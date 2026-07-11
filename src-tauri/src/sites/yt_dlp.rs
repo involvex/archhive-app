@@ -43,14 +43,41 @@ impl SidecarRunner {
         url: &str,
         output_dir: &str,
         on_line: impl Fn(&str),
-    ) -> AppResult<String> {
+    ) -> AppResult<Vec<String>> {
         let args = vec![
             url.to_string(),
             "-d".to_string(),
             output_dir.to_string(),
             "--no-mtime".to_string(),
         ];
-        self.spawn("gallery-dl", &args, on_line).await
+        self.spawn_gallery_dl("gallery-dl", &args, on_line).await
+    }
+
+    async fn spawn_gallery_dl(
+        &self,
+        name: &str,
+        args: &[String],
+        on_line: impl Fn(&str),
+    ) -> AppResult<Vec<String>> {
+        let sidecar_result = self
+            .app
+            .shell()
+            .sidecar(format!("binaries/{name}"))
+            .map(|cmd| cmd.args(args).spawn());
+
+        match sidecar_result {
+            Ok(Ok((rx, _child))) => self.consume_gallery_dl(rx, name, on_line).await,
+            _ => {
+                let (rx, _child) = self
+                    .app
+                    .shell()
+                    .command(name)
+                    .args(args)
+                    .spawn()
+                    .map_err(|e| AppError::Download(format!("spawn {name}: {e}")))?;
+                self.consume_gallery_dl(rx, name, on_line).await
+            }
+        }
     }
 
     pub async fn list_flat_playlist(
@@ -59,7 +86,7 @@ impl SidecarRunner {
         page: u32,
         page_size: u32,
         cookies_file: Option<&Path>,
-    ) -> AppResult<Vec<(String, String, String)>> {
+    ) -> AppResult<Vec<(String, String, String, Option<String>)>> {
         let start = (page.saturating_sub(1)) * page_size + 1;
         let end = page * page_size;
         let mut args = vec![
@@ -199,6 +226,38 @@ impl SidecarRunner {
         Ok(destination)
     }
 
+    async fn consume_gallery_dl(
+        &self,
+        mut rx: tauri::async_runtime::Receiver<CommandEvent>,
+        name: &str,
+        on_line: impl Fn(&str),
+    ) -> AppResult<Vec<String>> {
+        let mut destinations = Vec::new();
+        while let Some(event) = rx.recv().await {
+            match event {
+                CommandEvent::Stdout(line) | CommandEvent::Stderr(line) => {
+                    let text = String::from_utf8_lossy(&line);
+                    on_line(&text);
+                    if let Some(path) = crate::downloads::gallery_dl::parse_gallery_dl_path(&text) {
+                        destinations.push(path);
+                    }
+                    if let Some(path) = Self::parse_destination(&text) {
+                        destinations.push(path);
+                    }
+                }
+                CommandEvent::Terminated(payload)
+                    if payload.code != Some(0) => {
+                        return Err(AppError::Download(format!(
+                            "{name} exited with code {:?}",
+                            payload.code
+                        )));
+                    }
+                _ => {}
+            }
+        }
+        Ok(destinations)
+    }
+
     pub fn parse_progress(line: &str) -> Option<f32> {
         let re = Regex::new(r"\[download\]\s+(\d+\.?\d*)%").ok()?;
         re.captures(line)
@@ -220,7 +279,7 @@ impl SidecarRunner {
     }
 }
 
-fn parse_flat_playlist_json(raw: &str) -> AppResult<Vec<(String, String, String)>> {
+fn parse_flat_playlist_json(raw: &str) -> AppResult<Vec<(String, String, String, Option<String>)>> {
     let value: serde_json::Value =
         serde_json::from_str(raw.trim()).map_err(|e| AppError::Download(format!("yt-dlp JSON: {e}")))?;
 
@@ -250,7 +309,8 @@ fn parse_flat_playlist_json(raw: &str) -> AppResult<Vec<(String, String, String)
             .and_then(|v| v.as_str())
             .unwrap_or(&url)
             .to_string();
-        out.push((id, title, url));
+        let thumbnail = thumbnail_from_entry(obj);
+        out.push((id, title, url, thumbnail));
     }
 
     if out.is_empty() {
@@ -260,4 +320,18 @@ fn parse_flat_playlist_json(raw: &str) -> AppResult<Vec<(String, String, String)
     }
 
     Ok(out)
+}
+
+fn thumbnail_from_entry(obj: &serde_json::Map<String, serde_json::Value>) -> Option<String> {
+    if let Some(thumb) = obj.get("thumbnail").and_then(|v| v.as_str()) {
+        if !thumb.is_empty() {
+            return Some(thumb.to_string());
+        }
+    }
+    obj.get("thumbnails")
+        .and_then(|v| v.as_array())
+        .and_then(|arr| arr.last())
+        .and_then(|v| v.get("url"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
 }

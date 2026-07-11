@@ -37,7 +37,7 @@ Configure in **Settings → Engine**.
 ## Project Structure
 
 ```
-scrawler-app/
+archhive-app/
 ├── src/                    # React UI
 │   ├── routes/             # TanStack file routes
 │   ├── components/         # UI + layout

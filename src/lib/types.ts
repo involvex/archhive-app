@@ -1,4 +1,6 @@
-export type BrowseKind = "tag" | "model" | "channel" | "search" | "video";
+export type BrowseKind = "tag" | "model" | "channel" | "search" | "video" | "category";
+
+export type BrowseOrientation = "straight" | "gay" | "lesbian" | "transgender";
 
 export interface MediaItem {
   id: string;
@@ -53,6 +55,34 @@ export interface Scene {
   rating?: number;
   performers: string[];
   tags: string[];
+  phash?: string;
+  oshash?: string;
+  file_size?: number;
+}
+
+export interface UpdateSceneRequest {
+  title?: string;
+  performers?: string[];
+  tags?: string[];
+  rename_file?: boolean;
+}
+
+export interface BatchUpdateScenesRequest {
+  scene_ids: string[];
+  performers_add?: string[];
+  tags_add?: string[];
+}
+
+export interface BatchUpdateScenesResult {
+  updated: number;
+}
+
+export interface PornhubCategoryEntry {
+  name: string;
+  slug: string;
+  orientation: BrowseOrientation;
+  category_id?: number;
+  video_count?: number;
 }
 
 export interface Performer {

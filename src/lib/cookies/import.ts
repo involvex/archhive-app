@@ -22,11 +22,60 @@ export const COOKIE_EXTENSION_URL =
   "https://chromewebstore.google.com/detail/cookie-editor/hlkenndednhfkekhgcdicdfddnkalmdm";
 
 export const COOKIE_IMPORT_STEPS = [
-  "Install the Cookie-Editor extension (Chrome/Edge/Firefox).",
-  "Log in on the target site in your browser.",
-  "Open Cookie-Editor → Export → JSON → copy to clipboard.",
-  "Paste JSON below and click Import JSON.",
+  "Option A — Cookie-Editor extension: install, log in on the site, Export → JSON.",
+  "Option B — DevTools (no extension): F12 → Application → Cookies → select domain → copy table rows → paste below → Import DevTools table.",
+  "Option C — Console on the site tab: run the copy(JSON.stringify(...)) snippet from docs, paste JSON below.",
+  "Select the matching site, paste, then Import JSON or Import DevTools table.",
 ];
+
+/** One-liner to run in the browser console while logged in on the target site. */
+export const DEVTOOLS_COOKIE_CONSOLE_SNIPPET = `copy(JSON.stringify(document.cookie.split("; ").map(p=>{const i=p.indexOf("=");return{name:p.slice(0,i),value:p.slice(i+1),domain:location.hostname,path:"/"}}),null,2))`;
+
+function parseIsoExpiry(value: string): number | undefined {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.toLowerCase() === "session") return undefined;
+  const ms = Date.parse(trimmed);
+  if (Number.isNaN(ms)) return undefined;
+  return Math.floor(ms / 1000);
+}
+
+function isTruthyCell(value: string | undefined): boolean {
+  if (!value) return false;
+  const v = value.trim().toLowerCase();
+  return v === "✓" || v === "true" || v === "yes" || v === "1";
+}
+
+/** Parse cookies copied from Chrome/Edge DevTools Application → Cookies table (TSV). */
+export function parseDevToolsCookieTable(raw: string): BrowserCookieExport[] {
+  const cookies: BrowserCookieExport[] = [];
+  for (const line of raw.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("Name\t") || trimmed.startsWith("#")) continue;
+    const parts = trimmed.split("\t");
+    if (parts.length < 4) continue;
+    const [name, value, domain, path, expires, , httpOnly, secure] = parts;
+    if (!name || value === undefined || !domain) continue;
+    cookies.push({
+      name,
+      value,
+      domain,
+      path: path || "/",
+      expirationDate: expires ? parseIsoExpiry(expires) : undefined,
+      hostOnly: !domain.startsWith("."),
+      httpOnly: isTruthyCell(httpOnly),
+      secure: isTruthyCell(secure),
+    });
+  }
+  return cookies;
+}
+
+export function importCookiesFromDevToolsTable(raw: string, siteId: string): string {
+  const cookies = filterCookiesForSite(parseDevToolsCookieTable(raw), siteId);
+  if (cookies.length === 0) {
+    throw new Error("No cookies parsed. Copy rows from DevTools Application → Cookies.");
+  }
+  return jsonToNetscape(cookies);
+}
 
 export function jsonToNetscape(cookies: BrowserCookieExport[]): string {
   const lines = [

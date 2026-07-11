@@ -2,10 +2,14 @@ import { StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { RouterProvider, createRouter } from "@tanstack/react-router";
 import { routeTree } from "./routeTree.gen";
+import { initializePlugins } from "./lib/plugins/loader";
+import { getRegisteredPlugins } from "./lib/plugins/registry.generated";
 import { api } from "./lib/api/client";
 import { useSettingsStore } from "./lib/stores/settings";
 import { isDesktopTauri } from "./lib/tauri";
 import "./styles/globals.css";
+
+initializePlugins(getRegisteredPlugins());
 
 const router = createRouter({ routeTree });
 

@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { mergeSiteLists, SITE_CATALOG } from "@/lib/sites/catalog";
+import { PornhubCategoryBrowser } from "@/components/PornhubCategoryBrowser";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import type { BrowseKind } from "@/lib/types";
@@ -14,6 +15,7 @@ const KIND_LABELS: Record<BrowseKind, string> = {
   channel: "Channel",
   search: "Search",
   video: "Video",
+  category: "Category",
 };
 
 function SiteHubPage() {
@@ -32,6 +34,8 @@ function SiteHubPage() {
     );
   }
 
+  const advancedKinds = site.supported_kinds.filter((k) => k !== "category");
+
   return (
     <div className="space-y-6">
       <div>
@@ -42,23 +46,47 @@ function SiteHubPage() {
         <p className="text-sm text-[var(--color-muted-foreground)]">{site.base_url}</p>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Browse by</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-wrap gap-2">
-          {site.supported_kinds.map((kind) => (
-            <Button key={kind} asChild variant="outline">
-              <Link
-                to="/browse/$site/$kind/$slug"
-                params={{ site: site.id, kind, slug: "example" }}
-              >
-                {KIND_LABELS[kind]}
-              </Link>
-            </Button>
-          ))}
-        </CardContent>
-      </Card>
+      {site.id === "pornhub" && <PornhubCategoryBrowser />}
+
+      {advancedKinds.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Advanced browse</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-wrap gap-2">
+            {advancedKinds.map((kind) => (
+              <Button key={kind} asChild variant="outline">
+                <Link
+                  to="/browse/$site/$kind/$slug"
+                  params={{ site: site.id, kind, slug: "example" }}
+                >
+                  {KIND_LABELS[kind]}
+                </Link>
+              </Button>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {site.id !== "pornhub" && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Browse by</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-wrap gap-2">
+            {site.supported_kinds.map((kind) => (
+              <Button key={kind} asChild variant="outline">
+                <Link
+                  to="/browse/$site/$kind/$slug"
+                  params={{ site: site.id, kind, slug: "example" }}
+                >
+                  {KIND_LABELS[kind]}
+                </Link>
+              </Button>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       {site.requires_cookies && (
         <Card className="border-yellow-600/50 bg-yellow-950/30">

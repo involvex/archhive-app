@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Link2 } from "lucide-react";
 
-export const Route = createFileRoute("/browse/custom")({
+export const Route = createFileRoute("/browse/by-url")({
   component: CustomBrowsePage,
 });
 

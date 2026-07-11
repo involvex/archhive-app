@@ -53,6 +53,9 @@ impl SiteRegistry {
                 return Some(adapter.id().to_string());
             }
         }
+        if lower.contains("thethothub.com") || lower.contains("thothub.to") {
+            return Some("thothub".to_string());
+        }
         if lower.contains("youtube.com") || lower.contains("youtu.be") {
             return Some("youtube".to_string());
         }
@@ -63,6 +66,9 @@ impl SiteRegistry {
             return Some("twitter".to_string());
         }
         if lower.contains("reddit.com") {
+            return Some("reddit".to_string());
+        }
+        if lower.contains("i.redd.it") || lower.contains("redd.it") {
             return Some("reddit".to_string());
         }
         Some("generic_ytdlp".to_string())

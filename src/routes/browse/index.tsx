@@ -2,7 +2,8 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api/client";
 import { getCapabilities } from "@/lib/runtime";
-import { mergeSiteLists, SITE_CATALOG } from "@/lib/sites/catalog";
+import { getPluginBrowseSites } from "@/lib/plugins/loader";
+import { mergeSiteLists } from "@/lib/sites/catalog";
 import { useSettingsStore } from "@/lib/stores/settings";
 import type { SiteInfo } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,7 +18,7 @@ export const Route = createFileRoute("/browse/")({
 function BrowsePage() {
   const caps = getCapabilities();
   const { settings } = useSettingsStore();
-  const [sites, setSites] = useState<SiteInfo[]>(SITE_CATALOG);
+  const [sites, setSites] = useState<SiteInfo[]>(() => mergeSiteLists([], getPluginBrowseSites()));
   const [url, setUrl] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -36,10 +37,10 @@ function BrowsePage() {
     });
     void api
       .listSites()
-      .then((apiSites) => setSites(mergeSiteLists(apiSites)))
+      .then((apiSites) => setSites(mergeSiteLists(apiSites, getPluginBrowseSites())))
       .catch((e) => {
         setError(e instanceof Error ? e.message : "Failed to load sites");
-        setSites(SITE_CATALOG);
+        setSites(mergeSiteLists([], getPluginBrowseSites()));
       })
       .finally(() => setLoading(false));
   }, [needsRemoteSetup, caps.showBrowserBanner, settings.remote_host]);
@@ -95,7 +96,7 @@ function BrowsePage() {
             Paste any supported profile or playlist URL and browse via yt-dlp on the desktop host.
           </p>
           <Button asChild className="w-full sm:w-auto">
-            <Link to="/browse/custom">Open Custom URL</Link>
+            <Link to="/browse/by-url">Open Custom URL</Link>
           </Button>
         </CardContent>
       </Card>

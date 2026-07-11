@@ -5,15 +5,15 @@ export const SITE_CATALOG: SiteInfo[] = [
   {
     id: "thothub",
     display_name: "ThotHub",
-    base_url: "https://thothub.to",
-    supported_kinds: ["search", "model", "tag"] as BrowseKind[],
+    base_url: "https://thethothub.com",
+    supported_kinds: ["search", "tag"] as BrowseKind[],
     requires_cookies: false,
   },
   {
     id: "pornhub",
     display_name: "PornHub",
     base_url: "https://www.pornhub.com",
-    supported_kinds: ["search", "model", "channel", "tag"] as BrowseKind[],
+    supported_kinds: ["category", "search", "model", "channel", "tag"] as BrowseKind[],
     requires_cookies: true,
   },
   {
@@ -74,10 +74,17 @@ export const SITE_CATALOG: SiteInfo[] = [
   },
 ];
 
-export function mergeSiteLists(apiSites: SiteInfo[], fallback = SITE_CATALOG): SiteInfo[] {
-  if (apiSites.length === 0) return fallback;
+export function mergeSiteLists(
+  apiSites: SiteInfo[],
+  pluginSites: SiteInfo[] = [],
+  fallback = SITE_CATALOG,
+): SiteInfo[] {
+  const base = apiSites.length === 0 ? fallback : apiSites;
   const byId = new Map(fallback.map((s) => [s.id, s]));
-  for (const site of apiSites) {
+  for (const site of base) {
+    byId.set(site.id, site);
+  }
+  for (const site of pluginSites) {
     byId.set(site.id, site);
   }
   return [...byId.values()];

@@ -113,6 +113,13 @@ pub fn run() {
             commands::discover_lan_hosts,
             commands::start_lan_server,
             commands::stop_lan_server,
+            commands::regenerate_lan_server,
+            commands::get_scene,
+            commands::update_scene,
+            commands::open_scene_in_explorer,
+            commands::open_scene_with_default,
+            commands::batch_update_scenes,
+            commands::list_pornhub_categories,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

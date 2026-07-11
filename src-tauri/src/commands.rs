@@ -1,7 +1,7 @@
 use crate::error::AppResult;
-use crate::models::{
-    AppSettings, BrowseKind, DownloadJob, DuplicateGroup, HealthResponse, LanHost, MediaItem,
-    MergeDuplicatesResult, Performer, Scene, ScanResult, SiteInfo, Tag,
+use crate::models::{AppSettings, BrowseKind, BrowseOrientation, DownloadJob, DuplicateGroup, HealthResponse,
+    LanHost, MediaItem, MergeDuplicatesResult, Performer, Scene, ScanResult, SiteInfo, Tag,
+    UpdateSceneRequest, BatchUpdateScenesRequest, BatchUpdateScenesResult, PornhubCategoryEntry,
 };
 use crate::state::AppState;
 use crate::vault::CookieSiteInfo;
@@ -31,10 +31,11 @@ pub async fn browse(
     kind: BrowseKind,
     slug: String,
     page: Option<u32>,
+    orientation: Option<BrowseOrientation>,
 ) -> CmdResult<crate::models::BrowsePage> {
     map_err(
         state
-            .browse(&site_id, kind, &slug, page.unwrap_or(1))
+            .browse(&site_id, kind, &slug, page.unwrap_or(1), orientation)
             .await,
     )
 }
@@ -108,10 +109,7 @@ pub async fn scan_library(
                 &path,
                 &rules,
                 Some(Box::new(move |progress| {
-                    let app_emit = app_for_progress.clone();
-                    let _ = app_for_progress.run_on_main_thread(move || {
-                        let _ = app_emit.emit("library:scan-progress", progress);
-                    });
+                    let _ = app_for_progress.emit("library:scan-progress", progress);
                 })),
             )
             .map_err(|e| e.to_string())
@@ -186,4 +184,85 @@ pub async fn start_lan_server(
 #[tauri::command]
 pub fn stop_lan_server(state: State<'_, Arc<AppState>>) -> CmdResult<()> {
     map_err(state.stop_lan_server())
+}
+
+#[tauri::command]
+pub async fn regenerate_lan_server(
+    state: State<'_, Arc<AppState>>,
+    port: u16,
+) -> CmdResult<serde_json::Value> {
+    let token = map_err(state.regenerate_lan_server(port).await)?;
+    Ok(serde_json::json!({ "token": token, "port": port, "auth_required": !token.is_empty() }))
+}
+
+#[tauri::command]
+pub fn get_scene(state: State<'_, Arc<AppState>>, id: String) -> CmdResult<Scene> {
+    map_err(state.get_scene(&id))
+}
+
+#[tauri::command]
+pub fn update_scene(
+    state: State<'_, Arc<AppState>>,
+    id: String,
+    body: UpdateSceneRequest,
+) -> CmdResult<Scene> {
+    map_err(state.update_scene(
+        &id,
+        body.title.as_deref(),
+        body.performers.as_deref(),
+        body.tags.as_deref(),
+        body.rename_file.unwrap_or(false),
+    ))
+}
+
+#[tauri::command]
+pub async fn open_scene_in_explorer(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    id: String,
+) -> CmdResult<()> {
+    use tauri_plugin_opener::OpenerExt;
+    let scene = map_err(state.get_scene(&id))?;
+    let path = scene
+        .path
+        .ok_or_else(|| "Scene has no file on disk".to_string())?;
+    app.opener()
+        .reveal_item_in_dir(&path)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn open_scene_with_default(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    id: String,
+) -> CmdResult<()> {
+    use tauri_plugin_opener::OpenerExt;
+    let scene = map_err(state.get_scene(&id))?;
+    let path = scene
+        .path
+        .ok_or_else(|| "Scene has no file on disk".to_string())?;
+    app.opener()
+        .open_path(&path, None::<&str>)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn batch_update_scenes(
+    state: State<'_, Arc<AppState>>,
+    body: BatchUpdateScenesRequest,
+) -> CmdResult<BatchUpdateScenesResult> {
+    map_err(state.batch_update_scenes(
+        &body.scene_ids,
+        body.performers_add.as_deref(),
+        body.tags_add.as_deref(),
+    ))
+}
+
+#[tauri::command]
+pub async fn list_pornhub_categories(
+    state: State<'_, Arc<AppState>>,
+    orientation: BrowseOrientation,
+) -> CmdResult<Vec<PornhubCategoryEntry>> {
+    map_err(state.list_pornhub_categories(orientation).await)
 }

@@ -109,7 +109,9 @@ impl SiteAdapter for GenericYtDlpAdapter {
             crate::models::BrowseKind::Channel | crate::models::BrowseKind::Model => {
                 profile_url(self.base, self.site_id, &query.slug)
             }
-            crate::models::BrowseKind::Tag => format!("{}/tags/{}", self.base, query.slug),
+            crate::models::BrowseKind::Tag | crate::models::BrowseKind::Category => {
+                format!("{}/tags/{}", self.base, query.slug)
+            }
         };
 
         if matches!(
@@ -123,11 +125,11 @@ impl SiteAdapter for GenericYtDlpAdapter {
                 .await?;
             let items = entries
                 .into_iter()
-                .map(|(id, title, item_url)| MediaItem {
+                .map(|(id, title, item_url, thumbnail)| MediaItem {
                     id,
                     title,
                     url: item_url,
-                    thumbnail: None,
+                    thumbnail,
                     duration: None,
                     site_id: self.site_id.to_string(),
                     performers: vec![],

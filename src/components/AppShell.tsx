@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
-import { Home, Compass, Library, Download, Users, Tags, Settings } from "lucide-react";
+import { Home, Compass, Library, Download, Users, Tags, Settings, Puzzle } from "lucide-react";
+import { getPluginNavItems } from "@/lib/plugins/loader";
 import { cn } from "@/lib/utils";
 
 const desktopNavItems = [
@@ -20,7 +21,16 @@ const mobileNavItems = [
   { to: "/settings", label: "Settings", icon: Settings },
 ] as const;
 
+const pluginNavItems = getPluginNavItems().map((item) => ({
+  to: item.to,
+  label: item.label,
+  icon: Puzzle,
+}));
+
 export function AppShell({ children }: { children: React.ReactNode }) {
+  const desktopNav = [...desktopNavItems, ...pluginNavItems];
+  const mobileNav = [...mobileNavItems, ...pluginNavItems];
+
   return (
     <div className="flex min-h-screen max-w-[100vw] overflow-x-hidden">
       <aside className="hidden md:flex w-56 shrink-0 flex-col border-r border-[var(--color-border)] bg-[var(--color-card)] p-4">
@@ -31,7 +41,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </p>
         </div>
         <nav className="flex flex-col gap-1">
-          {desktopNavItems.map(({ to, label, icon: Icon }) => (
+          {desktopNav.map(({ to, label, icon: Icon }) => (
             <Link
               key={to}
               to={to}
@@ -52,7 +62,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <main className="flex-1 overflow-x-hidden p-4 pb-24 md:p-6 md:pb-6">{children}</main>
         <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 border-t border-[var(--color-border)] bg-[var(--color-card)] pb-[env(safe-area-inset-bottom)]">
           <div className="flex justify-around py-2">
-            {mobileNavItems.map(({ to, label, icon: Icon }) => (
+            {mobileNav.map(({ to, label, icon: Icon }) => (
               <Link
                 key={to}
                 to={to}

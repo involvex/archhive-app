@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useState } from "react";
 import { api } from "@/lib/api/client";
+import { normalizeBrowseInput } from "@/lib/browse/normalize";
 import type { BrowseKind, MediaItem } from "@/lib/types";
 import { SceneCard } from "@/components/SceneCard";
 import { Input } from "@/components/ui/input";
@@ -25,7 +26,8 @@ function BrowseDetailPage() {
       setLoading(true);
       setError("");
       try {
-        const result = await api.browse(site, kind as BrowseKind, querySlug.trim(), p);
+        const normalized = normalizeBrowseInput(site, kind as BrowseKind, querySlug.trim());
+        const result = await api.browse(site, normalized.kind, normalized.slug, p);
         setItems((prev) => (append ? [...prev, ...result.items] : result.items));
         setHasMore(result.has_more);
         setPage(p);

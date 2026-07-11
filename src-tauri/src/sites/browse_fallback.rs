@@ -18,11 +18,11 @@ pub async fn ytdlp_browse_fallback(
         .await?;
     Ok(entries
         .into_iter()
-        .map(|(id, title, item_url)| MediaItem {
+        .map(|(id, title, item_url, thumbnail)| MediaItem {
             id,
             title,
             url: item_url,
-            thumbnail: None,
+            thumbnail,
             duration: None,
             site_id: site_id.to_string(),
             performers: vec![],

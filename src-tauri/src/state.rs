@@ -2,8 +2,8 @@ use crate::db::Database;
 use crate::downloads::DownloadManager;
 use crate::error::AppResult;
 use crate::models::{
-    AppSettings, BrowseKind, BrowseQuery, DownloadJob, DuplicateGroup, HealthResponse, MediaItem,
-    Performer, Scene, ScanResult, SiteInfo, Tag,
+    AppSettings, BrowseKind, BrowseOrientation, BrowseQuery, DownloadJob, DuplicateGroup,
+    HealthResponse, MediaItem, Performer, Scene, ScanResult, SiteInfo, Tag,
 };
 use crate::server::LanServer;
 use crate::sites::registry::SiteRegistry;
@@ -64,6 +64,7 @@ impl AppState {
         kind: BrowseKind,
         slug: &str,
         page: u32,
+        orientation: Option<BrowseOrientation>,
     ) -> AppResult<crate::models::BrowsePage> {
         let adapter = self
             .sites
@@ -76,6 +77,7 @@ impl AppState {
                     kind,
                     slug: slug.to_string(),
                     page,
+                    orientation,
                 },
             )
             .await
@@ -209,6 +211,50 @@ impl AppState {
             !token.is_empty()
         );
         Ok(token)
+    }
+
+    pub async fn regenerate_lan_server(self: &Arc<Self>, port: u16) -> AppResult<String> {
+        self.stop_lan_server()?;
+        let mut settings = self.get_settings()?;
+        settings.lan_token = None;
+        self.save_settings(&settings)?;
+        self.ensure_lan_server(port).await
+    }
+
+    pub fn get_scene(&self, id: &str) -> AppResult<Scene> {
+        self.db.get_scene(id)
+    }
+
+    pub fn update_scene(
+        &self,
+        id: &str,
+        title: Option<&str>,
+        performers: Option<&[String]>,
+        tags: Option<&[String]>,
+        rename_file: bool,
+    ) -> AppResult<Scene> {
+        self.db.update_scene(id, title, performers, tags, rename_file)
+    }
+
+    pub fn batch_update_scenes(
+        &self,
+        ids: &[String],
+        performers_add: Option<&[String]>,
+        tags_add: Option<&[String]>,
+    ) -> AppResult<crate::models::BatchUpdateScenesResult> {
+        let updated = self.db.batch_update_scenes(ids, performers_add, tags_add)?;
+        Ok(crate::models::BatchUpdateScenesResult { updated })
+    }
+
+    pub async fn list_pornhub_categories(
+        &self,
+        orientation: crate::models::BrowseOrientation,
+    ) -> AppResult<Vec<crate::models::PornhubCategoryEntry>> {
+        let url = crate::sites::adapters::pornhub::categories_page_url(orientation);
+        let html = self.site_ctx.fetch_html(&url, "pornhub").await?;
+        Ok(crate::sites::adapters::pornhub::parse_pornhub_categories(
+            &html, orientation,
+        ))
     }
 
     pub fn find_duplicates(&self) -> AppResult<Vec<DuplicateGroup>> {

@@ -1,5 +1,5 @@
 use crate::error::AppResult;
-use crate::models::{BrowseKind, BrowsePage, BrowseQuery, DownloadPlan, DownloadTool, MediaItem};
+use crate::models::{BrowseKind, BrowsePage, BrowseQuery, DownloadPlan, MediaItem};
 use crate::sites::browse_fallback::ytdlp_browse_fallback;
 use crate::sites::urls::{path_slug, query_slug};
 use crate::sites::{SiteAdapter, SiteContext};
@@ -45,10 +45,11 @@ impl SiteAdapter for RedditAdapter {
     }
 
     async fn resolve_download(&self, _ctx: &SiteContext, item: &MediaItem) -> AppResult<DownloadPlan> {
+        let tool = crate::downloads::image::resolve_download_tool(&item.url, "reddit");
         Ok(DownloadPlan {
             url: item.url.clone(),
             output_template: "reddit/%(title)s.%(ext)s".to_string(),
-            tool: DownloadTool::YtDlp,
+            tool,
             title: Some(item.title.clone()),
             performers: vec![],
             tags: vec!["reddit".to_string()],
@@ -146,6 +147,7 @@ mod tests {
             kind: BrowseKind::Search,
             slug: "sweetie fox".to_string(),
             page: 1,
+            orientation: None,
         };
         let url = build_browse_url(&q).unwrap();
         assert!(url.starts_with(OLD_BASE));
@@ -158,6 +160,7 @@ mod tests {
             kind: BrowseKind::Channel,
             slug: "nsfw".to_string(),
             page: 1,
+            orientation: None,
         };
         assert_eq!(build_browse_url(&q).unwrap(), "https://old.reddit.com/r/nsfw/");
     }

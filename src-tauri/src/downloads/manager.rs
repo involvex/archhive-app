@@ -30,14 +30,11 @@ impl DownloadManager {
 
     pub fn queue(&self, url: &str, adapter: &str, title: Option<&str>) -> AppResult<DownloadJob> {
         let settings = self.db.get_settings()?;
+        let tool = crate::downloads::image::resolve_download_tool(url, adapter);
         let plan = DownloadPlan {
             url: url.to_string(),
             output_template: settings.naming_template,
-            tool: if adapter == "redgifs" {
-                DownloadTool::GalleryDl
-            } else {
-                DownloadTool::YtDlp
-            },
+            tool,
             title: title.map(|s| s.to_string()),
             performers: vec![],
             tags: vec![],
@@ -120,16 +117,37 @@ async fn run_job_with_plan(
     let job_id_emit = job_id.clone();
     let cookies = vault.cookie_file_for_site(&plan.adapter_id);
 
-    let result = match plan.tool {
+    let snapshot = if matches!(plan.tool, DownloadTool::GalleryDl) {
+        Some(crate::downloads::gallery_dl::DirSnapshot::capture(library_path)?)
+    } else {
+        None
+    };
+
+    let result: AppResult<Vec<String>> = match plan.tool {
         DownloadTool::GalleryDl => {
-            runner
+            let parsed = runner
                 .run_gallery_dl(&plan.url, library_path, |line| {
                     update_progress(&db_emit, &app_emit, &job_id_emit, line, None);
                 })
-                .await
+                .await?;
+            let paths = crate::downloads::gallery_dl::resolve_output_paths(
+                &parsed,
+                snapshot.as_ref().expect("gallery-dl snapshot"),
+                library_path,
+            )?;
+            Ok(paths)
         }
-        _ => {
-            runner
+        DownloadTool::DirectHttp => {
+            let path = crate::downloads::image::download_direct(
+                &plan.url,
+                library_path,
+                plan.title.as_deref(),
+            )
+            .await?;
+            Ok(vec![path])
+        }
+        DownloadTool::YtDlp => {
+            let path = runner
                 .run_yt_dlp(
                     &plan.url,
                     library_path,
@@ -140,35 +158,49 @@ async fn run_job_with_plan(
                         update_progress(&db_emit, &app_emit, &job_id_emit, line, progress);
                     },
                 )
-                .await
+                .await?;
+            Ok(vec![path])
         }
     };
 
     match result {
-        Ok(output_path) => {
+        Ok(output_paths) => {
+            if output_paths.is_empty() {
+                return Err(AppError::Download("Download produced no output files".into()));
+            }
             job.status = DownloadStatus::Completed;
             job.progress = 100.0;
-            job.output_path = Some(output_path.clone());
+            job.output_path = Some(output_paths.last().cloned().unwrap_or_default());
             db.update_download_job(&job)?;
             let _ = app.emit("download:progress", &job);
 
             let title = plan.title.clone().unwrap_or_else(|| job.url.clone());
-            let scene_id = import_download(
-                &db,
-                &title,
-                Some(&output_path),
-                Some(&job.url),
-                &plan.performers,
-                &plan.tags,
-                None,
-                None,
-                None,
-            )?;
-
-            if Path::new(&output_path).exists() {
-                let _ =
-                    LibraryScanner::post_process_file(&db, app.clone(), &scene_id, Path::new(&output_path))
-                        .await;
+            for output_path in &output_paths {
+                if !Path::new(output_path).exists() {
+                    continue;
+                }
+                let file_title = Path::new(output_path)
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or(&title);
+                let scene_id = import_download(
+                    &db,
+                    file_title,
+                    Some(output_path),
+                    Some(&job.url),
+                    &plan.performers,
+                    &plan.tags,
+                    None,
+                    None,
+                    None,
+                )?;
+                let _ = LibraryScanner::post_process_file(
+                    &db,
+                    app.clone(),
+                    &scene_id,
+                    Path::new(output_path),
+                )
+                .await;
             }
         }
         Err(e) => {

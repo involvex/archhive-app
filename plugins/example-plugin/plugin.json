@@ -1,0 +1,22 @@
+{
+  "id": "example",
+  "name": "Example Plugin",
+  "version": "1.0.0",
+  "entry": "index.tsx",
+  "browseSites": [
+    {
+      "id": "example-tube",
+      "display_name": "Example Tube",
+      "base_url": "https://example.com",
+      "supported_kinds": ["search", "video"],
+      "requires_cookies": false
+    }
+  ],
+  "settingsPanels": [
+    {
+      "id": "example-settings",
+      "title": "Installed Plugins",
+      "tab": "engine"
+    }
+  ]
+}

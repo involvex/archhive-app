@@ -18,6 +18,7 @@ export default defineConfig(async () => ({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      "@plugins": path.resolve(__dirname, "./plugins"),
     },
   },
   clearScreen: false,
@@ -25,6 +26,9 @@ export default defineConfig(async () => ({
     port: 1420,
     strictPort: true,
     host: host || true,
+    fs: {
+      allow: ["..", path.resolve(__dirname, "./plugins")],
+    },
     hmr: host
       ? {
           protocol: "ws",

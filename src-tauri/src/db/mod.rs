@@ -305,6 +305,9 @@ impl Database {
                 rating: None,
                 performers,
                 tags,
+                phash: None,
+                oshash: None,
+                file_size: None,
             });
         }
         Ok(result)
@@ -343,6 +346,9 @@ impl Database {
                 rating: None,
                 performers,
                 tags,
+                phash: None,
+                oshash: None,
+                file_size: None,
             }
         }))
     }
@@ -469,6 +475,176 @@ impl Database {
         Ok(groups)
     }
 
+    pub fn get_scene(&self, scene_id: &str) -> AppResult<Scene> {
+        let conn = self.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
+        let row = conn
+            .query_row(
+                "SELECT id, title, path, thumb, source_url, phash, oshash FROM scenes WHERE id = ?1",
+                params![scene_id],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, Option<String>>(2)?,
+                        row.get::<_, Option<String>>(3)?,
+                        row.get::<_, Option<String>>(4)?,
+                        row.get::<_, Option<String>>(5)?,
+                        row.get::<_, Option<String>>(6)?,
+                    ))
+                },
+            )
+            .optional()?;
+        let Some((id, title, path, thumb, source_url, phash, oshash)) = row else {
+            return Err(AppError::NotFound(format!("scene {scene_id}")));
+        };
+        let performers = self.scene_performers(&conn, &id)?;
+        let tags = self.scene_tags(&conn, &id)?;
+        let file_size = path
+            .as_deref()
+            .and_then(|p| std::fs::metadata(p).ok())
+            .map(|m| m.len());
+        Ok(Scene {
+            id,
+            title,
+            path,
+            duration: None,
+            thumb,
+            source_url,
+            studio_id: None,
+            studio_name: None,
+            date: None,
+            rating: None,
+            performers,
+            tags,
+            phash,
+            oshash,
+            file_size,
+        })
+    }
+
+    pub fn batch_update_scenes(
+        &self,
+        ids: &[String],
+        performers_add: Option<&[String]>,
+        tags_add: Option<&[String]>,
+    ) -> AppResult<u32> {
+        let mut updated = 0u32;
+        for id in ids {
+            let scene = self.get_scene(id)?;
+            let mut performers = scene.performers;
+            if let Some(add) = performers_add {
+                for name in add {
+                    let name = name.trim();
+                    if name.is_empty() {
+                        continue;
+                    }
+                    if !performers
+                        .iter()
+                        .any(|p| p.eq_ignore_ascii_case(name))
+                    {
+                        performers.push(name.to_string());
+                    }
+                }
+            }
+            let mut tags = scene.tags;
+            if let Some(add) = tags_add {
+                for name in add {
+                    let name = name.trim();
+                    if name.is_empty() {
+                        continue;
+                    }
+                    if !tags.iter().any(|t| t.eq_ignore_ascii_case(name)) {
+                        tags.push(name.to_string());
+                    }
+                }
+            }
+            self.update_scene(id, None, Some(&performers), Some(&tags), false)?;
+            updated += 1;
+        }
+        Ok(updated)
+    }
+
+    pub fn update_scene(
+        &self,
+        id: &str,
+        title: Option<&str>,
+        performers: Option<&[String]>,
+        tags: Option<&[String]>,
+        rename_file: bool,
+    ) -> AppResult<Scene> {
+        let existing = self.get_scene(id)?;
+        let new_title = title.unwrap_or(&existing.title);
+        let mut new_path = existing.path.clone();
+
+        if rename_file {
+            if let Some(ref old_path) = existing.path {
+                let old = std::path::Path::new(old_path);
+                if old.exists() {
+                    let ext = old
+                        .extension()
+                        .and_then(|e| e.to_str())
+                        .unwrap_or("mp4");
+                    let safe: String = new_title
+                        .chars()
+                        .map(|c| {
+                            if c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == ' ' {
+                                c
+                            } else {
+                                '_'
+                            }
+                        })
+                        .collect();
+                    let safe = safe.trim().replace(' ', "_");
+                    let parent = old.parent().unwrap_or_else(|| std::path::Path::new("."));
+                    let target = parent.join(format!("{safe}.{ext}"));
+                    if target != old {
+                        std::fs::rename(old, &target)?;
+                        new_path = Some(target.to_string_lossy().to_string());
+                    }
+                }
+            }
+        }
+
+        let conn = self.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
+        conn.execute(
+            "UPDATE scenes SET title = ?2, path = COALESCE(?3, path) WHERE id = ?1",
+            params![id, new_title, new_path],
+        )?;
+        drop(conn);
+
+        if let Some(p) = performers {
+            {
+                let conn = self.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
+                conn.execute("DELETE FROM scene_performers WHERE scene_id = ?1", params![id])?;
+            }
+            for name in p {
+                let pid = self.upsert_performer(name)?;
+                let conn = self.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
+                conn.execute(
+                    "INSERT OR IGNORE INTO scene_performers (scene_id, performer_id) VALUES (?1, ?2)",
+                    params![id, pid],
+                )?;
+            }
+        }
+
+        if let Some(t) = tags {
+            {
+                let conn = self.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
+                conn.execute("DELETE FROM scene_tags WHERE scene_id = ?1", params![id])?;
+            }
+            for name in t {
+                let tid = self.upsert_tag(name)?;
+                let conn = self.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
+                conn.execute(
+                    "INSERT OR IGNORE INTO scene_tags (scene_id, tag_id) VALUES (?1, ?2)",
+                    params![id, tid],
+                )?;
+            }
+        }
+
+        self.get_scene(id)
+    }
+
     pub fn delete_scene(&self, id: &str, delete_files: bool) -> AppResult<()> {
         let conn = self.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
         let row: Option<(Option<String>, Option<String>)> = conn
@@ -566,6 +742,9 @@ impl Database {
                     rating: None,
                     performers,
                     tags,
+                    phash: None,
+                    oshash: None,
+                    file_size: None,
                 });
             }
         }

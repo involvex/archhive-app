@@ -2,64 +2,93 @@
 
 Cross-platform media browser, downloader, and personal library — inspired by [SCrawler](https://github.com/AAndyProgram/SCrawler) and [Stash](https://github.com/stashapp/stash).
 
+> **Development workspace:** `D:\repos\archhive-app` (canonical clone). Do not use `I:\dev\scrawler-app` — that path was retired due to slow disk I/O.
+
+Browse sites, queue downloads to your library, organize scenes with performers and tags, and optionally control everything from your phone over LAN.
+
 ## Features
 
-- Browse and download from multiple sites (ThotHub, PornHub, xHamster, XVIDEOS, Reddit, RedGifs, YouTube, TikTok, and more)
-- Paste-any-URL download via yt-dlp
-- Local library with scenes, performers, tags, and FTS search
-- Auto-tagging from filenames and download metadata
+- Multi-site browse and download (ThotHub, PornHub, xHamster, XVIDEOS, Reddit, RedGifs, YouTube, TikTok, and more)
+- Paste-any-URL download via yt-dlp / gallery-dl / direct HTTP (images)
+- SQLite library with FTS search, performers, tags, duplicates
+- Library scene edit, rename-on-disk, thumbnails (desktop + LAN)
+- PornHub category browser with orientation filters and live count refresh
 - Download queue with live progress
-- Optional LAN web server for mobile full-parity access
-- Mobile standalone mode for YouTube and direct media
-- Dark-first responsive UI (desktop + mobile)
+- LAN REST API + mDNS for mobile full-parity (port 8787)
+- TypeScript plugins via `plugins/` directory (see [docs/plugins.md](docs/plugins.md))
 
-## Quick Start
+## Prerequisites
+
+- [Bun](https://bun.sh)
+- [Rust](https://rustup.rs) (for Tauri desktop/Android)
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp) on PATH (or bundled sidecars)
+- Optional: `gallery-dl`, Android SDK for mobile builds
+
+## Quick start (desktop)
 
 ```bash
 bun install
+bun run setup:binaries   # Windows: yt-dlp + ffmpeg sidecars
 bun run tauri dev
 ```
 
-Install [yt-dlp](https://github.com/yt-dlp/yt-dlp) on your PATH, or bundle sidecars:
+## Quick start (Android + Remote LAN)
 
-```bash
-# Windows
-.\scripts\setup-binaries.ps1
+1. Desktop: `bun run android:dev` (starts LAN server + emulator/device build)
+2. Phone: Settings → Engine → **Remote LAN** → pick discovered host (`http://<pc-ip>:8787`)
+3. Copy LAN token from desktop Settings → LAN if auth is required
 
-# macOS / Linux
-./scripts/setup-binaries.sh
-```
+See [docs/mobile-android.md](docs/mobile-android.md).
 
-Optional: `gallery-dl` on PATH. ffmpeg is bundled by the setup script.
+## Engine modes
+
+| Mode           | Where            | Capability                            |
+| -------------- | ---------------- | ------------------------------------- |
+| **Local**      | Desktop          | Full yt-dlp, gallery-dl, library scan |
+| **Remote LAN** | Mobile / browser | Full parity via desktop REST API      |
+| **Standalone** | Mobile offline   | Direct URL resolve only               |
+
+Configure in **Settings → Engine**.
 
 ## Scripts
 
-| Command                     | Description                       |
-| --------------------------- | --------------------------------- |
-| `bun run dev`               | Vite dev server                   |
-| `bun run tauri dev`         | Desktop app                       |
-| `bun run tauri:android:dev` | Android app (device/emulator)     |
-| `bun run setup:binaries`    | Download yt-dlp + ffmpeg sidecars |
-| `bun run build`             | Production frontend build         |
-| `bun run lint`              | ESLint                            |
-| `bun run format`            | Prettier write                    |
+| Command                     | Description                                                                                                           |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `bun run dev`               | Vite dev server (1420)                                                                                                |
+| `bun run tauri dev`         | Desktop app                                                                                                           |
+| `bun run tauri:android:dev` | Android on device/emulator                                                                                            |
+| `bun run android:dev`       | Windows helper: AVD + LAN auto-start                                                                                  |
+| `bun run android:regen`     | Regenerate `gen/android` after identifier/icon change (runs `tauri icon` if `assets/branding/icon-source.png` exists) |
+| `bun run build:apk`         | Debug APK (aarch64)                                                                                                   |
+| `bun run setup:binaries`    | Download yt-dlp + ffmpeg sidecars                                                                                     |
+| `bun run plugins:generate`  | Regenerate plugin registry from `plugins/`                                                                            |
+| `bun run build`             | Lint + typecheck + production frontend                                                                                |
+| `bun run lint` / `format`   | ESLint / Prettier                                                                                                     |
+
+## Plugins
+
+Clone a plugin repo into `plugins/<name>/`, then:
+
+```bash
+bun run plugins:generate
+bun run dev
+```
+
+Author guide: [docs/plugins.md](docs/plugins.md).
+
+## Documentation
+
+Full index: [docs/README.md](docs/README.md).
+
+## Troubleshooting
+
+- Android logcat / FrameInsert: [docs/troubleshooting-android.md](docs/troubleshooting-android.md)
+- Cookies: [docs/cookie-import.md](docs/cookie-import.md)
+- LAN / mobile: [docs/mobile-android.md](docs/mobile-android.md)
 
 ## Architecture
 
-See [Plan.md](Plan.md) for full architecture, site adapter docs in [docs/sites.md](docs/sites.md).
-
-## LAN Mode
-
-1. Open **Settings → LAN**
-2. Enable server (default port 8787)
-3. Copy API token
-4. On mobile, set Engine mode to **Remote LAN** with `http://<desktop-ip>:8787`
-
-See [docs/mobile-android.md](docs/mobile-android.md) for emulator (`10.0.2.2`) and device testing.
-
-## Cookie import
-
-See [docs/cookie-import.md](docs/cookie-import.md) for Cookie-Editor JSON import and bookmarklet workflow.
+See [Plan.md](Plan.md) for stack, adapters, and LAN API.
 
 ## License
 

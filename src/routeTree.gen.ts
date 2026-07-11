@@ -13,7 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as SettingsIndexRouteImport } from './routes/settings/index'
 import { Route as DownloadsIndexRouteImport } from './routes/downloads/index'
 import { Route as BrowseIndexRouteImport } from './routes/browse/index'
-import { Route as BrowseCustomRouteImport } from './routes/browse/custom'
+import { Route as BrowseByUrlRouteImport } from './routes/browse/by-url'
 import { Route as LibraryTagsIndexRouteImport } from './routes/library/tags/index'
 import { Route as LibraryScenesIndexRouteImport } from './routes/library/scenes/index'
 import { Route as LibraryPerformersIndexRouteImport } from './routes/library/performers/index'
@@ -40,9 +40,9 @@ const BrowseIndexRoute = BrowseIndexRouteImport.update({
   path: '/browse/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const BrowseCustomRoute = BrowseCustomRouteImport.update({
-  id: '/browse/custom',
-  path: '/browse/custom',
+const BrowseByUrlRoute = BrowseByUrlRouteImport.update({
+  id: '/browse/by-url',
+  path: '/browse/by-url',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LibraryTagsIndexRoute = LibraryTagsIndexRouteImport.update({
@@ -73,7 +73,7 @@ const BrowseSiteKindSlugRoute = BrowseSiteKindSlugRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/browse/custom': typeof BrowseCustomRoute
+  '/browse/by-url': typeof BrowseByUrlRoute
   '/browse/': typeof BrowseIndexRoute
   '/downloads/': typeof DownloadsIndexRoute
   '/settings/': typeof SettingsIndexRoute
@@ -85,7 +85,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/browse/custom': typeof BrowseCustomRoute
+  '/browse/by-url': typeof BrowseByUrlRoute
   '/browse': typeof BrowseIndexRoute
   '/downloads': typeof DownloadsIndexRoute
   '/settings': typeof SettingsIndexRoute
@@ -98,7 +98,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/browse/custom': typeof BrowseCustomRoute
+  '/browse/by-url': typeof BrowseByUrlRoute
   '/browse/': typeof BrowseIndexRoute
   '/downloads/': typeof DownloadsIndexRoute
   '/settings/': typeof SettingsIndexRoute
@@ -112,7 +112,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/browse/custom'
+    | '/browse/by-url'
     | '/browse/'
     | '/downloads/'
     | '/settings/'
@@ -124,7 +124,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
-    | '/browse/custom'
+    | '/browse/by-url'
     | '/browse'
     | '/downloads'
     | '/settings'
@@ -136,7 +136,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
-    | '/browse/custom'
+    | '/browse/by-url'
     | '/browse/'
     | '/downloads/'
     | '/settings/'
@@ -149,7 +149,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  BrowseCustomRoute: typeof BrowseCustomRoute
+  BrowseByUrlRoute: typeof BrowseByUrlRoute
   BrowseIndexRoute: typeof BrowseIndexRoute
   DownloadsIndexRoute: typeof DownloadsIndexRoute
   SettingsIndexRoute: typeof SettingsIndexRoute
@@ -190,11 +190,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BrowseIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/browse/custom': {
-      id: '/browse/custom'
-      path: '/browse/custom'
-      fullPath: '/browse/custom'
-      preLoaderRoute: typeof BrowseCustomRouteImport
+    '/browse/by-url': {
+      id: '/browse/by-url'
+      path: '/browse/by-url'
+      fullPath: '/browse/by-url'
+      preLoaderRoute: typeof BrowseByUrlRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/library/tags/': {
@@ -237,7 +237,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  BrowseCustomRoute: BrowseCustomRoute,
+  BrowseByUrlRoute: BrowseByUrlRoute,
   BrowseIndexRoute: BrowseIndexRoute,
   DownloadsIndexRoute: DownloadsIndexRoute,
   SettingsIndexRoute: SettingsIndexRoute,

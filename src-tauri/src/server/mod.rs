@@ -1,6 +1,7 @@
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 use axum::{
+    body::Body,
     extract::{Path, Query, State},
     http::{header, Request, StatusCode},
     middleware::{self, Next},
@@ -27,6 +28,7 @@ struct BrowseParams {
     kind: String,
     slug: String,
     page: Option<u32>,
+    orientation: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -41,6 +43,11 @@ struct ScenesQuery {
 }
 
 #[derive(Deserialize)]
+struct CategoriesQuery {
+    orientation: Option<String>,
+}
+
+#[derive(Deserialize)]
 struct CookieBody {
     cookies: String,
 }
@@ -52,6 +59,7 @@ struct MergeDuplicatesBody {
     delete_files: Option<bool>,
 }
 
+use crate::models::{UpdateSceneRequest, BatchUpdateScenesRequest};
 use serde::Deserialize;
 
 pub struct LanServer {
@@ -74,6 +82,10 @@ impl LanServer {
             .route("/api/downloads", get(list_downloads).post(queue_download))
             .route("/api/downloads/{id}/cancel", post(cancel_download))
             .route("/api/scenes", get(list_scenes))
+            .route("/api/scenes/{id}", get(get_scene).patch(update_scene))
+            .route("/api/scenes/{id}/thumb", get(scene_thumb))
+            .route("/api/scenes/batch", post(batch_update_scenes))
+            .route("/api/sites/pornhub/categories", get(pornhub_categories))
             .route("/api/performers", get(list_performers))
             .route("/api/tags", get(list_tags))
             .route("/api/duplicates", get(list_duplicates))
@@ -164,7 +176,14 @@ async fn auth_middleware(
         .unwrap_or("");
     let expected = format!("Bearer {}", state.token);
     if auth != expected {
-        return (StatusCode::UNAUTHORIZED, "invalid token").into_response();
+        let query_ok = req.uri().query().is_some_and(|q| {
+            url::form_urlencoded::parse(q.as_bytes()).any(|(k, v)| {
+                k == "token" && v == state.token
+            })
+        });
+        if !query_ok {
+            return (StatusCode::UNAUTHORIZED, "invalid token").into_response();
+        }
     }
     next.run(req).await
 }
@@ -191,9 +210,15 @@ async fn browse(
     Query(params): Query<BrowseParams>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     let kind = parse_kind(&params.kind).map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    let orientation = params
+        .orientation
+        .as_deref()
+        .map(parse_orientation)
+        .transpose()
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
     let page = state
         .app
-        .browse(&id, kind, &params.slug, params.page.unwrap_or(1))
+        .browse(&id, kind, &params.slug, params.page.unwrap_or(1), orientation)
         .await
         .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
     Ok(Json(serde_json::json!(page)))
@@ -236,6 +261,98 @@ async fn list_scenes(
         .list_scenes(q.q.as_deref())
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(serde_json::json!(scenes)))
+}
+
+async fn get_scene(
+    State(state): State<ApiState>,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let scene = state
+        .app
+        .get_scene(&id)
+        .map_err(|_| StatusCode::NOT_FOUND)?;
+    Ok(Json(serde_json::json!(scene)))
+}
+
+async fn update_scene(
+    State(state): State<ApiState>,
+    Path(id): Path<String>,
+    Json(body): Json<UpdateSceneRequest>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let scene = state
+        .app
+        .update_scene(
+            &id,
+            body.title.as_deref(),
+            body.performers.as_deref(),
+            body.tags.as_deref(),
+            body.rename_file.unwrap_or(false),
+        )
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(serde_json::json!(scene)))
+}
+
+async fn scene_thumb(
+    State(state): State<ApiState>,
+    Path(id): Path<String>,
+) -> Result<Response, StatusCode> {
+    let scene = state
+        .app
+        .get_scene(&id)
+        .map_err(|_| StatusCode::NOT_FOUND)?;
+    let thumb_path = scene
+        .thumb
+        .or(scene.path)
+        .ok_or(StatusCode::NOT_FOUND)?;
+    let bytes = tokio::fs::read(&thumb_path)
+        .await
+        .map_err(|_| StatusCode::NOT_FOUND)?;
+    let content_type = if thumb_path.to_lowercase().ends_with(".png") {
+        "image/png"
+    } else if thumb_path.to_lowercase().ends_with(".webp") {
+        "image/webp"
+    } else {
+        "image/jpeg"
+    };
+    Ok(Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, content_type)
+        .body(Body::from(bytes))
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?)
+}
+
+async fn batch_update_scenes(
+    State(state): State<ApiState>,
+    Json(body): Json<BatchUpdateScenesRequest>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let result = state
+        .app
+        .batch_update_scenes(
+            &body.scene_ids,
+            body.performers_add.as_deref(),
+            body.tags_add.as_deref(),
+        )
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(serde_json::json!(result)))
+}
+
+async fn pornhub_categories(
+    State(state): State<ApiState>,
+    Query(q): Query<CategoriesQuery>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let orientation = q
+        .orientation
+        .as_deref()
+        .map(parse_orientation)
+        .transpose()
+        .map_err(|_| StatusCode::BAD_REQUEST)?
+        .unwrap_or(crate::models::BrowseOrientation::Straight);
+    let categories = state
+        .app
+        .list_pornhub_categories(orientation)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(serde_json::json!(categories)))
 }
 
 async fn list_performers(
@@ -342,7 +459,23 @@ fn parse_kind(s: &str) -> AppResult<crate::models::BrowseKind> {
         "channel" => BrowseKind::Channel,
         "search" => BrowseKind::Search,
         "video" => BrowseKind::Video,
+        "category" => BrowseKind::Category,
         _ => return Err(AppError::InvalidInput(format!("unknown kind: {s}"))),
+    })
+}
+
+fn parse_orientation(s: &str) -> AppResult<crate::models::BrowseOrientation> {
+    use crate::models::BrowseOrientation;
+    Ok(match s {
+        "straight" => BrowseOrientation::Straight,
+        "gay" => BrowseOrientation::Gay,
+        "lesbian" => BrowseOrientation::Lesbian,
+        "transgender" => BrowseOrientation::Transgender,
+        _ => {
+            return Err(AppError::InvalidInput(format!(
+                "unknown orientation: {s}"
+            )));
+        }
     })
 }
 

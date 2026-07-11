@@ -6,6 +6,7 @@ import { getCapabilities } from "@/lib/runtime";
 import { useSettingsStore } from "@/lib/stores/settings";
 import { isMobileDevice } from "@/lib/tauri";
 import type { DownloadJob, Scene } from "@/lib/types";
+import { sceneThumbUrl } from "@/lib/mediaUrl";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DownloadProgressRow } from "@/components/DownloadProgress";
 import { Button } from "@/components/ui/button";
@@ -100,18 +101,21 @@ function HomePage() {
       <div>
         <h3 className="mb-3 text-lg font-semibold">Recent Scenes</h3>
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-5">
-          {scenes.slice(0, 10).map((scene) => (
-            <Card key={scene.id} className="overflow-hidden">
-              <div className="aspect-video bg-[var(--color-muted)]">
-                {scene.thumb && (
-                  <img src={scene.thumb} alt={scene.title} className="h-full w-full object-cover" />
-                )}
-              </div>
-              <CardContent className="p-2">
-                <p className="line-clamp-2 text-xs font-medium">{scene.title}</p>
-              </CardContent>
-            </Card>
-          ))}
+          {scenes.slice(0, 10).map((scene) => {
+            const thumbSrc = sceneThumbUrl(scene);
+            return (
+              <Card key={scene.id} className="overflow-hidden">
+                <div className="aspect-video bg-[var(--color-muted)]">
+                  {thumbSrc ? (
+                    <img src={thumbSrc} alt={scene.title} className="h-full w-full object-cover" />
+                  ) : null}
+                </div>
+                <CardContent className="p-2">
+                  <p className="line-clamp-2 text-xs font-medium">{scene.title}</p>
+                </CardContent>
+              </Card>
+            );
+          })}
           {scenes.length === 0 && (
             <p className="col-span-full text-sm text-[var(--color-muted-foreground)]">
               No scenes yet. Browse sites or paste a URL to download.

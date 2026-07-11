@@ -34,3 +34,6 @@ src-tauri/binaries/*
 
 # Netlify
 .netlify
+
+# Generated plugin registry
+src/lib/plugins/registry.generated.ts

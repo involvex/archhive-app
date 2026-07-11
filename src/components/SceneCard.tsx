@@ -13,7 +13,14 @@ export function SceneCard({ item, onDownload }: SceneCardProps) {
     <Card className="overflow-hidden transition hover:border-[var(--color-primary)]">
       <div className="aspect-video bg-[var(--color-muted)] relative">
         {item.thumbnail ? (
-          <img src={item.thumbnail} alt={item.title} className="h-full w-full object-cover" />
+          <img
+            src={item.thumbnail}
+            alt={item.title}
+            className="h-full w-full object-cover"
+            onError={(e) => {
+              e.currentTarget.style.display = "none";
+            }}
+          />
         ) : (
           <div className="flex h-full items-center justify-center text-[var(--color-muted-foreground)] text-xs">
             No preview

@@ -2,6 +2,8 @@
 
 Cross-platform media browser, downloader, and personal library built with **Tauri v2 + React 19 + Rust**. Use this document as the authoritative reference when working in this codebase.
 
+**Workspace:** `D:\repos\archhive-app` — run all scripts, builds, and edits here. The old `I:\dev\scrawler-app` clone is deprecated.
+
 ---
 
 ## Project Overview
@@ -115,7 +117,7 @@ bun run tauri android init   # One-time Android project setup
 ## Project Structure
 
 ```
-scrawler-app/
+archhive-app/
 ├── src/                        # React frontend
 │   ├── routes/                 # TanStack file-based routes
 │   │   ├── __root.tsx          # Root layout (AppShell wrapper)
@@ -342,10 +344,13 @@ bun run format:check
 ## Learned User Preferences
 
 - Do not create git commits unless the user explicitly asks
+- Do not edit `Plan.md` when implementing attached plans
 - Run `bun run lint`, `bun run format:check`, and `cd src-tauri && cargo test` before declaring work complete
-- Keep the project on `I:\` — user is low on `C:\` storage; Android dev must work from the I: drive
+- Primary dev clone is `D:\repos\archhive-app`; avoid running scripts or builds on `I:\dev\scrawler-app` while the user is migrating or deleting files there
 - Enable the LAN server on the desktop ArcHive app, not on the mobile client
 - Do not push to remote without explicit user permission
+- Windows `package.json` script entries for `.ps1` helpers should invoke `pwsh -NoProfile` (not Windows PowerShell 5.1)
+- In PowerShell `.ps1` files, use `${Var}:` before colons (not `$Var:`) and avoid Unicode em-dashes in strings
 
 ---
 
@@ -356,7 +361,10 @@ bun run format:check
 - `reqwest` uses **rustls** (not OpenSSL) to avoid NDK OpenSSL setup for Android cross-compiles
 - Mobile defaults to `remote_lan` engine mode; browse/download/library APIs route over HTTP to the desktop LAN host
 - Mobile bottom navigation must include **Settings** (Home, Browse, Downloads, Library, Settings)
-- Windows Android helpers: `bun run android:dev` (auto-boot AVD + deploy) and `bun run android:regen` (regenerate `gen/android` after identifier changes)
-- Repo on `I:\` with Cargo registry on `C:\` can trigger Kotlin "different roots" errors — `android:regen` sets `kotlin.incremental=false`
+- `build:apk` uses `--target aarch64` with a typecheck prebuild; `build:apk:fast` skips lint/format and only runs `tsc && vite build` before the APK build
+- Site browse adapters (ThotHub, Reddit, PornHub) use HTML scrape with yt-dlp `--flat-playlist` fallback when scrape returns empty
+- Custom URL browse route is `/browse/by-url`
+- Windows Android helpers: `bun run android:dev` (auto-boot AVD + deploy + LAN host) and `bun run android:regen` (regenerate `gen/android` after identifier/icon changes; verify `com.archhive.app`; sets `kotlin.incremental=false` for cross-drive Gradle)
+- Frontend plugins: Bun + TypeScript only, clone into `plugins/`, run `bun run plugins:generate` after changes (`predev`/`prebuild` run it automatically); scrape/download backends still need Rust site adapters
 - Physical Android device: set Remote LAN host to `http://<pc-lan-ip>:8787`; Android emulator uses `http://10.0.2.2:8787`
-- After changing `identifier` in `tauri.conf.json`, run `bun run android:regen` to fix stale `gen/android` package paths
+- Release Android APK requires `scripts/patch-android-lan.ps1` for cleartext HTTP and mDNS multicast permissions (`gen/android` is gitignored)

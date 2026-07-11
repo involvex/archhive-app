@@ -7,9 +7,12 @@ import {
   COOKIE_EXTENSION_URL,
   COOKIE_IMPORT_STEPS,
   importCookiesFromJson,
+  importCookiesFromDevToolsTable,
+  DEVTOOLS_COOKIE_CONSOLE_SNIPPET,
 } from "@/lib/cookies/import";
 import { useUnifiedSettings } from "@/hooks/useUnifiedSettings";
 import { mergeDiscoveredHosts } from "@/lib/lan-discovery";
+import { getPluginSettingsPanels } from "@/lib/plugins/loader";
 import { SETTINGS_TABS } from "@/lib/settings/capabilities";
 import type { CookieSiteInfo, DuplicateGroup, EngineMode, LanHost, SiteInfo } from "@/lib/types";
 import { DuplicateGroupCard } from "@/components/DuplicateGroupCard";
@@ -46,13 +49,15 @@ function SettingsPage() {
     error,
   } = useUnifiedSettings();
 
-  const [lanToken, setLanToken] = useState("");
+  const [runtimeLanToken, setRuntimeLanToken] = useState("");
+  const displayLanToken = settings.lan_token ?? runtimeLanToken;
   const [testStatus, setTestStatus] = useState("");
   const [sites, setSites] = useState<SiteInfo[]>([]);
   const [cookieSites, setCookieSites] = useState<CookieSiteInfo[]>([]);
   const [selectedSite, setSelectedSite] = useState("");
   const [cookieText, setCookieText] = useState("");
   const [cookieJson, setCookieJson] = useState("");
+  const [cookieTable, setCookieTable] = useState("");
   const [cookieStatus, setCookieStatus] = useState("");
   const [duplicates, setDuplicates] = useState<DuplicateGroup[]>([]);
   const [dupSelections, setDupSelections] = useState<Record<string, string>>({});
@@ -67,9 +72,16 @@ function SettingsPage() {
   const [discoverStatus, setDiscoverStatus] = useState("");
 
   useEffect(() => {
-    void api.listSites().then(setSites).catch(console.error);
-    void refreshCookies().catch(console.error);
-  }, []);
+    if (!caps.lanServer || !settings.lan_enabled) return;
+    if (displayLanToken) return;
+    void api
+      .startLanServer(settings.lan_port)
+      .then((r) => {
+        setRuntimeLanToken(r.token);
+        updateSettings({ lan_token: r.token || undefined });
+      })
+      .catch(console.error);
+  }, [caps.lanServer, settings.lan_enabled, settings.lan_port, displayLanToken, updateSettings]);
 
   const runLanDiscovery = useCallback(
     async (autoSelect = false) => {
@@ -127,9 +139,30 @@ function SettingsPage() {
     }
   }
 
+  useEffect(() => {
+    void api.listSites().then(setSites).catch(console.error);
+    void api
+      .listCookieSites()
+      .then(setCookieSites)
+      .catch(() => {});
+  }, []);
+
+  async function copyLanToken() {
+    if (!displayLanToken) return;
+    await navigator.clipboard.writeText(displayLanToken);
+    setTestStatus("LAN token copied — paste into mobile Settings → Engine → Remote token.");
+  }
+
+  async function regenerateLanToken() {
+    const result = await api.regenerateLanServer(settings.lan_port);
+    setRuntimeLanToken(result.token);
+    updateSettings({ lan_enabled: true, lan_token: result.token || undefined });
+    setTestStatus("LAN token regenerated. Update mobile clients with the new token.");
+  }
+
   async function enableLan() {
     const result = await api.startLanServer(settings.lan_port);
-    setLanToken(result.token);
+    setRuntimeLanToken(result.token);
     updateSettings({ lan_enabled: true, lan_token: result.token });
   }
 
@@ -173,6 +206,27 @@ function SettingsPage() {
     setCookieText("");
     setCookieStatus("Cookies saved.");
     await refreshCookies();
+  }
+
+  async function importDevToolsCookies() {
+    if (!selectedSite || !cookieTable.trim()) return;
+    try {
+      const netscape = importCookiesFromDevToolsTable(cookieTable, selectedSite);
+      setCookieText(netscape);
+      await api.saveSiteCookies(selectedSite, netscape);
+      setCookieTable("");
+      setCookieStatus(`Imported ${netscape.split("\n").length - 4} cookies from DevTools table.`);
+      await refreshCookies();
+    } catch (e) {
+      setCookieStatus(e instanceof Error ? e.message : "Import failed");
+    }
+  }
+
+  async function copyConsoleSnippet() {
+    await navigator.clipboard.writeText(DEVTOOLS_COOKIE_CONSOLE_SNIPPET);
+    setCookieStatus(
+      "Console snippet copied. Run it on the logged-in site tab, then paste JSON below. Note: httpOnly cookies need DevTools table import.",
+    );
   }
 
   async function importJsonCookies() {
@@ -234,6 +288,8 @@ function SettingsPage() {
 
   const cookieSitesList = sites.filter((s) => s.requires_cookies);
   const canScan = caps.libraryScanLocal || caps.libraryScanRemote;
+  const pluginPanels = getPluginSettingsPanels();
+  const pluginPanelsByTab = (tab: string) => pluginPanels.filter((p) => p.tab === tab);
 
   return (
     <div className="space-y-6 max-w-2xl">
@@ -284,6 +340,19 @@ function SettingsPage() {
                   {mode === "remote_lan" && runtime !== "desktop-tauri" && " (recommended)"}
                 </label>
               ))}
+              {caps.lanServer && settings.lan_enabled && displayLanToken && (
+                <Card className="border-[var(--color-primary)]">
+                  <CardContent className="p-4 text-sm space-y-2">
+                    <p>
+                      <strong>Mobile LAN token</strong> (copy to Android Settings → Engine):
+                    </p>
+                    <code className="block break-all text-xs">{displayLanToken}</code>
+                    <Button variant="outline" size="sm" onClick={() => void copyLanToken()}>
+                      Copy token
+                    </Button>
+                  </CardContent>
+                </Card>
+              )}
               {settings.engine_mode === "remote_lan" && (
                 <div className="space-y-2 pt-2">
                   <ConnectionStatusChip />
@@ -359,6 +428,14 @@ function SettingsPage() {
               )}
             </CardContent>
           </Card>
+          {pluginPanelsByTab("engine").map((panel) => (
+            <Card key={panel.id}>
+              <CardHeader>
+                <CardTitle className="text-base">{panel.title}</CardTitle>
+              </CardHeader>
+              <CardContent>{panel.render()}</CardContent>
+            </Card>
+          ))}
         </Tabs.Content>
 
         <Tabs.Content value="library" className="mt-4 space-y-4">
@@ -440,7 +517,8 @@ function SettingsPage() {
             </CardHeader>
             <CardContent className="space-y-3">
               <p className="text-xs text-[var(--color-muted-foreground)]">
-                Import via Cookie-Editor JSON (recommended) or paste Netscape format manually.
+                Import via Cookie-Editor JSON, DevTools cookie table (no extension), or Netscape
+                format.
               </p>
               <ol className="list-decimal space-y-1 pl-5 text-xs text-[var(--color-muted-foreground)]">
                 {COOKIE_IMPORT_STEPS.map((step) => (
@@ -471,7 +549,19 @@ function SettingsPage() {
                 <Button variant="outline" onClick={copyBookmarklet} disabled={!selectedSite}>
                   Copy login bookmarklet
                 </Button>
+                <Button variant="outline" onClick={() => void copyConsoleSnippet()}>
+                  Copy console snippet
+                </Button>
               </div>
+              <textarea
+                className="min-h-20 w-full rounded-md border border-[var(--color-border)] bg-transparent px-3 py-2 text-xs font-mono"
+                placeholder="Paste DevTools Application → Cookies table rows (Name, Value, Domain…)"
+                value={cookieTable}
+                onChange={(e) => setCookieTable(e.target.value)}
+              />
+              <Button onClick={() => void importDevToolsCookies()} disabled={!selectedSite}>
+                Import DevTools table
+              </Button>
               <textarea
                 className="min-h-24 w-full rounded-md border border-[var(--color-border)] bg-transparent px-3 py-2 text-xs font-mono"
                 placeholder='[{"name":"sess","value":"...","domain":".example.com"}]'
@@ -605,10 +695,27 @@ function SettingsPage() {
                     value={settings.lan_port}
                     onChange={(e) => updateSettings({ lan_port: Number(e.target.value) })}
                   />
-                  {lanToken && (
-                    <p className="text-xs break-all">
-                      API Token: <code>{lanToken}</code>
-                    </p>
+                  {displayLanToken && (
+                    <div className="space-y-2">
+                      <p className="text-xs break-all">
+                        API Token: <code>{displayLanToken}</code>
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        <Button variant="outline" size="sm" onClick={() => void copyLanToken()}>
+                          Copy token
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => void regenerateLanToken()}
+                        >
+                          Regenerate
+                        </Button>
+                      </div>
+                      <p className="text-xs text-[var(--color-muted-foreground)]">
+                        Mobile: Settings → Engine → paste token into Remote token field.
+                      </p>
+                    </div>
                   )}
                 </>
               )}

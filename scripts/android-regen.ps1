@@ -43,6 +43,16 @@ if (Test-Path $gradlew) {
 
 & (Join-Path $PSScriptRoot "patch-android-lan.ps1")
 
+$iconSource = Join-Path $root "assets\branding\icon-source.png"
+$iconSquare = Join-Path $root "assets\branding\icon-square.png"
+$iconInput = if (Test-Path $iconSource) { $iconSource } elseif (Test-Path $iconSquare) { $iconSquare } else { $null }
+if ($iconInput) {
+    Write-Host "Applying launcher icons from $iconInput ..."
+    bun run tauri icon $iconInput
+} else {
+    Write-Host "No assets/branding/icon-source.png — skip tauri icon (Android keeps default launcher)."
+}
+
 Write-Host "Android project regenerated."
 Write-Host "Note: tauri.settings.gradle is created on the first `tauri android dev` run."
 Write-Host "Run: bun run android:dev"

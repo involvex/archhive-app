@@ -54,10 +54,8 @@ if ($health -and $health.auth_required -eq $true) {
 
 Write-Host "Starting desktop ArcHive (LAN auto-start on port $Port)..."
 $env:ARCHIVE_AUTO_LAN = "1"
-$pwsh = (Get-Command pwsh -ErrorAction Stop).Source
-Start-Process $pwsh -ArgumentList @(
+Start-Process powershell -ArgumentList @(
     "-NoExit",
-    "-NoProfile",
     "-Command",
     "Set-Location '$root'; `$env:ARCHIVE_AUTO_LAN='1'; bun run tauri dev"
 ) | Out-Null

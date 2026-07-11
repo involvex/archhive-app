@@ -8,6 +8,17 @@ pub enum BrowseKind {
     Channel,
     Search,
     Video,
+    Category,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum BrowseOrientation {
+    #[default]
+    Straight,
+    Gay,
+    Lesbian,
+    Transgender,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -35,6 +46,8 @@ pub struct BrowseQuery {
     pub kind: BrowseKind,
     pub slug: String,
     pub page: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub orientation: Option<BrowseOrientation>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -102,6 +115,12 @@ pub struct Scene {
     pub rating: Option<u8>,
     pub performers: Vec<String>,
     pub tags: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub phash: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub oshash: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file_size: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -203,6 +222,37 @@ pub struct LanHost {
     pub url: String,
     pub ip: String,
     pub port: u16,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateSceneRequest {
+    pub title: Option<String>,
+    pub performers: Option<Vec<String>>,
+    pub tags: Option<Vec<String>>,
+    pub rename_file: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BatchUpdateScenesRequest {
+    pub scene_ids: Vec<String>,
+    pub performers_add: Option<Vec<String>>,
+    pub tags_add: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PornhubCategoryEntry {
+    pub name: String,
+    pub slug: String,
+    pub orientation: BrowseOrientation,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub category_id: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub video_count: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BatchUpdateScenesResult {
+    pub updated: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

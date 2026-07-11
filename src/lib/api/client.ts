@@ -3,6 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import type {
   AppSettings,
   BrowseKind,
+  BrowseOrientation,
   BrowsePage,
   DownloadJob,
   DuplicateGroup,
@@ -15,6 +16,10 @@ import type {
   Scene,
   SiteInfo,
   Tag,
+  UpdateSceneRequest,
+  BatchUpdateScenesRequest,
+  BatchUpdateScenesResult,
+  PornhubCategoryEntry,
 } from "../types";
 import { getAppRuntime, shouldUseRemoteApi } from "../runtime";
 import { useSettingsStore } from "../stores/settings";
@@ -131,11 +136,18 @@ export const api = {
     return localOrRemote("list_sites", undefined, "/api/sites");
   },
 
-  async browse(siteId: string, kind: BrowseKind, slug: string, page = 1): Promise<BrowsePage> {
+  async browse(
+    siteId: string,
+    kind: BrowseKind,
+    slug: string,
+    page = 1,
+    orientation?: BrowseOrientation,
+  ): Promise<BrowsePage> {
+    const orientParam = orientation ? `&orientation=${orientation}` : "";
     return localOrRemote(
       "browse",
-      { siteId, kind, slug, page },
-      `/api/sites/${siteId}/browse?kind=${kind}&slug=${encodeURIComponent(slug)}&page=${page}`,
+      { siteId, kind, slug, page, orientation },
+      `/api/sites/${siteId}/browse?kind=${kind}&slug=${encodeURIComponent(slug)}&page=${page}${orientParam}`,
     );
   },
 
@@ -240,6 +252,49 @@ export const api = {
   async stopLanServer(): Promise<void> {
     if (getAppRuntime() !== "desktop-tauri") return;
     await localInvoke("stop_lan_server");
+  },
+
+  async regenerateLanServer(port: number): Promise<{ token: string }> {
+    if (getAppRuntime() !== "desktop-tauri") {
+      throw new Error("Regenerate the LAN token on the desktop app (Settings → LAN).");
+    }
+    return localInvoke("regenerate_lan_server", { port });
+  },
+
+  async getScene(id: string): Promise<Scene> {
+    return localOrRemote("get_scene", { id }, `/api/scenes/${id}`);
+  },
+
+  async updateScene(id: string, body: UpdateSceneRequest): Promise<Scene> {
+    return localOrRemote("update_scene", { id, body }, `/api/scenes/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    });
+  },
+
+  async openSceneInExplorer(id: string): Promise<void> {
+    return localInvoke("open_scene_in_explorer", { id });
+  },
+
+  async openSceneWithDefault(id: string): Promise<void> {
+    return localInvoke("open_scene_with_default", { id });
+  },
+
+  async batchUpdateScenes(body: BatchUpdateScenesRequest): Promise<BatchUpdateScenesResult> {
+    return localOrRemote("batch_update_scenes", { body }, "/api/scenes/batch", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  },
+
+  async listPornhubCategories(
+    orientation: BrowseOrientation = "straight",
+  ): Promise<PornhubCategoryEntry[]> {
+    return localOrRemote(
+      "list_pornhub_categories",
+      { orientation },
+      `/api/sites/pornhub/categories?orientation=${orientation}`,
+    );
   },
 
   async scanLibrary(): Promise<{ added: number; updated: number }> {
