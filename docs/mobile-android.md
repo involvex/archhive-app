@@ -27,7 +27,7 @@ bun run android:regen
 On Windows, enable cleartext HTTP for LAN (required for `http://192.168.x.x`):
 
 ```powershell
-.\scripts\patch-android-lan.ps1
+pwsh -NoProfile -File .\scripts\patch-android-lan.ps1
 ```
 
 Debug builds already allow cleartext; the patch is mainly for release APKs.
@@ -131,12 +131,12 @@ Allow both ports through Windows Firewall on the desktop.
 
 ## Scripts
 
-| Command                           | Description                                      |
-| --------------------------------- | ------------------------------------------------ |
-| `bun run android:regen`           | Regenerate `gen/android` after identifier change |
-| `bun run android:dev`             | Auto-boot AVD + run dev (Windows)                |
-| `bun run tauri:android:dev`       | Build and run on connected device/emulator       |
-| `bun run tauri android build`     | Release APK/AAB                                  |
-| `bun run build:apk`               | Debug APK, aarch64 only (faster)                 |
-| `bun run build:apk:fast`          | Skip lint/format; vite build + aarch64 APK       |
-| `.\scripts\patch-android-lan.ps1` | Allow HTTP + mDNS multicast on Android           |
+| Command                           | Description                                             |
+| --------------------------------- | ------------------------------------------------------- |
+| `bun run android:regen`           | Regenerate `gen/android` after identifier change        |
+| `bun run android:dev`             | Auto-boot AVD + run dev (Windows)                       |
+| `bun run tauri:android:dev`       | Build and run on connected device/emulator              |
+| `bun run tauri android build`     | Release APK/AAB                                         |
+| `bun run build:apk`               | Debug APK, aarch64 only (faster)                        |
+| `bun run build:apk:fast`          | Skip lint/format; vite build + aarch64 APK              |
+| `.\scripts\patch-android-lan.ps1` | Allow HTTP + mDNS multicast on Android (run via `pwsh`) |

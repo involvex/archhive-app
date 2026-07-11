@@ -28,7 +28,7 @@ function Stop-PortListener([int]$Port) {
         }
         Start-Sleep -Seconds 1
     } catch {
-        Write-Warning "Could not stop listener on port $Port: $_"
+        Write-Warning "Could not stop listener on port ${Port}: $_"
     }
 }
 
@@ -47,15 +47,17 @@ if ($health -and $health.auth_required -eq $false) {
 }
 
 if ($health -and $health.auth_required -eq $true) {
-    Write-Host "LAN host on port $Port requires a token — restarting in open dev mode..."
-    Write-Host "  auth_required: true (token-locked — mobile will get 401)"
+    Write-Host "LAN host on port $Port requires a token - restarting in open dev mode..."
+    Write-Host "  auth_required: true (token-locked - mobile will get 401)"
     Stop-PortListener $Port
 }
 
 Write-Host "Starting desktop ArcHive (LAN auto-start on port $Port)..."
 $env:ARCHIVE_AUTO_LAN = "1"
-Start-Process powershell -ArgumentList @(
+$pwsh = (Get-Command pwsh -ErrorAction Stop).Source
+Start-Process $pwsh -ArgumentList @(
     "-NoExit",
+    "-NoProfile",
     "-Command",
     "Set-Location '$root'; `$env:ARCHIVE_AUTO_LAN='1'; bun run tauri dev"
 ) | Out-Null
@@ -72,7 +74,7 @@ do {
         if ($lanIp) {
             Write-Host "  PC LAN URL: http://${lanIp}:$Port"
         } else {
-            Write-Warning "Could not detect 192.168.* LAN IP — run ipconfig and use http://<pc-ip>:$Port"
+            Write-Warning "Could not detect 192.168.* LAN IP - run ipconfig and use http://<pc-ip>:$Port"
         }
         exit 0
     }
