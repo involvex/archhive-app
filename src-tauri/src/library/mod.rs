@@ -2,6 +2,7 @@ use crate::db::Database;
 use crate::error::AppResult;
 use crate::library::hashing::{compute_oshash, compute_phash_from_image};
 use crate::media::FfmpegProcessor;
+use crate::models::ScanProgress;
 use std::path::Path;
 use tauri::AppHandle;
 
@@ -12,8 +13,15 @@ pub mod import;
 
 pub struct LibraryScanner;
 
+type ProgressCb = Box<dyn Fn(ScanProgress) + Send>;
+
 impl LibraryScanner {
-    pub fn scan(db: &Database, library_path: &str, rules: &[String]) -> AppResult<crate::models::ScanResult> {
+    pub fn scan(
+        db: &Database,
+        library_path: &str,
+        rules: &[String],
+        on_progress: Option<ProgressCb>,
+    ) -> AppResult<crate::models::ScanResult> {
         use crate::library::auto_tag::apply_filename_rules;
         use walkdir::WalkDir;
 
@@ -28,7 +36,18 @@ impl LibraryScanner {
 
         let mut added = 0u32;
         let mut updated = 0u32;
+        let mut scanned = 0u32;
         let extensions = ["mp4", "mkv", "webm", "mov", "avi", "m4v"];
+
+        let emit = |scanned: u32, added: u32, updated: u32| {
+            if let Some(ref cb) = on_progress {
+                cb(ScanProgress {
+                    scanned,
+                    added,
+                    updated,
+                });
+            }
+        };
 
         for entry in WalkDir::new(path).max_depth(5).into_iter().filter_map(|e| e.ok()) {
             let file_path = entry.path();
@@ -44,6 +63,7 @@ impl LibraryScanner {
                 continue;
             }
 
+            scanned += 1;
             let path_str = file_path.to_string_lossy().to_string();
             let title = file_path
                 .file_stem()
@@ -53,11 +73,13 @@ impl LibraryScanner {
 
             if db.scene_exists_by_path(&path_str)? {
                 updated += 1;
+                if scanned.is_multiple_of(10) {
+                    emit(scanned, added, updated);
+                }
                 continue;
             }
 
             let (performers, tags) = apply_filename_rules(&title, rules);
-            let oshash = compute_oshash(file_path).ok();
             db.insert_scene(
                 &title,
                 Some(&path_str),
@@ -66,11 +88,15 @@ impl LibraryScanner {
                 &tags,
                 None,
                 None,
-                oshash.as_deref(),
+                None,
             )?;
             added += 1;
+            if scanned.is_multiple_of(10) {
+                emit(scanned, added, updated);
+            }
         }
 
+        emit(scanned, added, updated);
         Ok(crate::models::ScanResult { added, updated })
     }
 

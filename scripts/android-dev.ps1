@@ -84,5 +84,12 @@ if ($devices.Count -gt 1) {
 }
 
 Write-Host "Running tauri android dev on $device"
+if ($device -notmatch "^emulator-") {
+    Write-Host ""
+    Write-Host "Physical device detected. After launch, set Remote LAN to:"
+    Write-Host "  http://<your-pc-lan-ip>:8787  (API — not :1420)"
+    Write-Host "Enable desktop LAN server first (Settings -> LAN on PC)."
+    Write-Host ""
+}
 Set-Location (Join-Path $PSScriptRoot "..")
 bun run tauri android dev $device @args

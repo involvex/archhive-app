@@ -1,4 +1,4 @@
-# Scrawler — AI Agent Instructions
+# ArcHive — AI Agent Instructions
 
 Cross-platform media browser, downloader, and personal library built with **Tauri v2 + React 19 + Rust**. Use this document as the authoritative reference when working in this codebase.
 
@@ -6,7 +6,7 @@ Cross-platform media browser, downloader, and personal library built with **Taur
 
 ## Project Overview
 
-Scrawler is a desktop and mobile application that lets users browse, download, and organize media from multiple sites (YouTube, TikTok, Reddit, PornHub, xHamster, XVIDEOS, RedGifs, ThotHub, and more). It uses **yt-dlp** and **gallery-dl** as download engines, stores a local library in **SQLite**, and exposes an optional **LAN REST API** for mobile clients.
+ArcHive is a desktop and mobile application that lets users browse, download, and organize media from multiple sites (YouTube, TikTok, Reddit, PornHub, xHamster, XVIDEOS, RedGifs, ThotHub, and more). It uses **yt-dlp** and **gallery-dl** as download engines, stores a local library in **SQLite**, and exposes an optional **LAN REST API** for mobile clients.
 
 **Key files to read first:**
 
@@ -189,7 +189,7 @@ scrawler-app/
 - **Error handling**: Use `AppError` enum (in `error.rs`) with `thiserror`. Convert to `String` at the command boundary via `map_err()`.
 - **Site adapters**: Implement the `SiteAdapter` trait (`async_trait`) for each site. Register in `SiteRegistry`. See `docs/custom-sites.md` for the full pattern.
 - **Database**: SQLite with rusqlite. Schema and migrations in `src-tauri/src/db/`. Uses FTS5 for full-text search.
-- **LAN server**: Axum-based REST API in `src-tauri/src/server/`. Bearer token auth. Advertises via mDNS (`_scrawler._tcp`).
+- **LAN server**: Axum-based REST API in `src-tauri/src/server/`. Bearer token auth. Advertises via mDNS (`_archhive._tcp`).
 
 ### Data Flow
 
@@ -336,3 +336,27 @@ bun run format:check
 - [gallery-dl](https://github.com/mikf/gallery-dl)
 - [SCrawler (reference)](https://github.com/AAndyProgram/SCrawler)
 - [Stash (reference)](https://github.com/stashapp/stash)
+
+---
+
+## Learned User Preferences
+
+- Do not create git commits unless the user explicitly asks
+- Run `bun run lint`, `bun run format:check`, and `cd src-tauri && cargo test` before declaring work complete
+- Keep the project on `I:\` — user is low on `C:\` storage; Android dev must work from the I: drive
+- Enable the LAN server on the desktop ArcHive app, not on the mobile client
+- Do not push to remote without explicit user permission
+
+---
+
+## Learned Workspace Facts
+
+- Mobile Remote LAN connects to the desktop Axum API on port **8787**, not the Vite dev server port 1420
+- Android builds do not bundle yt-dlp/ffmpeg sidecars; `externalBin` is desktop-only (`tauri.windows.conf.json`, `.macos`, `.linux`) and `tauri.android.conf.json` keeps an empty list
+- `reqwest` uses **rustls** (not OpenSSL) to avoid NDK OpenSSL setup for Android cross-compiles
+- Mobile defaults to `remote_lan` engine mode; browse/download/library APIs route over HTTP to the desktop LAN host
+- Mobile bottom navigation must include **Settings** (Home, Browse, Downloads, Library, Settings)
+- Windows Android helpers: `bun run android:dev` (auto-boot AVD + deploy) and `bun run android:regen` (regenerate `gen/android` after identifier changes)
+- Repo on `I:\` with Cargo registry on `C:\` can trigger Kotlin "different roots" errors — `android:regen` sets `kotlin.incremental=false`
+- Physical Android device: set Remote LAN host to `http://<pc-lan-ip>:8787`; Android emulator uses `http://10.0.2.2:8787`
+- After changing `identifier` in `tauri.conf.json`, run `bun run android:regen` to fix stale `gen/android` package paths

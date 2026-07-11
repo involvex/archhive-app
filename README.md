@@ -1,4 +1,4 @@
-# Scrawler
+# ArcHive
 
 Cross-platform media browser, downloader, and personal library — inspired by [SCrawler](https://github.com/AAndyProgram/SCrawler) and [Stash](https://github.com/stashapp/stash).
 

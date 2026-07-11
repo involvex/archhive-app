@@ -1,12 +1,12 @@
 [package]
-name = "scrawler-app"
+name = "archhive-app"
 version = "0.1.0"
 description = "Cross-platform media browser, downloader, and library manager"
 authors = ["you"]
 edition = "2021"
 
 [lib]
-name = "scrawler_app_lib"
+name = "archhive_app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
@@ -20,7 +20,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
-reqwest = { version = "0.12", features = ["json", "cookies"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "cookies", "charset", "http2", "rustls-tls", "rustls-tls-webpki-roots"] }
 scraper = "0.22"
 regex = "1"
 uuid = { version = "1", features = ["v4", "serde"] }

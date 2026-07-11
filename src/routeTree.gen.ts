@@ -16,6 +16,7 @@ import { Route as BrowseIndexRouteImport } from './routes/browse/index'
 import { Route as LibraryTagsIndexRouteImport } from './routes/library/tags/index'
 import { Route as LibraryScenesIndexRouteImport } from './routes/library/scenes/index'
 import { Route as LibraryPerformersIndexRouteImport } from './routes/library/performers/index'
+import { Route as BrowseSiteIndexRouteImport } from './routes/browse/$site/index'
 import { Route as BrowseSiteKindSlugRouteImport } from './routes/browse/$site/$kind/$slug'
 
 const IndexRoute = IndexRouteImport.update({
@@ -53,6 +54,11 @@ const LibraryPerformersIndexRoute = LibraryPerformersIndexRouteImport.update({
   path: '/library/performers/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const BrowseSiteIndexRoute = BrowseSiteIndexRouteImport.update({
+  id: '/browse/$site/',
+  path: '/browse/$site/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const BrowseSiteKindSlugRoute = BrowseSiteKindSlugRouteImport.update({
   id: '/browse/$site/$kind/$slug',
   path: '/browse/$site/$kind/$slug',
@@ -64,6 +70,7 @@ export interface FileRoutesByFullPath {
   '/browse/': typeof BrowseIndexRoute
   '/downloads/': typeof DownloadsIndexRoute
   '/settings/': typeof SettingsIndexRoute
+  '/browse/$site/': typeof BrowseSiteIndexRoute
   '/library/performers/': typeof LibraryPerformersIndexRoute
   '/library/scenes/': typeof LibraryScenesIndexRoute
   '/library/tags/': typeof LibraryTagsIndexRoute
@@ -74,6 +81,7 @@ export interface FileRoutesByTo {
   '/browse': typeof BrowseIndexRoute
   '/downloads': typeof DownloadsIndexRoute
   '/settings': typeof SettingsIndexRoute
+  '/browse/$site': typeof BrowseSiteIndexRoute
   '/library/performers': typeof LibraryPerformersIndexRoute
   '/library/scenes': typeof LibraryScenesIndexRoute
   '/library/tags': typeof LibraryTagsIndexRoute
@@ -85,6 +93,7 @@ export interface FileRoutesById {
   '/browse/': typeof BrowseIndexRoute
   '/downloads/': typeof DownloadsIndexRoute
   '/settings/': typeof SettingsIndexRoute
+  '/browse/$site/': typeof BrowseSiteIndexRoute
   '/library/performers/': typeof LibraryPerformersIndexRoute
   '/library/scenes/': typeof LibraryScenesIndexRoute
   '/library/tags/': typeof LibraryTagsIndexRoute
@@ -97,6 +106,7 @@ export interface FileRouteTypes {
     | '/browse/'
     | '/downloads/'
     | '/settings/'
+    | '/browse/$site/'
     | '/library/performers/'
     | '/library/scenes/'
     | '/library/tags/'
@@ -107,6 +117,7 @@ export interface FileRouteTypes {
     | '/browse'
     | '/downloads'
     | '/settings'
+    | '/browse/$site'
     | '/library/performers'
     | '/library/scenes'
     | '/library/tags'
@@ -117,6 +128,7 @@ export interface FileRouteTypes {
     | '/browse/'
     | '/downloads/'
     | '/settings/'
+    | '/browse/$site/'
     | '/library/performers/'
     | '/library/scenes/'
     | '/library/tags/'
@@ -128,6 +140,7 @@ export interface RootRouteChildren {
   BrowseIndexRoute: typeof BrowseIndexRoute
   DownloadsIndexRoute: typeof DownloadsIndexRoute
   SettingsIndexRoute: typeof SettingsIndexRoute
+  BrowseSiteIndexRoute: typeof BrowseSiteIndexRoute
   LibraryPerformersIndexRoute: typeof LibraryPerformersIndexRoute
   LibraryScenesIndexRoute: typeof LibraryScenesIndexRoute
   LibraryTagsIndexRoute: typeof LibraryTagsIndexRoute
@@ -185,6 +198,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LibraryPerformersIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/browse/$site/': {
+      id: '/browse/$site/'
+      path: '/browse/$site'
+      fullPath: '/browse/$site/'
+      preLoaderRoute: typeof BrowseSiteIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/browse/$site/$kind/$slug': {
       id: '/browse/$site/$kind/$slug'
       path: '/browse/$site/$kind/$slug'
@@ -200,6 +220,7 @@ const rootRouteChildren: RootRouteChildren = {
   BrowseIndexRoute: BrowseIndexRoute,
   DownloadsIndexRoute: DownloadsIndexRoute,
   SettingsIndexRoute: SettingsIndexRoute,
+  BrowseSiteIndexRoute: BrowseSiteIndexRoute,
   LibraryPerformersIndexRoute: LibraryPerformersIndexRoute,
   LibraryScenesIndexRoute: LibraryScenesIndexRoute,
   LibraryTagsIndexRoute: LibraryTagsIndexRoute,

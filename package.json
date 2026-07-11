@@ -1,5 +1,5 @@
 {
-  "name": "scrawler-app",
+  "name": "archhive-app",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -10,7 +10,9 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:android:dev": "tauri android dev",
+    "build:apk": "bun run tauri android build --apk -d",
     "android:dev": "powershell -ExecutionPolicy Bypass -File scripts/android-dev.ps1",
+    "android:regen": "powershell -ExecutionPolicy Bypass -File scripts/android-regen.ps1",
     "setup:binaries": "powershell -ExecutionPolicy Bypass -File scripts/setup-binaries.ps1",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",

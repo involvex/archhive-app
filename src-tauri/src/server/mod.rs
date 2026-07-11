@@ -80,6 +80,8 @@ impl LanServer {
             .route("/api/duplicates/merge", post(merge_duplicates))
             .route("/api/cookies", get(list_cookies))
             .route("/api/cookies/{id}", post(save_cookies).delete(delete_cookies))
+            .route("/api/settings", get(get_settings).put(put_settings))
+            .route("/api/library/scan", post(scan_library))
             .layer(middleware::from_fn_with_state(api.clone(), auth_middleware))
             .with_state(api);
 
@@ -126,9 +128,9 @@ impl LanServer {
 
 fn advertise_mdns(port: u16) -> AppResult<ServiceDaemon> {
     let mdns = ServiceDaemon::new().map_err(|e| AppError::Other(e.to_string()))?;
-    let host = "scrawler-host";
-    let service_type = "_scrawler._tcp.local.";
-    let instance = "Scrawler";
+    let host = "archhive-host";
+    let service_type = "_archhive._tcp.local.";
+    let instance = "ArcHive";
     let info = ServiceInfo::new(
         service_type,
         instance,
@@ -295,6 +297,36 @@ async fn delete_cookies(
         .delete_site_cookies(&id)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+async fn get_settings(State(state): State<ApiState>) -> Result<Json<serde_json::Value>, StatusCode> {
+    let settings = state
+        .app
+        .get_settings()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(serde_json::json!(settings)))
+}
+
+async fn put_settings(
+    State(state): State<ApiState>,
+    Json(body): Json<crate::models::AppSettings>,
+) -> Result<StatusCode, StatusCode> {
+    state
+        .app
+        .save_settings(&body)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn scan_library(
+    State(state): State<ApiState>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let app = state.app.clone();
+    let result = tokio::task::spawn_blocking(move || app.scan_library())
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(serde_json::json!(result)))
 }
 
 fn parse_kind(s: &str) -> AppResult<crate::models::BrowseKind> {

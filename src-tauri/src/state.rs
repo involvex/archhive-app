@@ -10,11 +10,12 @@ use crate::sites::registry::SiteRegistry;
 use crate::sites::SiteContext;
 use crate::vault::{CookieSiteInfo, CookieVault};
 use parking_lot::Mutex;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 pub struct AppState {
     pub db: Arc<Database>,
+    pub data_dir: PathBuf,
     pub sites: Arc<SiteRegistry>,
     pub site_ctx: Arc<SiteContext>,
     pub downloads: Arc<DownloadManager>,
@@ -30,12 +31,13 @@ impl AppState {
         app: tauri::AppHandle,
         static_ui_dir: Option<PathBuf>,
     ) -> AppResult<Self> {
-        let vault = Arc::new(CookieVault::new(data_dir, db.connection())?);
+        let vault = Arc::new(CookieVault::new(data_dir.clone(), db.connection())?);
         let sites = Arc::new(SiteRegistry::new());
         let site_ctx = Arc::new(SiteContext::new(vault.clone())?);
         let downloads = Arc::new(DownloadManager::new(db.clone(), app, vault.clone()));
         Ok(Self {
             db,
+            data_dir,
             sites,
             site_ctx,
             downloads,
@@ -135,8 +137,46 @@ impl AppState {
 
     pub fn scan_library(&self) -> AppResult<ScanResult> {
         let settings = self.db.get_settings()?;
+        let path = Self::validate_library_path(&settings.library_path, &self.data_dir)?;
         let rules = vec![r"(?<performer>[a-zA-Z0-9_]+)-\d+".to_string()];
-        crate::library::LibraryScanner::scan(&self.db, &settings.library_path, &rules)
+        crate::library::LibraryScanner::scan(&self.db, &path, &rules, None)
+    }
+
+    pub fn validate_library_path(library_path: &str, data_dir: &Path) -> AppResult<String> {
+        let trimmed = library_path.trim();
+        if trimmed.is_empty() {
+            return Err(crate::error::AppError::InvalidInput(
+                "Library path is not configured. Set it in Settings → Library.".into(),
+            ));
+        }
+        let path = std::path::Path::new(trimmed);
+        if !path.is_absolute() && trimmed == "." {
+            return Err(crate::error::AppError::InvalidInput(
+                "Invalid library path.".into(),
+            ));
+        }
+        let canonical = if path.exists() {
+            path.canonicalize()?
+        } else {
+            std::fs::create_dir_all(path)?;
+            path.canonicalize()?
+        };
+        let data_canonical = data_dir.canonicalize().unwrap_or_else(|_| data_dir.to_path_buf());
+        let videos = dirs::video_dir().and_then(|p| p.canonicalize().ok());
+        let home = dirs::home_dir().and_then(|p| p.canonicalize().ok());
+        let allowed_roots = [Some(data_canonical), videos, home]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
+        let allowed = allowed_roots.iter().any(|root| canonical.starts_with(root))
+            || canonical.components().count() >= 2;
+        if !allowed {
+            return Err(crate::error::AppError::InvalidInput(format!(
+                "Library path must be under your home, Videos, or app data directory: {}",
+                canonical.display()
+            )));
+        }
+        Ok(canonical.to_string_lossy().to_string())
     }
 
     pub fn find_duplicates(&self) -> AppResult<Vec<DuplicateGroup>> {

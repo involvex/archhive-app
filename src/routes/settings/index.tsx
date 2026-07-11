@@ -7,14 +7,9 @@ import {
   COOKIE_IMPORT_STEPS,
   importCookiesFromJson,
 } from "@/lib/cookies/import";
-import type {
-  AppSettings,
-  CookieSiteInfo,
-  DuplicateGroup,
-  EngineMode,
-  SiteInfo,
-} from "@/lib/types";
-import { useSettingsStore } from "@/lib/stores/settings";
+import { useUnifiedSettings } from "@/hooks/useUnifiedSettings";
+import { SETTINGS_TABS } from "@/lib/settings/capabilities";
+import type { CookieSiteInfo, DuplicateGroup, EngineMode, SiteInfo } from "@/lib/types";
 import { DuplicateGroupCard } from "@/components/DuplicateGroupCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -30,9 +25,25 @@ function groupKey(group: DuplicateGroup) {
   return `${group.match_type}:${group.hash}`;
 }
 
+const ENGINE_LABELS: Record<EngineMode, string> = {
+  local: "Local (Desktop)",
+  remote_lan: "Remote LAN",
+  standalone: "Standalone (direct URLs only)",
+};
+
 function SettingsPage() {
-  const { settings, updateSettings } = useSettingsStore();
-  const [backendSettings, setBackendSettings] = useState<AppSettings | null>(null);
+  const {
+    runtime,
+    caps,
+    settings,
+    updateSettings,
+    hostSettings,
+    patchHostSettings,
+    saveHostSettings,
+    loading,
+    error,
+  } = useUnifiedSettings();
+
   const [lanToken, setLanToken] = useState("");
   const [testStatus, setTestStatus] = useState("");
   const [sites, setSites] = useState<SiteInfo[]>([]);
@@ -46,20 +57,33 @@ function SettingsPage() {
   const [deleteDupFiles, setDeleteDupFiles] = useState(false);
   const [mergingKey, setMergingKey] = useState<string | null>(null);
   const [dupStatus, setDupStatus] = useState("");
+  const [scanning, setScanning] = useState(false);
+  const [scanProgress, setScanProgress] = useState("");
+  const [scanResult, setScanResult] = useState("");
 
   useEffect(() => {
-    void api.getSettings().then(setBackendSettings).catch(console.error);
     void api.listSites().then(setSites).catch(console.error);
     void refreshCookies().catch(console.error);
   }, []);
 
-  async function refreshCookies() {
-    setCookieSites(await api.listCookieSites());
-  }
+  useEffect(() => {
+    if (!caps.libraryScanLocal) return;
+    let unlisten: (() => void) | undefined;
+    void api
+      .subscribeScanProgress((p) => {
+        setScanProgress(`Scanned ${p.scanned} — added ${p.added}, updated ${p.updated}`);
+      })
+      .then((fn) => {
+        unlisten = fn;
+      });
+    return () => unlisten?.();
+  }, [caps.libraryScanLocal]);
 
-  async function saveBackend() {
-    if (backendSettings) {
-      await api.saveSettings(backendSettings);
+  async function refreshCookies() {
+    try {
+      setCookieSites(await api.listCookieSites());
+    } catch {
+      /* remote not configured yet */
     }
   }
 
@@ -78,6 +102,21 @@ function SettingsPage() {
       setTestStatus(`Connected: ${health.version}`);
     } catch {
       setTestStatus("Connection failed");
+    }
+  }
+
+  async function runLibraryScan() {
+    setScanning(true);
+    setScanProgress("Starting scan…");
+    setScanResult("");
+    try {
+      const result = await api.scanLibrary();
+      setScanResult(`Done — added ${result.added}, updated ${result.updated}`);
+      setScanProgress("");
+    } catch (e) {
+      setScanResult(e instanceof Error ? e.message : "Scan failed");
+    } finally {
+      setScanning(false);
     }
   }
 
@@ -146,21 +185,30 @@ function SettingsPage() {
     }
   }
 
-  const engineModes: { value: EngineMode; label: string }[] = [
-    { value: "local", label: "Local (Desktop)" },
-    { value: "remote_lan", label: "Remote LAN" },
-    { value: "standalone", label: "Standalone Mobile" },
-  ];
-
   const cookieSitesList = sites.filter((s) => s.requires_cookies);
+  const canScan = caps.libraryScanLocal || caps.libraryScanRemote;
 
   return (
     <div className="space-y-6 max-w-2xl">
       <h2 className="text-2xl font-bold">Settings</h2>
 
+      {caps.showBrowserBanner && (
+        <Card className="border-[var(--color-primary)]">
+          <CardContent className="p-4 text-sm">
+            Browser mode — connect via <strong>Engine → Remote LAN</strong> (
+            <code>http://&lt;pc-ip&gt;:8787</code> + token). LAN server runs only in the desktop
+            app.
+          </CardContent>
+        </Card>
+      )}
+
+      {error && <p className="text-sm text-yellow-400">{error}</p>}
+
+      {loading && <p className="text-sm text-[var(--color-muted-foreground)]">Loading settings…</p>}
+
       <Tabs.Root defaultValue="engine">
         <Tabs.List className="flex flex-wrap gap-2 border-b border-[var(--color-border)] pb-2">
-          {["engine", "library", "cookies", "duplicates", "lan"].map((tab) => (
+          {SETTINGS_TABS.map((tab) => (
             <Tabs.Trigger
               key={tab}
               value={tab}
@@ -177,21 +225,28 @@ function SettingsPage() {
               <CardTitle className="text-base">Engine Mode</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              {engineModes.map((mode) => (
-                <label key={mode.value} className="flex items-center gap-2 text-sm">
+              {caps.engineModes.map((mode) => (
+                <label key={mode} className="flex items-center gap-2 text-sm">
                   <input
                     type="radio"
                     name="engine"
-                    checked={settings.engine_mode === mode.value}
-                    onChange={() => updateSettings({ engine_mode: mode.value })}
+                    checked={settings.engine_mode === mode}
+                    onChange={() => updateSettings({ engine_mode: mode })}
                   />
-                  {mode.label}
+                  {ENGINE_LABELS[mode]}
+                  {mode === "remote_lan" && runtime !== "desktop-tauri" && " (recommended)"}
                 </label>
               ))}
               {settings.engine_mode === "remote_lan" && (
                 <div className="space-y-2 pt-2">
+                  {!caps.lanServer && (
+                    <p className="rounded-md border border-[var(--color-border)] bg-[var(--color-muted)] p-3 text-xs">
+                      Enable LAN on your <strong>desktop</strong> app first (Settings → LAN). Port{" "}
+                      <strong>8787</strong>, not 1420.
+                    </p>
+                  )}
                   <Input
-                    placeholder="http://192.168.1.10:8787"
+                    placeholder="http://192.168.178.69:8787"
                     value={settings.remote_host || ""}
                     onChange={(e) => updateSettings({ remote_host: e.target.value })}
                   />
@@ -219,13 +274,17 @@ function SettingsPage() {
               <CardTitle className="text-base">Library</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
+              {!caps.libraryPathEditable && (
+                <p className="text-xs text-[var(--color-muted-foreground)]">
+                  Library path is managed on the desktop host. Scan runs on the host when connected.
+                </p>
+              )}
               <div>
                 <label className="text-xs text-[var(--color-muted-foreground)]">Library path</label>
                 <Input
-                  value={backendSettings?.library_path || ""}
-                  onChange={(e) =>
-                    setBackendSettings((s) => s && { ...s, library_path: e.target.value })
-                  }
+                  value={hostSettings?.library_path || ""}
+                  readOnly={!caps.libraryPathEditable}
+                  onChange={(e) => patchHostSettings({ library_path: e.target.value })}
                 />
               </div>
               <div>
@@ -233,10 +292,9 @@ function SettingsPage() {
                   Naming template
                 </label>
                 <Input
-                  value={backendSettings?.naming_template || ""}
-                  onChange={(e) =>
-                    setBackendSettings((s) => s && { ...s, naming_template: e.target.value })
-                  }
+                  value={hostSettings?.naming_template || ""}
+                  readOnly={!caps.libraryPathEditable}
+                  onChange={(e) => patchHostSettings({ naming_template: e.target.value })}
                 />
               </div>
               <div>
@@ -247,18 +305,37 @@ function SettingsPage() {
                   type="number"
                   min={0}
                   max={32}
-                  value={backendSettings?.phash_threshold ?? 10}
-                  onChange={(e) =>
-                    setBackendSettings(
-                      (s) => s && { ...s, phash_threshold: Number(e.target.value) },
-                    )
-                  }
+                  value={hostSettings?.phash_threshold ?? 10}
+                  readOnly={!caps.libraryPathEditable}
+                  onChange={(e) => patchHostSettings({ phash_threshold: Number(e.target.value) })}
                 />
               </div>
-              <Button onClick={() => void saveBackend()}>Save</Button>
-              <Button variant="outline" onClick={() => void api.scanLibrary()}>
-                Scan Library
-              </Button>
+              {caps.libraryPathEditable && (
+                <Button onClick={() => void saveHostSettings()} disabled={!hostSettings}>
+                  Save
+                </Button>
+              )}
+              {canScan && (
+                <>
+                  <Button
+                    variant="outline"
+                    onClick={() => void runLibraryScan()}
+                    disabled={scanning}
+                  >
+                    {scanning
+                      ? "Scanning…"
+                      : caps.libraryScanRemote
+                        ? "Scan on host"
+                        : "Scan Library"}
+                  </Button>
+                  {scanProgress && (
+                    <p className="text-xs text-[var(--color-muted-foreground)]">{scanProgress}</p>
+                  )}
+                  {scanResult && (
+                    <p className="text-xs text-[var(--color-muted-foreground)]">{scanResult}</p>
+                  )}
+                </>
+              )}
             </CardContent>
           </Card>
         </Tabs.Content>
@@ -403,33 +480,44 @@ function SettingsPage() {
               <CardTitle className="text-base">LAN Web Server</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <p className="text-xs text-[var(--color-muted-foreground)]">
-                Serves API and built UI from <code>dist/</code> when available. Use the same host on
-                mobile in Remote LAN mode.
-              </p>
-              <div className="flex items-center gap-3">
-                <Switch.Root
-                  checked={settings.lan_enabled}
-                  onCheckedChange={(checked) => {
-                    if (checked) void enableLan();
-                    else
-                      void api.stopLanServer().then(() => updateSettings({ lan_enabled: false }));
-                  }}
-                  className="h-5 w-9 rounded-full bg-[var(--color-secondary)] data-[state=checked]:bg-[var(--color-primary)]"
-                >
-                  <Switch.Thumb className="block h-4 w-4 translate-x-0.5 rounded-full bg-white transition data-[state=checked]:translate-x-[18px]" />
-                </Switch.Root>
-                <span className="text-sm">Enable LAN server</span>
-              </div>
-              <Input
-                type="number"
-                value={settings.lan_port}
-                onChange={(e) => updateSettings({ lan_port: Number(e.target.value) })}
-              />
-              {lanToken && (
-                <p className="text-xs break-all">
-                  API Token: <code>{lanToken}</code>
+              {!caps.lanServer ? (
+                <p className="text-xs text-[var(--color-muted-foreground)]">
+                  The LAN server runs only in the desktop app. Open ArcHive on your PC → Settings →
+                  LAN to enable API on port 8787.
                 </p>
+              ) : (
+                <>
+                  <p className="text-xs text-[var(--color-muted-foreground)]">
+                    Serves API and built UI from <code>dist/</code> when available. Mobile and
+                    browser clients use Remote LAN mode with this host and token.
+                  </p>
+                  <div className="flex items-center gap-3">
+                    <Switch.Root
+                      checked={settings.lan_enabled}
+                      onCheckedChange={(checked) => {
+                        if (checked) void enableLan();
+                        else
+                          void api
+                            .stopLanServer()
+                            .then(() => updateSettings({ lan_enabled: false }));
+                      }}
+                      className="h-5 w-9 rounded-full bg-[var(--color-secondary)] data-[state=checked]:bg-[var(--color-primary)]"
+                    >
+                      <Switch.Thumb className="block h-4 w-4 translate-x-0.5 rounded-full bg-white transition data-[state=checked]:translate-x-[18px]" />
+                    </Switch.Root>
+                    <span className="text-sm">Enable LAN server</span>
+                  </div>
+                  <Input
+                    type="number"
+                    value={settings.lan_port}
+                    onChange={(e) => updateSettings({ lan_port: Number(e.target.value) })}
+                  />
+                  {lanToken && (
+                    <p className="text-xs break-all">
+                      API Token: <code>{lanToken}</code>
+                    </p>
+                  )}
+                </>
               )}
             </CardContent>
           </Card>

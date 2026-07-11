@@ -7,7 +7,7 @@ use crate::server::{generate_token, LanServer};
 use crate::state::AppState;
 use crate::vault::CookieSiteInfo;
 use std::sync::Arc;
-use tauri::State;
+use tauri::{AppHandle, Emitter, State};
 
 type CmdResult<T> = Result<T, String>;
 
@@ -91,8 +91,31 @@ pub fn save_settings(state: State<'_, Arc<AppState>>, settings: AppSettings) -> 
 }
 
 #[tauri::command]
-pub fn scan_library(state: State<'_, Arc<AppState>>) -> CmdResult<ScanResult> {
-    map_err(state.scan_library())
+pub async fn scan_library(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+) -> CmdResult<ScanResult> {
+    let app_state = state.inner().clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let settings = app_state.db.get_settings().map_err(|e| e.to_string())?;
+        let path =
+            AppState::validate_library_path(&settings.library_path, &app_state.data_dir)
+                .map_err(|e| e.to_string())?;
+        let rules = vec![r"(?<performer>[a-zA-Z0-9_]+)-\d+".to_string()];
+        let app_for_progress = app.clone();
+        crate::library::LibraryScanner::scan(
+            &app_state.db,
+            &path,
+            &rules,
+            Some(Box::new(move |progress| {
+                let _ = app_for_progress.emit("library:scan-progress", progress);
+            })),
+        )
+        .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    Ok(result)
 }
 
 #[tauri::command]

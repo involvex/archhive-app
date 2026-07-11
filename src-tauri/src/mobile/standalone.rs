@@ -4,7 +4,7 @@ use reqwest::Client;
 
 pub async fn resolve(url: &str) -> AppResult<MediaItem> {
     let client = Client::builder()
-        .user_agent("ScrawlerApp/0.1")
+        .user_agent("ArcHive/0.1")
         .build()?;
 
     if url.contains("youtube.com") || url.contains("youtu.be") {

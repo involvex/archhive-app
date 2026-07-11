@@ -20,7 +20,7 @@ pub struct Database {
 impl Database {
     pub fn new(data_dir: PathBuf) -> AppResult<Self> {
         std::fs::create_dir_all(&data_dir)?;
-        let db_path = data_dir.join("scrawler.db");
+        let db_path = data_dir.join("archhive.db");
         let conn = Connection::open(db_path)?;
         conn.execute_batch(MIGRATION_001)?;
         conn.execute_batch(MIGRATION_002)?;

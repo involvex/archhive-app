@@ -1,4 +1,4 @@
-# Scrawler App — Architecture Plan
+# ArcHive App — Architecture Plan
 
 Cross-platform desktop and mobile media browser, downloader, and personal library manager.
 
@@ -83,7 +83,7 @@ Enable in **Settings → LAN**. Endpoints:
 - `GET|POST /api/downloads`
 - `GET /api/scenes`, `/api/performers`, `/api/tags`
 
-Bearer token required (except `/api/health`). Advertises `_scrawler._tcp` via mDNS.
+Bearer token required (except `/api/health`). Advertises `_archhive._tcp` via mDNS.
 
 ## Development
 

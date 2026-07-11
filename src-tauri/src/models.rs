@@ -158,19 +158,33 @@ fn default_phash_threshold() -> u8 {
 
 impl Default for AppSettings {
     fn default() -> Self {
+        #[cfg(mobile)]
+        let library_path = String::new();
+        #[cfg(not(mobile))]
         let library_path = dirs::video_dir()
             .unwrap_or_else(|| dirs::home_dir().unwrap_or_default())
-            .join("Scrawler")
+            .join("ArcHive")
             .to_string_lossy()
             .to_string();
+
+        #[cfg(mobile)]
+        let engine_mode = EngineMode::RemoteLan;
+        #[cfg(not(mobile))]
+        let engine_mode = EngineMode::Local;
+
+        #[cfg(mobile)]
+        let remote_host = Some("http://192.168.178.69:8787".to_string());
+        #[cfg(not(mobile))]
+        let remote_host = None;
+
         Self {
-            engine_mode: EngineMode::Local,
+            engine_mode,
             library_path,
             naming_template: "{performer}/{title}.{ext}".to_string(),
             lan_enabled: false,
             lan_port: 8787,
             lan_token: None,
-            remote_host: None,
+            remote_host,
             remote_token: None,
             phash_threshold: default_phash_threshold(),
         }
@@ -185,6 +199,13 @@ pub struct HealthResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScanResult {
+    pub added: u32,
+    pub updated: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScanProgress {
+    pub scanned: u32,
     pub added: u32,
     pub updated: u32,
 }

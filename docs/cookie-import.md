@@ -1,15 +1,15 @@
-# Cookie import for Scrawler
+# Cookie import for ArcHive
 
-Scrawler stores cookies encrypted per site for browse and yt-dlp downloads.
+ArcHive stores cookies encrypted per site for browse and yt-dlp downloads.
 
 ## Recommended: Cookie-Editor extension
 
 1. Install [Cookie-Editor](https://chromewebstore.google.com/detail/cookie-editor/hlkenndednhfkekhgcdicdfddnkalmdm) (Chrome, Edge, Brave) or the Firefox equivalent.
 2. Log in on the target site (PornHub, xHamster, etc.).
 3. Open Cookie-Editor → **Export** → **JSON**.
-4. In Scrawler **Settings → Cookies**, select the site and paste JSON → **Import JSON**.
+4. In ArcHive **Settings → Cookies**, select the site and paste JSON → **Import JSON**.
 
-Scrawler converts JSON to Netscape format and saves it in the encrypted vault.
+ArcHive converts JSON to Netscape format and saves it in the encrypted vault.
 
 ## Bookmarklet (login shortcut)
 

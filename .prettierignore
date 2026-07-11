@@ -32,6 +32,7 @@ bun.lockb
 *.min.css
 *.min.js.map
 *.min.css.map
+src/routeTree.gen.ts
 
 # System Files
 .DS_Store

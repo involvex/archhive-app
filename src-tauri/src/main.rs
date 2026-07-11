@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    scrawler_app_lib::run()
+    archhive_app_lib::run()
 }

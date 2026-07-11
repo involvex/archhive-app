@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { AppSettings, EngineMode } from "../types";
+import { isMobileDevice } from "../tauri";
 
 interface SettingsState {
   settings: AppSettings;
@@ -14,11 +15,12 @@ interface SettingsState {
 }
 
 const defaultSettings: AppSettings = {
-  engine_mode: "local",
+  engine_mode: isMobileDevice() ? "remote_lan" : "local",
   library_path: "",
   naming_template: "{performer}/{title}.{ext}",
   lan_enabled: false,
   lan_port: 8787,
+  remote_host: undefined,
 };
 
 export const useSettingsStore = create<SettingsState>()(
@@ -34,6 +36,14 @@ export const useSettingsStore = create<SettingsState>()(
       setLibraryPath: (path) => set((s) => ({ settings: { ...s.settings, library_path: path } })),
       updateSettings: (partial) => set((s) => ({ settings: { ...s.settings, ...partial } })),
     }),
-    { name: "scrawler-settings" },
+    {
+      name: "archhive-settings",
+      onRehydrateStorage: () => (state) => {
+        if (!state || !isMobileDevice()) return;
+        if (state.settings.engine_mode !== "remote_lan") {
+          state.updateSettings({ engine_mode: "remote_lan" });
+        }
+      },
+    },
   ),
 );
