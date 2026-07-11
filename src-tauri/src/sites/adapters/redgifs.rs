@@ -74,7 +74,7 @@ fn parse_redgifs(html: &str) -> AppResult<Vec<MediaItem>> {
         };
         items.push(MediaItem {
             id: Uuid::new_v4().to_string(),
-            title: url.split('/').last().unwrap_or("redgif").to_string(),
+            title: url.split('/').next_back().unwrap_or("redgif").to_string(),
             url,
             thumbnail: None,
             duration: None,

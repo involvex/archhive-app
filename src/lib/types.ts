@@ -88,12 +88,18 @@ export interface AppSettings {
   lan_token?: string;
   remote_host?: string;
   remote_token?: string;
+  phash_threshold?: number;
+}
+
+export interface MergeDuplicatesResult {
+  removed: number;
 }
 
 export interface DuplicateGroup {
   match_type: string;
   hash: string;
   scenes: Scene[];
+  max_distance?: number;
 }
 
 export interface CookieSiteInfo {

@@ -5,10 +5,16 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "prebuild": "bun run lint:fix && bun run typecheck && bun run format",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
+    "tauri:android:dev": "tauri android dev",
+    "android:dev": "powershell -ExecutionPolicy Bypass -File scripts/android-dev.ps1",
+    "setup:binaries": "powershell -ExecutionPolicy Bypass -File scripts/setup-binaries.ps1",
     "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "typecheck": "tsc --noEmit",
     "format": "prettier . --write",
     "format:check": "prettier . --check"
   },

@@ -9,6 +9,7 @@ import type {
   CookieSiteInfo,
   HealthResponse,
   MediaItem,
+  MergeDuplicatesResult,
   Performer,
   Scene,
   SiteInfo,
@@ -138,6 +139,30 @@ export const api = {
 
   async findDuplicates(): Promise<DuplicateGroup[]> {
     return localOrRemote(() => invoke<DuplicateGroup[]>("find_duplicates"), "/api/duplicates");
+  },
+
+  async mergeDuplicates(
+    keepId: string,
+    removeIds: string[],
+    deleteFiles = false,
+  ): Promise<MergeDuplicatesResult> {
+    return localOrRemote(
+      () =>
+        invoke<MergeDuplicatesResult>("merge_duplicates", {
+          keepId,
+          removeIds,
+          deleteFiles,
+        }),
+      "/api/duplicates/merge",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          keep_id: keepId,
+          remove_ids: removeIds,
+          delete_files: deleteFiles,
+        }),
+      },
+    );
   },
 
   async listCookieSites(): Promise<CookieSiteInfo[]> {

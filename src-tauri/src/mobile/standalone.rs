@@ -48,7 +48,7 @@ fn is_direct_media(url: &str) -> bool {
 
 fn extract_title_from_url(url: &str) -> String {
     url.split('/')
-        .last()
+        .next_back()
         .unwrap_or("media")
         .split('?')
         .next()

@@ -1,7 +1,7 @@
 use crate::error::AppResult;
 use crate::models::{
-    AppSettings, BrowseKind, DownloadJob, DuplicateGroup, HealthResponse, MediaItem, Performer,
-    Scene, ScanResult, SiteInfo, Tag,
+    AppSettings, BrowseKind, DownloadJob, DuplicateGroup, HealthResponse, MediaItem,
+    MergeDuplicatesResult, Performer, Scene, ScanResult, SiteInfo, Tag,
 };
 use crate::server::{generate_token, LanServer};
 use crate::state::AppState;
@@ -98,6 +98,16 @@ pub fn scan_library(state: State<'_, Arc<AppState>>) -> CmdResult<ScanResult> {
 #[tauri::command]
 pub fn find_duplicates(state: State<'_, Arc<AppState>>) -> CmdResult<Vec<DuplicateGroup>> {
     map_err(state.find_duplicates())
+}
+
+#[tauri::command]
+pub fn merge_duplicates(
+    state: State<'_, Arc<AppState>>,
+    keep_id: String,
+    remove_ids: Vec<String>,
+    delete_files: Option<bool>,
+) -> CmdResult<MergeDuplicatesResult> {
+    map_err(state.merge_duplicates(&keep_id, &remove_ids, delete_files.unwrap_or(false)))
 }
 
 #[tauri::command]

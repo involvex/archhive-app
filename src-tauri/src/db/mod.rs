@@ -11,6 +11,8 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
+type SceneRow = (String, String, Option<String>, Option<String>, Option<String>);
+
 pub struct Database {
     conn: Arc<Mutex<Connection>>,
 }
@@ -187,6 +189,7 @@ impl Database {
         Ok(id)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn insert_scene(
         &self,
         title: &str,
@@ -249,7 +252,7 @@ impl Database {
 
     pub fn list_scenes(&self, query: Option<&str>) -> AppResult<Vec<Scene>> {
         let conn = self.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
-        let scenes: Vec<(String, String, Option<String>, Option<String>, Option<String>)> =
+        let scenes: Vec<SceneRow> =
             if let Some(q) = query.filter(|s| !s.is_empty()) {
                 let mut stmt = conn.prepare(
                     "SELECT s.id, s.title, s.path, s.thumb, s.source_url
@@ -413,26 +416,35 @@ impl Database {
         Ok(count > 0)
     }
 
-    pub fn find_duplicate_groups(&self) -> AppResult<Vec<DuplicateGroup>> {
+    pub fn find_duplicate_groups(&self, phash_threshold: u8) -> AppResult<Vec<DuplicateGroup>> {
         let conn = self.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
         let mut groups = Vec::new();
 
-        let mut stmt = conn.prepare(
-            "SELECT phash, GROUP_CONCAT(id) FROM scenes
-             WHERE phash IS NOT NULL AND phash != ''
-             GROUP BY phash HAVING COUNT(*) > 1",
-        )?;
-        let phash_rows = stmt.query_map([], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-        })?;
-        for row in phash_rows {
-            let (phash, ids_csv) = row?;
+        let mut phash_entries: Vec<(String, String)> = Vec::new();
+        {
+            let mut stmt = conn.prepare(
+                "SELECT id, phash FROM scenes WHERE phash IS NOT NULL AND phash != ''",
+            )?;
+            let rows = stmt.query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?;
+            for row in rows {
+                phash_entries.push(row?);
+            }
+        }
+
+        let clusters = crate::library::duplicates::cluster_phash_ids(&phash_entries, phash_threshold);
+        for ids in clusters {
+            let ids_csv = ids.join(",");
             let scenes = self.scenes_by_ids(&conn, &ids_csv)?;
-            groups.push(DuplicateGroup {
-                match_type: "phash".to_string(),
-                hash: phash,
+            if scenes.len() < 2 {
+                continue;
+            }
+            groups.push(crate::library::duplicates::build_phash_group(
+                &phash_entries,
+                &ids,
                 scenes,
-            });
+            )?);
         }
 
         let mut stmt = conn.prepare(
@@ -450,10 +462,69 @@ impl Database {
                 match_type: "oshash".to_string(),
                 hash: oshash,
                 scenes,
+                max_distance: None,
             });
         }
 
         Ok(groups)
+    }
+
+    pub fn delete_scene(&self, id: &str, delete_files: bool) -> AppResult<()> {
+        let conn = self.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
+        let row: Option<(Option<String>, Option<String>)> = conn
+            .query_row(
+                "SELECT path, thumb FROM scenes WHERE id = ?1",
+                params![id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()?;
+        let Some((path, thumb)) = row else {
+            return Err(AppError::NotFound(format!("scene {id}")));
+        };
+
+        conn.execute("DELETE FROM scene_performers WHERE scene_id = ?1", params![id])?;
+        conn.execute("DELETE FROM scene_tags WHERE scene_id = ?1", params![id])?;
+        conn.execute("DELETE FROM scenes WHERE id = ?1", params![id])?;
+
+        if delete_files {
+            if let Some(p) = path {
+                let _ = std::fs::remove_file(p);
+            }
+            if let Some(t) = thumb {
+                let _ = std::fs::remove_file(t);
+            }
+        }
+        Ok(())
+    }
+
+    pub fn merge_duplicates(
+        &self,
+        keep_id: &str,
+        remove_ids: &[String],
+        delete_files: bool,
+    ) -> AppResult<u32> {
+        let conn = self.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
+        let exists: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM scenes WHERE id = ?1",
+                params![keep_id],
+                |row| row.get::<_, i64>(0),
+            )
+            .map(|c| c > 0)?;
+        if !exists {
+            return Err(AppError::NotFound(format!("scene {keep_id}")));
+        }
+
+        let mut removed = 0u32;
+        drop(conn);
+        for id in remove_ids {
+            if id == keep_id {
+                continue;
+            }
+            self.delete_scene(id, delete_files)?;
+            removed += 1;
+        }
+        Ok(removed)
     }
 
     fn scenes_by_ids(&self, conn: &Connection, ids_csv: &str) -> AppResult<Vec<Scene>> {

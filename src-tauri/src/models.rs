@@ -148,6 +148,12 @@ pub struct AppSettings {
     pub lan_token: Option<String>,
     pub remote_host: Option<String>,
     pub remote_token: Option<String>,
+    #[serde(default = "default_phash_threshold")]
+    pub phash_threshold: u8,
+}
+
+fn default_phash_threshold() -> u8 {
+    10
 }
 
 impl Default for AppSettings {
@@ -166,6 +172,7 @@ impl Default for AppSettings {
             lan_token: None,
             remote_host: None,
             remote_token: None,
+            phash_threshold: default_phash_threshold(),
         }
     }
 }
@@ -187,4 +194,11 @@ pub struct DuplicateGroup {
     pub match_type: String,
     pub hash: String,
     pub scenes: Vec<Scene>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_distance: Option<u8>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MergeDuplicatesResult {
+    pub removed: u32,
 }

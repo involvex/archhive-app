@@ -6,6 +6,7 @@ use std::path::Path;
 use tauri::AppHandle;
 
 pub mod auto_tag;
+pub mod duplicates;
 pub mod hashing;
 pub mod import;
 

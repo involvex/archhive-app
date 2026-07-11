@@ -52,6 +52,7 @@ pub fn run() {
             commands::save_settings,
             commands::scan_library,
             commands::find_duplicates,
+            commands::merge_duplicates,
             commands::list_cookie_sites,
             commands::save_site_cookies,
             commands::delete_site_cookies,

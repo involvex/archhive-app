@@ -1,6 +1,7 @@
 use crate::db::Database;
 use crate::error::AppResult;
 
+#[allow(clippy::too_many_arguments)]
 pub fn import_download(
     db: &Database,
     title: &str,

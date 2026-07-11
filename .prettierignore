@@ -1,0 +1,41 @@
+# AI Agent Directories
+.agent
+.agents
+.kilo
+.claude
+.gemini
+.kilocode
+.opencode
+
+# Build & Dependency Directories
+node_modules
+dist
+build
+coverage
+.next
+.nuxt
+.cache
+
+# Version Control & Config
+.git
+.vscode
+.idea
+
+# Lock Files
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+bun.lockb
+
+# Minified & Generated Files
+*.min.js
+*.min.css
+*.min.js.map
+*.min.css.map
+
+# System Files
+.DS_Store
+Thumbs.db
+*.log
+*.tgz
+*.tar.gz

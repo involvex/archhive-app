@@ -140,7 +140,18 @@ impl AppState {
     }
 
     pub fn find_duplicates(&self) -> AppResult<Vec<DuplicateGroup>> {
-        self.db.find_duplicate_groups()
+        let settings = self.db.get_settings()?;
+        self.db.find_duplicate_groups(settings.phash_threshold)
+    }
+
+    pub fn merge_duplicates(
+        &self,
+        keep_id: &str,
+        remove_ids: &[String],
+        delete_files: bool,
+    ) -> AppResult<crate::models::MergeDuplicatesResult> {
+        let removed = self.db.merge_duplicates(keep_id, remove_ids, delete_files)?;
+        Ok(crate::models::MergeDuplicatesResult { removed })
     }
 
     pub fn list_cookie_sites(&self) -> AppResult<Vec<CookieSiteInfo>> {

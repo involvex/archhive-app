@@ -45,6 +45,13 @@ struct CookieBody {
     cookies: String,
 }
 
+#[derive(Deserialize)]
+struct MergeDuplicatesBody {
+    keep_id: String,
+    remove_ids: Vec<String>,
+    delete_files: Option<bool>,
+}
+
 use serde::Deserialize;
 
 pub struct LanServer {
@@ -70,6 +77,7 @@ impl LanServer {
             .route("/api/performers", get(list_performers))
             .route("/api/tags", get(list_tags))
             .route("/api/duplicates", get(list_duplicates))
+            .route("/api/duplicates/merge", post(merge_duplicates))
             .route("/api/cookies", get(list_cookies))
             .route("/api/cookies/{id}", post(save_cookies).delete(delete_cookies))
             .layer(middleware::from_fn_with_state(api.clone(), auth_middleware))
@@ -245,6 +253,17 @@ async fn list_duplicates(State(state): State<ApiState>) -> Result<Json<serde_jso
         .find_duplicates()
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(serde_json::json!(groups)))
+}
+
+async fn merge_duplicates(
+    State(state): State<ApiState>,
+    Json(body): Json<MergeDuplicatesBody>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let result = state
+        .app
+        .merge_duplicates(&body.keep_id, &body.remove_ids, body.delete_files.unwrap_or(false))
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(serde_json::json!(result)))
 }
 
 async fn list_cookies(State(state): State<ApiState>) -> Result<Json<serde_json::Value>, StatusCode> {

@@ -70,7 +70,7 @@ impl SidecarRunner {
         let sidecar_result = self
             .app
             .shell()
-            .sidecar(&format!("binaries/{name}"))
+            .sidecar(format!("binaries/{name}"))
             .map(|cmd| cmd.args(args).spawn());
 
         match sidecar_result {
@@ -104,14 +104,13 @@ impl SidecarRunner {
                         destination = path;
                     }
                 }
-                CommandEvent::Terminated(payload) => {
-                    if payload.code != Some(0) {
+                CommandEvent::Terminated(payload)
+                    if payload.code != Some(0) => {
                         return Err(AppError::Download(format!(
                             "{name} exited with code {:?}",
                             payload.code
                         )));
                     }
-                }
                 _ => {}
             }
         }

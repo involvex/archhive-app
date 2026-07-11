@@ -1,6 +1,6 @@
 # Sidecar binaries
 
-Tauri bundles `yt-dlp` from this folder. ffmpeg and gallery-dl fall back to PATH.
+Tauri bundles `yt-dlp` and `ffmpeg` from this folder. gallery-dl uses PATH fallback.
 
 ## Setup
 
