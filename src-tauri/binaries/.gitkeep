@@ -1,0 +1,2 @@
+# Place yt-dlp, ffmpeg, and gallery-dl binaries here for Tauri sidecar bundling.
+# Run scripts/setup-binaries.ps1 (Windows) or scripts/setup-binaries.sh (Unix) to download.

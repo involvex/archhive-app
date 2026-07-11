@@ -1,0 +1,48 @@
+[package]
+name = "scrawler-app"
+version = "0.1.0"
+description = "Cross-platform media browser, downloader, and library manager"
+authors = ["you"]
+edition = "2021"
+
+[lib]
+name = "scrawler_app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+tauri-plugin-shell = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
+reqwest = { version = "0.12", features = ["json", "cookies"] }
+scraper = "0.22"
+regex = "1"
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "2"
+anyhow = "1"
+async-trait = "0.1"
+axum = { version = "0.8", features = ["macros"] }
+tower-http = { version = "0.6", features = ["cors", "fs", "trace"] }
+mdns-sd = "0.13"
+rand = "0.8"
+url = "2"
+dirs = "6"
+parking_lot = "0.12"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+walkdir = "2"
+aes-gcm = "0.10"
+base64 = "0.22"
+sha2 = "0.10"
+image = "0.25"
+image_hasher = "2.0"
+
+[dev-dependencies]
+tempfile = "3"
