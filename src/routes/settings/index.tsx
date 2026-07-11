@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api/client";
+import { ConnectionStatusChip } from "@/components/ConnectionStatusChip";
 import {
   buildCookieBookmarklet,
   COOKIE_EXTENSION_URL,
@@ -8,8 +9,9 @@ import {
   importCookiesFromJson,
 } from "@/lib/cookies/import";
 import { useUnifiedSettings } from "@/hooks/useUnifiedSettings";
+import { mergeDiscoveredHosts } from "@/lib/lan-discovery";
 import { SETTINGS_TABS } from "@/lib/settings/capabilities";
-import type { CookieSiteInfo, DuplicateGroup, EngineMode, SiteInfo } from "@/lib/types";
+import type { CookieSiteInfo, DuplicateGroup, EngineMode, LanHost, SiteInfo } from "@/lib/types";
 import { DuplicateGroupCard } from "@/components/DuplicateGroupCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -60,11 +62,49 @@ function SettingsPage() {
   const [scanning, setScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState("");
   const [scanResult, setScanResult] = useState("");
+  const [discoveredHosts, setDiscoveredHosts] = useState<LanHost[]>([]);
+  const [discovering, setDiscovering] = useState(false);
+  const [discoverStatus, setDiscoverStatus] = useState("");
 
   useEffect(() => {
     void api.listSites().then(setSites).catch(console.error);
     void refreshCookies().catch(console.error);
   }, []);
+
+  const runLanDiscovery = useCallback(
+    async (autoSelect = false) => {
+      setDiscovering(true);
+      setDiscoverStatus("Searching LAN for ArcHive on port 8787…");
+      try {
+        const found = mergeDiscoveredHosts(await api.discoverLanHosts(6000));
+        setDiscoveredHosts(found);
+        if (found.length === 0) {
+          setDiscoverStatus(
+            "No hosts found. Ensure desktop is running (bun run android:dev starts it on :8787).",
+          );
+        } else {
+          setDiscoverStatus(`Found ${found.length} host(s). Tap one to connect.`);
+          if (autoSelect && !settings.remote_host?.trim() && found[0]) {
+            updateSettings({ remote_host: found[0].url, remote_token: undefined });
+          }
+        }
+      } catch (e) {
+        setDiscoverStatus(e instanceof Error ? e.message : "Discovery failed");
+        setDiscoveredHosts(mergeDiscoveredHosts([]));
+      } finally {
+        setDiscovering(false);
+      }
+    },
+    [settings.remote_host, updateSettings],
+  );
+
+  useEffect(() => {
+    if (settings.engine_mode !== "remote_lan" || !caps.lanDiscovery) return;
+    const timer = window.setTimeout(() => {
+      void runLanDiscovery(true);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [settings.engine_mode, caps.lanDiscovery, runLanDiscovery]);
 
   useEffect(() => {
     if (!caps.libraryScanLocal) return;
@@ -93,13 +133,20 @@ function SettingsPage() {
     updateSettings({ lan_enabled: true, lan_token: result.token });
   }
 
+  function selectDiscoveredHost(host: LanHost) {
+    updateSettings({ remote_host: host.url, remote_token: undefined });
+    setDiscoverStatus(`Selected ${host.url} (no token)`);
+  }
+
   async function testRemote() {
     try {
       const health = await api.testRemoteConnection(
         settings.remote_host || "",
         settings.remote_token,
       );
-      setTestStatus(`Connected: ${health.version}`);
+      const authNote =
+        health.auth_required === false ? " — no token required" : " — token required";
+      setTestStatus(`Connected to ArcHive v${health.version}${authNote}`);
     } catch {
       setTestStatus("Connection failed");
     }
@@ -239,11 +286,57 @@ function SettingsPage() {
               ))}
               {settings.engine_mode === "remote_lan" && (
                 <div className="space-y-2 pt-2">
+                  <ConnectionStatusChip />
                   {!caps.lanServer && (
                     <p className="rounded-md border border-[var(--color-border)] bg-[var(--color-muted)] p-3 text-xs">
-                      Enable LAN on your <strong>desktop</strong> app first (Settings → LAN). Port{" "}
-                      <strong>8787</strong>, not 1420.
+                      Desktop LAN runs on port <strong>8787</strong> (not 1420).{" "}
+                      <code>bun run android:dev</code> auto-starts it; token is optional in dev
+                      mode.
                     </p>
+                  )}
+                  {caps.lanDiscovery && (
+                    <div className="space-y-2 rounded-md border border-[var(--color-border)] p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-xs font-medium">LAN discovery (mDNS)</p>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => void runLanDiscovery()}
+                          disabled={discovering}
+                        >
+                          {discovering ? "Searching…" : "Scan again"}
+                        </Button>
+                      </div>
+                      {discoveredHosts.length > 0 ? (
+                        <ul className="space-y-1">
+                          {discoveredHosts.map((host) => (
+                            <li key={host.url}>
+                              <button
+                                type="button"
+                                className="w-full rounded-md border border-[var(--color-border)] px-3 py-2 text-left text-xs hover:bg-[var(--color-muted)]"
+                                onClick={() => selectDiscoveredHost(host)}
+                              >
+                                <span className="font-medium">{host.name}</span>
+                                <span className="block text-[var(--color-muted-foreground)]">
+                                  {host.url}
+                                </span>
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="text-xs text-[var(--color-muted-foreground)]">
+                          {discovering
+                            ? "Searching…"
+                            : "No hosts yet. Start desktop ArcHive with LAN enabled."}
+                        </p>
+                      )}
+                      {discoverStatus && (
+                        <p className="text-xs text-[var(--color-muted-foreground)]">
+                          {discoverStatus}
+                        </p>
+                      )}
+                    </div>
                   )}
                   <Input
                     placeholder="http://192.168.178.69:8787"
@@ -251,7 +344,7 @@ function SettingsPage() {
                     onChange={(e) => updateSettings({ remote_host: e.target.value })}
                   />
                   <Input
-                    placeholder="API token"
+                    placeholder="API token (optional if desktop LAN has no token)"
                     type="password"
                     value={settings.remote_token || ""}
                     onChange={(e) => updateSettings({ remote_token: e.target.value })}

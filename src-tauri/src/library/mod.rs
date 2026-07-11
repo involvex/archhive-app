@@ -49,7 +49,12 @@ impl LibraryScanner {
             }
         };
 
-        for entry in WalkDir::new(path).max_depth(5).into_iter().filter_map(|e| e.ok()) {
+        for entry in WalkDir::new(path)
+            .max_depth(5)
+            .follow_links(false)
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
             let file_path = entry.path();
             if !file_path.is_file() {
                 continue;
@@ -71,26 +76,36 @@ impl LibraryScanner {
                 .unwrap_or("Unknown")
                 .to_string();
 
-            if db.scene_exists_by_path(&path_str)? {
-                updated += 1;
-                if scanned.is_multiple_of(10) {
-                    emit(scanned, added, updated);
+            let exists = match db.scene_exists_by_path(&path_str) {
+                Ok(v) => v,
+                Err(e) => {
+                    eprintln!("scan skip {}: {e}", path_str);
+                    if scanned.is_multiple_of(10) {
+                        emit(scanned, added, updated);
+                    }
+                    continue;
                 }
-                continue;
+            };
+
+            if exists {
+                updated += 1;
+            } else {
+                let (performers, tags) = apply_filename_rules(&title, rules);
+                match db.insert_scene(
+                    &title,
+                    Some(&path_str),
+                    None,
+                    &performers,
+                    &tags,
+                    None,
+                    None,
+                    None,
+                ) {
+                    Ok(_) => added += 1,
+                    Err(e) => eprintln!("scan skip {}: {e}", path_str),
+                }
             }
 
-            let (performers, tags) = apply_filename_rules(&title, rules);
-            db.insert_scene(
-                &title,
-                Some(&path_str),
-                None,
-                &performers,
-                &tags,
-                None,
-                None,
-                None,
-            )?;
-            added += 1;
             if scanned.is_multiple_of(10) {
                 emit(scanned, added, updated);
             }

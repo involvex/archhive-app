@@ -5,7 +5,7 @@ import reactRefresh from "eslint-plugin-react-refresh";
 import eslintConfigPrettier from "eslint-config-prettier";
 
 export default tseslint.config(
-  { ignores: ["dist", "src/routeTree.gen.ts", "src-tauri/target"] },
+  { ignores: ["dist", "src/routeTree.gen.ts", "src-tauri/target", "target-verify"] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {

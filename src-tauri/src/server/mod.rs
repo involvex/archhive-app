@@ -128,16 +128,17 @@ impl LanServer {
 
 fn advertise_mdns(port: u16) -> AppResult<ServiceDaemon> {
     let mdns = ServiceDaemon::new().map_err(|e| AppError::Other(e.to_string()))?;
-    let host = "archhive-host";
-    let service_type = "_archhive._tcp.local.";
-    let instance = "ArcHive";
+    let ip = crate::discovery::local_ipv4_for_mdns();
+    let ip_str = ip.to_string();
+    let host_name = format!("{ip_str}.local.");
+    let properties = [("version", env!("CARGO_PKG_VERSION"))];
     let info = ServiceInfo::new(
-        service_type,
-        instance,
-        &format!("{host}.local."),
-        "",
+        crate::discovery::SERVICE_TYPE,
+        "ArcHive",
+        &host_name,
+        &ip_str,
         port,
-        None,
+        &properties[..],
     )
     .map_err(|e| AppError::Other(e.to_string()))?;
     mdns.register(info)
@@ -151,6 +152,9 @@ async fn auth_middleware(
     next: Next,
 ) -> Response {
     if req.uri().path() == "/api/health" || !req.uri().path().starts_with("/api/") {
+        return next.run(req).await;
+    }
+    if state.token.is_empty() {
         return next.run(req).await;
     }
     let auth = req
@@ -171,6 +175,7 @@ async fn health(State(state): State<ApiState>) -> Json<serde_json::Value> {
         "status": h.status,
         "version": h.version,
         "lan": true,
+        "auth_required": !state.token.is_empty(),
         "library_path": state.app.get_settings().ok().map(|s| s.library_path),
     }))
 }
@@ -184,13 +189,13 @@ async fn browse(
     State(state): State<ApiState>,
     Path(id): Path<String>,
     Query(params): Query<BrowseParams>,
-) -> Result<Json<serde_json::Value>, StatusCode> {
-    let kind = parse_kind(&params.kind).map_err(|_| StatusCode::BAD_REQUEST)?;
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let kind = parse_kind(&params.kind).map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
     let page = state
         .app
         .browse(&id, kind, &params.slug, params.page.unwrap_or(1))
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
     Ok(Json(serde_json::json!(page)))
 }
 

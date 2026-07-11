@@ -1,7 +1,8 @@
 use crate::models::SiteInfo;
 use crate::sites::adapters::{
-    generic_ytdlp::GenericYtDlpAdapter, reddit::RedditAdapter, redgifs::RedgifsAdapter,
-    thothub::ThotHubAdapter, PornhubAdapter, XHamsterAdapter, XVideosAdapter,
+    custom::CustomUrlAdapter, generic_ytdlp::GenericYtDlpAdapter, reddit::RedditAdapter,
+    redgifs::RedgifsAdapter, thothub::ThotHubAdapter, PornhubAdapter, XHamsterAdapter,
+    XVideosAdapter,
 };
 use crate::sites::SiteAdapter;
 use std::sync::Arc;
@@ -19,6 +20,7 @@ impl SiteRegistry {
             Arc::new(XVideosAdapter),
             Arc::new(RedditAdapter),
             Arc::new(RedgifsAdapter),
+            Arc::new(CustomUrlAdapter),
             Arc::new(GenericYtDlpAdapter::youtube()),
             Arc::new(GenericYtDlpAdapter::tiktok()),
             Arc::new(GenericYtDlpAdapter::twitter()),

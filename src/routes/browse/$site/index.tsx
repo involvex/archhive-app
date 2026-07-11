@@ -61,9 +61,12 @@ function SiteHubPage() {
       </Card>
 
       {site.requires_cookies && (
-        <p className="text-sm text-yellow-400">
-          This site may require cookies — import them in Settings → Cookies.
-        </p>
+        <Card className="border-yellow-600/50 bg-yellow-950/30">
+          <CardContent className="p-4 text-sm text-yellow-200">
+            <strong>{site.display_name}</strong> requires cookies for browse and download. Import
+            them in <Link to="/settings">Settings → Cookies</Link> before browsing.
+          </CardContent>
+        </Card>
       )}
     </div>
   );

@@ -34,7 +34,7 @@ export const SITE_CATALOG: SiteInfo[] = [
     id: "reddit",
     display_name: "Reddit",
     base_url: "https://www.reddit.com",
-    supported_kinds: ["search"] as BrowseKind[],
+    supported_kinds: ["search", "channel"] as BrowseKind[],
     requires_cookies: false,
   },
   {
@@ -55,14 +55,14 @@ export const SITE_CATALOG: SiteInfo[] = [
     id: "tiktok",
     display_name: "TikTok",
     base_url: "https://www.tiktok.com",
-    supported_kinds: ["search"] as BrowseKind[],
+    supported_kinds: ["channel", "video"] as BrowseKind[],
     requires_cookies: false,
   },
   {
     id: "twitter",
     display_name: "Twitter / X",
     base_url: "https://x.com",
-    supported_kinds: ["search"] as BrowseKind[],
+    supported_kinds: ["channel", "video"] as BrowseKind[],
     requires_cookies: false,
   },
   {

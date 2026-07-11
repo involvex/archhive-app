@@ -23,12 +23,20 @@ if (Test-Path $ManifestPath) {
     if ($manifest -notmatch 'READ_MEDIA_VIDEO') {
         $manifest = $manifest -replace '(<uses-permission android:name="android.permission.INTERNET" />)', @'
 $1
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
 '@
         Set-Content -Path $ManifestPath -Value $manifest -NoNewline
-        Write-Host "Patched $ManifestPath with media storage permissions."
+        Write-Host "Patched $ManifestPath with mDNS and media storage permissions."
+    } elseif ($manifest -notmatch 'CHANGE_WIFI_MULTICAST_STATE') {
+        $manifest = $manifest -replace '(<uses-permission android:name="android.permission.INTERNET" />)', @'
+$1
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+'@
+        Set-Content -Path $ManifestPath -Value $manifest -NoNewline
+        Write-Host "Patched $ManifestPath with CHANGE_WIFI_MULTICAST_STATE for mDNS."
     } else {
         Write-Host "Android storage permissions already present."
     }

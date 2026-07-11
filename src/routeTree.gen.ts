@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as SettingsIndexRouteImport } from './routes/settings/index'
 import { Route as DownloadsIndexRouteImport } from './routes/downloads/index'
 import { Route as BrowseIndexRouteImport } from './routes/browse/index'
+import { Route as BrowseCustomRouteImport } from './routes/browse/custom'
 import { Route as LibraryTagsIndexRouteImport } from './routes/library/tags/index'
 import { Route as LibraryScenesIndexRouteImport } from './routes/library/scenes/index'
 import { Route as LibraryPerformersIndexRouteImport } from './routes/library/performers/index'
@@ -37,6 +38,11 @@ const DownloadsIndexRoute = DownloadsIndexRouteImport.update({
 const BrowseIndexRoute = BrowseIndexRouteImport.update({
   id: '/browse/',
   path: '/browse/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BrowseCustomRoute = BrowseCustomRouteImport.update({
+  id: '/browse/custom',
+  path: '/browse/custom',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LibraryTagsIndexRoute = LibraryTagsIndexRouteImport.update({
@@ -67,6 +73,7 @@ const BrowseSiteKindSlugRoute = BrowseSiteKindSlugRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/browse/custom': typeof BrowseCustomRoute
   '/browse/': typeof BrowseIndexRoute
   '/downloads/': typeof DownloadsIndexRoute
   '/settings/': typeof SettingsIndexRoute
@@ -78,6 +85,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/browse/custom': typeof BrowseCustomRoute
   '/browse': typeof BrowseIndexRoute
   '/downloads': typeof DownloadsIndexRoute
   '/settings': typeof SettingsIndexRoute
@@ -90,6 +98,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/browse/custom': typeof BrowseCustomRoute
   '/browse/': typeof BrowseIndexRoute
   '/downloads/': typeof DownloadsIndexRoute
   '/settings/': typeof SettingsIndexRoute
@@ -103,6 +112,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/browse/custom'
     | '/browse/'
     | '/downloads/'
     | '/settings/'
@@ -114,6 +124,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/browse/custom'
     | '/browse'
     | '/downloads'
     | '/settings'
@@ -125,6 +136,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/browse/custom'
     | '/browse/'
     | '/downloads/'
     | '/settings/'
@@ -137,6 +149,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  BrowseCustomRoute: typeof BrowseCustomRoute
   BrowseIndexRoute: typeof BrowseIndexRoute
   DownloadsIndexRoute: typeof DownloadsIndexRoute
   SettingsIndexRoute: typeof SettingsIndexRoute
@@ -175,6 +188,13 @@ declare module '@tanstack/react-router' {
       path: '/browse'
       fullPath: '/browse/'
       preLoaderRoute: typeof BrowseIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/browse/custom': {
+      id: '/browse/custom'
+      path: '/browse/custom'
+      fullPath: '/browse/custom'
+      preLoaderRoute: typeof BrowseCustomRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/library/tags/': {
@@ -217,6 +237,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  BrowseCustomRoute: BrowseCustomRoute,
   BrowseIndexRoute: BrowseIndexRoute,
   DownloadsIndexRoute: DownloadsIndexRoute,
   SettingsIndexRoute: SettingsIndexRoute,

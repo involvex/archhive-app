@@ -39,7 +39,15 @@ export const useSettingsStore = create<SettingsState>()(
     {
       name: "archhive-settings",
       onRehydrateStorage: () => (state) => {
-        if (!state || !isMobileDevice()) return;
+        if (!state) return;
+        if (state.settings.remote_token?.trim() === "") {
+          state.updateSettings({ remote_token: undefined });
+        }
+        const host = state.settings.remote_host?.trim();
+        if (host !== state.settings.remote_host) {
+          state.updateSettings({ remote_host: host || undefined });
+        }
+        if (!isMobileDevice()) return;
         if (state.settings.engine_mode !== "remote_lan") {
           state.updateSettings({ engine_mode: "remote_lan" });
         }

@@ -42,6 +42,18 @@ function Get-BootedDevices([string]$Adb) {
     return $booted
 }
 
+function Get-PcLanIp {
+    $ip = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.IPAddress -match '^192\.168\.' -and
+            $_.PrefixOrigin -ne 'WellKnown' -and
+            $_.IPAddress -ne '127.0.0.1'
+        } |
+        Select-Object -First 1 -ExpandProperty IPAddress
+    if ($ip) { return $ip }
+    return $null
+}
+
 $adb = Get-AdbPath
 $devices = Get-BootedDevices $adb
 
@@ -83,13 +95,23 @@ if ($devices.Count -gt 1) {
     Write-Host "Pass a device id to override: bun run tauri android dev <device-id>"
 }
 
+$pcIp = Get-PcLanIp
+$apiUrl = if ($pcIp) { "http://${pcIp}:8787" } else { "http://<pc-lan-ip>:8787" }
+
+Write-Host "Starting desktop LAN host (port 8787, open mode)..."
+& (Join-Path $PSScriptRoot "start-lan-host.ps1") -Port 8787
+
 Write-Host "Running tauri android dev on $device"
 if ($device -notmatch "^emulator-") {
     Write-Host ""
-    Write-Host "Physical device detected. After launch, set Remote LAN to:"
-    Write-Host "  http://<your-pc-lan-ip>:8787  (API — not :1420)"
-    Write-Host "Enable desktop LAN server first (Settings -> LAN on PC)."
+    Write-Host "Physical device on Wi-Fi:"
+    Write-Host "  1. Phone and PC must be on the same network (you can ping the phone)."
+    Write-Host "  2. In the app: Settings -> Engine -> tap a host under LAN discovery"
+    Write-Host "  3. Expected desktop API: $apiUrl (port 8787 only, not 1420)"
+    Write-Host "  4. Leave token empty when desktop was started via android:dev"
     Write-Host ""
+} else {
+    Write-Host "Emulator: use discovered host 10.0.2.2:8787 in Settings -> Engine"
 }
 Set-Location (Join-Path $PSScriptRoot "..")
 bun run tauri android dev $device @args

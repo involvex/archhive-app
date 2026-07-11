@@ -8,6 +8,7 @@ import type {
   DuplicateGroup,
   CookieSiteInfo,
   HealthResponse,
+  LanHost,
   MediaItem,
   MergeDuplicatesResult,
   Performer,
@@ -26,11 +27,12 @@ function getRemoteBase(): string | null {
   return host;
 }
 
-function remoteHeaders(): HeadersInit {
+function remoteHeaders(includeToken = true): HeadersInit {
   const { settings } = useSettingsStore.getState();
   const headers: HeadersInit = { "Content-Type": "application/json" };
-  if (settings.remote_token) {
-    headers["Authorization"] = `Bearer ${settings.remote_token}`;
+  const token = settings.remote_token?.trim();
+  if (includeToken && token) {
+    headers["Authorization"] = `Bearer ${token}`;
   }
   return headers;
 }
@@ -39,13 +41,44 @@ async function remoteFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const base = getRemoteBase();
   if (!base) {
     throw new Error(
-      "Remote host not configured. Open Settings → Engine and set http://<pc-ip>:8787 with your desktop LAN token.",
+      "Remote host not configured. Open Settings → Engine and pick a discovered LAN host.",
     );
   }
-  const res = await fetch(`${base}${path}`, {
-    ...init,
-    headers: { ...remoteHeaders(), ...init?.headers },
-  });
+  const doFetch = (headers: HeadersInit) =>
+    fetch(`${base}${path}`, {
+      ...init,
+      headers: { ...headers, ...init?.headers },
+    });
+
+  let res: Response;
+  try {
+    res = await doFetch(remoteHeaders(true));
+  } catch (e) {
+    const host = base.replace(/^https?:\/\//, "");
+    const hint =
+      e instanceof TypeError
+        ? `Cannot reach ${host}. Check PC IP, Windows Firewall (TCP 8787), same Wi‑Fi, and cleartext HTTP on Android.`
+        : e instanceof Error
+          ? e.message
+          : "Network error";
+    throw new Error(hint, e instanceof Error ? { cause: e } : undefined);
+  }
+  if (res.status === 401) {
+    const text = await res.text();
+    const hadToken = Boolean(useSettingsStore.getState().settings.remote_token?.trim());
+    if (hadToken) {
+      useSettingsStore.getState().updateSettings({ remote_token: undefined });
+      res = await doFetch(remoteHeaders(false));
+      if (res.ok) {
+        return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
+      }
+    }
+    throw new Error(
+      text.includes("invalid token")
+        ? "Invalid token — cleared saved token. Retry without a token in Settings."
+        : text || "Unauthorized",
+    );
+  }
   if (!res.ok) {
     const text = await res.text();
     throw new Error(text || res.statusText);
@@ -171,11 +204,30 @@ export const api = {
   },
 
   async testRemoteConnection(host: string, token?: string): Promise<HealthResponse> {
+    const trimmed = token?.trim();
     const res = await fetch(`${host.replace(/\/$/, "")}/api/health`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      headers: trimmed ? { Authorization: `Bearer ${trimmed}` } : {},
     });
+    if (res.status === 401 && trimmed) {
+      const retry = await fetch(`${host.replace(/\/$/, "")}/api/health`, { headers: {} });
+      if (retry.ok) {
+        useSettingsStore.getState().updateSettings({ remote_token: undefined });
+        return retry.json() as Promise<HealthResponse>;
+      }
+    }
     if (!res.ok) throw new Error("Connection failed");
-    return res.json() as Promise<HealthResponse>;
+    const health = (await res.json()) as HealthResponse;
+    if (health.auth_required === false) {
+      useSettingsStore.getState().updateSettings({ remote_token: undefined });
+    }
+    return health;
+  },
+
+  async discoverLanHosts(timeoutMs = 6000): Promise<LanHost[]> {
+    if (getAppRuntime() === "browser") {
+      return [];
+    }
+    return localInvoke<LanHost[]>("discover_lan_hosts", { timeoutMs });
   },
 
   async startLanServer(port: number): Promise<{ token: string }> {

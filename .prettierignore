@@ -12,6 +12,7 @@ node_modules
 dist
 build
 coverage
+target-verify
 .next
 .nuxt
 .cache

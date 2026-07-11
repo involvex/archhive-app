@@ -1,9 +1,8 @@
 use crate::error::AppResult;
 use crate::models::{
-    AppSettings, BrowseKind, DownloadJob, DuplicateGroup, HealthResponse, MediaItem,
+    AppSettings, BrowseKind, DownloadJob, DuplicateGroup, HealthResponse, LanHost, MediaItem,
     MergeDuplicatesResult, Performer, Scene, ScanResult, SiteInfo, Tag,
 };
-use crate::server::{generate_token, LanServer};
 use crate::state::AppState;
 use crate::vault::CookieSiteInfo;
 use std::sync::Arc;
@@ -97,21 +96,27 @@ pub async fn scan_library(
 ) -> CmdResult<ScanResult> {
     let app_state = state.inner().clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
-        let settings = app_state.db.get_settings().map_err(|e| e.to_string())?;
-        let path =
-            AppState::validate_library_path(&settings.library_path, &app_state.data_dir)
-                .map_err(|e| e.to_string())?;
-        let rules = vec![r"(?<performer>[a-zA-Z0-9_]+)-\d+".to_string()];
-        let app_for_progress = app.clone();
-        crate::library::LibraryScanner::scan(
-            &app_state.db,
-            &path,
-            &rules,
-            Some(Box::new(move |progress| {
-                let _ = app_for_progress.emit("library:scan-progress", progress);
-            })),
-        )
-        .map_err(|e| e.to_string())
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let settings = app_state.db.get_settings().map_err(|e| e.to_string())?;
+            let path =
+                AppState::validate_library_path(&settings.library_path, &app_state.data_dir)
+                    .map_err(|e| e.to_string())?;
+            let rules = vec![r"(?<performer>[a-zA-Z0-9_]+)-\d+".to_string()];
+            let app_for_progress = app.clone();
+            crate::library::LibraryScanner::scan(
+                &app_state.db,
+                &path,
+                &rules,
+                Some(Box::new(move |progress| {
+                    let app_emit = app_for_progress.clone();
+                    let _ = app_for_progress.run_on_main_thread(move || {
+                        let _ = app_emit.emit("library:scan-progress", progress);
+                    });
+                })),
+            )
+            .map_err(|e| e.to_string())
+        }))
+        .map_err(|_| "Library scan panicked — skipped unreadable files.".to_string())?
     })
     .await
     .map_err(|e| e.to_string())??;
@@ -161,38 +166,24 @@ pub async fn resolve_standalone(
 }
 
 #[tauri::command]
+pub async fn discover_lan_hosts(timeout_ms: Option<u64>) -> CmdResult<Vec<LanHost>> {
+    let timeout = timeout_ms.unwrap_or(4000);
+    tauri::async_runtime::spawn_blocking(move || crate::discovery::discover_lan_hosts(timeout))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn start_lan_server(
     state: State<'_, Arc<AppState>>,
     port: u16,
 ) -> CmdResult<serde_json::Value> {
-    if state.lan_server.lock().is_some() {
-        let token = state
-            .get_settings()
-            .ok()
-            .and_then(|s| s.lan_token)
-            .unwrap_or_default();
-        return Ok(serde_json::json!({ "token": token }));
-    }
-    let token = generate_token();
-    let app_state = state.inner().clone();
-    let static_dir = app_state.static_ui_path();
-    let server = map_err(LanServer::start(app_state, port, token.clone(), static_dir).await)?;
-    *state.lan_server.lock() = Some(server);
-    let mut settings = map_err(state.get_settings())?;
-    settings.lan_enabled = true;
-    settings.lan_port = port;
-    settings.lan_token = Some(token.clone());
-    map_err(state.save_settings(&settings))?;
-    Ok(serde_json::json!({ "token": token, "port": port }))
+    let token = map_err(state.ensure_lan_server(port).await)?;
+    Ok(serde_json::json!({ "token": token, "port": port, "auth_required": !token.is_empty() }))
 }
 
 #[tauri::command]
 pub fn stop_lan_server(state: State<'_, Arc<AppState>>) -> CmdResult<()> {
-    let mut guard = state.lan_server.lock();
-    if let Some(mut server) = guard.take() {
-        server.stop();
-    }
-    let mut settings = map_err(state.get_settings())?;
-    settings.lan_enabled = false;
-    map_err(state.save_settings(&settings))
+    map_err(state.stop_lan_server())
 }

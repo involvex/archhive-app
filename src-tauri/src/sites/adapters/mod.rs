@@ -1,3 +1,4 @@
+pub mod custom;
 pub mod generic_ytdlp;
 pub mod pornhub;
 pub mod reddit;

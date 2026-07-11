@@ -1,5 +1,6 @@
 use crate::error::AppResult;
-use crate::models::{DownloadPlan, DownloadTool, MediaItem};
+use crate::models::{BrowseKind, BrowsePage, BrowseQuery, DownloadPlan, DownloadTool, MediaItem};
+use crate::sites::yt_dlp::SidecarRunner;
 use crate::sites::{SiteAdapter, SiteContext};
 use async_trait::async_trait;
 
@@ -29,7 +30,10 @@ impl GenericYtDlpAdapter {
             site_id: "tiktok",
             name: "TikTok",
             base: "https://www.tiktok.com",
-            kinds: vec![crate::models::BrowseKind::Channel, crate::models::BrowseKind::Video],
+            kinds: vec![
+                crate::models::BrowseKind::Channel,
+                crate::models::BrowseKind::Video,
+            ],
         }
     }
 
@@ -38,7 +42,10 @@ impl GenericYtDlpAdapter {
             site_id: "twitter",
             name: "Twitter / X",
             base: "https://x.com",
-            kinds: vec![crate::models::BrowseKind::Channel, crate::models::BrowseKind::Video],
+            kinds: vec![
+                crate::models::BrowseKind::Channel,
+                crate::models::BrowseKind::Video,
+            ],
         }
     }
 
@@ -53,6 +60,18 @@ impl GenericYtDlpAdapter {
                 crate::models::BrowseKind::Video,
             ],
         }
+    }
+}
+
+fn profile_url(base: &str, site_id: &str, slug: &str) -> String {
+    let trimmed = slug.trim();
+    if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+        return trimmed.to_string();
+    }
+    let clean = trimmed.trim_start_matches('@');
+    match site_id {
+        "tiktok" | "youtube" => format!("{base}/@{clean}"),
+        _ => format!("{base}/{clean}"),
     }
 }
 
@@ -76,21 +95,53 @@ impl SiteAdapter for GenericYtDlpAdapter {
 
     async fn browse(
         &self,
-        _ctx: &SiteContext,
-        query: crate::models::BrowseQuery,
+        ctx: &SiteContext,
+        query: BrowseQuery,
     ) -> AppResult<crate::models::BrowsePage> {
         let url = match query.kind {
             crate::models::BrowseKind::Video | crate::models::BrowseKind::Search => {
                 if query.slug.starts_with("http") {
                     query.slug.clone()
                 } else {
-                    format!("{}/{}", self.base, query.slug)
+                    format!("{}/{}", self.base, query.slug.trim_start_matches('/'))
                 }
             }
-            crate::models::BrowseKind::Channel => format!("{}/@{}", self.base, query.slug),
+            crate::models::BrowseKind::Channel | crate::models::BrowseKind::Model => {
+                profile_url(self.base, self.site_id, &query.slug)
+            }
             crate::models::BrowseKind::Tag => format!("{}/tags/{}", self.base, query.slug),
-            crate::models::BrowseKind::Model => format!("{}/models/{}", self.base, query.slug),
         };
+
+        if matches!(
+            query.kind,
+            BrowseKind::Channel | BrowseKind::Model | BrowseKind::Search
+        ) {
+            let runner = SidecarRunner::new(ctx.app().clone());
+            let cookies = ctx.cookie_file_for_site(self.site_id);
+            let entries = runner
+                .list_flat_playlist(&url, query.page, 24, cookies.as_deref())
+                .await?;
+            let items = entries
+                .into_iter()
+                .map(|(id, title, item_url)| MediaItem {
+                    id,
+                    title,
+                    url: item_url,
+                    thumbnail: None,
+                    duration: None,
+                    site_id: self.site_id.to_string(),
+                    performers: vec![],
+                    tags: vec![],
+                })
+                .collect::<Vec<_>>();
+            let has_more = items.len() >= 24;
+            return Ok(BrowsePage {
+                items,
+                page: query.page,
+                has_more,
+                total: None,
+            });
+        }
 
         Ok(crate::models::BrowsePage {
             items: vec![MediaItem {
@@ -112,7 +163,7 @@ impl SiteAdapter for GenericYtDlpAdapter {
     async fn resolve_download(&self, _ctx: &SiteContext, item: &MediaItem) -> AppResult<DownloadPlan> {
         Ok(DownloadPlan {
             url: item.url.clone(),
-            output_template: "%(title)s.%(ext)s".to_string(),
+            output_template: "%(uploader)s/%(title)s.%(ext)s".to_string(),
             tool: DownloadTool::YtDlp,
             title: Some(item.title.clone()),
             performers: item.performers.clone(),

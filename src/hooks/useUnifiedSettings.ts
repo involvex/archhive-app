@@ -31,12 +31,16 @@ export function useUnifiedSettings() {
               phash_threshold: backend.phash_threshold,
             });
           }
-        } else if (caps.libraryScanRemote || runtime !== "browser") {
-          try {
-            const remote = await api.getHostSettings();
-            if (!cancelled) setHostSettings(remote);
-          } catch {
+        } else if (runtime !== "browser") {
+          if (!settings.remote_host?.trim()) {
             if (!cancelled) setHostSettings(settings);
+          } else {
+            try {
+              const remote = await api.getHostSettings();
+              if (!cancelled) setHostSettings(remote);
+            } catch {
+              if (!cancelled) setHostSettings(settings);
+            }
           }
         } else {
           if (!cancelled) setHostSettings(settings);

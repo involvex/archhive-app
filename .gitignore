@@ -26,6 +26,7 @@ dist-ssr
 
 # Tauri / Rust
 src-tauri/target
+target-verify
 src-tauri/gen
 src-tauri/binaries/*
 !src-tauri/binaries/.gitkeep

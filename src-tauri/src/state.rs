@@ -33,7 +33,7 @@ impl AppState {
     ) -> AppResult<Self> {
         let vault = Arc::new(CookieVault::new(data_dir.clone(), db.connection())?);
         let sites = Arc::new(SiteRegistry::new());
-        let site_ctx = Arc::new(SiteContext::new(vault.clone())?);
+        let site_ctx = Arc::new(SiteContext::new(vault.clone(), app.clone())?);
         let downloads = Arc::new(DownloadManager::new(db.clone(), app, vault.clone()));
         Ok(Self {
             db,
@@ -142,7 +142,7 @@ impl AppState {
         crate::library::LibraryScanner::scan(&self.db, &path, &rules, None)
     }
 
-    pub fn validate_library_path(library_path: &str, data_dir: &Path) -> AppResult<String> {
+    pub fn validate_library_path(library_path: &str, _data_dir: &Path) -> AppResult<String> {
         let trimmed = library_path.trim();
         if trimmed.is_empty() {
             return Err(crate::error::AppError::InvalidInput(
@@ -150,33 +150,65 @@ impl AppState {
             ));
         }
         let path = std::path::Path::new(trimmed);
-        if !path.is_absolute() && trimmed == "." {
+        if !path.is_absolute() {
             return Err(crate::error::AppError::InvalidInput(
-                "Invalid library path.".into(),
+                "Library path must be absolute (e.g. I:\\videos or C:\\Users\\you\\Videos).".into(),
             ));
         }
-        let canonical = if path.exists() {
-            path.canonicalize()?
-        } else {
+        if !path.exists() {
             std::fs::create_dir_all(path)?;
-            path.canonicalize()?
-        };
-        let data_canonical = data_dir.canonicalize().unwrap_or_else(|_| data_dir.to_path_buf());
-        let videos = dirs::video_dir().and_then(|p| p.canonicalize().ok());
-        let home = dirs::home_dir().and_then(|p| p.canonicalize().ok());
-        let allowed_roots = [Some(data_canonical), videos, home]
-            .into_iter()
-            .flatten()
-            .collect::<Vec<_>>();
-        let allowed = allowed_roots.iter().any(|root| canonical.starts_with(root))
-            || canonical.components().count() >= 2;
-        if !allowed {
-            return Err(crate::error::AppError::InvalidInput(format!(
-                "Library path must be under your home, Videos, or app data directory: {}",
-                canonical.display()
-            )));
         }
+        let canonical = path
+            .canonicalize()
+            .unwrap_or_else(|_| path.to_path_buf());
         Ok(canonical.to_string_lossy().to_string())
+    }
+
+    pub fn stop_lan_server(&self) -> AppResult<()> {
+        if let Some(mut server) = self.lan_server.lock().take() {
+            server.stop();
+        }
+        let mut settings = self.get_settings()?;
+        settings.lan_enabled = false;
+        self.save_settings(&settings)?;
+        Ok(())
+    }
+
+    pub async fn ensure_lan_server(self: &Arc<Self>, port: u16) -> AppResult<String> {
+        let open_dev = std::env::var("ARCHIVE_AUTO_LAN").ok().as_deref() == Some("1");
+
+        if self.lan_server.lock().is_some() {
+            let current = self.get_settings()?.lan_token.unwrap_or_default();
+            if open_dev && !current.is_empty() {
+                self.stop_lan_server()?;
+            } else {
+                return Ok(current);
+            }
+        }
+
+        let mut settings = self.get_settings()?;
+        let token = if open_dev {
+            String::new()
+        } else {
+            match settings.lan_token.clone() {
+                Some(t) if !t.is_empty() => t,
+                _ => crate::server::generate_token(),
+            }
+        };
+        let static_dir = self.static_ui_path();
+        let server =
+            crate::server::LanServer::start(self.clone(), port, token.clone(), static_dir)
+                .await?;
+        *self.lan_server.lock() = Some(server);
+        settings.lan_enabled = true;
+        settings.lan_port = port;
+        settings.lan_token = if token.is_empty() { None } else { Some(token.clone()) };
+        self.save_settings(&settings)?;
+        eprintln!(
+            "[lan] server started on port {port} auth_required={}",
+            !token.is_empty()
+        );
+        Ok(token)
     }
 
     pub fn find_duplicates(&self) -> AppResult<Vec<DuplicateGroup>> {

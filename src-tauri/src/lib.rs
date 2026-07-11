@@ -1,5 +1,6 @@
 mod commands;
 mod db;
+mod discovery;
 mod downloads;
 mod error;
 mod library;
@@ -16,6 +17,31 @@ use state::AppState;
 use std::sync::Arc;
 use tauri::Manager;
 
+/// Mobile-only defaults (compiled into Android/iOS builds via `cfg(mobile)`).
+#[cfg_attr(not(mobile), allow(dead_code))]
+fn bootstrap_mobile_settings(db: &Database, data_dir: &std::path::Path) -> Result<(), String> {
+    let mut settings = db.get_settings().unwrap_or_default();
+    let mut changed = false;
+    if settings.library_path.is_empty() {
+        let downloads = data_dir.join("downloads");
+        std::fs::create_dir_all(&downloads).map_err(|e| e.to_string())?;
+        settings.library_path = downloads.to_string_lossy().to_string();
+        changed = true;
+    }
+    if settings.engine_mode == crate::models::EngineMode::Local {
+        settings.engine_mode = crate::models::EngineMode::RemoteLan;
+        changed = true;
+    }
+    if settings.remote_token.as_ref().is_some_and(|t| t.trim().is_empty()) {
+        settings.remote_token = None;
+        changed = true;
+    }
+    if changed {
+        db.save_settings(&settings).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -30,27 +56,7 @@ pub fn run() {
             let db = Arc::new(Database::new(data_dir.clone()).map_err(|e| e.to_string())?);
 
             #[cfg(mobile)]
-            {
-                let mut settings = db.get_settings().unwrap_or_default();
-                let mut changed = false;
-                if settings.library_path.is_empty() {
-                    let downloads = data_dir.join("downloads");
-                    std::fs::create_dir_all(&downloads).map_err(|e| e.to_string())?;
-                    settings.library_path = downloads.to_string_lossy().to_string();
-                    changed = true;
-                }
-                if settings.engine_mode == crate::models::EngineMode::Local {
-                    settings.engine_mode = crate::models::EngineMode::RemoteLan;
-                    changed = true;
-                }
-                if settings.remote_host.is_none() {
-                    settings.remote_host = Some("http://192.168.178.69:8787".to_string());
-                    changed = true;
-                }
-                if changed {
-                    db.save_settings(&settings).map_err(|e| e.to_string())?;
-                }
-            }
+            bootstrap_mobile_settings(&db, &data_dir)?;
 
             let static_ui = std::env::current_dir()
                 .ok()
@@ -60,7 +66,29 @@ pub fn run() {
                 AppState::with_app(db, data_dir, app.handle().clone(), static_ui)
                     .map_err(|e| e.to_string())?,
             );
-            app.manage(state);
+            app.manage(state.clone());
+
+            #[cfg(not(mobile))]
+            {
+                let auto_lan = std::env::var("ARCHIVE_AUTO_LAN").ok().as_deref() == Some("1");
+                let lan_enabled = state.get_settings().map(|s| s.lan_enabled).unwrap_or(false);
+                if auto_lan || lan_enabled {
+                    if auto_lan {
+                        if let Ok(mut s) = state.get_settings() {
+                            s.lan_token = None;
+                            let _ = state.save_settings(&s);
+                        }
+                    }
+                    let st = state.clone();
+                    tauri::async_runtime::spawn(async move {
+                        let port = st.get_settings().map(|s| s.lan_port).unwrap_or(8787);
+                        if let Err(e) = st.ensure_lan_server(port).await {
+                            eprintln!("LAN auto-start failed: {e}");
+                        }
+                    });
+                }
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -82,6 +110,7 @@ pub fn run() {
             commands::save_site_cookies,
             commands::delete_site_cookies,
             commands::resolve_standalone,
+            commands::discover_lan_hosts,
             commands::start_lan_server,
             commands::stop_lan_server,
         ])

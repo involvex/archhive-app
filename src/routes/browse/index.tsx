@@ -8,7 +8,7 @@ import type { SiteInfo } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Globe, Search } from "lucide-react";
+import { Globe, Link2, Search } from "lucide-react";
 
 export const Route = createFileRoute("/browse/")({
   component: BrowsePage,
@@ -82,6 +82,23 @@ function BrowsePage() {
           {error} — showing offline site list.
         </p>
       )}
+
+      <Card className="border-[var(--color-primary)]">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Link2 className="h-4 w-4" />
+            Custom URL
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          <p className="text-sm text-[var(--color-muted-foreground)]">
+            Paste any supported profile or playlist URL and browse via yt-dlp on the desktop host.
+          </p>
+          <Button asChild className="w-full sm:w-auto">
+            <Link to="/browse/custom">Open Custom URL</Link>
+          </Button>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

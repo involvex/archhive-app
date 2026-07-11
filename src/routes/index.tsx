@@ -1,6 +1,7 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api/client";
+import { ConnectionStatusChip } from "@/components/ConnectionStatusChip";
 import { getCapabilities } from "@/lib/runtime";
 import { useSettingsStore } from "@/lib/stores/settings";
 import { isMobileDevice } from "@/lib/tauri";
@@ -20,8 +21,7 @@ function HomePage() {
   const [loadError, setLoadError] = useState("");
   const caps = getCapabilities();
   const isMobile = isMobileDevice();
-  const needsSetup =
-    (isMobile || caps.showBrowserBanner) && (!settings.remote_host || !settings.remote_token);
+  const needsSetup = (isMobile || caps.showBrowserBanner) && !settings.remote_host;
 
   useEffect(() => {
     if (needsSetup) return;
@@ -55,6 +55,8 @@ function HomePage() {
           Recent library items and active downloads
         </p>
       </div>
+
+      {(isMobile || caps.showBrowserBanner) && <ConnectionStatusChip />}
 
       {caps.showBrowserBanner && !needsSetup && (
         <Card className="border-[var(--color-border)]">

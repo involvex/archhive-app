@@ -1,25 +1,37 @@
 use crate::error::{AppError, AppResult};
-use crate::models::{BrowseKind, BrowsePage, BrowseQuery, DownloadPlan, MediaItem};use crate::vault::CookieVault;
+use crate::models::{BrowseKind, BrowsePage, BrowseQuery, DownloadPlan, MediaItem};
+use crate::vault::CookieVault;
 use async_trait::async_trait;
 use std::sync::Arc;
 
 pub mod adapters;
+pub mod browse_fallback;
 pub mod registry;
+pub mod urls;
 pub mod yt_dlp;
 
 #[derive(Clone)]
 pub struct SiteContext {
     pub client: reqwest::Client,
     vault: Arc<CookieVault>,
+    app: tauri::AppHandle,
 }
 
 impl SiteContext {
-    pub fn new(vault: Arc<CookieVault>) -> AppResult<Self> {
+    pub fn new(vault: Arc<CookieVault>, app: tauri::AppHandle) -> AppResult<Self> {
         let client = reqwest::Client::builder()
             .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
             .cookie_store(true)
             .build()?;
-        Ok(Self { client, vault })
+        Ok(Self { client, vault, app })
+    }
+
+    pub fn app(&self) -> &tauri::AppHandle {
+        &self.app
+    }
+
+    pub fn cookie_file_for_site(&self, site_id: &str) -> Option<std::path::PathBuf> {
+        self.vault.cookie_file_for_site(site_id)
     }
 
     pub async fn fetch_html(&self, url: &str, site_id: &str) -> AppResult<String> {

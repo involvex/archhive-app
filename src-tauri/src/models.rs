@@ -198,6 +198,14 @@ pub struct HealthResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LanHost {
+    pub name: String,
+    pub url: String,
+    pub ip: String,
+    pub port: u16,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScanResult {
     pub added: u32,
     pub updated: u32,

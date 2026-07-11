@@ -82,13 +82,31 @@ Allow both ports through Windows Firewall on the desktop.
 
 ## Remote LAN test flow
 
+1. Close any extra `tauri dev` windows. Run `bun run android:dev` (auto-starts desktop LAN in open mode).
+2. **Desktop:** confirm `http://127.0.0.1:8787/api/health` returns `"auth_required": false`.
+3. **Phone:** Settings → Engine → Remote LAN → tap discovered **ArcHive @ 192.168.x.x** → **Test Connection**.
+4. **Windows Firewall:** allow inbound **TCP 8787** on the desktop PC.
+5. Dashboard shows a green connection chip when health succeeds.
+
+### Verification checklist
+
+| Step      | Expected                                                                 |
+| --------- | ------------------------------------------------------------------------ |
+| Health    | `auth_required: false` when using `ARCHIVE_AUTO_LAN` / `android:dev`     |
+| Discovery | mDNS finds PC at `http://192.168.178.69:8787` (your LAN IP)              |
+| Browse    | ThotHub search, Reddit channel, PornHub model (with cookies), Custom URL |
+| APK       | `bun run build:apk` uses `--target aarch64` only (~15–25 min vs 1h+)     |
+
+## Remote LAN test flow (manual)
+
 1. **Desktop:** Settings → LAN → enable server (default port `8787`). Copy API token.
 2. **Desktop:** `bun run build` so LAN can serve `dist/` (optional but recommended).
 3. **Find desktop IP:** `ipconfig` (Windows). Example: `192.168.178.69`.
 4. **Phone/emulator:** Settings → Engine → **Remote LAN**
-   - **Emulator:** `http://10.0.2.2:8787`
-   - **Physical device:** `http://192.168.178.69:8787` (your PC IP, port **8787** not 1420)
-   - Token: paste from desktop
+   - Tap a host under **LAN discovery** (mDNS), or enter manually:
+   - **Emulator:** `http://10.0.2.2:8787` (listed automatically)
+   - **Physical device:** pick discovered desktop host, e.g. `http://192.168.178.69:8787`
+   - Token: optional when desktop runs with `ARCHIVE_AUTO_LAN` (e.g. `bun run android:dev`)
 5. Tap **Test Connection** — should show desktop app version.
 6. Browse sites and queue downloads; jobs run on the desktop host.
 
@@ -119,4 +137,6 @@ Allow both ports through Windows Firewall on the desktop.
 | `bun run android:dev`             | Auto-boot AVD + run dev (Windows)                |
 | `bun run tauri:android:dev`       | Build and run on connected device/emulator       |
 | `bun run tauri android build`     | Release APK/AAB                                  |
-| `.\scripts\patch-android-lan.ps1` | Allow HTTP to LAN host                           |
+| `bun run build:apk`               | Debug APK, aarch64 only (faster)                 |
+| `bun run build:apk:fast`          | Skip lint/format; vite build + aarch64 APK       |
+| `.\scripts\patch-android-lan.ps1` | Allow HTTP + mDNS multicast on Android           |

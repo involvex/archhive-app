@@ -110,4 +110,13 @@ export interface CookieSiteInfo {
 export interface HealthResponse {
   status: string;
   version: string;
+  auth_required?: boolean;
+  lan?: boolean;
+}
+
+export interface LanHost {
+  name: string;
+  url: string;
+  ip: string;
+  port: number;
 }

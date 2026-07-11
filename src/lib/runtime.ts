@@ -16,6 +16,7 @@ export interface RuntimeCapabilities {
   libraryScanLocal: boolean;
   libraryScanRemote: boolean;
   showBrowserBanner: boolean;
+  lanDiscovery: boolean;
   engineModes: EngineMode[];
 }
 
@@ -28,6 +29,7 @@ export function getCapabilities(runtime: AppRuntime = getAppRuntime()): RuntimeC
   return {
     localIpc: runtime === "desktop-tauri",
     lanServer: runtime === "desktop-tauri",
+    lanDiscovery: runtime === "mobile-tauri" || runtime === "desktop-tauri",
     libraryPathEditable: runtime === "desktop-tauri",
     libraryScanLocal: runtime === "desktop-tauri",
     libraryScanRemote: useRemote && remoteConfigured,
