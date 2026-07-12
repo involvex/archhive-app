@@ -4,11 +4,11 @@
 
 These files stay in sync (use `bun run version:bump <semver>`):
 
-| File                        | Field     |
-| --------------------------- | --------- |
-| `package.json`              | `version` |
-| `src-tauri/tauri.conf.json` | `version` |
-| `src-tauri/Cargo.toml`      | `version` |
+| File                        | Field                            |
+| --------------------------- | -------------------------------- |
+| `package.json`              | `version`                        |
+| `src-tauri/tauri.conf.json` | `version`                        |
+| `src-tauri/Cargo.toml`      | `version`                        |
 | `src-tauri/Cargo.lock`      | `archhive-app` package `version` |
 
 The UI reads `VITE_APP_VERSION` (from `package.json` at build time) and Tauri `getVersion()` on native. Settings and the desktop sidebar show the current version.
