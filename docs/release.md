@@ -9,6 +9,7 @@ These files stay in sync (use `bun run version:bump <semver>`):
 | `package.json`              | `version` |
 | `src-tauri/tauri.conf.json` | `version` |
 | `src-tauri/Cargo.toml`      | `version` |
+| `src-tauri/Cargo.lock`      | `archhive-app` package `version` |
 
 The UI reads `VITE_APP_VERSION` (from `package.json` at build time) and Tauri `getVersion()` on native. Settings and the desktop sidebar show the current version.
 
@@ -42,7 +43,7 @@ bun run build:apk:release  # Release APK under src-tauri/gen/android/.../release
 
 ## CI requirements
 
-- **Windows job:** Bun, Rust, Tauri desktop bundle
+- **Windows job:** Bun, Rust, sidecar binaries (`setup-binaries.ps1`), Tauri desktop bundle
 - **Android job:** Bun, Rust, Android SDK, NDK r27 (`NDK_HOME` required for `tauri android init`), Java 17, `scripts/android-regen.sh` + `tauri icon`
 
 No secrets required for unsigned APK + NSIS upload. Add code signing later if needed.

@@ -28,7 +28,17 @@ async function main(): Promise<void> {
   cargo = cargo.replace(/^version = ".*"$/m, `version = "${version}"`);
   await writeFile(cargoPath, cargo, "utf8");
 
-  console.log(`Bumped version to ${version} in package.json, tauri.conf.json, Cargo.toml`);
+  const lockPath = path.join(ROOT, "src-tauri", "Cargo.lock");
+  let lock = await readFile(lockPath, "utf8");
+  lock = lock.replace(
+    /(\[\[package\]\]\nname = "archhive-app"\nversion = )"[^"]+"/,
+    `$1"${version}"`,
+  );
+  await writeFile(lockPath, lock, "utf8");
+
+  console.log(
+    `Bumped version to ${version} in package.json, tauri.conf.json, Cargo.toml, Cargo.lock`,
+  );
 }
 
 await main();

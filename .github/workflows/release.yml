@@ -36,6 +36,10 @@ jobs:
       - name: Generate plugins registry
         run: bun run plugins:generate
 
+      - name: Download sidecar binaries
+        shell: pwsh
+        run: pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/setup-binaries.ps1 -Arch x86_64-pc-windows-msvc
+
       - name: Build desktop installer
         run: bun run build:desktop
         env:
