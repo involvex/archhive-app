@@ -93,6 +93,10 @@ Full index: [docs/README.md](docs/README.md).
 
 See [Plan.md](Plan.md) for stack, adapters, and LAN API.
 
+## Security
+
+Report vulnerabilities privately via [SECURITY.md](SECURITY.md) (GitHub Security Advisories preferred). Do not file public issues with exploit details.
+
 ## License
 
 Private / TBD

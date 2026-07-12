@@ -14,4 +14,6 @@ Guides for ArcHive development, deployment, and extension.
 | [plugins.md](plugins.md)                                 | TypeScript plugins (`plugins/` directory) |
 | [release.md](release.md)                                 | Version bump, tags, GitHub Releases       |
 
+Security vulnerabilities: see [SECURITY.md](../SECURITY.md) in the repo root.
+
 Architecture overview: [Plan.md](../Plan.md) in the repo root.
