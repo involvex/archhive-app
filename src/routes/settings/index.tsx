@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api/client";
+import { resolveAppVersion } from "@/lib/appVersion";
 import { ConnectionStatusChip } from "@/components/ConnectionStatusChip";
 import {
   buildCookieBookmarklet,
@@ -70,6 +71,11 @@ function SettingsPage() {
   const [discoveredHosts, setDiscoveredHosts] = useState<LanHost[]>([]);
   const [discovering, setDiscovering] = useState(false);
   const [discoverStatus, setDiscoverStatus] = useState("");
+  const [appVersion, setAppVersion] = useState("…");
+
+  useEffect(() => {
+    void resolveAppVersion().then(setAppVersion);
+  }, []);
 
   useEffect(() => {
     if (!caps.lanServer || !settings.lan_enabled) return;
@@ -723,6 +729,10 @@ function SettingsPage() {
           </Card>
         </Tabs.Content>
       </Tabs.Root>
+
+      <p className="text-xs text-[var(--color-muted-foreground)]">
+        ArcHive v{appVersion} · {runtime}
+      </p>
     </div>
   );
 }

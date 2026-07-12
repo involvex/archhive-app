@@ -1,0 +1,143 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-windows:
+    name: Desktop (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install frontend dependencies
+        run: bun install --frozen-lockfile
+        continue-on-error: true
+
+      - name: Install frontend dependencies (no lockfile)
+        if: failure()
+        run: bun install
+
+      - name: Generate plugins registry
+        run: bun run plugins:generate
+
+      - name: Build desktop installer
+        run: bun run build:desktop
+        env:
+          CI: true
+
+      - name: Collect Windows installer
+        shell: pwsh
+        run: |
+          $nsis = Get-ChildItem -Path "src-tauri/target/release/bundle/nsis" -Filter "*.exe" -ErrorAction SilentlyContinue
+          if (-not $nsis) {
+            $nsis = Get-ChildItem -Path "src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis" -Filter "*.exe" -ErrorAction SilentlyContinue
+          }
+          if (-not $nsis) { throw "NSIS installer not found under src-tauri/target" }
+          New-Item -ItemType Directory -Force -Path release-artifacts | Out-Null
+          Copy-Item $nsis[0].FullName "release-artifacts/ArcHive-windows-setup.exe"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: release-artifacts/ArcHive-windows-setup.exe
+          if-no-files-found: error
+
+  build-android:
+    name: Android APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Setup NDK
+        id: setup-ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r27d
+
+      - name: Install Rust Android targets
+        run: rustup target add aarch64-linux-android
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install frontend dependencies
+        run: bun install --frozen-lockfile
+        continue-on-error: true
+
+      - name: Install frontend dependencies (no lockfile)
+        if: failure()
+        run: bun install
+
+      - name: Regenerate Android project and icons
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/android-regen.ps1
+
+      - name: Generate plugins registry
+        run: bun run plugins:generate
+
+      - name: Build release APK
+        run: bun run build:apk:release
+        env:
+          CI: true
+          NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+
+      - name: Collect APK
+        run: |
+          APK=$(find src-tauri/gen/android/app/build/outputs/apk -name "*release*.apk" | head -1)
+          if [ -z "$APK" ]; then echo "Release APK not found"; find src-tauri/gen/android -name "*.apk"; exit 1; fi
+          mkdir -p release-artifacts
+          cp "$APK" release-artifacts/ArcHive-android.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: release-artifacts/ArcHive-android.apk
+          if-no-files-found: error
+
+  publish:
+    name: GitHub Release
+    needs: [build-windows, build-android]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ArcHive ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            dist/ArcHive-windows-setup.exe
+            dist/ArcHive-android.apk

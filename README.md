@@ -52,18 +52,21 @@ Configure in **Settings → Engine**.
 
 ## Scripts
 
-| Command                     | Description                                                                                                           |
-| --------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `bun run dev`               | Vite dev server (1420)                                                                                                |
-| `bun run tauri dev`         | Desktop app                                                                                                           |
-| `bun run tauri:android:dev` | Android on device/emulator                                                                                            |
-| `bun run android:dev`       | Windows helper: AVD + LAN auto-start                                                                                  |
-| `bun run android:regen`     | Regenerate `gen/android` after identifier/icon change (runs `tauri icon` if `assets/branding/icon-source.png` exists) |
-| `bun run build:apk`         | Debug APK (aarch64)                                                                                                   |
-| `bun run setup:binaries`    | Download yt-dlp + ffmpeg sidecars                                                                                     |
-| `bun run plugins:generate`  | Regenerate plugin registry from `plugins/`                                                                            |
-| `bun run build`             | Lint + typecheck + production frontend                                                                                |
-| `bun run lint` / `format`   | ESLint / Prettier                                                                                                     |
+| Command                             | Description                                                                                                           |
+| ----------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `bun run dev`                       | Vite dev server (1420)                                                                                                |
+| `bun run tauri dev`                 | Desktop app                                                                                                           |
+| `bun run tauri:android:dev`         | Android on device/emulator                                                                                            |
+| `bun run android:dev`               | Windows helper: AVD + LAN auto-start                                                                                  |
+| `bun run android:regen`             | Regenerate `gen/android` after identifier/icon change (runs `tauri icon` if `assets/branding/icon-source.png` exists) |
+| `bun run build:apk`                 | Debug APK (aarch64)                                                                                                   |
+| `bun run build:apk:release`         | Release APK (aarch64)                                                                                                 |
+| `bun run build:desktop`             | Windows NSIS installer                                                                                                |
+| `bun run release -- -Version X.Y.Z` | Bump version, tag `vX.Y.Z`, push (CI publishes GitHub Release)                                                        |
+| `bun run setup:binaries`            | Download yt-dlp + ffmpeg sidecars                                                                                     |
+| `bun run plugins:generate`          | Regenerate plugin registry from `plugins/`                                                                            |
+| `bun run build`                     | Lint + typecheck + production frontend                                                                                |
+| `bun run lint` / `format`           | ESLint / Prettier                                                                                                     |
 
 ## Plugins
 

@@ -1,5 +1,7 @@
 import { Link } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import { Home, Compass, Library, Download, Users, Tags, Settings, Puzzle } from "lucide-react";
+import { resolveAppVersion } from "@/lib/appVersion";
 import { getPluginNavItems } from "@/lib/plugins/loader";
 import { cn } from "@/lib/utils";
 
@@ -30,6 +32,11 @@ const pluginNavItems = getPluginNavItems().map((item) => ({
 export function AppShell({ children }: { children: React.ReactNode }) {
   const desktopNav = [...desktopNavItems, ...pluginNavItems];
   const mobileNav = [...mobileNavItems, ...pluginNavItems];
+  const [appVersion, setAppVersion] = useState("");
+
+  useEffect(() => {
+    void resolveAppVersion().then(setAppVersion);
+  }, []);
 
   return (
     <div className="flex min-h-screen max-w-[100vw] overflow-x-hidden">
@@ -56,6 +63,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </Link>
           ))}
         </nav>
+        {appVersion && (
+          <p className="mt-auto px-2 pt-4 text-[10px] text-[var(--color-muted-foreground)]">
+            v{appVersion}
+          </p>
+        )}
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">

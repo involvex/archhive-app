@@ -12,5 +12,6 @@ Guides for ArcHive development, deployment, and extension.
 | [cookie-import.md](cookie-import.md)                     | Cookie-Editor and DevTools import         |
 | [custom-sites.md](custom-sites.md)                       | Rust site adapters (advanced)             |
 | [plugins.md](plugins.md)                                 | TypeScript plugins (`plugins/` directory) |
+| [release.md](release.md)                                 | Version bump, tags, GitHub Releases       |
 
 Architecture overview: [Plan.md](../Plan.md) in the repo root.
