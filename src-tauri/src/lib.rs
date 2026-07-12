@@ -12,10 +12,29 @@ mod sites;
 mod state;
 mod vault;
 
+#[cfg(not(mobile))]
+mod desktop;
+
 use db::Database;
 use state::AppState;
 use std::sync::Arc;
 use tauri::Manager;
+use tauri::path::BaseDirectory;
+
+fn resolve_lan_static_ui(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
+    if let Ok(cwd) = std::env::current_dir() {
+        let dev = cwd.join("dist");
+        if dev.join("index.html").exists() {
+            return Some(dev);
+        }
+    }
+    if let Ok(resource) = app.path().resolve("lan-ui", BaseDirectory::Resource) {
+        if resource.join("index.html").exists() {
+            return Some(resource);
+        }
+    }
+    None
+}
 
 /// Mobile-only defaults (compiled into Android/iOS builds via `cfg(mobile)`).
 #[cfg_attr(not(mobile), allow(dead_code))]
@@ -44,10 +63,14 @@ fn bootstrap_mobile_settings(db: &Database, data_dir: &std::path::Path) -> Resul
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_shell::init())
-        .setup(|app| {
+        .plugin(tauri_plugin_shell::init());
+
+    #[cfg(not(mobile))]
+    let builder = builder.plugin(tauri_plugin_global_shortcut::Builder::new().build());
+
+    let builder = builder.setup(|app| {
             let data_dir = app
                 .path()
                 .app_data_dir()
@@ -58,15 +81,20 @@ pub fn run() {
             #[cfg(mobile)]
             bootstrap_mobile_settings(&db, &data_dir)?;
 
-            let static_ui = std::env::current_dir()
-                .ok()
-                .map(|p| p.join("dist"))
-                .filter(|p| p.join("index.html").exists());
+            let static_ui = resolve_lan_static_ui(app.handle());
             let state = Arc::new(
                 AppState::with_app(db, data_dir, app.handle().clone(), static_ui)
                     .map_err(|e| e.to_string())?,
             );
             app.manage(state.clone());
+
+            #[cfg(not(mobile))]
+            {
+                desktop::setup(app.handle())?;
+                if let Ok(settings) = state.get_settings() {
+                    desktop::sync_from_settings(app.handle(), &settings);
+                }
+            }
 
             #[cfg(not(mobile))]
             {
@@ -90,7 +118,14 @@ pub fn run() {
             }
 
             Ok(())
-        })
+        });
+
+    #[cfg(not(mobile))]
+    let builder = builder.on_window_event(|window, event| {
+        desktop::on_window_event(window, event);
+    });
+
+    builder
         .invoke_handler(tauri::generate_handler![
             commands::health,
             commands::list_sites,

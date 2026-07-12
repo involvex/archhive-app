@@ -86,8 +86,15 @@ pub fn get_settings(state: State<'_, Arc<AppState>>) -> CmdResult<AppSettings> {
 }
 
 #[tauri::command]
-pub fn save_settings(state: State<'_, Arc<AppState>>, settings: AppSettings) -> CmdResult<()> {
-    map_err(state.save_settings(&settings))
+pub fn save_settings(
+    app: tauri::AppHandle,
+    state: State<'_, Arc<AppState>>,
+    settings: AppSettings,
+) -> CmdResult<()> {
+    map_err(state.save_settings(&settings))?;
+    #[cfg(not(mobile))]
+    crate::desktop::sync_from_settings(&app, &settings);
+    Ok(())
 }
 
 #[tauri::command]

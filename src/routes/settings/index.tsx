@@ -14,8 +14,15 @@ import {
 import { useUnifiedSettings } from "@/hooks/useUnifiedSettings";
 import { mergeDiscoveredHosts } from "@/lib/lan-discovery";
 import { getPluginSettingsPanels } from "@/lib/plugins/loader";
-import { SETTINGS_TABS } from "@/lib/settings/capabilities";
-import type { CookieSiteInfo, DuplicateGroup, EngineMode, LanHost, SiteInfo } from "@/lib/types";
+import { visibleSettingsTabs } from "@/lib/settings/capabilities";
+import type {
+  CookieSiteInfo,
+  DuplicateGroup,
+  EngineMode,
+  LanHost,
+  SiteInfo,
+  AppSettings,
+} from "@/lib/types";
 import { DuplicateGroupCard } from "@/components/DuplicateGroupCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -159,6 +166,27 @@ function SettingsPage() {
     setTestStatus("LAN token copied — paste into mobile Settings → Engine → Remote token.");
   }
 
+  async function copyWebLink() {
+    const port = settings.lan_port;
+    const token = displayLanToken?.trim();
+    let base = `http://127.0.0.1:${port}`;
+    if (settings.lan_enabled) {
+      try {
+        const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {};
+        const res = await fetch(`http://127.0.0.1:${port}/api/health`, { headers });
+        if (res.ok) {
+          const health = (await res.json()) as { lan_url?: string };
+          if (health.lan_url) base = health.lan_url;
+        }
+      } catch {
+        // fall back to localhost
+      }
+    }
+    const url = token ? `${base}/?token=${encodeURIComponent(token)}` : `${base}/`;
+    await navigator.clipboard.writeText(url);
+    setTestStatus(`Web UI link copied. Open on phone: ${base}/ — folder browser at ${base}/files`);
+  }
+
   async function regenerateLanToken() {
     const result = await api.regenerateLanServer(settings.lan_port);
     setRuntimeLanToken(result.token);
@@ -296,6 +324,15 @@ function SettingsPage() {
   const canScan = caps.libraryScanLocal || caps.libraryScanRemote;
   const pluginPanels = getPluginSettingsPanels();
   const pluginPanelsByTab = (tab: string) => pluginPanels.filter((p) => p.tab === tab);
+  const settingsTabs = visibleSettingsTabs(caps);
+
+  async function persistTraySettings(partial: Partial<AppSettings>) {
+    if (!hostSettings) return;
+    const merged = { ...hostSettings, ...partial };
+    patchHostSettings(partial);
+    await api.saveSettings(merged);
+    updateSettings(partial);
+  }
 
   return (
     <div className="space-y-6 max-w-2xl">
@@ -317,7 +354,7 @@ function SettingsPage() {
 
       <Tabs.Root defaultValue="engine">
         <Tabs.List className="flex flex-wrap gap-2 border-b border-[var(--color-border)] pb-2">
-          {SETTINGS_TABS.map((tab) => (
+          {settingsTabs.map((tab) => (
             <Tabs.Trigger
               key={tab}
               value={tab}
@@ -677,8 +714,9 @@ function SettingsPage() {
               ) : (
                 <>
                   <p className="text-xs text-[var(--color-muted-foreground)]">
-                    Serves API and built UI from <code>dist/</code> when available. Mobile and
-                    browser clients use Remote LAN mode with this host and token.
+                    Serves the web UI and API on your LAN. Open{" "}
+                    <code>http://&lt;pc-ip&gt;:{settings.lan_port}/</code> in a phone browser, or
+                    use Remote LAN in the mobile app. Folder browser: <code>/files</code>.
                   </p>
                   <div className="flex items-center gap-3">
                     <Switch.Root
@@ -710,6 +748,9 @@ function SettingsPage() {
                         <Button variant="outline" size="sm" onClick={() => void copyLanToken()}>
                           Copy token
                         </Button>
+                        <Button variant="outline" size="sm" onClick={() => void copyWebLink()}>
+                          Copy web link
+                        </Button>
                         <Button
                           variant="outline"
                           size="sm"
@@ -719,12 +760,81 @@ function SettingsPage() {
                         </Button>
                       </div>
                       <p className="text-xs text-[var(--color-muted-foreground)]">
-                        Mobile: Settings → Engine → paste token into Remote token field.
+                        Mobile app: Settings → Engine → paste token. Phone browser: use Copy web
+                        link (includes token in URL when required).
                       </p>
                     </div>
                   )}
                 </>
               )}
+            </CardContent>
+          </Card>
+        </Tabs.Content>
+
+        <Tabs.Content value="desktop" className="mt-4 space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">System Tray</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-xs text-[var(--color-muted-foreground)]">
+                ArcHive stays in the system tray when hidden. Left-click the tray icon or use the
+                hotkey to show or hide the window. Tray menu includes quick access to Settings.
+              </p>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium">Close to tray</p>
+                  <p className="text-xs text-[var(--color-muted-foreground)]">
+                    When enabled, the close button hides the app instead of quitting.
+                  </p>
+                </div>
+                <Switch.Root
+                  checked={hostSettings?.close_to_tray ?? true}
+                  onCheckedChange={(checked) =>
+                    void persistTraySettings({ close_to_tray: checked })
+                  }
+                  className="h-5 w-9 shrink-0 rounded-full bg-[var(--color-secondary)] data-[state=checked]:bg-[var(--color-primary)]"
+                >
+                  <Switch.Thumb className="block h-4 w-4 translate-x-0.5 rounded-full bg-white transition data-[state=checked]:translate-x-[18px]" />
+                </Switch.Root>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium">Minimize to tray</p>
+                  <p className="text-xs text-[var(--color-muted-foreground)]">
+                    When enabled, minimizing the window sends it to the tray.
+                  </p>
+                </div>
+                <Switch.Root
+                  checked={hostSettings?.minimize_to_tray ?? true}
+                  onCheckedChange={(checked) =>
+                    void persistTraySettings({ minimize_to_tray: checked })
+                  }
+                  className="h-5 w-9 shrink-0 rounded-full bg-[var(--color-secondary)] data-[state=checked]:bg-[var(--color-primary)]"
+                >
+                  <Switch.Thumb className="block h-4 w-4 translate-x-0.5 rounded-full bg-white transition data-[state=checked]:translate-x-[18px]" />
+                </Switch.Root>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium" htmlFor="tray-hotkey">
+                  Show / hide hotkey
+                </label>
+                <p className="text-xs text-[var(--color-muted-foreground)]">
+                  Global shortcut to toggle the window. Leave empty to disable. Example:{" "}
+                  <code>Ctrl+Shift+A</code>
+                </p>
+                <Input
+                  id="tray-hotkey"
+                  value={hostSettings?.tray_hotkey ?? ""}
+                  placeholder="Ctrl+Shift+A"
+                  onChange={(e) => patchHostSettings({ tray_hotkey: e.target.value || undefined })}
+                  onBlur={() =>
+                    void persistTraySettings({
+                      tray_hotkey: hostSettings?.tray_hotkey?.trim() || undefined,
+                    })
+                  }
+                />
+              </div>
             </CardContent>
           </Card>
         </Tabs.Content>

@@ -29,6 +29,9 @@ export function useUnifiedSettings() {
               lan_port: backend.lan_port,
               lan_token: backend.lan_token,
               phash_threshold: backend.phash_threshold,
+              close_to_tray: backend.close_to_tray,
+              minimize_to_tray: backend.minimize_to_tray,
+              tray_hotkey: backend.tray_hotkey,
             });
           }
         } else if (runtime !== "browser") {

@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { getCapabilities } from "@/lib/runtime";
+import { isVideoScene } from "@/lib/mediaUrl";
 import type { Scene } from "@/lib/types";
 
 export interface SceneContextMenuState {
@@ -13,6 +14,7 @@ interface SceneContextMenuProps {
   onClose: () => void;
   onEdit: (scene: Scene) => void;
   onDetails: (scene: Scene) => void;
+  onPlay?: (scene: Scene) => void;
   onOpenExplorer?: (scene: Scene) => void;
   onOpenDefault?: (scene: Scene) => void;
 }
@@ -22,6 +24,7 @@ export function SceneContextMenu({
   onClose,
   onEdit,
   onDetails,
+  onPlay,
   onOpenExplorer,
   onOpenDefault,
 }: SceneContextMenuProps) {
@@ -55,6 +58,14 @@ export function SceneContextMenu({
         onEdit(menu.scene);
         onClose();
       },
+    },
+    {
+      label: "Play",
+      action: () => {
+        onPlay?.(menu.scene);
+        onClose();
+      },
+      show: Boolean(menu.scene.path) && isVideoScene(menu.scene) && Boolean(onPlay),
     },
     {
       label: "Details",

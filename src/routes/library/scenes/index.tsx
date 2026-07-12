@@ -1,13 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api/client";
-import { sceneThumbUrl } from "@/lib/mediaUrl";
+import { sceneThumbUrl, isVideoScene } from "@/lib/mediaUrl";
 import type { Scene } from "@/lib/types";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { SceneEditDialog } from "@/components/SceneEditDialog";
 import { SceneDetailsDialog } from "@/components/SceneDetailsDialog";
+import { ScenePlayerDialog } from "@/components/ScenePlayerDialog";
 import { SceneBulkEditBar } from "@/components/SceneBulkEditBar";
 import { SceneContextMenu, type SceneContextMenuState } from "@/components/SceneContextMenu";
 import { Pencil } from "lucide-react";
@@ -21,6 +22,7 @@ function ScenesPage() {
   const [query, setQuery] = useState("");
   const [editScene, setEditScene] = useState<Scene | null>(null);
   const [detailsScene, setDetailsScene] = useState<Scene | null>(null);
+  const [playerScene, setPlayerScene] = useState<Scene | null>(null);
   const [contextMenu, setContextMenu] = useState<SceneContextMenuState | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [selectionMode, setSelectionMode] = useState(false);
@@ -100,8 +102,13 @@ function ScenesPage() {
           return (
             <Card
               key={scene.id}
-              className={`overflow-hidden group ${isSelected ? "ring-2 ring-[var(--color-primary)]" : ""}`}
+              className={`overflow-hidden group cursor-pointer ${isSelected ? "ring-2 ring-[var(--color-primary)]" : ""}`}
               onContextMenu={(e) => handleContextMenu(e, scene)}
+              onClick={() => {
+                if (selectionMode) return;
+                if (isVideoScene(scene)) setPlayerScene(scene);
+                else setDetailsScene(scene);
+              }}
             >
               <div className="aspect-video bg-[var(--color-muted)] relative">
                 {selectionMode && (
@@ -133,7 +140,10 @@ function ScenesPage() {
                     size="sm"
                     variant="secondary"
                     className="absolute top-1 right-1 h-7 w-7 p-0 opacity-0 group-hover:opacity-100"
-                    onClick={() => setEditScene(scene)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setEditScene(scene);
+                    }}
                     aria-label="Edit scene"
                   >
                     <Pencil className="h-3.5 w-3.5" />
@@ -179,11 +189,18 @@ function ScenesPage() {
         onClose={() => setDetailsScene(null)}
       />
 
+      <ScenePlayerDialog
+        scene={playerScene}
+        open={playerScene !== null}
+        onClose={() => setPlayerScene(null)}
+      />
+
       <SceneContextMenu
         menu={contextMenu}
         onClose={() => setContextMenu(null)}
         onEdit={(s) => setEditScene(s)}
         onDetails={(s) => setDetailsScene(s)}
+        onPlay={(s) => setPlayerScene(s)}
         onOpenExplorer={(s) => void api.openSceneInExplorer(s.id).catch(console.error)}
         onOpenDefault={(s) => void api.openSceneWithDefault(s.id).catch(console.error)}
       />

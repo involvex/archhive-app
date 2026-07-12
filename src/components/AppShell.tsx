@@ -1,6 +1,16 @@
 import { Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Home, Compass, Library, Download, Users, Tags, Settings, Puzzle } from "lucide-react";
+import {
+  Home,
+  Compass,
+  Library,
+  Download,
+  Users,
+  Tags,
+  Settings,
+  Puzzle,
+  FolderOpen,
+} from "lucide-react";
 import { resolveAppVersion } from "@/lib/appVersion";
 import { getPluginNavItems } from "@/lib/plugins/loader";
 import { cn } from "@/lib/utils";
@@ -9,6 +19,7 @@ const desktopNavItems = [
   { to: "/", label: "Home", icon: Home },
   { to: "/browse", label: "Browse", icon: Compass },
   { to: "/library/scenes", label: "Library", icon: Library },
+  { to: "/files", label: "Files", icon: FolderOpen },
   { to: "/downloads", label: "Downloads", icon: Download },
   { to: "/library/performers", label: "Performers", icon: Users },
   { to: "/library/tags", label: "Tags", icon: Tags },
@@ -20,6 +31,7 @@ const mobileNavItems = [
   { to: "/browse", label: "Browse", icon: Compass },
   { to: "/downloads", label: "Downloads", icon: Download },
   { to: "/library/scenes", label: "Library", icon: Library },
+  { to: "/files", label: "Files", icon: FolderOpen },
   { to: "/settings", label: "Settings", icon: Settings },
 ] as const;
 

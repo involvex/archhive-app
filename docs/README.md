@@ -13,6 +13,7 @@ Guides for ArcHive development, deployment, and extension.
 | [custom-sites.md](custom-sites.md)                       | Rust site adapters (advanced)             |
 | [plugins.md](plugins.md)                                 | TypeScript plugins (`plugins/` directory) |
 | [release.md](release.md)                                 | Version bump, tags, GitHub Releases       |
+| [lan-web.md](lan-web.md)                                 | Browser UI, video streaming, `/files`     |
 
 Security vulnerabilities: see [SECURITY.md](../SECURITY.md) in the repo root.
 

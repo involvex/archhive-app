@@ -8,6 +8,7 @@ import type {
   DownloadJob,
   DuplicateGroup,
   CookieSiteInfo,
+  FilesListResponse,
   HealthResponse,
   LanHost,
   MediaItem,
@@ -295,6 +296,29 @@ export const api = {
       { orientation },
       `/api/sites/pornhub/categories?orientation=${orientation}`,
     );
+  },
+
+  async listFiles(path = ""): Promise<FilesListResponse> {
+    const q = path ? `?path=${encodeURIComponent(path)}` : "";
+    if (shouldUseRemoteApi()) {
+      return remoteFetch<FilesListResponse>(`/api/files${q}`);
+    }
+    if (getAppRuntime() === "desktop-tauri") {
+      const { settings } = useSettingsStore.getState();
+      if (!settings.lan_enabled) {
+        throw new Error("Enable the LAN server in Settings → LAN to browse library files.");
+      }
+      const token = settings.lan_token?.trim();
+      const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {};
+      const res = await fetch(`http://127.0.0.1:${settings.lan_port}/api/files${q}`, {
+        headers,
+      });
+      if (!res.ok) {
+        throw new Error(await res.text());
+      }
+      return res.json() as Promise<FilesListResponse>;
+    }
+    throw new Error("Configure Remote LAN in Settings to browse files.");
   },
 
   async scanLibrary(): Promise<{ added: number; updated: number }> {

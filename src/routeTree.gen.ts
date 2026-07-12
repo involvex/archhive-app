@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SettingsIndexRouteImport } from './routes/settings/index'
+import { Route as FilesIndexRouteImport } from './routes/files/index'
 import { Route as DownloadsIndexRouteImport } from './routes/downloads/index'
 import { Route as BrowseIndexRouteImport } from './routes/browse/index'
 import { Route as BrowseByUrlRouteImport } from './routes/browse/by-url'
@@ -28,6 +29,11 @@ const IndexRoute = IndexRouteImport.update({
 const SettingsIndexRoute = SettingsIndexRouteImport.update({
   id: '/settings/',
   path: '/settings/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FilesIndexRoute = FilesIndexRouteImport.update({
+  id: '/files/',
+  path: '/files/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DownloadsIndexRoute = DownloadsIndexRouteImport.update({
@@ -76,6 +82,7 @@ export interface FileRoutesByFullPath {
   '/browse/by-url': typeof BrowseByUrlRoute
   '/browse/': typeof BrowseIndexRoute
   '/downloads/': typeof DownloadsIndexRoute
+  '/files/': typeof FilesIndexRoute
   '/settings/': typeof SettingsIndexRoute
   '/browse/$site/': typeof BrowseSiteIndexRoute
   '/library/performers/': typeof LibraryPerformersIndexRoute
@@ -88,6 +95,7 @@ export interface FileRoutesByTo {
   '/browse/by-url': typeof BrowseByUrlRoute
   '/browse': typeof BrowseIndexRoute
   '/downloads': typeof DownloadsIndexRoute
+  '/files': typeof FilesIndexRoute
   '/settings': typeof SettingsIndexRoute
   '/browse/$site': typeof BrowseSiteIndexRoute
   '/library/performers': typeof LibraryPerformersIndexRoute
@@ -101,6 +109,7 @@ export interface FileRoutesById {
   '/browse/by-url': typeof BrowseByUrlRoute
   '/browse/': typeof BrowseIndexRoute
   '/downloads/': typeof DownloadsIndexRoute
+  '/files/': typeof FilesIndexRoute
   '/settings/': typeof SettingsIndexRoute
   '/browse/$site/': typeof BrowseSiteIndexRoute
   '/library/performers/': typeof LibraryPerformersIndexRoute
@@ -115,6 +124,7 @@ export interface FileRouteTypes {
     | '/browse/by-url'
     | '/browse/'
     | '/downloads/'
+    | '/files/'
     | '/settings/'
     | '/browse/$site/'
     | '/library/performers/'
@@ -127,6 +137,7 @@ export interface FileRouteTypes {
     | '/browse/by-url'
     | '/browse'
     | '/downloads'
+    | '/files'
     | '/settings'
     | '/browse/$site'
     | '/library/performers'
@@ -139,6 +150,7 @@ export interface FileRouteTypes {
     | '/browse/by-url'
     | '/browse/'
     | '/downloads/'
+    | '/files/'
     | '/settings/'
     | '/browse/$site/'
     | '/library/performers/'
@@ -152,6 +164,7 @@ export interface RootRouteChildren {
   BrowseByUrlRoute: typeof BrowseByUrlRoute
   BrowseIndexRoute: typeof BrowseIndexRoute
   DownloadsIndexRoute: typeof DownloadsIndexRoute
+  FilesIndexRoute: typeof FilesIndexRoute
   SettingsIndexRoute: typeof SettingsIndexRoute
   BrowseSiteIndexRoute: typeof BrowseSiteIndexRoute
   LibraryPerformersIndexRoute: typeof LibraryPerformersIndexRoute
@@ -174,6 +187,13 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings/'
       preLoaderRoute: typeof SettingsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/files/': {
+      id: '/files/'
+      path: '/files'
+      fullPath: '/files/'
+      preLoaderRoute: typeof FilesIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/downloads/': {
@@ -240,6 +260,7 @@ const rootRouteChildren: RootRouteChildren = {
   BrowseByUrlRoute: BrowseByUrlRoute,
   BrowseIndexRoute: BrowseIndexRoute,
   DownloadsIndexRoute: DownloadsIndexRoute,
+  FilesIndexRoute: FilesIndexRoute,
   SettingsIndexRoute: SettingsIndexRoute,
   BrowseSiteIndexRoute: BrowseSiteIndexRoute,
   LibraryPerformersIndexRoute: LibraryPerformersIndexRoute,

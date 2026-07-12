@@ -59,13 +59,13 @@ We support good-faith security research. Do not access data that is not yours, d
 
 Understanding these areas helps write useful reports:
 
-| Area             | Notes                                                                                                                                          |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Cookie vault** | Site cookies are encrypted at rest (AES-256-GCM). Plaintext cookie files may exist briefly for yt-dlp `--cookies` usage.                       |
-| **LAN server**   | Bearer token required for all endpoints except `/api/health`. Default token is randomly generated; treat it like a password.                   |
-| **Downloads**    | External URLs are passed to yt-dlp, gallery-dl, or direct HTTP fetchers. Command invocation uses argument arrays, not shell interpolation.     |
-| **CSP**          | Content Security Policy is currently disabled in `tauri.conf.json` for development flexibility. Hardening before wide distribution is planned. |
-| **Plugins**      | TypeScript plugins in `plugins/` run in the app context. Only install plugins from sources you trust.                                          |
+| Area             | Notes                                                                                                                                                                                                                        |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Cookie vault** | Site cookies are encrypted at rest (AES-256-GCM). Plaintext cookie files may exist briefly for yt-dlp `--cookies` usage.                                                                                                     |
+| **LAN server**   | Bearer token required for all endpoints except `/api/health`. Default token is randomly generated; treat it like a password. `/api/files/stream` and `/api/scenes/{id}/media` expose library files to anyone with the token. |
+| **Downloads**    | External URLs are passed to yt-dlp, gallery-dl, or direct HTTP fetchers. Command invocation uses argument arrays, not shell interpolation.                                                                                   |
+| **CSP**          | Content Security Policy is currently disabled in `tauri.conf.json` for development flexibility. Hardening before wide distribution is planned.                                                                               |
+| **Plugins**      | TypeScript plugins in `plugins/` run in the app context. Only install plugins from sources you trust.                                                                                                                        |
 
 ## Coordinated disclosure
 

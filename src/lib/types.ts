@@ -119,6 +119,9 @@ export interface AppSettings {
   remote_host?: string;
   remote_token?: string;
   phash_threshold?: number;
+  close_to_tray?: boolean;
+  minimize_to_tray?: boolean;
+  tray_hotkey?: string;
 }
 
 export interface MergeDuplicatesResult {
@@ -142,6 +145,21 @@ export interface HealthResponse {
   version: string;
   auth_required?: boolean;
   lan?: boolean;
+  library_path?: string;
+  lan_url?: string;
+}
+
+export interface FileEntry {
+  name: string;
+  path: string;
+  is_dir: boolean;
+  size?: number;
+  mime?: string;
+}
+
+export interface FilesListResponse {
+  path: string;
+  entries: FileEntry[];
 }
 
 export interface LanHost {

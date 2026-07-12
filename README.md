@@ -14,7 +14,7 @@ Browse sites, queue downloads to your library, organize scenes with performers a
 - Library scene edit, rename-on-disk, thumbnails (desktop + LAN)
 - PornHub category browser with orientation filters and live count refresh
 - Download queue with live progress
-- LAN REST API + mDNS for mobile full-parity (port 8787)
+- LAN REST API + mDNS + **web UI on port 8787** (library, video playback, `/files` folder browser)
 - TypeScript plugins via `plugins/` directory (see [docs/plugins.md](docs/plugins.md))
 
 ## Prerequisites
@@ -36,7 +36,8 @@ bun run tauri dev
 
 1. Desktop: `bun run android:dev` (starts LAN server + emulator/device build)
 2. Phone: Settings → Engine → **Remote LAN** → pick discovered host (`http://<pc-ip>:8787`)
-3. Copy LAN token from desktop Settings → LAN if auth is required
+3. **Phone browser (no app):** open `http://<pc-ip>:8787/?token=<lan-token>` — full web UI + `/files` folder streaming
+4. Copy LAN token from desktop Settings → LAN if auth is required
 
 See [docs/mobile-android.md](docs/mobile-android.md).
 

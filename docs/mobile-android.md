@@ -97,6 +97,20 @@ Allow both ports through Windows Firewall on the desktop.
 | Browse    | ThotHub search, Reddit channel, PornHub model (with cookies), Custom URL |
 | APK       | `bun run build:apk` uses `--target aarch64` only (~15–25 min vs 1h+)     |
 
+## LAN web UI (browser)
+
+When the desktop LAN server is enabled, the built React app is served at **`http://<pc-ip>:8787/`** on your local network (not port 1420).
+
+| URL                              | Purpose                                                    |
+| -------------------------------- | ---------------------------------------------------------- |
+| `http://<pc-ip>:8787/`           | Full ArcHive UI (browse, library, downloads)               |
+| `http://<pc-ip>:8787/files`      | Folder browser under your library path (like `bunx serve`) |
+| `http://<pc-ip>:8787/?token=...` | First-time browser access when LAN auth is enabled         |
+
+Desktop: Settings → LAN → **Copy web link** copies the URL with token.
+
+Video playback uses `GET /api/scenes/{id}/media` and `GET /api/files/stream` with HTTP Range support (seek in browser).
+
 ## Remote LAN test flow (manual)
 
 1. **Desktop:** Settings → LAN → enable server (default port `8787`). Copy API token.

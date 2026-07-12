@@ -59,6 +59,12 @@ struct MergeDuplicatesBody {
     delete_files: Option<bool>,
 }
 
+mod files;
+mod streaming;
+
+use files::{list_files, stream_file};
+use streaming::serve_file_with_range;
+
 use crate::models::{UpdateSceneRequest, BatchUpdateScenesRequest};
 use serde::Deserialize;
 
@@ -84,7 +90,10 @@ impl LanServer {
             .route("/api/scenes", get(list_scenes))
             .route("/api/scenes/{id}", get(get_scene).patch(update_scene))
             .route("/api/scenes/{id}/thumb", get(scene_thumb))
+            .route("/api/scenes/{id}/media", get(scene_media))
             .route("/api/scenes/batch", post(batch_update_scenes))
+            .route("/api/files", get(list_files))
+            .route("/api/files/stream", get(stream_file))
             .route("/api/sites/pornhub/categories", get(pornhub_categories))
             .route("/api/performers", get(list_performers))
             .route("/api/tags", get(list_tags))
@@ -190,12 +199,18 @@ async fn auth_middleware(
 
 async fn health(State(state): State<ApiState>) -> Json<serde_json::Value> {
     let h = AppState::health();
+    let settings = state.app.get_settings().ok();
+    let library_path = settings.as_ref().map(|s| s.library_path.clone());
+    let port = settings.as_ref().map(|s| s.lan_port).unwrap_or(8787);
+    let ip = crate::discovery::local_ipv4_for_mdns();
+    let lan_url = format!("http://{ip}:{port}");
     Json(serde_json::json!({
         "status": h.status,
         "version": h.version,
         "lan": true,
         "auth_required": !state.token.is_empty(),
-        "library_path": state.app.get_settings().ok().map(|s| s.library_path),
+        "library_path": library_path,
+        "lan_url": lan_url,
     }))
 }
 
@@ -319,6 +334,39 @@ async fn scene_thumb(
         .header(header::CONTENT_TYPE, content_type)
         .body(Body::from(bytes))
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?)
+}
+
+async fn scene_media(
+    State(state): State<ApiState>,
+    Path(id): Path<String>,
+    headers: axum::http::HeaderMap,
+) -> Result<Response, StatusCode> {
+    let scene = state
+        .app
+        .get_scene(&id)
+        .map_err(|_| StatusCode::NOT_FOUND)?;
+    let media_path = scene.path.ok_or(StatusCode::NOT_FOUND)?;
+    let path = std::path::Path::new(&media_path);
+    if !path.is_file() {
+        return Err(StatusCode::NOT_FOUND);
+    }
+    let settings = state
+        .app
+        .get_settings()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let library_root = AppState::validate_library_path(&settings.library_path, &state.app.data_dir)
+        .map(std::path::PathBuf::from)
+        .map_err(|_| StatusCode::FORBIDDEN)?;
+    let canonical_root = library_root
+        .canonicalize()
+        .unwrap_or(library_root);
+    let canonical_file = path
+        .canonicalize()
+        .map_err(|_| StatusCode::NOT_FOUND)?;
+    if !canonical_file.starts_with(&canonical_root) {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    serve_file_with_range(&canonical_file, &headers).await
 }
 
 async fn batch_update_scenes(

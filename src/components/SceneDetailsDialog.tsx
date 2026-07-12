@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api/client";
-import { sceneThumbUrl } from "@/lib/mediaUrl";
+import { sceneThumbUrl, sceneMediaUrl, isVideoScene } from "@/lib/mediaUrl";
 import type { Scene } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { X } from "lucide-react";
@@ -43,6 +43,8 @@ function SceneDetailsBody({ scene, onClose }: { scene: Scene; onClose: () => voi
 
   const data = detail ?? scene;
   const thumbSrc = sceneThumbUrl(data);
+  const mediaSrc = sceneMediaUrl(data);
+  const showVideo = isVideoScene(data) && mediaSrc;
   const fileSize = formatBytes(data.file_size);
 
   return (
@@ -58,10 +60,16 @@ function SceneDetailsBody({ scene, onClose }: { scene: Scene; onClose: () => voi
         </button>
       </div>
 
-      {thumbSrc && (
-        <div className="mb-4 aspect-video overflow-hidden rounded-md bg-[var(--color-muted)]">
-          <img src={thumbSrc} alt={data.title} className="h-full w-full object-cover" />
+      {showVideo ? (
+        <div className="mb-4 aspect-video overflow-hidden rounded-md bg-black">
+          <video src={mediaSrc} controls playsInline className="h-full w-full" />
         </div>
+      ) : (
+        thumbSrc && (
+          <div className="mb-4 aspect-video overflow-hidden rounded-md bg-[var(--color-muted)]">
+            <img src={thumbSrc} alt={data.title} className="h-full w-full object-cover" />
+          </div>
+        )
       )}
 
       {loading && <p className="text-sm text-[var(--color-muted-foreground)]">Loading details…</p>}

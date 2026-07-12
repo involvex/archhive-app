@@ -169,10 +169,28 @@ pub struct AppSettings {
     pub remote_token: Option<String>,
     #[serde(default = "default_phash_threshold")]
     pub phash_threshold: u8,
+    #[serde(default = "default_close_to_tray")]
+    pub close_to_tray: bool,
+    #[serde(default = "default_minimize_to_tray")]
+    pub minimize_to_tray: bool,
+    #[serde(default = "default_tray_hotkey")]
+    pub tray_hotkey: Option<String>,
 }
 
 fn default_phash_threshold() -> u8 {
     10
+}
+
+fn default_close_to_tray() -> bool {
+    true
+}
+
+fn default_minimize_to_tray() -> bool {
+    true
+}
+
+fn default_tray_hotkey() -> Option<String> {
+    Some("Ctrl+Shift+A".to_string())
 }
 
 impl Default for AppSettings {
@@ -206,6 +224,9 @@ impl Default for AppSettings {
             remote_host,
             remote_token: None,
             phash_threshold: default_phash_threshold(),
+            close_to_tray: default_close_to_tray(),
+            minimize_to_tray: default_minimize_to_tray(),
+            tray_hotkey: default_tray_hotkey(),
         }
     }
 }
