@@ -16,7 +16,7 @@
     "build:apk": "bun run prebuild:apk && bun run tauri android build --apk -d --target aarch64",
     "build:apk:fast": "tsc && vite build && bun run tauri android build --apk -d --target aarch64",
     "build:apk:release": "bun run plugins:generate && tsc && vite build && bun run tauri android build --apk --target aarch64",
-    "build:desktop": "bun run plugins:generate && tsc && vite build && bun run tauri build",
+    "build:desktop": "bun run tauri build",
     "version:bump": "bun scripts/bump-version.ts",
     "release": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/release.ps1",
     "android:dev": "powershell -ExecutionPolicy Bypass -File scripts/android-dev.ps1",

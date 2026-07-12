@@ -34,6 +34,8 @@ bun.lockb
 *.min.js.map
 *.min.css.map
 src/routeTree.gen.ts
+src-tauri/binaries/**
+src-tauri/gen/**
 
 # System Files
 .DS_Store

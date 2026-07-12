@@ -27,6 +27,9 @@ if (Get-Command ffmpeg -ErrorAction SilentlyContinue) {
 }
 
 Write-Host "Installing gallery-dl (optional)..."
+if ($env:CI -eq "true") {
+    Write-Host "Skipping gallery-dl pip bundle on CI (not bundled as a Tauri sidecar)."
+} else {
 $GalleryDir = Join-Path $BinDir "gallery-dl-bundle"
 $galleryCmd = Get-Command gallery-dl -ErrorAction SilentlyContinue
 if ($galleryCmd) {
@@ -57,6 +60,7 @@ py -3 "%~dp0gallery-dl-bundle\gallery_dl\__main__.py" %*
     } else {
         Write-Warning "gallery-dl install failed; add to PATH via: py -3 -m pip install gallery-dl"
     }
+}
 }
 
 Write-Host "Done. Binaries in $BinDir"
