@@ -90,6 +90,7 @@ pub fn run() {
 
             #[cfg(not(mobile))]
             {
+                app.manage(Arc::new(desktop::TrayHotkeyState::new()));
                 desktop::setup(app.handle())?;
                 if let Ok(settings) = state.get_settings() {
                     desktop::sync_from_settings(app.handle(), &settings);
@@ -131,8 +132,13 @@ pub fn run() {
             commands::list_sites,
             commands::browse,
             commands::queue_download,
+            commands::queue_downloads,
             commands::list_downloads,
             commands::cancel_download,
+            commands::pause_download,
+            commands::resume_download,
+            commands::delete_download,
+            commands::queue_bulk_import,
             commands::list_scenes,
             commands::list_performers,
             commands::list_tags,

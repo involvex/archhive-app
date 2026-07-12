@@ -64,9 +64,17 @@ pub struct SiteInfo {
 pub enum DownloadStatus {
     Pending,
     Active,
+    Paused,
     Completed,
     Failed,
     Cancelled,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BulkImportResult {
+    pub queued: u32,
+    pub expanded: u32,
+    pub skipped: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

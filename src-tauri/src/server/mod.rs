@@ -3,7 +3,7 @@ use crate::state::AppState;
 use axum::{
     body::Body,
     extract::{Path, Query, State},
-    http::{header, Request, StatusCode},
+    http::{header, HeaderValue, Request, StatusCode},
     middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -86,7 +86,11 @@ impl LanServer {
             .route("/api/sites", get(list_sites))
             .route("/api/sites/{id}/browse", get(browse))
             .route("/api/downloads", get(list_downloads).post(queue_download))
+            .route("/api/downloads/bulk", post(queue_bulk_import))
             .route("/api/downloads/{id}/cancel", post(cancel_download))
+            .route("/api/downloads/{id}/pause", post(pause_download))
+            .route("/api/downloads/{id}/resume", post(resume_download))
+            .route("/api/downloads/{id}", axum::routing::delete(delete_download))
             .route("/api/scenes", get(list_scenes))
             .route("/api/scenes/{id}", get(get_scene).patch(update_scene))
             .route("/api/scenes/{id}/thumb", get(scene_thumb))
@@ -259,6 +263,53 @@ async fn queue_download(
     Ok(Json(serde_json::json!(job)))
 }
 
+#[derive(Deserialize)]
+struct BulkImportBody {
+    urls: Vec<String>,
+    expand_browse: Option<bool>,
+    import_all: Option<bool>,
+}
+
+async fn queue_bulk_import(
+    State(state): State<ApiState>,
+    Json(body): Json<BulkImportBody>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let result = state
+        .app
+        .queue_bulk_import(
+            &body.urls,
+            body.expand_browse.unwrap_or(true),
+            body.import_all.unwrap_or(false),
+        )
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(serde_json::json!(result)))
+}
+
+async fn pause_download(
+    State(state): State<ApiState>,
+    Path(id): Path<String>,
+) -> Result<StatusCode, StatusCode> {
+    state.app.pause_download(&id).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn resume_download(
+    State(state): State<ApiState>,
+    Path(id): Path<String>,
+) -> Result<StatusCode, StatusCode> {
+    state.app.resume_download(&id).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn delete_download(
+    State(state): State<ApiState>,
+    Path(id): Path<String>,
+) -> Result<StatusCode, StatusCode> {
+    state.app.delete_download(&id).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 async fn cancel_download(
     State(state): State<ApiState>,
     Path(id): Path<String>,
@@ -350,23 +401,23 @@ async fn scene_media(
     if !path.is_file() {
         return Err(StatusCode::NOT_FOUND);
     }
-    let settings = state
+    let library_root = state
         .app
-        .get_settings()
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let library_root = AppState::validate_library_path(&settings.library_path, &state.app.data_dir)
-        .map(std::path::PathBuf::from)
+        .cached_library_root()
         .map_err(|_| StatusCode::FORBIDDEN)?;
-    let canonical_root = library_root
-        .canonicalize()
-        .unwrap_or(library_root);
     let canonical_file = path
         .canonicalize()
         .map_err(|_| StatusCode::NOT_FOUND)?;
-    if !canonical_file.starts_with(&canonical_root) {
+    if !canonical_file.starts_with(&library_root) {
         return Err(StatusCode::FORBIDDEN);
     }
-    serve_file_with_range(&canonical_file, &headers).await
+    let mut response = serve_file_with_range(&canonical_file, &headers).await?;
+    if streaming::is_video_path(&canonical_file) {
+        if let Ok(cd) = HeaderValue::from_str("inline") {
+            response.headers_mut().insert(header::CONTENT_DISPOSITION, cd);
+        }
+    }
+    Ok(response)
 }
 
 async fn batch_update_scenes(

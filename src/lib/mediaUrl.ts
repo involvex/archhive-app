@@ -12,21 +12,24 @@ function remoteMediaUrl(path: string, tokenQs: string): string | undefined {
   return `${base}${path}${tokenQs}`;
 }
 
-function authQuery(): string {
-  const token = useSettingsStore.getState().settings.remote_token?.trim();
-  return token ? `?token=${encodeURIComponent(token)}` : "";
-}
-
-/** Resolve a library scene thumbnail for desktop Tauri or remote LAN. */
 export function sceneThumbUrl(scene: Scene): string | undefined {
   if (!scene.thumb && !scene.path) return undefined;
 
+  const { settings } = useSettingsStore.getState();
+  const token = settings.remote_token?.trim() ?? settings.lan_token?.trim();
+  const tokenQs = token ? `?token=${encodeURIComponent(token)}` : "";
+
   if (shouldUseRemoteApi()) {
-    return remoteMediaUrl(`/api/scenes/${scene.id}/thumb`, authQuery());
+    return remoteMediaUrl(`/api/scenes/${scene.id}/thumb`, tokenQs);
   }
 
-  if (getAppRuntime() === "desktop-tauri" && scene.thumb) {
-    return convertFileSrc(scene.thumb);
+  if (getAppRuntime() === "desktop-tauri") {
+    if (settings.lan_enabled) {
+      return `http://127.0.0.1:${settings.lan_port}/api/scenes/${scene.id}/thumb${tokenQs}`;
+    }
+    if (scene.thumb) {
+      return convertFileSrc(scene.thumb);
+    }
   }
 
   return scene.thumb;
@@ -36,11 +39,18 @@ export function sceneThumbUrl(scene: Scene): string | undefined {
 export function sceneMediaUrl(scene: Scene): string | undefined {
   if (!scene.path) return undefined;
 
+  const { settings } = useSettingsStore.getState();
+  const token = settings.remote_token?.trim() ?? settings.lan_token?.trim();
+  const tokenQs = token ? `?token=${encodeURIComponent(token)}` : "";
+
   if (shouldUseRemoteApi()) {
-    return remoteMediaUrl(`/api/scenes/${scene.id}/media`, authQuery());
+    return remoteMediaUrl(`/api/scenes/${scene.id}/media`, tokenQs);
   }
 
   if (getAppRuntime() === "desktop-tauri") {
+    if (settings.lan_enabled) {
+      return `http://127.0.0.1:${settings.lan_port}/api/scenes/${scene.id}/media${tokenQs}`;
+    }
     return convertFileSrc(scene.path);
   }
 

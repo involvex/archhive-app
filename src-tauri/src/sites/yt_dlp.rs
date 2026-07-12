@@ -1,8 +1,10 @@
 use crate::error::{AppError, AppResult};
 use regex::Regex;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use tauri::AppHandle;
-use tauri_plugin_shell::process::CommandEvent;
+use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 
 pub struct SidecarRunner {
@@ -20,6 +22,7 @@ impl SidecarRunner {
         output_dir: &str,
         template: &str,
         cookies_file: Option<&Path>,
+        cancel: Arc<AtomicBool>,
         on_line: impl Fn(&str),
     ) -> AppResult<String> {
         let output = format!("{output_dir}/{template}");
@@ -35,7 +38,7 @@ impl SidecarRunner {
             args.push("--cookies".to_string());
             args.push(cookies.to_string_lossy().to_string());
         }
-        self.spawn("yt-dlp", &args, on_line).await
+        self.spawn_cancellable("yt-dlp", &args, cancel, on_line).await
     }
 
     pub async fn run_gallery_dl(
@@ -103,6 +106,106 @@ impl SidecarRunner {
         }
         let raw = self.run_capture("yt-dlp", &args).await?;
         parse_flat_playlist_json(&raw)
+    }
+
+    /// Expand channel/search/playlist URLs up to `max_entries` videos.
+    pub async fn list_flat_playlist_all(
+        &self,
+        url: &str,
+        max_entries: u32,
+        cookies_file: Option<&Path>,
+    ) -> AppResult<Vec<(String, String, String, Option<String>)>> {
+        let mut args = vec![
+            url.to_string(),
+            "--flat-playlist".to_string(),
+            "-J".to_string(),
+            "--no-warnings".to_string(),
+            format!("--playlist-end={max_entries}"),
+        ];
+        if let Some(cookies) = cookies_file {
+            args.push("--cookies".to_string());
+            args.push(cookies.to_string_lossy().to_string());
+        }
+        let raw = self.run_capture("yt-dlp", &args).await?;
+        parse_flat_playlist_json(&raw)
+    }
+
+    async fn spawn_cancellable(
+        &self,
+        name: &str,
+        args: &[String],
+        cancel: Arc<AtomicBool>,
+        on_line: impl Fn(&str),
+    ) -> AppResult<String> {
+        let sidecar_result = self
+            .app
+            .shell()
+            .sidecar(format!("binaries/{name}"))
+            .map(|cmd| cmd.args(args).spawn());
+
+        match sidecar_result {
+            Ok(Ok((rx, child))) => self.consume_cancellable(rx, child, name, cancel, on_line).await,
+            _ => {
+                let (rx, child) = self
+                    .app
+                    .shell()
+                    .command(name)
+                    .args(args)
+                    .spawn()
+                    .map_err(|e| AppError::Download(format!("spawn {name}: {e}")))?;
+                self.consume_cancellable(rx, child, name, cancel, on_line).await
+            }
+        }
+    }
+
+    async fn consume_cancellable(
+        &self,
+        mut rx: tauri::async_runtime::Receiver<CommandEvent>,
+        child: CommandChild,
+        name: &str,
+        cancel: Arc<AtomicBool>,
+        on_line: impl Fn(&str),
+    ) -> AppResult<String> {
+        let mut destination = String::new();
+        loop {
+            if !cancel.load(Ordering::Relaxed) {
+                let _ = child.kill();
+                return Err(AppError::Download("stopped".into()));
+            }
+            let event = tokio::select! {
+                biased;
+                _ = tokio::time::sleep(std::time::Duration::from_millis(200)) => {
+                    continue;
+                }
+                event = rx.recv() => event,
+            };
+            let Some(event) = event else {
+                break;
+            };
+            match event {
+                CommandEvent::Stdout(line) | CommandEvent::Stderr(line) => {
+                    let text = String::from_utf8_lossy(&line);
+                    on_line(&text);
+                    if let Some(path) = Self::parse_destination(&text) {
+                        destination = path;
+                    }
+                }
+                CommandEvent::Terminated(payload) => {
+                    if !cancel.load(Ordering::Relaxed) {
+                        return Err(AppError::Download("stopped".into()));
+                    }
+                    if payload.code != Some(0) {
+                        return Err(AppError::Download(format!(
+                            "{name} exited with code {:?}",
+                            payload.code
+                        )));
+                    }
+                    break;
+                }
+                _ => {}
+            }
+        }
+        Ok(destination)
     }
 
     async fn run_capture(&self, name: &str, args: &[String]) -> AppResult<String> {

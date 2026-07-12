@@ -50,6 +50,14 @@ pub async fn queue_download(
 }
 
 #[tauri::command]
+pub async fn queue_downloads(
+    state: State<'_, Arc<AppState>>,
+    urls: Vec<String>,
+) -> CmdResult<Vec<DownloadJob>> {
+    map_err(state.queue_downloads(&urls).await)
+}
+
+#[tauri::command]
 pub fn list_downloads(state: State<'_, Arc<AppState>>) -> CmdResult<Vec<DownloadJob>> {
     map_err(state.list_downloads())
 }
@@ -57,6 +65,35 @@ pub fn list_downloads(state: State<'_, Arc<AppState>>) -> CmdResult<Vec<Download
 #[tauri::command]
 pub fn cancel_download(state: State<'_, Arc<AppState>>, id: String) -> CmdResult<()> {
     map_err(state.cancel_download(&id))
+}
+
+#[tauri::command]
+pub fn pause_download(state: State<'_, Arc<AppState>>, id: String) -> CmdResult<()> {
+    map_err(state.pause_download(&id))
+}
+
+#[tauri::command]
+pub fn resume_download(state: State<'_, Arc<AppState>>, id: String) -> CmdResult<()> {
+    map_err(state.resume_download(&id))
+}
+
+#[tauri::command]
+pub fn delete_download(state: State<'_, Arc<AppState>>, id: String) -> CmdResult<()> {
+    map_err(state.delete_download(&id))
+}
+
+#[tauri::command]
+pub async fn queue_bulk_import(
+    state: State<'_, Arc<AppState>>,
+    urls: Vec<String>,
+    expand_browse: bool,
+    import_all: bool,
+) -> CmdResult<crate::models::BulkImportResult> {
+    map_err(
+        state
+            .queue_bulk_import(&urls, expand_browse, import_all)
+            .await,
+    )
 }
 
 #[tauri::command]
@@ -91,9 +128,12 @@ pub fn save_settings(
     state: State<'_, Arc<AppState>>,
     settings: AppSettings,
 ) -> CmdResult<()> {
+    let prev = state.get_settings().ok();
     map_err(state.save_settings(&settings))?;
     #[cfg(not(mobile))]
-    crate::desktop::sync_from_settings(&app, &settings);
+    if prev.as_ref().is_none_or(|p| crate::desktop::tray_settings_changed(p, &settings)) {
+        crate::desktop::sync_from_settings(&app, &settings);
+    }
     Ok(())
 }
 

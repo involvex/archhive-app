@@ -356,14 +356,14 @@ bun run format:check
 
 ## Learned Workspace Facts
 
-- Mobile Remote LAN connects to the desktop Axum API on port **8787**, not the Vite dev server port 1420
+- Desktop LAN on port **8787** serves the bundled React SPA (`lan-ui` Tauri resource), REST API, scene media streaming (`/api/scenes/{id}/media`), and `/files` folder browser; Vite dev UI is port **1420** only (see `docs/lan-web.md`)
 - Android builds do not bundle yt-dlp/ffmpeg sidecars; `externalBin` is desktop-only (`tauri.windows.conf.json`, `.macos`, `.linux`) and `tauri.android.conf.json` keeps an empty list
 - `reqwest` uses **rustls** (not OpenSSL) to avoid NDK OpenSSL setup for Android cross-compiles
 - Mobile defaults to `remote_lan` engine mode; browse/download/library APIs route over HTTP to the desktop LAN host
 - Mobile bottom navigation must include **Settings** (Home, Browse, Downloads, Library, Settings)
 - `build:apk` uses `--target aarch64` with a typecheck prebuild; `build:apk:fast` skips lint/format and only runs `tsc && vite build` before the APK build
-- Site browse adapters (ThotHub, Reddit, PornHub) use HTML scrape with yt-dlp `--flat-playlist` fallback when scrape returns empty
 - Custom URL browse route is `/browse/by-url`
+- Desktop system tray (`src-tauri/src/desktop/tray.rs`): close-to-tray and minimize-to-tray default on, global show/hide hotkey default **Ctrl+Shift+A**, tray menu opens Settings; configure in Settings → **Desktop**
 - Windows Android helpers: `bun run android:dev` (auto-boot AVD + deploy + LAN host) and `bun run android:regen` (regenerate `gen/android` after identifier/icon changes; verify `com.archhive.app`; sets `kotlin.incremental=false` for cross-drive Gradle)
 - Frontend plugins: Bun + TypeScript only, clone into `plugins/`, run `bun run plugins:generate` after changes (`predev`/`prebuild` run it automatically); scrape/download backends still need Rust site adapters
 - Physical Android device: set Remote LAN host to `http://<pc-lan-ip>:8787`; Android emulator uses `http://10.0.2.2:8787`

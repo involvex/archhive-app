@@ -38,6 +38,8 @@ export function ScenePlayerDialog({ scene, open, onClose }: ScenePlayerDialogPro
             src={mediaSrc}
             controls
             playsInline
+            preload="metadata"
+            crossOrigin="anonymous"
             className="aspect-video w-full rounded-md bg-black"
           />
         ) : (

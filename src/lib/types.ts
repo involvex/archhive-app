@@ -28,7 +28,13 @@ export interface SiteInfo {
   requires_cookies: boolean;
 }
 
-export type DownloadStatus = "pending" | "active" | "completed" | "failed" | "cancelled";
+export type DownloadStatus = "pending" | "active" | "paused" | "completed" | "failed" | "cancelled";
+
+export interface BulkImportResult {
+  queued: number;
+  expanded: number;
+  skipped: number;
+}
 
 export interface DownloadJob {
   id: string;

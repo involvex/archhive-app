@@ -1,10 +1,30 @@
 use crate::models::AppSettings;
+use parking_lot::Mutex;
+use std::sync::Arc;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     AppHandle, Emitter, Manager, Runtime, Window,
 };
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
+
+pub struct TrayHotkeyState {
+    registered: Mutex<Option<Shortcut>>,
+}
+
+impl TrayHotkeyState {
+    pub fn new() -> Self {
+        Self {
+            registered: Mutex::new(None),
+        }
+    }
+}
+
+pub fn tray_settings_changed(prev: &AppSettings, next: &AppSettings) -> bool {
+    prev.close_to_tray != next.close_to_tray
+        || prev.minimize_to_tray != next.minimize_to_tray
+        || prev.tray_hotkey != next.tray_hotkey
+}
 
 const MAIN_WINDOW: &str = "main";
 const MENU_SHOW: &str = "tray_show";
@@ -88,7 +108,11 @@ pub fn on_window_event<R: Runtime>(window: &Window<R>, event: &tauri::WindowEven
 
 fn sync_hotkey<R: Runtime>(app: &AppHandle<R>, settings: &AppSettings) -> Result<(), String> {
     let shortcuts = app.global_shortcut();
-    let _ = shortcuts.unregister_all();
+    let state = app.state::<Arc<TrayHotkeyState>>();
+
+    if let Some(prev) = state.registered.lock().take() {
+        let _ = shortcuts.unregister(prev);
+    }
 
     let hotkey = settings
         .tray_hotkey
@@ -104,6 +128,10 @@ fn sync_hotkey<R: Runtime>(app: &AppHandle<R>, settings: &AppSettings) -> Result
         .parse::<Shortcut>()
         .map_err(|e| format!("invalid hotkey '{hotkey}': {e}"))?;
 
+    if shortcuts.is_registered(shortcut) {
+        let _ = shortcuts.unregister(shortcut);
+    }
+
     shortcuts
         .on_shortcut(shortcut, |app, _shortcut, event| {
             use tauri_plugin_global_shortcut::ShortcutState;
@@ -113,6 +141,7 @@ fn sync_hotkey<R: Runtime>(app: &AppHandle<R>, settings: &AppSettings) -> Result
         })
         .map_err(|e| e.to_string())?;
 
+    *state.registered.lock() = Some(shortcut);
     Ok(())
 }
 

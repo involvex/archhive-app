@@ -127,12 +127,14 @@ pub async fn serve_file_with_range(path: &Path, headers: &HeaderMap) -> Result<R
             .await
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
         let chunk = file.take(len);
-        let stream = ReaderStream::new(chunk);
+        let stream = ReaderStream::with_capacity(chunk, 256 * 1024);
         let body = Body::from_stream(stream);
         return Ok(Response::builder()
             .status(StatusCode::PARTIAL_CONTENT)
             .header(header::CONTENT_TYPE, content_type)
             .header(header::ACCEPT_RANGES, "bytes")
+            .header(header::CONNECTION, "keep-alive")
+            .header(header::CACHE_CONTROL, "no-cache")
             .header(
                 header::CONTENT_RANGE,
                 format!("bytes {start}-{end}/{size}"),
@@ -142,12 +144,14 @@ pub async fn serve_file_with_range(path: &Path, headers: &HeaderMap) -> Result<R
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?);
     }
 
-    let stream = ReaderStream::new(file);
+    let stream = ReaderStream::with_capacity(file, 256 * 1024);
     let body = Body::from_stream(stream);
     Ok(Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, content_type)
         .header(header::ACCEPT_RANGES, "bytes")
+        .header(header::CONNECTION, "keep-alive")
+        .header(header::CACHE_CONTROL, "no-cache")
         .header(header::CONTENT_LENGTH, size.to_string())
         .body(body)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?)

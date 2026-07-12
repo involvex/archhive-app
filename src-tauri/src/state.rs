@@ -22,6 +22,7 @@ pub struct AppState {
     pub vault: Arc<CookieVault>,
     pub lan_server: Arc<Mutex<Option<LanServer>>>,
     pub static_ui_dir: Arc<Mutex<Option<PathBuf>>>,
+    library_root_cache: Arc<Mutex<Option<PathBuf>>>,
 }
 
 impl AppState {
@@ -44,7 +45,23 @@ impl AppState {
             vault,
             lan_server: Arc::new(Mutex::new(None)),
             static_ui_dir: Arc::new(Mutex::new(static_ui_dir)),
+            library_root_cache: Arc::new(Mutex::new(None)),
         })
+    }
+
+    pub fn cached_library_root(&self) -> AppResult<PathBuf> {
+        if let Some(root) = self.library_root_cache.lock().clone() {
+            return Ok(root);
+        }
+        let settings = self.get_settings()?;
+        let path = Self::validate_library_path(&settings.library_path, &self.data_dir)?;
+        let root = PathBuf::from(&path);
+        *self.library_root_cache.lock() = Some(root.clone());
+        Ok(root)
+    }
+
+    fn invalidate_library_cache(&self) {
+        *self.library_root_cache.lock() = None;
     }
 
     pub fn health() -> HealthResponse {
@@ -109,12 +126,101 @@ impl AppState {
         self.downloads.queue(url, &adapter_id, None)
     }
 
+    pub async fn queue_downloads(&self, urls: &[String]) -> AppResult<Vec<DownloadJob>> {
+        let mut jobs = Vec::with_capacity(urls.len());
+        for url in urls {
+            let trimmed = url.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            match self.queue_download(trimmed, None).await {
+                Ok(job) => jobs.push(job),
+                Err(e) => eprintln!("[queue] skipped {trimmed}: {e}"),
+            }
+        }
+        Ok(jobs)
+    }
+
     pub fn list_downloads(&self) -> AppResult<Vec<DownloadJob>> {
         self.db.list_download_jobs()
     }
 
     pub fn cancel_download(&self, id: &str) -> AppResult<()> {
         self.downloads.cancel(id)
+    }
+
+    pub fn pause_download(&self, id: &str) -> AppResult<()> {
+        self.downloads.pause(id)
+    }
+
+    pub fn resume_download(&self, id: &str) -> AppResult<()> {
+        self.downloads.resume(id)
+    }
+
+    pub fn delete_download(&self, id: &str) -> AppResult<()> {
+        self.downloads.delete(id)
+    }
+
+    pub async fn queue_bulk_import(
+        &self,
+        urls: &[String],
+        expand_browse: bool,
+        import_all: bool,
+    ) -> AppResult<crate::models::BulkImportResult> {
+        use crate::downloads::bulk::{is_browse_url, is_likely_video_url};
+        use crate::sites::yt_dlp::SidecarRunner;
+
+        const MAX_PER_BROWSE: u32 = 100;
+        let runner = SidecarRunner::new(self.site_ctx.app().clone());
+        let mut queued = 0u32;
+        let mut expanded = 0u32;
+        let mut skipped = 0u32;
+
+        for raw in urls {
+            let url = raw.trim();
+            if url.is_empty() {
+                continue;
+            }
+
+            if (expand_browse || import_all) && is_browse_url(url) {
+                let adapter = self.sites.detect(url).unwrap_or_else(|| "generic_ytdlp".to_string());
+                let cookies = self.vault.cookie_file_for_site(&adapter);
+                match runner
+                    .list_flat_playlist_all(url, MAX_PER_BROWSE, cookies.as_deref())
+                    .await
+                {
+                    Ok(entries) => {
+                        expanded += 1;
+                        for (_, _, video_url, _) in entries {
+                            if is_likely_video_url(&video_url) || import_all {
+                                if self.queue_download(&video_url, None).await.is_ok() {
+                                    queued += 1;
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("[bulk] browse expand failed {url}: {e}");
+                        skipped += 1;
+                    }
+                }
+                continue;
+            }
+
+            if is_likely_video_url(url) || import_all {
+                if self.queue_download(url, None).await.is_ok() {
+                    queued += 1;
+                }
+            } else {
+                skipped += 1;
+            }
+        }
+
+        Ok(crate::models::BulkImportResult {
+            queued,
+            expanded,
+            skipped,
+        })
     }
 
     pub fn list_scenes(&self, query: Option<&str>) -> AppResult<Vec<Scene>> {
@@ -134,7 +240,12 @@ impl AppState {
     }
 
     pub fn save_settings(&self, settings: &AppSettings) -> AppResult<()> {
-        self.db.save_settings(settings)
+        let prev_path = self.get_settings().ok().map(|s| s.library_path);
+        self.db.save_settings(settings)?;
+        if prev_path.as_deref() != Some(settings.library_path.as_str()) {
+            self.invalidate_library_cache();
+        }
+        Ok(())
     }
 
     pub fn scan_library(&self) -> AppResult<ScanResult> {

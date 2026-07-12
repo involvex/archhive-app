@@ -5,6 +5,7 @@ import type {
   BrowseKind,
   BrowseOrientation,
   BrowsePage,
+  BulkImportResult,
   DownloadJob,
   DuplicateGroup,
   CookieSiteInfo,
@@ -159,6 +160,21 @@ export const api = {
     });
   },
 
+  async queueDownloads(urls: string[]): Promise<DownloadJob[]> {
+    if (isDesktopTauri() && !shouldUseRemoteApi()) {
+      return invoke<DownloadJob[]>("queue_downloads", { urls });
+    }
+    const jobs: DownloadJob[] = [];
+    for (const url of urls) {
+      try {
+        jobs.push(await this.queueDownload(url));
+      } catch (e) {
+        console.error("queue failed", url, e);
+      }
+    }
+    return jobs;
+  },
+
   async listDownloads(): Promise<DownloadJob[]> {
     return localOrRemote("list_downloads", undefined, "/api/downloads");
   },
@@ -166,6 +182,43 @@ export const api = {
   async cancelDownload(id: string): Promise<void> {
     return localOrRemote("cancel_download", { id }, `/api/downloads/${id}/cancel`, {
       method: "POST",
+    });
+  },
+
+  async pauseDownload(id: string): Promise<void> {
+    return localOrRemote("pause_download", { id }, `/api/downloads/${id}/pause`, {
+      method: "POST",
+    });
+  },
+
+  async resumeDownload(id: string): Promise<void> {
+    return localOrRemote("resume_download", { id }, `/api/downloads/${id}/resume`, {
+      method: "POST",
+    });
+  },
+
+  async deleteDownload(id: string): Promise<void> {
+    if (isDesktopTauri() && !shouldUseRemoteApi()) {
+      return invoke("delete_download", { id });
+    }
+    return remoteFetch<void>(`/api/downloads/${id}`, { method: "DELETE" });
+  },
+
+  async queueBulkImport(
+    urls: string[],
+    expandBrowse = true,
+    importAll = false,
+  ): Promise<BulkImportResult> {
+    if (isDesktopTauri() && !shouldUseRemoteApi()) {
+      return invoke<BulkImportResult>("queue_bulk_import", {
+        urls,
+        expandBrowse,
+        importAll,
+      });
+    }
+    return remoteFetch<BulkImportResult>("/api/downloads/bulk", {
+      method: "POST",
+      body: JSON.stringify({ urls, expand_browse: expandBrowse, import_all: importAll }),
     });
   },
 

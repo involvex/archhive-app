@@ -7,25 +7,80 @@ use crate::sites::yt_dlp::SidecarRunner;
 use crate::vault::CookieVault;
 use parking_lot::Mutex;
 use std::collections::HashMap;
-use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
+use tokio::sync::{mpsc, Semaphore};
+
+const MAX_CONCURRENT_DOWNLOADS: usize = 2;
 
 pub struct DownloadManager {
     db: Arc<Database>,
     app: AppHandle,
-    vault: Arc<CookieVault>,
-    active: Arc<Mutex<HashMap<String, bool>>>,
+    cancel_flags: Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>,
+    queue_tx: mpsc::UnboundedSender<String>,
 }
 
 impl DownloadManager {
     pub fn new(db: Arc<Database>, app: AppHandle, vault: Arc<CookieVault>) -> Self {
-        Self {
-            db,
-            app,
-            vault,
-            active: Arc::new(Mutex::new(HashMap::new())),
+        let cancel_flags: Arc<Mutex<HashMap<String, Arc<AtomicBool>>>> =
+            Arc::new(Mutex::new(HashMap::new()));
+        let (queue_tx, queue_rx) = mpsc::unbounded_channel();
+
+        let worker_db = db.clone();
+        let worker_app = app.clone();
+        let worker_vault = vault.clone();
+        let worker_flags = cancel_flags.clone();
+
+        tauri::async_runtime::spawn(worker_loop(
+            queue_rx,
+            worker_db,
+            worker_app,
+            worker_vault,
+            worker_flags,
+        ));
+
+        let manager = Self {
+            db: db.clone(),
+            app: app.clone(),
+            cancel_flags,
+            queue_tx,
+        };
+
+        if let Ok(jobs) = db.list_download_jobs() {
+            for job in jobs {
+                if matches!(job.status, DownloadStatus::Pending) {
+                    let _ = manager.queue_tx.send(job.id);
+                }
+            }
         }
+
+        manager
+    }
+
+    fn register_cancel(&self, job_id: &str) -> Arc<AtomicBool> {
+        let flag = Arc::new(AtomicBool::new(true));
+        self.cancel_flags
+            .lock()
+            .insert(job_id.to_string(), flag.clone());
+        flag
+    }
+
+    fn clear_cancel(&self, job_id: &str) {
+        self.cancel_flags.lock().remove(job_id);
+    }
+
+    fn stop_flag(&self, job_id: &str) {
+        if let Some(flag) = self.cancel_flags.lock().get(job_id) {
+            flag.store(false, Ordering::Relaxed);
+        }
+    }
+
+    fn enqueue(&self, job_id: &str) -> AppResult<()> {
+        self.queue_tx
+            .send(job_id.to_string())
+            .map_err(|e| AppError::Other(format!("download queue: {e}")))?;
+        Ok(())
     }
 
     pub fn queue(&self, url: &str, adapter: &str, title: Option<&str>) -> AppResult<DownloadJob> {
@@ -44,50 +99,143 @@ impl DownloadManager {
     }
 
     pub fn queue_plan(&self, plan: DownloadPlan) -> AppResult<DownloadJob> {
-        let library_path = self.db.get_settings()?.library_path;
         let job = self
             .db
             .insert_download_job(&plan.url, &plan.adapter_id, plan.title.as_deref())?;
-        let job_id = job.id.clone();
-        let db = self.db.clone();
-        let app = self.app.clone();
-        let vault = self.vault.clone();
-        let active = self.active.clone();
-        let err_db = self.db.clone();
-        let err_app = self.app.clone();
-
-        tauri::async_runtime::spawn(async move {
-            if let Err(e) = run_job_with_plan(
-                db,
-                app,
-                vault,
-                active,
-                job_id.clone(),
-                &plan,
-                &library_path,
-            )
-            .await
-            {
-                if let Ok(Some(mut job)) = err_db.get_download_job(&job_id) {
-                    job.status = DownloadStatus::Failed;
-                    job.error = Some(e.to_string());
-                    let _ = err_db.update_download_job(&job);
-                    let _ = err_app.emit("download:progress", &job);
-                }
-            }
-        });
-
+        self.register_cancel(&job.id);
+        self.enqueue(&job.id)?;
         Ok(job)
     }
 
-    pub fn cancel(&self, id: &str) -> AppResult<()> {
-        if let Some(mut job) = self.db.get_download_job(id)? {
-            job.status = DownloadStatus::Cancelled;
-            self.db.update_download_job(&job)?;
-            self.active.lock().insert(id.to_string(), false);
-            let _ = self.app.emit("download:progress", &job);
+    pub fn pause(&self, id: &str) -> AppResult<()> {
+        let Some(mut job) = self.db.get_download_job(id)? else {
+            return Ok(());
+        };
+        if !matches!(
+            job.status,
+            DownloadStatus::Active | DownloadStatus::Pending
+        ) {
+            return Ok(());
         }
+        self.stop_flag(id);
+        job.status = DownloadStatus::Paused;
+        self.db.update_download_job(&job)?;
+        let _ = self.app.emit("download:progress", &job);
         Ok(())
+    }
+
+    pub fn resume(&self, id: &str) -> AppResult<()> {
+        let Some(mut job) = self.db.get_download_job(id)? else {
+            return Ok(());
+        };
+        if job.status != DownloadStatus::Paused {
+            return Ok(());
+        }
+        self.register_cancel(id);
+        job.status = DownloadStatus::Pending;
+        job.error = None;
+        self.db.update_download_job(&job)?;
+        let _ = self.app.emit("download:progress", &job);
+        self.enqueue(id)?;
+        Ok(())
+    }
+
+    pub fn cancel(&self, id: &str) -> AppResult<()> {
+        let Some(mut job) = self.db.get_download_job(id)? else {
+            return Ok(());
+        };
+        if matches!(
+            job.status,
+            DownloadStatus::Completed | DownloadStatus::Cancelled
+        ) {
+            return Ok(());
+        }
+        self.stop_flag(id);
+        job.status = DownloadStatus::Cancelled;
+        self.db.update_download_job(&job)?;
+        let _ = self.app.emit("download:progress", &job);
+        Ok(())
+    }
+
+    pub fn delete(&self, id: &str) -> AppResult<()> {
+        if let Some(job) = self.db.get_download_job(id)? {
+            if matches!(job.status, DownloadStatus::Active | DownloadStatus::Pending) {
+                self.stop_flag(id);
+            }
+        }
+        self.clear_cancel(id);
+        self.db.delete_download_job(id)?;
+        let _ = self.app.emit("download:deleted", id);
+        Ok(())
+    }
+}
+
+fn plan_from_job(db: &Database, job: &DownloadJob) -> AppResult<DownloadPlan> {
+    let settings = db.get_settings()?;
+    let tool = crate::downloads::image::resolve_download_tool(&job.url, &job.adapter);
+    Ok(DownloadPlan {
+        url: job.url.clone(),
+        output_template: settings.naming_template,
+        tool,
+        title: job.title.clone(),
+        performers: vec![],
+        tags: vec![],
+        adapter_id: job.adapter.clone(),
+    })
+}
+
+async fn worker_loop(
+    mut queue_rx: mpsc::UnboundedReceiver<String>,
+    db: Arc<Database>,
+    app: AppHandle,
+    vault: Arc<CookieVault>,
+    cancel_flags: Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>,
+) {
+    let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_DOWNLOADS));
+    while let Some(job_id) = queue_rx.recv().await {
+        let permit = match semaphore.clone().acquire_owned().await {
+            Ok(p) => p,
+            Err(_) => break,
+        };
+        let db = db.clone();
+        let app = app.clone();
+        let vault = vault.clone();
+        let cancel_flags = cancel_flags.clone();
+        tauri::async_runtime::spawn(async move {
+            let _permit = permit;
+            let cancel = cancel_flags
+                .lock()
+                .get(&job_id)
+                .cloned()
+                .unwrap_or_else(|| Arc::new(AtomicBool::new(true)));
+
+            let Ok(Some(job)) = db.get_download_job(&job_id) else {
+                return;
+            };
+            if matches!(
+                job.status,
+                DownloadStatus::Paused | DownloadStatus::Cancelled | DownloadStatus::Completed
+            ) {
+                return;
+            }
+            let Ok(plan) = plan_from_job(&db, &job) else {
+                return;
+            };
+            let library_path = db
+                .get_settings()
+                .map(|s| s.library_path)
+                .unwrap_or_default();
+            let _ = run_job_with_plan(
+                db,
+                app,
+                vault,
+                cancel,
+                job_id,
+                &plan,
+                &library_path,
+            )
+            .await;
+        });
     }
 }
 
@@ -95,7 +243,7 @@ async fn run_job_with_plan(
     db: Arc<Database>,
     app: AppHandle,
     vault: Arc<CookieVault>,
-    active: Arc<Mutex<HashMap<String, bool>>>,
+    cancel: Arc<AtomicBool>,
     job_id: String,
     plan: &DownloadPlan,
     library_path: &str,
@@ -104,7 +252,14 @@ async fn run_job_with_plan(
         .get_download_job(&job_id)?
         .ok_or_else(|| AppError::NotFound(job_id.clone()))?;
 
-    active.lock().insert(job_id.clone(), true);
+    if job.status == DownloadStatus::Paused || job.status == DownloadStatus::Cancelled {
+        return Ok(job);
+    }
+
+    if !cancel.load(Ordering::Relaxed) {
+        return Ok(job);
+    }
+
     job.status = DownloadStatus::Active;
     db.update_download_job(&job)?;
     let _ = app.emit("download:progress", &job);
@@ -125,11 +280,18 @@ async fn run_job_with_plan(
 
     let result: AppResult<Vec<String>> = match plan.tool {
         DownloadTool::GalleryDl => {
+            if !cancel.load(Ordering::Relaxed) {
+                return handle_stopped(&db, &app, &job_id);
+            }
             let parsed = runner
                 .run_gallery_dl(&plan.url, library_path, |line| {
                     update_progress(&db_emit, &app_emit, &job_id_emit, line, None);
                 })
-                .await?;
+                .await;
+            if parsed.is_err() && !cancel.load(Ordering::Relaxed) {
+                return handle_stopped(&db, &app, &job_id);
+            }
+            let parsed = parsed?;
             let paths = crate::downloads::gallery_dl::resolve_output_paths(
                 &parsed,
                 snapshot.as_ref().expect("gallery-dl snapshot"),
@@ -138,6 +300,9 @@ async fn run_job_with_plan(
             Ok(paths)
         }
         DownloadTool::DirectHttp => {
+            if !cancel.load(Ordering::Relaxed) {
+                return handle_stopped(&db, &app, &job_id);
+            }
             let path = crate::downloads::image::download_direct(
                 &plan.url,
                 library_path,
@@ -147,21 +312,30 @@ async fn run_job_with_plan(
             Ok(vec![path])
         }
         DownloadTool::YtDlp => {
-            let path = runner
+            let cancel_clone = cancel.clone();
+            let path_result = runner
                 .run_yt_dlp(
                     &plan.url,
                     library_path,
                     &plan.output_template,
                     cookies.as_deref(),
+                    cancel_clone,
                     |line| {
                         let progress = SidecarRunner::parse_progress(line);
                         update_progress(&db_emit, &app_emit, &job_id_emit, line, progress);
                     },
                 )
-                .await?;
-            Ok(vec![path])
+                .await;
+            if path_result.is_err() && !cancel.load(Ordering::Relaxed) {
+                return handle_stopped(&db, &app, &job_id);
+            }
+            Ok(vec![path_result?])
         }
     };
+
+    if !cancel.load(Ordering::Relaxed) {
+        return handle_stopped(&db, &app, &job_id);
+    }
 
     match result {
         Ok(output_paths) => {
@@ -176,10 +350,10 @@ async fn run_job_with_plan(
 
             let title = plan.title.clone().unwrap_or_else(|| job.url.clone());
             for output_path in &output_paths {
-                if !Path::new(output_path).exists() {
+                if !std::path::Path::new(output_path).exists() {
                     continue;
                 }
-                let file_title = Path::new(output_path)
+                let file_title = std::path::Path::new(output_path)
                     .file_stem()
                     .and_then(|s| s.to_str())
                     .unwrap_or(&title);
@@ -198,12 +372,15 @@ async fn run_job_with_plan(
                     &db,
                     app.clone(),
                     &scene_id,
-                    Path::new(output_path),
+                    std::path::Path::new(output_path),
                 )
                 .await;
             }
         }
         Err(e) => {
+            if !cancel.load(Ordering::Relaxed) || e.to_string().contains("stopped") {
+                return handle_stopped(&db, &app, &job_id);
+            }
             job.status = DownloadStatus::Failed;
             job.error = Some(e.to_string());
             db.update_download_job(&job)?;
@@ -215,6 +392,26 @@ async fn run_job_with_plan(
     Ok(job)
 }
 
+fn handle_stopped(
+    db: &Database,
+    app: &AppHandle,
+    job_id: &str,
+) -> AppResult<DownloadJob> {
+    let Some(mut job) = db.get_download_job(job_id)? else {
+        return Err(AppError::NotFound(job_id.to_string()));
+    };
+    if matches!(
+        job.status,
+        DownloadStatus::Paused | DownloadStatus::Cancelled | DownloadStatus::Completed
+    ) {
+        return Ok(job);
+    }
+    job.status = DownloadStatus::Paused;
+    db.update_download_job(&job)?;
+    let _ = app.emit("download:progress", &job);
+    Ok(job)
+}
+
 fn update_progress(
     db: &Database,
     app: &AppHandle,
@@ -223,6 +420,12 @@ fn update_progress(
     progress: Option<f32>,
 ) {
     if let Ok(Some(mut job)) = db.get_download_job(job_id) {
+        if matches!(
+            job.status,
+            DownloadStatus::Paused | DownloadStatus::Cancelled
+        ) {
+            return;
+        }
         if let Some(p) = progress {
             job.progress = p;
         }

@@ -124,6 +124,12 @@ impl Database {
         rows.collect::<Result<Vec<_>, _>>().map_err(AppError::from)
     }
 
+    pub fn delete_download_job(&self, id: &str) -> AppResult<()> {
+        let conn = self.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
+        conn.execute("DELETE FROM download_jobs WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
     pub fn get_download_job(&self, id: &str) -> AppResult<Option<DownloadJob>> {
         let conn = self.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
         conn.query_row(
@@ -768,6 +774,7 @@ fn map_performer(row: &rusqlite::Row<'_>) -> rusqlite::Result<Performer> {
 fn parse_status(s: &str) -> DownloadStatus {
     match s.to_lowercase().as_str() {
         "active" => DownloadStatus::Active,
+        "paused" => DownloadStatus::Paused,
         "completed" => DownloadStatus::Completed,
         "failed" => DownloadStatus::Failed,
         "cancelled" => DownloadStatus::Cancelled,
