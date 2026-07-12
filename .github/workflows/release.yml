@@ -78,6 +78,18 @@ jobs:
         with:
           ndk-version: r27d
 
+      # nttld/setup-ndk can leave broken symlinks on Ubuntu; Tauri upstream uses this fix.
+      - name: Restore Android NDK symlinks
+        run: |
+          directory="${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          if [ -d "$directory" ]; then
+            find "$directory" -type l | while read -r link; do
+              current_target=$(readlink "$link")
+              new_target="$directory/$(basename "$current_target")"
+              ln -sf "$new_target" "$link"
+            done
+          fi
+
       - name: Install Rust Android targets
         run: rustup target add aarch64-linux-android
 
@@ -95,8 +107,9 @@ jobs:
         run: bun install
 
       - name: Regenerate Android project and icons
-        shell: pwsh
-        run: pwsh -NoProfile -File scripts/android-regen.ps1
+        env:
+          NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: bash scripts/android-regen.sh
 
       - name: Generate plugins registry
         run: bun run plugins:generate
@@ -106,6 +119,7 @@ jobs:
         env:
           CI: true
           NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
 
       - name: Collect APK
         run: |

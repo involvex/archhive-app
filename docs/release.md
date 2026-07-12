@@ -43,6 +43,6 @@ bun run build:apk:release  # Release APK under src-tauri/gen/android/.../release
 ## CI requirements
 
 - **Windows job:** Bun, Rust, Tauri desktop bundle
-- **Android job:** Bun, Rust, Android SDK, NDK r27, Java 17, `android:regen` + `tauri icon`
+- **Android job:** Bun, Rust, Android SDK, NDK r27 (`NDK_HOME` required for `tauri android init`), Java 17, `scripts/android-regen.sh` + `tauri icon`
 
 No secrets required for unsigned APK + NSIS upload. Add code signing later if needed.
