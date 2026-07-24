@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api/client";
-import { sceneThumbUrl, sceneMediaUrl, isVideoScene } from "@/lib/mediaUrl";
+import { sceneThumbUrl, sceneMediaUrl, isWebPlayableScene, isHttpMediaSrc } from "@/lib/mediaUrl";
 import type { Scene } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { X } from "lucide-react";
@@ -44,7 +44,8 @@ function SceneDetailsBody({ scene, onClose }: { scene: Scene; onClose: () => voi
   const data = detail ?? scene;
   const thumbSrc = sceneThumbUrl(data);
   const mediaSrc = sceneMediaUrl(data);
-  const showVideo = isVideoScene(data) && mediaSrc;
+  const showVideo = isWebPlayableScene(data) && mediaSrc;
+  const useCors = isHttpMediaSrc(mediaSrc);
   const fileSize = formatBytes(data.file_size);
 
   return (
@@ -62,7 +63,13 @@ function SceneDetailsBody({ scene, onClose }: { scene: Scene; onClose: () => voi
 
       {showVideo ? (
         <div className="mb-4 aspect-video overflow-hidden rounded-md bg-black">
-          <video src={mediaSrc} controls playsInline className="h-full w-full" />
+          <video
+            src={mediaSrc}
+            controls
+            playsInline
+            {...(useCors ? { crossOrigin: "anonymous" as const } : {})}
+            className="h-full w-full"
+          />
         </div>
       ) : (
         thumbSrc && (

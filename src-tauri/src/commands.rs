@@ -2,7 +2,8 @@ use crate::error::AppResult;
 use crate::models::{
     AppSettings, BatchUpdateScenesRequest, BatchUpdateScenesResult, BrowseKind, BrowseOrientation,
     DownloadJob, DuplicateGroup, HealthResponse, LanHost, MediaItem, MergeDuplicatesResult,
-    Performer, PornhubCategoryEntry, ScanResult, Scene, SiteInfo, Tag, UpdateSceneRequest,
+    Performer, PornhubCategoryEntry, ScanResult, Scene, SceneSort, SiteInfo, Tag,
+    UpdateSceneRequest,
 };
 use crate::state::AppState;
 use crate::vault::CookieSiteInfo;
@@ -101,8 +102,26 @@ pub async fn queue_bulk_import(
 pub fn list_scenes(
     state: State<'_, Arc<AppState>>,
     query: Option<String>,
+    sort: Option<SceneSort>,
 ) -> CmdResult<Vec<Scene>> {
-    map_err(state.list_scenes(query.as_deref()))
+    map_err(state.list_scenes(query.as_deref(), sort.unwrap_or_default()))
+}
+
+#[tauri::command]
+pub fn delete_scene(
+    state: State<'_, Arc<AppState>>,
+    id: String,
+    delete_files: Option<bool>,
+) -> CmdResult<()> {
+    map_err(state.delete_scene(&id, delete_files.unwrap_or(false)))
+}
+
+#[tauri::command]
+pub fn ensure_performer(
+    state: State<'_, Arc<AppState>>,
+    name: String,
+) -> CmdResult<Performer> {
+    map_err(state.ensure_performer(&name))
 }
 
 #[tauri::command]
@@ -168,7 +187,27 @@ pub async fn scan_library(
     })
     .await
     .map_err(|e| e.to_string())??;
+
+    // Best-effort thumb generation after scan (does not fail the scan).
+    let thumbs_state = state.inner().clone();
+    let _ = thumbs_state.generate_missing_thumbs().await;
+
     Ok(result)
+}
+
+#[tauri::command]
+pub async fn generate_missing_thumbs(
+    state: State<'_, Arc<AppState>>,
+) -> CmdResult<u32> {
+    map_err(state.generate_missing_thumbs().await)
+}
+
+#[tauri::command]
+pub async fn resolve_media_details(
+    state: State<'_, Arc<AppState>>,
+    url: String,
+) -> CmdResult<MediaItem> {
+    map_err(state.resolve_media_details(&url).await)
 }
 
 #[tauri::command]

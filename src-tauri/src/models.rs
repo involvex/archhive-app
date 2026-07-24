@@ -31,6 +31,10 @@ pub struct MediaItem {
     pub site_id: String,
     pub performers: Vec<String>,
     pub tags: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub channel: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -165,6 +169,27 @@ pub enum EngineMode {
     Standalone,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum SceneSort {
+    #[default]
+    Newest,
+    Name,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum DownloadQuality {
+    Best,
+    #[default]
+    #[serde(rename = "1080")]
+    Height1080,
+    #[serde(rename = "720")]
+    Height720,
+    #[serde(rename = "480")]
+    Height480,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppSettings {
     pub engine_mode: EngineMode,
@@ -183,6 +208,10 @@ pub struct AppSettings {
     pub minimize_to_tray: bool,
     #[serde(default = "default_tray_hotkey")]
     pub tray_hotkey: Option<String>,
+    #[serde(default)]
+    pub download_quality: DownloadQuality,
+    #[serde(default = "default_prefer_mp4")]
+    pub prefer_mp4: bool,
 }
 
 fn default_phash_threshold() -> u8 {
@@ -199,6 +228,10 @@ fn default_minimize_to_tray() -> bool {
 
 fn default_tray_hotkey() -> Option<String> {
     Some("Ctrl+Shift+A".to_string())
+}
+
+fn default_prefer_mp4() -> bool {
+    true
 }
 
 impl Default for AppSettings {
@@ -235,6 +268,8 @@ impl Default for AppSettings {
             close_to_tray: default_close_to_tray(),
             minimize_to_tray: default_minimize_to_tray(),
             tray_hotkey: default_tray_hotkey(),
+            download_quality: DownloadQuality::default(),
+            prefer_mp4: default_prefer_mp4(),
         }
     }
 }

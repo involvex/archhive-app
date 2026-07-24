@@ -3,8 +3,10 @@ use crate::error::AppResult;
 use crate::library::hashing::{compute_oshash, compute_phash_from_image};
 use crate::media::FfmpegProcessor;
 use crate::models::ScanProgress;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use tauri::AppHandle;
+use tokio::sync::Semaphore;
 
 pub mod auto_tag;
 pub mod duplicates;
@@ -113,6 +115,70 @@ impl LibraryScanner {
 
         emit(scanned, added, updated);
         Ok(crate::models::ScanResult { added, updated })
+    }
+
+    /// Generate JPEG sidecars for library scenes missing thumbs. Caps concurrency to avoid USB thrash.
+    pub async fn generate_missing_thumbs(
+        db: Arc<Database>,
+        app: AppHandle,
+        concurrency: usize,
+    ) -> AppResult<u32> {
+        let missing = db.list_scenes_missing_thumbs()?;
+        if missing.is_empty() {
+            return Ok(0);
+        }
+
+        let limit = concurrency.max(1);
+        let sem = Arc::new(Semaphore::new(limit));
+        let mut handles = Vec::new();
+        let generated = Arc::new(std::sync::atomic::AtomicU32::new(0));
+
+        for (scene_id, path_str) in missing {
+            let permit = sem
+                .clone()
+                .acquire_owned()
+                .await
+                .map_err(|e| crate::error::AppError::Other(format!("thumb semaphore: {e}")))?;
+            let db = db.clone();
+            let app = app.clone();
+            let generated = generated.clone();
+            handles.push(tokio::spawn(async move {
+                let _permit = permit;
+                let video_path = PathBuf::from(&path_str);
+                if !video_path.is_file() {
+                    return;
+                }
+
+                // Reuse existing sidecar if present from a prior scan.
+                let sidecar = video_path.with_extension("jpg");
+                let thumb_path = if sidecar.is_file() {
+                    Some(sidecar)
+                } else {
+                    let ffmpeg = FfmpegProcessor::new(app);
+                    ffmpeg.extract_thumbnail(&video_path).await.ok()
+                };
+
+                if let Some(thumb) = thumb_path {
+                    let thumb_str = thumb.to_string_lossy().to_string();
+                    if db.set_scene_thumb(&scene_id, &thumb_str).is_ok() {
+                        let phash = compute_phash_from_image(&thumb).ok();
+                        let oshash = compute_oshash(&video_path).ok();
+                        let _ = db.update_scene_hashes(
+                            &scene_id,
+                            phash.as_deref(),
+                            oshash.as_deref(),
+                            Some(&thumb_str),
+                        );
+                        generated.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    }
+                }
+            }));
+        }
+
+        for h in handles {
+            let _ = h.await;
+        }
+        Ok(generated.load(std::sync::atomic::Ordering::Relaxed))
     }
 
     pub async fn post_process_file(

@@ -10,16 +10,19 @@ interface SceneEditDialogProps {
   open: boolean;
   onClose: () => void;
   onSaved: (scene: Scene) => void;
+  onDeleted?: (id: string) => void;
 }
 
 function SceneEditForm({
   scene,
   onClose,
   onSaved,
+  onDeleted,
 }: {
   scene: Scene;
   onClose: () => void;
   onSaved: (scene: Scene) => void;
+  onDeleted?: (id: string) => void;
 }) {
   const [title, setTitle] = useState(scene.title);
   const [performers, setPerformers] = useState(scene.performers.join(", "));
@@ -27,6 +30,8 @@ function SceneEditForm({
   const [renameFile, setRenameFile] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   async function handleSave() {
     setSaving(true);
@@ -52,6 +57,20 @@ function SceneEditForm({
       setError(e instanceof Error ? e.message : "Save failed");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleDelete(deleteFiles: boolean) {
+    setDeleting(true);
+    setError(null);
+    try {
+      await api.deleteScene(scene.id, deleteFiles);
+      onDeleted?.(scene.id);
+      onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Delete failed");
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -96,19 +115,68 @@ function SceneEditForm({
         )}
         {error && <p className="text-sm text-red-500">{error}</p>}
       </div>
-      <div className="mt-4 flex justify-end gap-2">
-        <Button variant="outline" onClick={onClose} disabled={saving}>
-          Cancel
-        </Button>
-        <Button onClick={() => void handleSave()} disabled={saving}>
-          {saving ? "Saving…" : "Save"}
-        </Button>
-      </div>
+
+      {confirmDelete ? (
+        <div className="mt-4 space-y-2 rounded-md border border-red-400/30 bg-red-400/10 p-3">
+          <p className="text-sm">Delete this scene?</p>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setConfirmDelete(false)}
+              disabled={deleting}
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => void handleDelete(false)}
+              disabled={deleting}
+            >
+              Remove from library
+            </Button>
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={() => void handleDelete(true)}
+              disabled={deleting}
+            >
+              Also delete file
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-4 flex justify-between gap-2">
+          <Button
+            variant="outline"
+            className="text-red-400"
+            onClick={() => setConfirmDelete(true)}
+            disabled={saving}
+          >
+            Delete…
+          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={onClose} disabled={saving}>
+              Cancel
+            </Button>
+            <Button onClick={() => void handleSave()} disabled={saving}>
+              {saving ? "Saving…" : "Save"}
+            </Button>
+          </div>
+        </div>
+      )}
     </>
   );
 }
 
-export function SceneEditDialog({ scene, open, onClose, onSaved }: SceneEditDialogProps) {
+export function SceneEditDialog({
+  scene,
+  open,
+  onClose,
+  onSaved,
+  onDeleted,
+}: SceneEditDialogProps) {
   if (!open || !scene) return null;
 
   return (
@@ -118,7 +186,13 @@ export function SceneEditDialog({ scene, open, onClose, onSaved }: SceneEditDial
         aria-modal="true"
         className="w-full max-w-md rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] p-4 shadow-xl"
       >
-        <SceneEditForm key={scene.id} scene={scene} onClose={onClose} onSaved={onSaved} />
+        <SceneEditForm
+          key={scene.id}
+          scene={scene}
+          onClose={onClose}
+          onSaved={onSaved}
+          onDeleted={onDeleted}
+        />
       </div>
     </div>
   );

@@ -3,6 +3,7 @@ import type { RuntimeCapabilities } from "../runtime";
 export const SETTINGS_TABS = [
   "engine",
   "library",
+  "downloads",
   "cookies",
   "duplicates",
   "lan",

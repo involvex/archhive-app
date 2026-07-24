@@ -303,19 +303,65 @@ impl Database {
         Ok(())
     }
 
-    pub fn list_scenes(&self, query: Option<&str>) -> AppResult<Vec<Scene>> {
+    /// Scenes with a video path but no thumbnail path (or missing thumb file).
+    pub fn list_scenes_missing_thumbs(&self) -> AppResult<Vec<(String, String)>> {
         let conn = self
             .conn
             .lock()
             .map_err(|e| AppError::Other(e.to_string()))?;
+        let mut stmt = conn.prepare(
+            "SELECT id, path FROM scenes
+             WHERE path IS NOT NULL AND path != ''
+               AND (thumb IS NULL OR thumb = '')
+             LIMIT 500",
+        )?;
+        let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
+        let mut out = Vec::new();
+        for row in rows {
+            let (id, path): (String, String) = row?;
+            out.push((id, path));
+        }
+        Ok(out)
+    }
+
+    pub fn set_scene_thumb(&self, id: &str, thumb: &str) -> AppResult<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        conn.execute(
+            "UPDATE scenes SET thumb = ?2 WHERE id = ?1",
+            params![id, thumb],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_scenes(
+        &self,
+        query: Option<&str>,
+        sort: crate::models::SceneSort,
+    ) -> AppResult<Vec<Scene>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let order_by = match sort {
+            crate::models::SceneSort::Newest => "s.created_at DESC",
+            crate::models::SceneSort::Name => "s.title COLLATE NOCASE ASC",
+        };
+        let order_by_plain = match sort {
+            crate::models::SceneSort::Newest => "created_at DESC",
+            crate::models::SceneSort::Name => "title COLLATE NOCASE ASC",
+        };
         let scenes: Vec<SceneRow> = if let Some(q) = query.filter(|s| !s.is_empty()) {
-            let mut stmt = conn.prepare(
+            let sql = format!(
                 "SELECT s.id, s.title, s.path, s.thumb, s.source_url
                      FROM scenes s
                      JOIN scenes_fts fts ON s.rowid = fts.rowid
                      WHERE scenes_fts MATCH ?1
-                     ORDER BY s.created_at DESC LIMIT 100",
-            )?;
+                     ORDER BY {order_by} LIMIT 100"
+            );
+            let mut stmt = conn.prepare(&sql)?;
             let fts_q = format!("\"{}*\"", q.replace('"', ""));
             let rows = stmt.query_map(params![fts_q], |row| {
                 Ok((
@@ -328,9 +374,10 @@ impl Database {
             })?;
             rows.collect::<Result<Vec<_>, _>>()?
         } else {
-            let mut stmt = conn.prepare(
-                    "SELECT id, title, path, thumb, source_url FROM scenes ORDER BY created_at DESC LIMIT 100",
-                )?;
+            let sql = format!(
+                "SELECT id, title, path, thumb, source_url FROM scenes ORDER BY {order_by_plain} LIMIT 100"
+            );
+            let mut stmt = conn.prepare(&sql)?;
             let rows = stmt.query_map([], |row| {
                 Ok((
                     row.get(0)?,

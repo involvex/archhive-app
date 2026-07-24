@@ -63,6 +63,8 @@ impl SiteAdapter for CustomUrlAdapter {
                     site_id: self.id().to_string(),
                     performers: vec![],
                     tags: vec![],
+                description: None,
+                channel: None,
                 }],
                 page: query.page,
                 has_more: false,

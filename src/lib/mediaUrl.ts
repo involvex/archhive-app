@@ -4,6 +4,7 @@ import { useSettingsStore } from "./stores/settings";
 import type { Scene } from "./types";
 
 const VIDEO_EXT = /\.(mp4|m4v|webm|mkv|avi|mov|wmv|flv)$/i;
+const PLAYABLE_IN_WEBVIEW = /\.(mp4|m4v|webm)$/i;
 
 /** Token for remote API clients (phone / browser → desktop). */
 function remoteAuthToken(): string | undefined {
@@ -33,7 +34,8 @@ function remoteMediaUrl(path: string, tokenQs: string): string | undefined {
 }
 
 export function sceneThumbUrl(scene: Scene): string | undefined {
-  if (!scene.thumb && !scene.path) return undefined;
+  // Only request thumbs when a real image path exists (never use video path).
+  if (!scene.thumb) return undefined;
 
   const { settings } = useSettingsStore.getState();
 
@@ -45,9 +47,7 @@ export function sceneThumbUrl(scene: Scene): string | undefined {
     if (settings.lan_enabled) {
       return `http://127.0.0.1:${settings.lan_port}/api/scenes/${scene.id}/thumb${tokenQuery(lanAuthToken())}`;
     }
-    if (scene.thumb) {
-      return convertFileSrc(scene.thumb);
-    }
+    return convertFileSrc(scene.thumb);
   }
 
   return scene.thumb;
@@ -76,6 +76,12 @@ export function sceneMediaUrl(scene: Scene): string | undefined {
 export function isVideoScene(scene: Scene): boolean {
   if (!scene.path) return false;
   return VIDEO_EXT.test(scene.path);
+}
+
+/** Formats the in-app WebView/LAN player can usually decode. */
+export function isWebPlayableScene(scene: Scene): boolean {
+  if (!scene.path) return false;
+  return PLAYABLE_IN_WEBVIEW.test(scene.path);
 }
 
 /** Stream URL for a file path relative to library root (folder browser). */

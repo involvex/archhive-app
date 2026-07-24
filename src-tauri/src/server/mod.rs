@@ -40,6 +40,12 @@ struct QueueBody {
 #[derive(Deserialize)]
 struct ScenesQuery {
     q: Option<String>,
+    sort: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct DeleteSceneQuery {
+    delete_files: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -98,10 +104,15 @@ impl LanServer {
                 axum::routing::delete(delete_download),
             )
             .route("/api/scenes", get(list_scenes))
-            .route("/api/scenes/{id}", get(get_scene).patch(update_scene))
+            .route(
+                "/api/scenes/{id}",
+                get(get_scene).patch(update_scene).delete(delete_scene),
+            )
             .route("/api/scenes/{id}/thumb", get(scene_thumb))
             .route("/api/scenes/{id}/media", get(scene_media))
             .route("/api/scenes/batch", post(batch_update_scenes))
+            .route("/api/media/resolve", post(resolve_media_details))
+            .route("/api/performers/ensure", post(ensure_performer))
             .route("/api/files", get(list_files))
             .route("/api/files/stream", get(stream_file))
             .route("/api/sites/pornhub/categories", get(pornhub_categories))
@@ -116,6 +127,7 @@ impl LanServer {
             )
             .route("/api/settings", get(get_settings).put(put_settings))
             .route("/api/library/scan", post(scan_library))
+            .route("/api/library/thumbs", post(generate_missing_thumbs))
             .layer(middleware::from_fn_with_state(api.clone(), auth_middleware))
             .with_state(api);
 
@@ -347,11 +359,30 @@ async fn list_scenes(
     State(state): State<ApiState>,
     Query(q): Query<ScenesQuery>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
+    let sort = match q.sort.as_deref() {
+        Some("name") => crate::models::SceneSort::Name,
+        _ => crate::models::SceneSort::Newest,
+    };
     let scenes = state
         .app
-        .list_scenes(q.q.as_deref())
+        .list_scenes(q.q.as_deref(), sort)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(serde_json::json!(scenes)))
+}
+
+async fn delete_scene(
+    State(state): State<ApiState>,
+    Path(id): Path<String>,
+    Query(q): Query<DeleteSceneQuery>,
+) -> Result<StatusCode, StatusCode> {
+    state
+        .app
+        .delete_scene(&id, q.delete_files.unwrap_or(false))
+        .map_err(|e| match e {
+            crate::error::AppError::NotFound(_) => StatusCode::NOT_FOUND,
+            _ => StatusCode::INTERNAL_SERVER_ERROR,
+        })?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn get_scene(
@@ -391,14 +422,30 @@ async fn scene_thumb(
         .app
         .get_scene(&id)
         .map_err(|_| StatusCode::NOT_FOUND)?;
-    let thumb_path = scene.thumb.or(scene.path).ok_or(StatusCode::NOT_FOUND)?;
-    let bytes = tokio::fs::read(&thumb_path)
+    // Never fall back to the video path — that reads entire movies as fake JPEGs.
+    let thumb_path = scene.thumb.ok_or(StatusCode::NOT_FOUND)?;
+    let lower = thumb_path.to_lowercase();
+    if !(lower.ends_with(".jpg")
+        || lower.ends_with(".jpeg")
+        || lower.ends_with(".png")
+        || lower.ends_with(".webp")
+        || lower.ends_with(".gif"))
+    {
+        return Err(StatusCode::NOT_FOUND);
+    }
+    let path = std::path::Path::new(&thumb_path);
+    if !path.is_file() {
+        return Err(StatusCode::NOT_FOUND);
+    }
+    let bytes = tokio::fs::read(path)
         .await
         .map_err(|_| StatusCode::NOT_FOUND)?;
-    let content_type = if thumb_path.to_lowercase().ends_with(".png") {
+    let content_type = if lower.ends_with(".png") {
         "image/png"
-    } else if thumb_path.to_lowercase().ends_with(".webp") {
+    } else if lower.ends_with(".webp") {
         "image/webp"
+    } else if lower.ends_with(".gif") {
+        "image/gif"
     } else {
         "image/jpeg"
     };
@@ -582,7 +629,52 @@ async fn scan_library(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let _ = state.app.generate_missing_thumbs().await;
     Ok(Json(serde_json::json!(result)))
+}
+
+async fn generate_missing_thumbs(
+    State(state): State<ApiState>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let count = state
+        .app
+        .generate_missing_thumbs()
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(serde_json::json!({ "generated": count })))
+}
+
+#[derive(Deserialize)]
+struct ResolveBody {
+    url: String,
+}
+
+async fn resolve_media_details(
+    State(state): State<ApiState>,
+    Json(body): Json<ResolveBody>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let item = state
+        .app
+        .resolve_media_details(&body.url)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(serde_json::json!(item)))
+}
+
+#[derive(Deserialize)]
+struct EnsurePerformerBody {
+    name: String,
+}
+
+async fn ensure_performer(
+    State(state): State<ApiState>,
+    Json(body): Json<EnsurePerformerBody>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let performer = state
+        .app
+        .ensure_performer(&body.name)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(serde_json::json!(performer)))
 }
 
 fn parse_kind(s: &str) -> AppResult<crate::models::BrowseKind> {

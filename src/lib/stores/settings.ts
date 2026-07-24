@@ -21,6 +21,8 @@ const defaultSettings: AppSettings = {
   lan_enabled: false,
   lan_port: 8787,
   remote_host: undefined,
+  download_quality: "1080",
+  prefer_mp4: true,
 };
 
 export const useSettingsStore = create<SettingsState>()(

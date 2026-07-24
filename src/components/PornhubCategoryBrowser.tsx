@@ -11,10 +11,12 @@ import {
 } from "@/lib/sites/pornhub-categories";
 import type { MediaItem } from "@/lib/types";
 import { SceneCard } from "@/components/SceneCard";
+import { BrowseItemDetailsDialog } from "@/components/BrowseItemDetailsDialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { RefreshCw } from "lucide-react";
+import { browseCacheKey, useBrowseStore } from "@/lib/stores/browse";
 
 export function PornhubCategoryBrowser() {
   const [orientation, setOrientation] = useState<BrowseOrientation>("straight");
@@ -28,6 +30,10 @@ export function PornhubCategoryBrowser() {
   const [liveCatalog, setLiveCatalog] = useState<PornhubCategory[] | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshStatus, setRefreshStatus] = useState("");
+  const [infoItem, setInfoItem] = useState<MediaItem | null>(null);
+
+  const setCache = useBrowseStore((s) => s.set);
+  const getCache = useBrowseStore((s) => s.get);
 
   const categories = useMemo(() => {
     const base = liveCatalog ?? categoriesForOrientation(orientation);
@@ -37,24 +43,46 @@ export function PornhubCategoryBrowser() {
     return list.filter((c) => c.name.toLowerCase().includes(q));
   }, [orientation, filter, liveCatalog]);
 
-  const load = useCallback(async (cat: PornhubCategory, p: number, append = false) => {
-    setLoading(true);
-    setError("");
-    try {
-      const slug = categoryBrowseSlug(cat);
-      const result = await api.browse("pornhub", "category", slug, p, cat.orientation);
-      setItems((prev) => (append ? [...prev, ...result.items] : result.items));
-      setHasMore(result.has_more);
-      setPage(p);
-      setSelected(cat);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "Browse failed";
-      setError(msg.replace(/^site error:\s*/i, ""));
-      if (!append) setItems([]);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const load = useCallback(
+    async (cat: PornhubCategory, p: number, append = false) => {
+      setLoading(true);
+      setError("");
+      try {
+        const slug = categoryBrowseSlug(cat);
+        const result = await api.browse("pornhub", "category", slug, p, cat.orientation);
+        setItems((prev) => {
+          const out = append ? [...prev, ...result.items] : result.items;
+          setCache(
+            browseCacheKey({
+              site: "pornhub",
+              kind: "category",
+              orientation: cat.orientation,
+              categoryKey: slug,
+            }),
+            {
+              items: out,
+              page: p,
+              hasMore: result.has_more,
+              querySlug: slug,
+              orientation: cat.orientation,
+              categoryKey: slug,
+            },
+          );
+          return out;
+        });
+        setHasMore(result.has_more);
+        setPage(p);
+        setSelected(cat);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "Browse failed";
+        setError(msg.replace(/^site error:\s*/i, ""));
+        if (!append) setItems([]);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [setCache],
+  );
 
   async function refreshCategories() {
     setRefreshing(true);
@@ -127,7 +155,24 @@ export function PornhubCategoryBrowser() {
                 <button
                   type="button"
                   className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-[var(--color-muted)]"
-                  onClick={() => void load(cat, 1)}
+                  onClick={() => {
+                    const key = browseCacheKey({
+                      site: "pornhub",
+                      kind: "category",
+                      orientation: cat.orientation,
+                      categoryKey: categoryBrowseSlug(cat),
+                    });
+                    const cached = getCache(key);
+                    if (cached && cached.items.length > 0) {
+                      setSelected(cat);
+                      setItems(cached.items);
+                      setPage(cached.page);
+                      setHasMore(cached.hasMore);
+                      setError("");
+                      return;
+                    }
+                    void load(cat, 1);
+                  }}
                 >
                   <span>{cat.name}</span>
                   {cat.videoCount != null && (
@@ -156,7 +201,12 @@ export function PornhubCategoryBrowser() {
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
         {items.map((item) => (
-          <SceneCard key={item.id} item={item} onDownload={(i) => void handleDownload(i)} />
+          <SceneCard
+            key={item.id}
+            item={item}
+            onDownload={(i) => void handleDownload(i)}
+            onInfo={setInfoItem}
+          />
         ))}
       </div>
 
@@ -175,6 +225,12 @@ export function PornhubCategoryBrowser() {
           No videos — import PornHub cookies in Settings.
         </p>
       )}
+
+      <BrowseItemDetailsDialog
+        item={infoItem}
+        open={infoItem !== null}
+        onClose={() => setInfoItem(null)}
+      />
     </div>
   );
 }

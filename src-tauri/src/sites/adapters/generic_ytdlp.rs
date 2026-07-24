@@ -134,6 +134,8 @@ impl SiteAdapter for GenericYtDlpAdapter {
                     site_id: self.site_id.to_string(),
                     performers: vec![],
                     tags: vec![],
+                description: None,
+                channel: None,
                 })
                 .collect::<Vec<_>>();
             let has_more = items.len() >= 24;
@@ -155,6 +157,8 @@ impl SiteAdapter for GenericYtDlpAdapter {
                 site_id: self.site_id.to_string(),
                 performers: vec![],
                 tags: vec![],
+            description: None,
+            channel: None,
             }],
             page: query.page,
             has_more: false,

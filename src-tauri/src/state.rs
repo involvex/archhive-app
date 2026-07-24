@@ -55,7 +55,10 @@ impl AppState {
         }
         let settings = self.get_settings()?;
         let path = Self::validate_library_path(&settings.library_path, &self.data_dir)?;
-        let root = PathBuf::from(&path);
+        // Always store canonical path so Range media checks match Windows \\?\ prefixes.
+        let root = PathBuf::from(&path)
+            .canonicalize()
+            .unwrap_or_else(|_| PathBuf::from(&path));
         *self.library_root_cache.lock() = Some(root.clone());
         Ok(root)
     }
@@ -116,6 +119,8 @@ impl AppState {
                 site_id: adapter_id.clone(),
                 performers: vec![],
                 tags: vec![],
+            description: None,
+            channel: None,
             };
             let plan = site_adapter.resolve_download(&self.site_ctx, &item).await?;
             return self.downloads.queue_plan(plan);
@@ -224,8 +229,28 @@ impl AppState {
         })
     }
 
-    pub fn list_scenes(&self, query: Option<&str>) -> AppResult<Vec<Scene>> {
-        self.db.list_scenes(query)
+    pub fn list_scenes(
+        &self,
+        query: Option<&str>,
+        sort: crate::models::SceneSort,
+    ) -> AppResult<Vec<Scene>> {
+        self.db.list_scenes(query, sort)
+    }
+
+    pub fn delete_scene(&self, id: &str, delete_files: bool) -> AppResult<()> {
+        self.db.delete_scene(id, delete_files)
+    }
+
+    pub fn ensure_performer(&self, name: &str) -> AppResult<Performer> {
+        let id = self.db.upsert_performer(name)?;
+        Ok(Performer {
+            id,
+            name: name.to_string(),
+            aliases: vec![],
+            image: None,
+            favorite: false,
+            scene_count: 0,
+        })
     }
 
     pub fn list_performers(&self, query: Option<&str>) -> AppResult<Vec<Performer>> {
@@ -403,6 +428,88 @@ impl AppState {
 
     pub async fn resolve_standalone(&self, url: &str) -> AppResult<MediaItem> {
         crate::mobile::standalone::resolve(url).await
+    }
+
+    pub async fn resolve_media_details(&self, url: &str) -> AppResult<MediaItem> {
+        let runner = crate::sites::yt_dlp::SidecarRunner::new(self.site_ctx.app().clone());
+        let site_id = self
+            .sites
+            .detect(url)
+            .unwrap_or_else(|| "custom".to_string());
+        let cookies = self.site_ctx.cookie_file_for_site(&site_id);
+        let json = runner
+            .resolve_media_json(url, cookies.as_deref())
+            .await?;
+
+        let title = json
+            .get("title")
+            .and_then(|v| v.as_str())
+            .unwrap_or(url)
+            .to_string();
+        let description = json
+            .get("description")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let channel = json
+            .get("uploader")
+            .or_else(|| json.get("channel"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let thumbnail = json
+            .get("thumbnail")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .or_else(|| {
+                json.get("thumbnails")
+                    .and_then(|v| v.as_array())
+                    .and_then(|arr| arr.last())
+                    .and_then(|t| t.get("url"))
+                    .and_then(|u| u.as_str())
+                    .map(|s| s.to_string())
+            });
+        let duration = json
+            .get("duration")
+            .and_then(|v| v.as_f64())
+            .map(|d| d as u32);
+        let tags = json
+            .get("tags")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|t| t.as_str().map(|s| s.to_string()))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        let mut performers = Vec::new();
+        if let Some(ch) = channel.as_ref() {
+            performers.push(ch.clone());
+        }
+
+        Ok(MediaItem {
+            id: json
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or(url)
+                .to_string(),
+            title,
+            url: url.to_string(),
+            thumbnail,
+            duration,
+            site_id,
+            performers,
+            tags,
+            description,
+            channel,
+        })
+    }
+
+    pub async fn generate_missing_thumbs(&self) -> AppResult<u32> {
+        crate::library::LibraryScanner::generate_missing_thumbs(
+            self.db.clone(),
+            self.site_ctx.app().clone(),
+            2,
+        )
+        .await
     }
 
     pub fn static_ui_path(&self) -> Option<PathBuf> {

@@ -17,6 +17,8 @@ interface SceneContextMenuProps {
   onPlay?: (scene: Scene) => void;
   onOpenExplorer?: (scene: Scene) => void;
   onOpenDefault?: (scene: Scene) => void;
+  onRenameFile?: (scene: Scene) => void;
+  onDelete?: (scene: Scene) => void;
 }
 
 export function SceneContextMenu({
@@ -27,6 +29,8 @@ export function SceneContextMenu({
   onPlay,
   onOpenExplorer,
   onOpenDefault,
+  onRenameFile,
+  onDelete,
 }: SceneContextMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
   const caps = getCapabilities();
@@ -51,13 +55,21 @@ export function SceneContextMenu({
 
   if (!menu) return null;
 
-  const items: { label: string; action: () => void; show?: boolean }[] = [
+  const items: { label: string; action: () => void; show?: boolean; danger?: boolean }[] = [
     {
       label: "Edit metadata",
       action: () => {
         onEdit(menu.scene);
         onClose();
       },
+    },
+    {
+      label: "Rename file to match title",
+      action: () => {
+        onRenameFile?.(menu.scene);
+        onClose();
+      },
+      show: Boolean(menu.scene.path) && Boolean(onRenameFile),
     },
     {
       label: "Play",
@@ -90,6 +102,15 @@ export function SceneContextMenu({
       },
       show: caps.localIpc && Boolean(menu.scene.path) && Boolean(onOpenDefault),
     },
+    {
+      label: "Delete…",
+      action: () => {
+        onDelete?.(menu.scene);
+        onClose();
+      },
+      show: Boolean(onDelete),
+      danger: true,
+    },
   ];
 
   return (
@@ -104,7 +125,9 @@ export function SceneContextMenu({
           <button
             key={item.label}
             type="button"
-            className="block w-full px-3 py-1.5 text-left text-sm hover:bg-[var(--color-muted)]"
+            className={`block w-full px-3 py-1.5 text-left text-sm hover:bg-[var(--color-muted)] ${
+              item.danger ? "text-red-400" : ""
+            }`}
             onClick={item.action}
           >
             {item.label}

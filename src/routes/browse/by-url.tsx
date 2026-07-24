@@ -1,23 +1,40 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api/client";
 import type { MediaItem } from "@/lib/types";
 import { SceneCard } from "@/components/SceneCard";
+import { BrowseItemDetailsDialog } from "@/components/BrowseItemDetailsDialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Link2 } from "lucide-react";
+import { browseCacheKey, useBrowseStore } from "@/lib/stores/browse";
 
 export const Route = createFileRoute("/browse/by-url")({
   component: CustomBrowsePage,
 });
 
 function CustomBrowsePage() {
-  const [url, setUrl] = useState("");
-  const [items, setItems] = useState<MediaItem[]>([]);
-  const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(false);
+  const cacheKey = useMemo(() => browseCacheKey({ site: "custom", kind: "by-url", url: "_" }), []);
+  const cached = useBrowseStore((s) => s.caches[cacheKey]);
+  const setCache = useBrowseStore((s) => s.set);
+
+  const [url, setUrl] = useState(cached?.url ?? "");
+  const [items, setItems] = useState<MediaItem[]>(cached?.items ?? []);
+  const [page, setPage] = useState(cached?.page ?? 1);
+  const [hasMore, setHasMore] = useState(cached?.hasMore ?? false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [infoItem, setInfoItem] = useState<MediaItem | null>(null);
+
+  useEffect(() => {
+    setCache(cacheKey, {
+      items,
+      page,
+      hasMore,
+      querySlug: url,
+      url,
+    });
+  }, [cacheKey, items, page, hasMore, url, setCache]);
 
   const load = useCallback(
     async (p: number, append = false) => {
@@ -76,7 +93,12 @@ function CustomBrowsePage() {
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
         {items.map((item) => (
-          <SceneCard key={item.id} item={item} onDownload={(i) => void handleDownload(i)} />
+          <SceneCard
+            key={item.id}
+            item={item}
+            onDownload={(i) => void handleDownload(i)}
+            onInfo={setInfoItem}
+          />
         ))}
       </div>
 
@@ -85,6 +107,12 @@ function CustomBrowsePage() {
           Load more
         </Button>
       )}
+
+      <BrowseItemDetailsDialog
+        item={infoItem}
+        open={infoItem !== null}
+        onClose={() => setInfoItem(null)}
+      />
     </div>
   );
 }

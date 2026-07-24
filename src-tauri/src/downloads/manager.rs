@@ -338,6 +338,11 @@ async fn run_job_with_plan(
         }
         DownloadTool::YtDlp => {
             let cancel_clone = cancel.clone();
+            let settings = db.get_settings().unwrap_or_default();
+            let format_args = SidecarRunner::format_selection_args(
+                settings.download_quality,
+                settings.prefer_mp4,
+            );
             let path_result = runner
                 .run_yt_dlp(
                     &plan.url,
@@ -349,6 +354,7 @@ async fn run_job_with_plan(
                         let progress = SidecarRunner::parse_progress(line);
                         update_progress(&db_emit, &app_emit, &job_id_emit, line, progress);
                     },
+                    &format_args,
                 )
                 .await;
             if path_result.is_err() && !cancel.load(Ordering::Relaxed) {

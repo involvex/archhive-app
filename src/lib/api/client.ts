@@ -22,6 +22,7 @@ import type {
   BatchUpdateScenesRequest,
   BatchUpdateScenesResult,
   PornhubCategoryEntry,
+  SceneSort,
 } from "../types";
 import { getAppRuntime, shouldUseRemoteApi } from "../runtime";
 import { useSettingsStore } from "../stores/settings";
@@ -222,9 +223,44 @@ export const api = {
     });
   },
 
-  async listScenes(query?: string): Promise<Scene[]> {
-    const q = query ? `?q=${encodeURIComponent(query)}` : "";
-    return localOrRemote("list_scenes", { query }, `/api/scenes${q}`);
+  async listScenes(query?: string, sort: SceneSort = "newest"): Promise<Scene[]> {
+    const params = new URLSearchParams();
+    if (query) params.set("q", query);
+    if (sort && sort !== "newest") params.set("sort", sort);
+    const qs = params.toString() ? `?${params}` : "";
+    return localOrRemote("list_scenes", { query, sort }, `/api/scenes${qs}`);
+  },
+
+  async deleteScene(id: string, deleteFiles = false): Promise<void> {
+    if (shouldUseRemoteApi()) {
+      const qs = deleteFiles ? "?delete_files=true" : "?delete_files=false";
+      return remoteFetch<void>(`/api/scenes/${id}${qs}`, { method: "DELETE" });
+    }
+    return localInvoke("delete_scene", { id, deleteFiles });
+  },
+
+  async generateMissingThumbs(): Promise<number> {
+    if (shouldUseRemoteApi()) {
+      const res = await remoteFetch<{ generated: number }>("/api/library/thumbs", {
+        method: "POST",
+      });
+      return res.generated;
+    }
+    return localInvoke<number>("generate_missing_thumbs");
+  },
+
+  async resolveMediaDetails(url: string): Promise<MediaItem> {
+    return localOrRemote("resolve_media_details", { url }, "/api/media/resolve", {
+      method: "POST",
+      body: JSON.stringify({ url }),
+    });
+  },
+
+  async ensurePerformer(name: string): Promise<Performer> {
+    return localOrRemote("ensure_performer", { name }, "/api/performers/ensure", {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    });
   },
 
   async listPerformers(query?: string): Promise<Performer[]> {

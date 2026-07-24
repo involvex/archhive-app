@@ -186,6 +186,8 @@ fn parse_listing(html: &str, site_id: &str) -> Vec<MediaItem> {
                 site_id: site_id.to_string(),
                 performers: vec![],
                 tags: vec![],
+            description: None,
+            channel: None,
             });
 
             if items.len() >= 48 {

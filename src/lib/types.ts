@@ -11,6 +11,8 @@ export interface MediaItem {
   site_id: string;
   performers: string[];
   tags: string[];
+  description?: string;
+  channel?: string;
 }
 
 export interface BrowsePage {
@@ -115,6 +117,10 @@ export interface Studio {
 
 export type EngineMode = "local" | "remote_lan" | "standalone";
 
+export type SceneSort = "newest" | "name";
+
+export type DownloadQuality = "best" | "1080" | "720" | "480";
+
 export interface AppSettings {
   engine_mode: EngineMode;
   library_path: string;
@@ -128,6 +134,8 @@ export interface AppSettings {
   close_to_tray?: boolean;
   minimize_to_tray?: boolean;
   tray_hotkey?: string;
+  download_quality?: DownloadQuality;
+  prefer_mp4?: boolean;
 }
 
 export interface MergeDuplicatesResult {

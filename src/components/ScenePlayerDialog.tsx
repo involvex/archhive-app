@@ -1,4 +1,6 @@
-import { sceneMediaUrl, isVideoScene, isHttpMediaSrc } from "@/lib/mediaUrl";
+import { sceneMediaUrl, isWebPlayableScene, isHttpMediaSrc, isVideoScene } from "@/lib/mediaUrl";
+import { getCapabilities } from "@/lib/runtime";
+import { api } from "@/lib/api/client";
 import type { Scene } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { X } from "lucide-react";
@@ -12,8 +14,9 @@ interface ScenePlayerDialogProps {
 export function ScenePlayerDialog({ scene, open, onClose }: ScenePlayerDialogProps) {
   if (!open || !scene) return null;
 
+  const caps = getCapabilities();
   const mediaSrc = sceneMediaUrl(scene);
-  const playable = isVideoScene(scene) && mediaSrc;
+  const webPlayable = isWebPlayableScene(scene) && mediaSrc;
   const useCors = isHttpMediaSrc(mediaSrc);
 
   return (
@@ -33,7 +36,7 @@ export function ScenePlayerDialog({ scene, open, onClose }: ScenePlayerDialogPro
             <X className="h-4 w-4" />
           </button>
         </div>
-        {playable ? (
+        {webPlayable ? (
           <video
             key={mediaSrc}
             src={mediaSrc}
@@ -44,11 +47,23 @@ export function ScenePlayerDialog({ scene, open, onClose }: ScenePlayerDialogPro
             className="aspect-video w-full rounded-md bg-black"
           />
         ) : (
-          <p className="text-sm text-[var(--color-muted-foreground)]">
-            {scene.path
-              ? "This file format may not play in the browser. MKV often needs a desktop player."
-              : "No media file path for this scene."}
-          </p>
+          <div className="space-y-3">
+            <p className="text-sm text-[var(--color-muted-foreground)]">
+              {scene.path
+                ? isVideoScene(scene)
+                  ? "This container (e.g. MKV/AVI) often cannot play in the in-app player. Open it with your system player instead."
+                  : "This file format may not play in the browser."
+                : "No media file path for this scene."}
+            </p>
+            {caps.localIpc && scene.path && (
+              <Button
+                variant="default"
+                onClick={() => void api.openSceneWithDefault(scene.id).catch(console.error)}
+              >
+                Open with system player
+              </Button>
+            )}
+          </div>
         )}
         <div className="mt-4 flex justify-end">
           <Button variant="outline" onClick={onClose}>

@@ -1,11 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api/client";
 import { normalizeBrowseInput } from "@/lib/browse/normalize";
 import type { BrowseKind, MediaItem } from "@/lib/types";
 import { SceneCard } from "@/components/SceneCard";
+import { BrowseItemDetailsDialog } from "@/components/BrowseItemDetailsDialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { browseCacheKey, useBrowseStore } from "@/lib/stores/browse";
 
 export const Route = createFileRoute("/browse/$site/$kind/$slug")({
   component: BrowseDetailPage,
@@ -13,12 +15,24 @@ export const Route = createFileRoute("/browse/$site/$kind/$slug")({
 
 function BrowseDetailPage() {
   const { site, kind, slug } = Route.useParams();
-  const [items, setItems] = useState<MediaItem[]>([]);
-  const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(false);
-  const [querySlug, setQuerySlug] = useState(slug === "example" ? "" : slug);
+  const cacheKey = useMemo(
+    () => browseCacheKey({ site, kind, slug: slug === "example" ? "" : slug }),
+    [site, kind, slug],
+  );
+  const cached = useBrowseStore((s) => s.caches[cacheKey]);
+  const setCache = useBrowseStore((s) => s.set);
+
+  const [items, setItems] = useState<MediaItem[]>(cached?.items ?? []);
+  const [page, setPage] = useState(cached?.page ?? 1);
+  const [hasMore, setHasMore] = useState(cached?.hasMore ?? false);
+  const [querySlug, setQuerySlug] = useState(cached?.querySlug ?? (slug === "example" ? "" : slug));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [infoItem, setInfoItem] = useState<MediaItem | null>(null);
+
+  useEffect(() => {
+    setCache(cacheKey, { items, page, hasMore, querySlug });
+  }, [cacheKey, items, page, hasMore, querySlug, setCache]);
 
   const load = useCallback(
     async (p: number, append = false) => {
@@ -73,7 +87,12 @@ function BrowseDetailPage() {
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
         {items.map((item) => (
-          <SceneCard key={item.id} item={item} onDownload={(i) => void handleDownload(i)} />
+          <SceneCard
+            key={item.id}
+            item={item}
+            onDownload={(i) => void handleDownload(i)}
+            onInfo={setInfoItem}
+          />
         ))}
       </div>
 
@@ -86,6 +105,12 @@ function BrowseDetailPage() {
       {!loading && items.length === 0 && querySlug && (
         <p className="text-sm text-[var(--color-muted-foreground)]">No items found.</p>
       )}
+
+      <BrowseItemDetailsDialog
+        item={infoItem}
+        open={infoItem !== null}
+        onClose={() => setInfoItem(null)}
+      />
     </div>
   );
 }

@@ -343,6 +343,8 @@ fn parse_video_links(html: &str, base: &str, site_id: &str) -> AppResult<Vec<Med
                 site_id: site_id.to_string(),
                 performers: vec![],
                 tags: vec![],
+            description: None,
+            channel: None,
             });
             if items.len() >= 40 {
                 break;

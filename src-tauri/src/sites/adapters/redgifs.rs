@@ -87,6 +87,8 @@ fn parse_redgifs(html: &str) -> AppResult<Vec<MediaItem>> {
             site_id: "redgifs".to_string(),
             performers: vec![],
             tags: vec![],
+        description: None,
+        channel: None,
         });
         if items.len() >= 30 {
             break;

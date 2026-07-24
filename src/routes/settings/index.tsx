@@ -73,6 +73,7 @@ function SettingsPage() {
   const [mergingKey, setMergingKey] = useState<string | null>(null);
   const [dupStatus, setDupStatus] = useState("");
   const [scanning, setScanning] = useState(false);
+  const [generatingThumbs, setGeneratingThumbs] = useState(false);
   const [scanProgress, setScanProgress] = useState("");
   const [scanResult, setScanResult] = useState("");
   const [discoveredHosts, setDiscoveredHosts] = useState<LanHost[]>([]);
@@ -231,6 +232,19 @@ function SettingsPage() {
       setScanResult(e instanceof Error ? e.message : "Scan failed");
     } finally {
       setScanning(false);
+    }
+  }
+
+  async function runGenerateThumbs() {
+    setGeneratingThumbs(true);
+    setScanResult("");
+    try {
+      const count = await api.generateMissingThumbs();
+      setScanResult(`Generated ${count} thumbnail${count === 1 ? "" : "s"}`);
+    } catch (e) {
+      setScanResult(e instanceof Error ? e.message : "Thumb generation failed");
+    } finally {
+      setGeneratingThumbs(false);
     }
   }
 
@@ -541,6 +555,13 @@ function SettingsPage() {
                         ? "Scan on host"
                         : "Scan Library"}
                   </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => void runGenerateThumbs()}
+                    disabled={generatingThumbs}
+                  >
+                    {generatingThumbs ? "Generating thumbs…" : "Generate missing thumbs"}
+                  </Button>
                   {scanProgress && (
                     <p className="text-xs text-[var(--color-muted-foreground)]">{scanProgress}</p>
                   )}
@@ -549,6 +570,49 @@ function SettingsPage() {
                   )}
                 </>
               )}
+            </CardContent>
+          </Card>
+        </Tabs.Content>
+
+        <Tabs.Content value="downloads" className="mt-4 space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Download quality</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-xs text-[var(--color-muted-foreground)]">
+                Controls yt-dlp format selection. Prefer MP4 for reliable in-app / LAN playback.
+              </p>
+              <div>
+                <label className="text-xs text-[var(--color-muted-foreground)]">
+                  Max resolution
+                </label>
+                <select
+                  className="mt-1 flex h-9 w-full max-w-xs rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-2 text-sm"
+                  value={hostSettings?.download_quality ?? "1080"}
+                  onChange={(e) =>
+                    patchHostSettings({
+                      download_quality: e.target.value as "best" | "1080" | "720" | "480",
+                    })
+                  }
+                >
+                  <option value="best">Best available</option>
+                  <option value="1080">1080p</option>
+                  <option value="720">720p</option>
+                  <option value="480">480p</option>
+                </select>
+              </div>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={hostSettings?.prefer_mp4 ?? true}
+                  onChange={(e) => patchHostSettings({ prefer_mp4: e.target.checked })}
+                />
+                Prefer MP4 for in-app playback
+              </label>
+              <Button onClick={() => void saveHostSettings()} disabled={!hostSettings}>
+                Save
+              </Button>
             </CardContent>
           </Card>
         </Tabs.Content>

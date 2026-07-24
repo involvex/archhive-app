@@ -24,6 +24,7 @@ impl SidecarRunner {
         cookies_file: Option<&Path>,
         cancel: Arc<AtomicBool>,
         on_line: impl Fn(&str),
+        format_args: &[String],
     ) -> AppResult<String> {
         let output = format!("{output_dir}/{template}");
         let mut args = vec![
@@ -39,12 +40,68 @@ impl SidecarRunner {
             "--print".to_string(),
             "filepath".to_string(),
         ];
+        args.extend(format_args.iter().cloned());
         if let Some(cookies) = cookies_file {
             args.push("--cookies".to_string());
             args.push(cookies.to_string_lossy().to_string());
         }
         self.spawn_cancellable("yt-dlp", &args, cancel, on_line, Some(output_dir))
             .await
+    }
+
+    /// Build yt-dlp `-f` / `-S` args from download quality prefs.
+    pub fn format_selection_args(
+        quality: crate::models::DownloadQuality,
+        prefer_mp4: bool,
+    ) -> Vec<String> {
+        use crate::models::DownloadQuality;
+        let height = match quality {
+            DownloadQuality::Best => None,
+            DownloadQuality::Height1080 => Some(1080u32),
+            DownloadQuality::Height720 => Some(720),
+            DownloadQuality::Height480 => Some(480),
+        };
+
+        let mut args = Vec::new();
+        if prefer_mp4 {
+            let format = match height {
+                Some(h) => format!(
+                    "bv*[height<={h}][ext=mp4]+ba[ext=m4a]/b[height<={h}][ext=mp4]/bv*[height<={h}]+ba/b[height<={h}]/b"
+                ),
+                None => {
+                    "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/b".to_string()
+                }
+            };
+            args.push("-f".to_string());
+            args.push(format);
+            args.push("-S".to_string());
+            args.push("res,ext:mp4:m4a".to_string());
+        } else if let Some(h) = height {
+            args.push("-f".to_string());
+            args.push(format!("bv*[height<={h}]+ba/b[height<={h}]/b"));
+        }
+        args
+    }
+
+    /// Resolve metadata for a single URL via yt-dlp `-J` (no download).
+    pub async fn resolve_media_json(
+        &self,
+        url: &str,
+        cookies_file: Option<&Path>,
+    ) -> AppResult<serde_json::Value> {
+        let mut args = vec![
+            url.to_string(),
+            "-J".to_string(),
+            "--no-warnings".to_string(),
+            "--no-playlist".to_string(),
+        ];
+        if let Some(cookies) = cookies_file {
+            args.push("--cookies".to_string());
+            args.push(cookies.to_string_lossy().to_string());
+        }
+        let raw = self.run_capture("yt-dlp", &args).await?;
+        serde_json::from_str(&raw)
+            .map_err(|e| AppError::Download(format!("yt-dlp JSON parse: {e}")))
     }
 
     pub async fn run_gallery_dl(
@@ -581,6 +638,21 @@ mod tests {
     fn parses_bare_print_filepath() {
         let p = SidecarRunner::parse_destination("/home/user/vid.mkv").unwrap();
         assert_eq!(p, "/home/user/vid.mkv");
+    }
+
+    #[test]
+    fn format_selection_prefers_mp4_with_height_cap() {
+        use crate::models::DownloadQuality;
+        let args = SidecarRunner::format_selection_args(DownloadQuality::Height720, true);
+        assert!(args.windows(2).any(|w| w[0] == "-f" && w[1].contains("height<=720")));
+        assert!(args.windows(2).any(|w| w[0] == "-S" && w[1].contains("ext:mp4")));
+    }
+
+    #[test]
+    fn format_selection_best_without_mp4_is_empty() {
+        use crate::models::DownloadQuality;
+        let args = SidecarRunner::format_selection_args(DownloadQuality::Best, false);
+        assert!(args.is_empty());
     }
 
     #[test]

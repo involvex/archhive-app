@@ -27,6 +27,8 @@ pub async fn ytdlp_browse_fallback(
             site_id: site_id.to_string(),
             performers: vec![],
             tags: vec![],
+        description: None,
+        channel: None,
         })
         .collect())
 }

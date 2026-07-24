@@ -15,6 +15,8 @@ pub async fn resolve(url: &str) -> AppResult<MediaItem> {
             site_id: "youtube".to_string(),
             performers: vec![],
             tags: vec![],
+        description: None,
+        channel: None,
         });
     }
 
@@ -30,6 +32,8 @@ pub async fn resolve(url: &str) -> AppResult<MediaItem> {
                 site_id: "direct".to_string(),
                 performers: vec![],
                 tags: vec![],
+            description: None,
+            channel: None,
             });
         }
     }
