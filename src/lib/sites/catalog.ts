@@ -17,6 +17,20 @@ export const SITE_CATALOG: SiteInfo[] = [
     requires_cookies: true,
   },
   {
+    id: "youporn",
+    display_name: "YouPorn",
+    base_url: "https://www.youporn.com",
+    supported_kinds: ["category", "search", "model", "channel", "tag"] as BrowseKind[],
+    requires_cookies: false,
+  },
+  {
+    id: "xnxx",
+    display_name: "XNXX",
+    base_url: "https://www.xnxx.com",
+    supported_kinds: ["search", "tag", "channel"] as BrowseKind[],
+    requires_cookies: false,
+  },
+  {
     id: "xhamster",
     display_name: "xHamster",
     base_url: "https://xhamster.com",
@@ -57,6 +71,13 @@ export const SITE_CATALOG: SiteInfo[] = [
     base_url: "https://www.tiktok.com",
     supported_kinds: ["channel", "video"] as BrowseKind[],
     requires_cookies: false,
+  },
+  {
+    id: "instagram",
+    display_name: "Instagram",
+    base_url: "https://www.instagram.com",
+    supported_kinds: ["channel", "video"] as BrowseKind[],
+    requires_cookies: true,
   },
   {
     id: "twitter",

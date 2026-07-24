@@ -10,6 +10,7 @@ pub struct GenericYtDlpAdapter {
     pub name: &'static str,
     pub base: &'static str,
     pub kinds: Vec<crate::models::BrowseKind>,
+    pub cookies: bool,
 }
 
 impl GenericYtDlpAdapter {
@@ -23,6 +24,7 @@ impl GenericYtDlpAdapter {
                 crate::models::BrowseKind::Search,
                 crate::models::BrowseKind::Video,
             ],
+            cookies: false,
         }
     }
 
@@ -36,6 +38,7 @@ impl GenericYtDlpAdapter {
                 crate::models::BrowseKind::Search,
                 crate::models::BrowseKind::Video,
             ],
+            cookies: false,
         }
     }
 
@@ -48,6 +51,7 @@ impl GenericYtDlpAdapter {
                 crate::models::BrowseKind::Channel,
                 crate::models::BrowseKind::Video,
             ],
+            cookies: false,
         }
     }
 
@@ -61,6 +65,20 @@ impl GenericYtDlpAdapter {
                 crate::models::BrowseKind::Search,
                 crate::models::BrowseKind::Video,
             ],
+            cookies: true,
+        }
+    }
+
+    pub fn instagram() -> Self {
+        Self {
+            site_id: "instagram",
+            name: "Instagram",
+            base: "https://www.instagram.com",
+            kinds: vec![
+                crate::models::BrowseKind::Channel,
+                crate::models::BrowseKind::Video,
+            ],
+            cookies: true,
         }
     }
 }
@@ -73,6 +91,7 @@ fn profile_url(base: &str, site_id: &str, slug: &str) -> String {
     let clean = trimmed.trim_start_matches('@');
     match site_id {
         "tiktok" | "youtube" => format!("{base}/@{clean}"),
+        "instagram" => format!("{base}/{clean}/"),
         _ => format!("{base}/{clean}"),
     }
 }
@@ -109,6 +128,10 @@ impl SiteAdapter for GenericYtDlpAdapter {
         self.kinds.clone()
     }
 
+    fn requires_cookies(&self) -> bool {
+        self.cookies
+    }
+
     async fn browse(
         &self,
         ctx: &SiteContext,
@@ -142,7 +165,7 @@ impl SiteAdapter for GenericYtDlpAdapter {
                 .await
                 .map_err(|e| {
                     crate::error::AppError::Site(format!(
-                        "{} browse failed: {e}. For TikTok, try a @username channel instead of search if blocked.",
+                        "{} browse failed: {e}. Import cookies in Settings if the site blocks anonymous access.",
                         self.name
                     ))
                 })?;

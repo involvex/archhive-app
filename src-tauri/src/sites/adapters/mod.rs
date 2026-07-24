@@ -5,4 +5,4 @@ pub mod reddit;
 pub mod redgifs;
 pub mod thothub;
 
-pub use pornhub::{PornhubAdapter, XHamsterAdapter, XVideosAdapter};
+pub use pornhub::{PornhubAdapter, XHamsterAdapter, XVideosAdapter, XnxxAdapter, YouPornAdapter};

@@ -31,6 +31,7 @@ macro_rules! ytdlp_tube_adapter {
                     BrowseKind::Tag,
                     BrowseKind::Search,
                     BrowseKind::Channel,
+                    BrowseKind::Category,
                     BrowseKind::Video,
                     BrowseKind::Model,
                 ]
@@ -183,6 +184,13 @@ ytdlp_tube_adapter!(
     "XVIDEOS",
     "https://www.xvideos.com"
 );
+ytdlp_tube_adapter!(
+    YouPornAdapter,
+    "youporn",
+    "YouPorn",
+    "https://www.youporn.com"
+);
+ytdlp_tube_adapter!(XnxxAdapter, "xnxx", "XNXX", "https://www.xnxx.com");
 
 fn tube_browse_url(site_id: &str, base: &str, query: &BrowseQuery) -> String {
     let slug = path_slug(&query.slug);
@@ -225,6 +233,49 @@ fn tube_browse_url(site_id: &str, base: &str, query: &BrowseQuery) -> String {
                     query.slug.clone()
                 } else {
                     format!("{base}/videos/{slug}")
+                }
+            }
+        },
+        "youporn" => match query.kind {
+            BrowseKind::Search | BrowseKind::Tag => {
+                format!("{base}/search/?query={q}{}", page_amp(query.page))
+            }
+            BrowseKind::Category => {
+                if slug.is_empty() || slug == "categories" {
+                    format!("{base}/categories/{}", page_query(query.page))
+                } else {
+                    format!("{base}/category/{slug}/{}", page_query(query.page))
+                }
+            }
+            BrowseKind::Model | BrowseKind::Channel => {
+                format!("{base}/pornstar/{slug}/{}", page_query(query.page))
+            }
+            BrowseKind::Video => {
+                if query.slug.starts_with("http") {
+                    query.slug.clone()
+                } else {
+                    format!("{base}/watch/{slug}/")
+                }
+            }
+        },
+        "xnxx" => match query.kind {
+            BrowseKind::Search | BrowseKind::Tag => {
+                let page = if query.page > 1 {
+                    format!("/{}", query.page)
+                } else {
+                    String::new()
+                };
+                format!("{base}/search/{slug}{page}")
+            }
+            BrowseKind::Model | BrowseKind::Channel => format!("{base}/pornstars/{slug}"),
+            BrowseKind::Category => format!("{base}/search/{slug}"),
+            BrowseKind::Video => {
+                if query.slug.starts_with("http") {
+                    query.slug.clone()
+                } else if slug.starts_with("video-") {
+                    format!("{base}/{slug}")
+                } else {
+                    format!("{base}/video-{slug}")
                 }
             }
         },
@@ -332,7 +383,17 @@ fn parse_video_links(html: &str, base: &str, site_id: &str) -> AppResult<Vec<Med
             ".thumb-list__item a[href*='/videos/']",
             "a.video-thumb__image-container[href*='/videos/']",
         ],
-        _ => &["a[href*='/video.']", "a[href*='/videos/']"],
+        "youporn" => &[
+            "a[href*='/watch/']",
+            ".video-box a[href*='/watch/']",
+            ".videoList a[href*='/watch/']",
+        ],
+        "xnxx" => &[
+            "div.mozaique a[href*='/video-']",
+            "div.thumb-block a[href*='/video-']",
+            "a[href*='/video-']",
+        ],
+        _ => &["a[href*='/video.']", "a[href*='/videos/']", "a[href*='/watch/']"],
     };
     let mut items = Vec::new();
     let mut seen = std::collections::HashSet::new();
@@ -388,11 +449,12 @@ fn parse_video_links(html: &str, base: &str, site_id: &str) -> AppResult<Vec<Med
                             })
                         })
                     }),
-                "xvideos" | "xhamster" => img_sel.as_ref().and_then(|sel| {
+                "xvideos" | "xhamster" | "youporn" | "xnxx" => img_sel.as_ref().and_then(|sel| {
                     el.select(sel).find_map(|img| {
                         img.value()
                             .attr("data-src")
                             .or_else(|| img.value().attr("data-thumb"))
+                            .or_else(|| img.value().attr("data-original"))
                             .or_else(|| img.value().attr("src"))
                             .filter(|s| !s.starts_with("data:"))
                             .map(|s| {
@@ -453,7 +515,29 @@ fn is_site_video_href(site_id: &str, href: &str) -> bool {
                 && !lower.contains("/users/")
                 && !lower.contains("/my/")
         }
-        _ => lower.contains("/video.") || lower.contains("/videos/"),
+        "youporn" => {
+            // /watch/12345/title — skip category/pornstar hubs
+            if !lower.contains("/watch/") {
+                return false;
+            }
+            let skip = [
+                "/categories/",
+                "/category/",
+                "/pornstar/",
+                "/channel/",
+                "/channels/",
+                "/search/",
+                "/info/",
+            ];
+            !skip.iter().any(|s| lower.contains(s))
+        }
+        "xnxx" => {
+            lower.contains("/video-")
+                && !lower.contains("/search/")
+                && !lower.contains("/pornstars/")
+                && !lower.contains("/profiles/")
+        }
+        _ => lower.contains("/video.") || lower.contains("/videos/") || lower.contains("/watch/"),
     }
 }
 
@@ -708,6 +792,69 @@ mod category_tests {
             },
         );
         assert_eq!(url, "https://xhamster.com/search/lesbian");
+    }
+
+    #[test]
+    fn youporn_category_and_pornstar_urls() {
+        let cat = tube_browse_url(
+            "youporn",
+            "https://www.youporn.com",
+            &BrowseQuery {
+                kind: BrowseKind::Category,
+                slug: "lesbian".into(),
+                page: 1,
+                orientation: None,
+            },
+        );
+        assert_eq!(cat, "https://www.youporn.com/category/lesbian/");
+
+        let star = tube_browse_url(
+            "youporn",
+            "https://www.youporn.com",
+            &BrowseQuery {
+                kind: BrowseKind::Model,
+                slug: "alexis-fawx".into(),
+                page: 1,
+                orientation: None,
+            },
+        );
+        assert_eq!(star, "https://www.youporn.com/pornstar/alexis-fawx/");
+
+        let search = tube_browse_url(
+            "youporn",
+            "https://www.youporn.com",
+            &BrowseQuery {
+                kind: BrowseKind::Search,
+                slug: "lesbian".into(),
+                page: 1,
+                orientation: None,
+            },
+        );
+        assert_eq!(search, "https://www.youporn.com/search/?query=lesbian");
+    }
+
+    #[test]
+    fn xnxx_search_url() {
+        let url = tube_browse_url(
+            "xnxx",
+            "https://www.xnxx.com",
+            &BrowseQuery {
+                kind: BrowseKind::Search,
+                slug: "lesbians".into(),
+                page: 1,
+                orientation: None,
+            },
+        );
+        assert_eq!(url, "https://www.xnxx.com/search/lesbians");
+    }
+
+    #[test]
+    fn youporn_and_xnxx_video_hrefs() {
+        assert!(is_site_video_href("youporn", "/watch/16877734/some-title/"));
+        assert!(!is_site_video_href("youporn", "/category/lesbian/"));
+        assert!(!is_site_video_href("youporn", "/pornstar/alexis-fawx/"));
+        assert!(is_site_video_href("xnxx", "/video-abc123/title"));
+        assert!(!is_site_video_href("xnxx", "/search/lesbians"));
     }
 
     #[test]
