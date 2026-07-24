@@ -89,7 +89,9 @@ impl DownloadManager {
         let tool = crate::downloads::image::resolve_download_tool(url, adapter);
         let plan = DownloadPlan {
             url: url.to_string(),
-            output_template: settings.naming_template,
+            output_template: crate::downloads::naming::to_ytdlp_output_template(
+                &settings.naming_template,
+            ),
             tool,
             title: title.map(|s| s.to_string()),
             performers: vec![],
@@ -173,7 +175,9 @@ fn plan_from_job(db: &Database, job: &DownloadJob) -> AppResult<DownloadPlan> {
     let tool = crate::downloads::image::resolve_download_tool(&job.url, &job.adapter);
     Ok(DownloadPlan {
         url: job.url.clone(),
-        output_template: settings.naming_template,
+        output_template: crate::downloads::naming::to_ytdlp_output_template(
+            &settings.naming_template,
+        ),
         tool,
         title: job.title.clone(),
         performers: vec![],

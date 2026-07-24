@@ -523,6 +523,10 @@ function SettingsPage() {
                   readOnly={!caps.libraryPathEditable}
                   onChange={(e) => patchHostSettings({ naming_template: e.target.value })}
                 />
+                <p className="mt-1 text-[10px] text-[var(--color-muted-foreground)]">
+                  Placeholders: {"{performer}"}, {"{title}"}, {"{ext}"}, {"{id}"}, {"{site}"}. Example:{" "}
+                  {"{performer}/{title}.{ext}"} → saved under your library path.
+                </p>
               </div>
               <div>
                 <label className="text-xs text-[var(--color-muted-foreground)]">
