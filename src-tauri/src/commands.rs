@@ -80,6 +80,11 @@ pub fn resume_download(state: State<'_, Arc<AppState>>, id: String) -> CmdResult
 }
 
 #[tauri::command]
+pub fn retry_download(state: State<'_, Arc<AppState>>, id: String) -> CmdResult<()> {
+    map_err(state.retry_download(&id))
+}
+
+#[tauri::command]
 pub fn delete_download(state: State<'_, Arc<AppState>>, id: String) -> CmdResult<()> {
     map_err(state.delete_download(&id))
 }

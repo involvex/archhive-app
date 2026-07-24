@@ -1,12 +1,13 @@
 import type { DownloadJob } from "@/lib/types";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
-import { Pause, Play, Trash2, XCircle } from "lucide-react";
+import { Pause, Play, RotateCcw, Trash2, XCircle } from "lucide-react";
 
 interface DownloadProgressRowProps {
   job: DownloadJob;
   onPause?: (id: string) => void;
   onResume?: (id: string) => void;
+  onRetry?: (id: string) => void;
   onCancel?: (id: string) => void;
   onDelete?: (id: string) => void;
 }
@@ -24,10 +25,13 @@ export function DownloadProgressRow({
   job,
   onPause,
   onResume,
+  onRetry,
   onCancel,
   onDelete,
 }: DownloadProgressRowProps) {
   const showProgress = job.status === "active" || job.status === "pending";
+  const canRetry =
+    job.status === "failed" || job.status === "cancelled" || job.status === "completed";
 
   return (
     <div className="space-y-2 rounded-lg border border-[var(--color-border)] p-3">
@@ -45,6 +49,11 @@ export function DownloadProgressRow({
           {(job.status === "pending" || job.status === "active") && onPause && (
             <Button variant="ghost" size="icon" title="Pause" onClick={() => onPause(job.id)}>
               <Pause className="h-4 w-4" />
+            </Button>
+          )}
+          {canRetry && onRetry && (
+            <Button variant="ghost" size="icon" title="Retry" onClick={() => onRetry(job.id)}>
+              <RotateCcw className="h-4 w-4" />
             </Button>
           )}
           {(job.status === "pending" || job.status === "active" || job.status === "paused") &&

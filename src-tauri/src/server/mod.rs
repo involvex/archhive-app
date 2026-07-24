@@ -99,6 +99,7 @@ impl LanServer {
             .route("/api/downloads/{id}/cancel", post(cancel_download))
             .route("/api/downloads/{id}/pause", post(pause_download))
             .route("/api/downloads/{id}/resume", post(resume_download))
+            .route("/api/downloads/{id}/retry", post(retry_download))
             .route(
                 "/api/downloads/{id}",
                 axum::routing::delete(delete_download),
@@ -329,6 +330,17 @@ async fn resume_download(
     state
         .app
         .resume_download(&id)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn retry_download(
+    State(state): State<ApiState>,
+    Path(id): Path<String>,
+) -> Result<StatusCode, StatusCode> {
+    state
+        .app
+        .retry_download(&id)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(StatusCode::NO_CONTENT)
 }

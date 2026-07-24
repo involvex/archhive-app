@@ -141,6 +141,7 @@ pub fn run() {
             commands::cancel_download,
             commands::pause_download,
             commands::resume_download,
+            commands::retry_download,
             commands::delete_download,
             commands::queue_bulk_import,
             commands::list_scenes,

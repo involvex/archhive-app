@@ -198,6 +198,12 @@ export const api = {
     });
   },
 
+  async retryDownload(id: string): Promise<void> {
+    return localOrRemote("retry_download", { id }, `/api/downloads/${id}/retry`, {
+      method: "POST",
+    });
+  },
+
   async deleteDownload(id: string): Promise<void> {
     if (isDesktopTauri() && !shouldUseRemoteApi()) {
       return invoke("delete_download", { id });

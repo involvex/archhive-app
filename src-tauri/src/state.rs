@@ -160,6 +160,10 @@ impl AppState {
         self.downloads.resume(id)
     }
 
+    pub fn retry_download(&self, id: &str) -> AppResult<()> {
+        self.downloads.retry(id)
+    }
+
     pub fn delete_download(&self, id: &str) -> AppResult<()> {
         self.downloads.delete(id)
     }

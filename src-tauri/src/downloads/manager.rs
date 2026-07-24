@@ -140,6 +140,27 @@ impl DownloadManager {
         Ok(())
     }
 
+    pub fn retry(&self, id: &str) -> AppResult<()> {
+        let Some(mut job) = self.db.get_download_job(id)? else {
+            return Ok(());
+        };
+        if !matches!(
+            job.status,
+            DownloadStatus::Failed | DownloadStatus::Cancelled | DownloadStatus::Completed
+        ) {
+            return Ok(());
+        }
+        self.register_cancel(id);
+        job.status = DownloadStatus::Pending;
+        job.progress = 0.0;
+        job.error = None;
+        job.output_path = None;
+        self.db.update_download_job(&job)?;
+        let _ = self.app.emit("download:progress", &job);
+        self.enqueue(id)?;
+        Ok(())
+    }
+
     pub fn cancel(&self, id: &str) -> AppResult<()> {
         let Some(mut job) = self.db.get_download_job(id)? else {
             return Ok(());
