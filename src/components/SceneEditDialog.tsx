@@ -180,11 +180,11 @@ export function SceneEditDialog({
   if (!open || !scene) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4">
       <div
         role="dialog"
         aria-modal="true"
-        className="w-full max-w-md rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] p-4 shadow-xl"
+        className="max-h-[92dvh] w-full max-w-md overflow-y-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] p-4 shadow-xl"
       >
         <SceneEditForm
           key={scene.id}

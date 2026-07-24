@@ -9,6 +9,7 @@ import { api } from "./lib/api/client";
 import { bootstrapLanBrowser } from "./lib/lanBootstrap";
 import { useSettingsStore } from "./lib/stores/settings";
 import { isDesktopTauri } from "./lib/tauri";
+import { AppErrorBoundary } from "./components/AppErrorBoundary";
 import "./styles/globals.css";
 
 initializePlugins(getRegisteredPlugins());
@@ -55,8 +56,10 @@ function TrayNavigationListener() {
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <BootstrapSettings />
-    <TrayNavigationListener />
-    <RouterProvider router={router} />
+    <AppErrorBoundary>
+      <BootstrapSettings />
+      <TrayNavigationListener />
+      <RouterProvider router={router} />
+    </AppErrorBoundary>
   </StrictMode>,
 );

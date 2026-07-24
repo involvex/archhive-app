@@ -37,7 +37,7 @@ export function SceneContextMenu({
 
   useEffect(() => {
     if (!menu) return;
-    function handleClick(e: MouseEvent) {
+    function handleClick(e: Event) {
       if (ref.current && !ref.current.contains(e.target as Node)) {
         onClose();
       }
@@ -46,9 +46,11 @@ export function SceneContextMenu({
       if (e.key === "Escape") onClose();
     }
     document.addEventListener("mousedown", handleClick);
+    document.addEventListener("touchstart", handleClick, { passive: true });
     document.addEventListener("keydown", handleKey);
     return () => {
       document.removeEventListener("mousedown", handleClick);
+      document.removeEventListener("touchstart", handleClick);
       document.removeEventListener("keydown", handleKey);
     };
   }, [menu, onClose]);
@@ -116,7 +118,7 @@ export function SceneContextMenu({
   return (
     <div
       ref={ref}
-      className="fixed z-50 min-w-[180px] rounded-md border border-[var(--color-border)] bg-[var(--color-card)] py-1 shadow-lg"
+      className="fixed z-[110] min-w-[180px] rounded-md border border-[var(--color-border)] bg-[var(--color-card)] py-1 shadow-lg"
       style={{ left: menu.x, top: menu.y }}
     >
       {items

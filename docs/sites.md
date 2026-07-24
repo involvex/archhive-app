@@ -5,7 +5,7 @@
 | Site ID  | Display Name | Browse kinds                | Cookies                     |
 | -------- | ------------ | --------------------------- | --------------------------- |
 | youtube  | YouTube      | channel, search, video      | Optional                    |
-| tiktok   | TikTok       | channel, video              | No                          |
+| tiktok   | TikTok       | channel, search, video      | No                          |
 | twitter  | Twitter / X  | channel, video              | Recommended                 |
 | thisvid  | ThisVid      | tag, search, video          | Yes                         |
 | thothub  | ThotHub      | tag, model, search, video   | Optional (`thethothub.com`) |

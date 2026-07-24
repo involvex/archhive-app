@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api/client";
 import { sceneThumbUrl, isVideoScene } from "@/lib/mediaUrl";
 import type { Scene, SceneSort } from "@/lib/types";
@@ -11,11 +11,13 @@ import { SceneDetailsDialog } from "@/components/SceneDetailsDialog";
 import { ScenePlayerDialog } from "@/components/ScenePlayerDialog";
 import { SceneBulkEditBar } from "@/components/SceneBulkEditBar";
 import { SceneContextMenu, type SceneContextMenuState } from "@/components/SceneContextMenu";
-import { Pencil } from "lucide-react";
+import { MoreVertical, Pencil } from "lucide-react";
 
 export const Route = createFileRoute("/library/scenes/")({
   component: ScenesPage,
 });
+
+const LONG_PRESS_MS = 480;
 
 function ScenesPage() {
   const [scenes, setScenes] = useState<Scene[]>([]);
@@ -29,6 +31,8 @@ function ScenesPage() {
   const [selectionMode, setSelectionMode] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Scene | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressTriggered = useRef(false);
 
   const refresh = useCallback(() => {
     void api
@@ -41,12 +45,20 @@ function ScenesPage() {
     refresh();
   }, [refresh]);
 
+  useEffect(() => {
+    return () => {
+      if (longPressTimer.current) clearTimeout(longPressTimer.current);
+    };
+  }, []);
+
   function handleSaved(scene: Scene) {
     setScenes((prev) => prev.map((s) => (s.id === scene.id ? scene : s)));
+    setPlayerScene((prev) => (prev?.id === scene.id ? scene : prev));
   }
 
   function handleDeleted(id: string) {
     setScenes((prev) => prev.filter((s) => s.id !== id));
+    setPlayerScene((prev) => (prev?.id === id ? null : prev));
     setSelectedIds((prev) => {
       const next = new Set(prev);
       next.delete(id);
@@ -54,9 +66,41 @@ function ScenesPage() {
     });
   }
 
+  function openMenuAt(scene: Scene, x: number, y: number) {
+    const maxX = typeof window !== "undefined" ? window.innerWidth - 200 : x;
+    const maxY = typeof window !== "undefined" ? window.innerHeight - 260 : y;
+    setContextMenu({
+      scene,
+      x: Math.max(8, Math.min(x, maxX)),
+      y: Math.max(8, Math.min(y, maxY)),
+    });
+  }
+
   function handleContextMenu(e: React.MouseEvent, scene: Scene) {
     e.preventDefault();
-    setContextMenu({ scene, x: e.clientX, y: e.clientY });
+    openMenuAt(scene, e.clientX, e.clientY);
+  }
+
+  function clearLongPress() {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  }
+
+  function onCardPointerDown(e: React.PointerEvent, scene: Scene) {
+    if (selectionMode || e.pointerType === "mouse") return;
+    longPressTriggered.current = false;
+    clearLongPress();
+    const { clientX, clientY } = e;
+    longPressTimer.current = setTimeout(() => {
+      longPressTriggered.current = true;
+      openMenuAt(scene, clientX, clientY);
+    }, LONG_PRESS_MS);
+  }
+
+  function onCardPointerUp() {
+    clearLongPress();
   }
 
   function toggleSelect(id: string) {
@@ -153,15 +197,23 @@ function ScenesPage() {
               key={scene.id}
               className={`overflow-hidden group cursor-pointer ${isSelected ? "ring-2 ring-[var(--color-primary)]" : ""}`}
               onContextMenu={(e) => handleContextMenu(e, scene)}
+              onPointerDown={(e) => onCardPointerDown(e, scene)}
+              onPointerUp={onCardPointerUp}
+              onPointerCancel={onCardPointerUp}
+              onPointerLeave={onCardPointerUp}
               onClick={() => {
                 if (selectionMode) return;
+                if (longPressTriggered.current) {
+                  longPressTriggered.current = false;
+                  return;
+                }
                 if (isVideoScene(scene)) setPlayerScene(scene);
                 else setDetailsScene(scene);
               }}
             >
               <div className="aspect-video bg-[var(--color-muted)] relative">
                 {selectionMode && (
-                  <label className="absolute top-1 left-1 z-10 flex h-6 w-6 items-center justify-center rounded bg-black/50">
+                  <label className="absolute top-1 left-1 z-10 flex h-8 w-8 items-center justify-center rounded bg-black/60">
                     <input
                       type="checkbox"
                       checked={isSelected}
@@ -185,18 +237,33 @@ function ScenesPage() {
                   </div>
                 )}
                 {!selectionMode && (
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    className="absolute top-1 right-1 h-7 w-7 p-0 opacity-0 group-hover:opacity-100"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setEditScene(scene);
-                    }}
-                    aria-label="Edit scene"
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                  </Button>
+                  <div className="absolute top-1 right-1 z-10 flex gap-1">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      className="h-8 w-8 p-0 bg-black/65 text-white hover:bg-black/80"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditScene(scene);
+                      }}
+                      aria-label="Edit scene"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      className="h-8 w-8 p-0 bg-black/65 text-white hover:bg-black/80"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        openMenuAt(scene, rect.left, rect.bottom + 4);
+                      }}
+                      aria-label="More actions"
+                    >
+                      <MoreVertical className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
                 )}
               </div>
               <CardContent className="p-2 space-y-1">
@@ -243,6 +310,10 @@ function ScenesPage() {
         scene={playerScene}
         open={playerScene !== null}
         onClose={() => setPlayerScene(null)}
+        onEdit={(s) => {
+          setPlayerScene(null);
+          setEditScene(s);
+        }}
       />
 
       <SceneContextMenu
@@ -258,7 +329,7 @@ function ScenesPage() {
       />
 
       {deleteTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4">
           <div
             role="dialog"
             aria-modal="true"

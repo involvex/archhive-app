@@ -1,5 +1,6 @@
 use crate::error::AppResult;
 use crate::models::{BrowseKind, BrowsePage, BrowseQuery, DownloadPlan, DownloadTool, MediaItem};
+use crate::sites::urls::query_slug;
 use crate::sites::yt_dlp::SidecarRunner;
 use crate::sites::{SiteAdapter, SiteContext};
 use async_trait::async_trait;
@@ -32,6 +33,7 @@ impl GenericYtDlpAdapter {
             base: "https://www.tiktok.com",
             kinds: vec![
                 crate::models::BrowseKind::Channel,
+                crate::models::BrowseKind::Search,
                 crate::models::BrowseKind::Video,
             ],
         }
@@ -75,6 +77,20 @@ fn profile_url(base: &str, site_id: &str, slug: &str) -> String {
     }
 }
 
+fn search_url(base: &str, site_id: &str, slug: &str) -> String {
+    let trimmed = slug.trim();
+    if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+        return trimmed.to_string();
+    }
+    let q = query_slug(trimmed);
+    match site_id {
+        "tiktok" => format!("{base}/search/video?q={q}"),
+        "youtube" => format!("{base}/results?search_query={q}"),
+        "thisvid" => format!("{base}/search/?q={q}"),
+        _ => format!("{base}/search?q={q}"),
+    }
+}
+
 #[async_trait]
 impl SiteAdapter for GenericYtDlpAdapter {
     fn id(&self) -> &str {
@@ -99,17 +115,18 @@ impl SiteAdapter for GenericYtDlpAdapter {
         query: BrowseQuery,
     ) -> AppResult<crate::models::BrowsePage> {
         let url = match query.kind {
-            crate::models::BrowseKind::Video | crate::models::BrowseKind::Search => {
+            BrowseKind::Search => search_url(self.base, self.site_id, &query.slug),
+            BrowseKind::Video => {
                 if query.slug.starts_with("http") {
                     query.slug.clone()
                 } else {
                     format!("{}/{}", self.base, query.slug.trim_start_matches('/'))
                 }
             }
-            crate::models::BrowseKind::Channel | crate::models::BrowseKind::Model => {
+            BrowseKind::Channel | BrowseKind::Model => {
                 profile_url(self.base, self.site_id, &query.slug)
             }
-            crate::models::BrowseKind::Tag | crate::models::BrowseKind::Category => {
+            BrowseKind::Tag | BrowseKind::Category => {
                 format!("{}/tags/{}", self.base, query.slug)
             }
         };
@@ -122,7 +139,13 @@ impl SiteAdapter for GenericYtDlpAdapter {
             let cookies = ctx.cookie_file_for_site(self.site_id);
             let entries = runner
                 .list_flat_playlist(&url, query.page, 24, cookies.as_deref())
-                .await?;
+                .await
+                .map_err(|e| {
+                    crate::error::AppError::Site(format!(
+                        "{} browse failed: {e}. For TikTok, try a @username channel instead of search if blocked.",
+                        self.name
+                    ))
+                })?;
             let items = entries
                 .into_iter()
                 .map(|(id, title, item_url, thumbnail)| MediaItem {
@@ -134,10 +157,16 @@ impl SiteAdapter for GenericYtDlpAdapter {
                     site_id: self.site_id.to_string(),
                     performers: vec![],
                     tags: vec![],
-                description: None,
-                channel: None,
+                    description: None,
+                    channel: None,
                 })
                 .collect::<Vec<_>>();
+            if items.is_empty() {
+                return Err(crate::error::AppError::Site(format!(
+                    "No results from {}. Check the query or try again later.",
+                    self.name
+                )));
+            }
             let has_more = items.len() >= 24;
             return Ok(BrowsePage {
                 items,
@@ -157,8 +186,8 @@ impl SiteAdapter for GenericYtDlpAdapter {
                 site_id: self.site_id.to_string(),
                 performers: vec![],
                 tags: vec![],
-            description: None,
-            channel: None,
+                description: None,
+                channel: None,
             }],
             page: query.page,
             has_more: false,

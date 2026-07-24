@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api/client";
 import { sceneThumbUrl, sceneMediaUrl, isWebPlayableScene, isHttpMediaSrc } from "@/lib/mediaUrl";
+import { getAppRuntime } from "@/lib/runtime";
 import type { Scene } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { X } from "lucide-react";
@@ -45,7 +46,7 @@ function SceneDetailsBody({ scene, onClose }: { scene: Scene; onClose: () => voi
   const thumbSrc = sceneThumbUrl(data);
   const mediaSrc = sceneMediaUrl(data);
   const showVideo = isWebPlayableScene(data) && mediaSrc;
-  const useCors = isHttpMediaSrc(mediaSrc);
+  const useCors = isHttpMediaSrc(mediaSrc) && getAppRuntime() === "desktop-tauri";
   const fileSize = formatBytes(data.file_size);
 
   return (
@@ -158,11 +159,11 @@ export function SceneDetailsDialog({ scene, open, onClose }: SceneDetailsDialogP
   if (!open || !scene) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4">
       <div
         role="dialog"
         aria-modal="true"
-        className="w-full max-w-lg rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] p-4 shadow-xl"
+        className="max-h-[92dvh] w-full max-w-lg overflow-y-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] p-4 shadow-xl"
       >
         <SceneDetailsBody key={scene.id} scene={scene} onClose={onClose} />
       </div>

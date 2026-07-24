@@ -1,7 +1,7 @@
 use crate::error::AppResult;
 use crate::models::{BrowseKind, BrowsePage, BrowseQuery, DownloadPlan, DownloadTool, MediaItem};
 use crate::sites::browse_fallback::ytdlp_browse_fallback;
-use crate::sites::urls::{path_slug, query_slug};
+use crate::sites::urls::path_slug;
 use crate::sites::{SiteAdapter, SiteContext};
 use async_trait::async_trait;
 use scraper::{Html, Selector};
@@ -73,8 +73,14 @@ fn build_browse_url(query: &BrowseQuery) -> AppResult<String> {
     let path = match query.kind {
         BrowseKind::Tag | BrowseKind::Model => format!("/tags/{}/", path_slug(&query.slug)),
         BrowseKind::Search => {
-            let q = query_slug(&query.slug);
-            return Ok(format!("{BASE}/?search={q}"));
+            // KVS search: /search/{query}/ (not ?search=)
+            let q = path_slug(&query.slug);
+            let page_suffix = if query.page > 1 {
+                format!("?from={}", (query.page.saturating_sub(1)) * 24)
+            } else {
+                String::new()
+            };
+            return Ok(format!("{BASE}/search/{q}/{page_suffix}"));
         }
         BrowseKind::Video => {
             if query.slug.starts_with("http") {
@@ -121,6 +127,8 @@ fn abs_url(href: &str) -> String {
 fn parse_listing(html: &str, site_id: &str) -> Vec<MediaItem> {
     let document = Html::parse_document(html);
     let container_selectors = [
+        ".list-videos .item",
+        ".list-videos",
         ".video-item",
         ".thumb-block",
         ".thumb",
@@ -140,26 +148,26 @@ fn parse_listing(html: &str, site_id: &str) -> Vec<MediaItem> {
             continue;
         };
         for el in document.select(&container_sel) {
-            let link = el
-                .select(&link_sel)
-                .find_map(|a| a.value().attr("href"))
-                .or_else(|| el.value().attr("href"));
+            let candidates: Vec<_> = el.select(&link_sel).collect();
+            for a in candidates {
+                let Some(href) = a.value().attr("href") else {
+                    continue;
+                };
+                if !is_video_href(href) {
+                    continue;
+                }
 
-            let Some(href) = link else { continue };
-            if !is_video_href(href) {
-                continue;
-            }
+                let url = abs_url(href);
+                if !seen.insert(url.clone()) {
+                    continue;
+                }
 
-            let url = abs_url(href);
-            if !seen.insert(url.clone()) {
-                continue;
-            }
-
-            let title = el
-                .select(&link_sel)
-                .find_map(|t| {
-                    t.value().attr("title").map(|s| s.to_string()).or_else(|| {
-                        let text = t.text().collect::<String>();
+                let title = a
+                    .value()
+                    .attr("title")
+                    .map(|s| s.to_string())
+                    .or_else(|| {
+                        let text = a.text().collect::<String>();
                         let trimmed = text.trim();
                         if trimmed.is_empty() {
                             None
@@ -167,31 +175,45 @@ fn parse_listing(html: &str, site_id: &str) -> Vec<MediaItem> {
                             Some(trimmed.to_string())
                         }
                     })
-                })
-                .unwrap_or_else(|| "Untitled".to_string());
+                    .unwrap_or_else(|| "Untitled".to_string());
 
-            let thumbnail = el.select(&img_sel).find_map(|img| {
-                img.value()
-                    .attr("data-src")
-                    .or_else(|| img.value().attr("src"))
-                    .map(abs_url)
-            });
+                let thumbnail = el
+                    .select(&img_sel)
+                    .find_map(|img| {
+                        img.value()
+                            .attr("data-original")
+                            .or_else(|| img.value().attr("data-src"))
+                            .or_else(|| img.value().attr("src"))
+                            .filter(|s| !s.starts_with("data:"))
+                            .map(abs_url)
+                    })
+                    .or_else(|| {
+                        a.select(&img_sel).find_map(|img| {
+                            img.value()
+                                .attr("data-original")
+                                .or_else(|| img.value().attr("data-src"))
+                                .or_else(|| img.value().attr("src"))
+                                .filter(|s| !s.starts_with("data:"))
+                                .map(abs_url)
+                        })
+                    });
 
-            items.push(MediaItem {
-                id: Uuid::new_v4().to_string(),
-                title,
-                url,
-                thumbnail,
-                duration: None,
-                site_id: site_id.to_string(),
-                performers: vec![],
-                tags: vec![],
-            description: None,
-            channel: None,
-            });
+                items.push(MediaItem {
+                    id: Uuid::new_v4().to_string(),
+                    title,
+                    url,
+                    thumbnail,
+                    duration: None,
+                    site_id: site_id.to_string(),
+                    performers: vec![],
+                    tags: vec![],
+                    description: None,
+                    channel: None,
+                });
 
-            if items.len() >= 48 {
-                return items;
+                if items.len() >= 48 {
+                    return items;
+                }
             }
         }
         if items.len() >= 12 {
@@ -228,7 +250,10 @@ mod tests {
             orientation: None,
         };
         let url = build_browse_url(&q).unwrap();
-        assert!(url.contains("search=sweetie+fox") || url.contains("search=sweetie%20fox"));
+        assert!(
+            url.contains("/search/sweetie-fox/"),
+            "unexpected search url: {url}"
+        );
     }
 
     #[test]

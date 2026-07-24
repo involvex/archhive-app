@@ -32,6 +32,7 @@ macro_rules! ytdlp_tube_adapter {
                     BrowseKind::Search,
                     BrowseKind::Channel,
                     BrowseKind::Video,
+                    BrowseKind::Model,
                 ]
             }
 
@@ -40,26 +41,19 @@ macro_rules! ytdlp_tube_adapter {
             }
 
             async fn browse(&self, ctx: &SiteContext, query: BrowseQuery) -> AppResult<BrowsePage> {
-                let url = match query.kind {
-                    BrowseKind::Tag => format!("{}/tags/{}", $base, path_slug(&query.slug)),
-                    BrowseKind::Search => format!("{}/?k={}", $base, query_slug(&query.slug)),
-                    BrowseKind::Channel => format!("{}/channels/{}", $base, path_slug(&query.slug)),
-                    BrowseKind::Video => {
-                        if query.slug.starts_with("http") {
-                            query.slug.clone()
-                        } else {
-                            format!("{}/videos/{}", $base, path_slug(&query.slug))
-                        }
-                    }
-                    BrowseKind::Model => format!("{}/pornstar/{}", $base, path_slug(&query.slug)),
-                    BrowseKind::Category => {
-                        format!("{}/categories/{}", $base, path_slug(&query.slug))
-                    }
-                };
-                let html = ctx.fetch_html(&url, $id).await?;
-                let mut items = parse_video_links(&html, $base, $id)?;
+                let url = tube_browse_url($id, $base, &query);
+                let html = ctx.fetch_html(&url, $id).await.unwrap_or_default();
+                let mut items = parse_video_links(&html, $base, $id).unwrap_or_default();
+                // Drop obvious nav junk so we fall through to yt-dlp.
+                items.retain(|i| !is_junk_nav_title(&i.title));
                 if items.is_empty() {
                     items = ytdlp_browse_fallback(ctx, $id, &url, query.page, 24).await?;
+                }
+                if items.is_empty() {
+                    return Err(crate::error::AppError::Site(format!(
+                        "No videos found on {}. Try another query, or import cookies if the site is blocking.",
+                        $name
+                    )));
                 }
                 let has_more = items.len() >= 20;
                 Ok(BrowsePage {
@@ -190,6 +184,73 @@ ytdlp_tube_adapter!(
     "https://www.xvideos.com"
 );
 
+fn tube_browse_url(site_id: &str, base: &str, query: &BrowseQuery) -> String {
+    let slug = path_slug(&query.slug);
+    let q = query_slug(&query.slug);
+    match site_id {
+        "xvideos" => match query.kind {
+            BrowseKind::Search | BrowseKind::Tag => {
+                let page = if query.page > 1 {
+                    format!("&p={}", query.page.saturating_sub(1))
+                } else {
+                    String::new()
+                };
+                format!("{base}/?k={q}{page}")
+            }
+            BrowseKind::Channel => format!("{base}/channels/{slug}"),
+            BrowseKind::Model => format!("{base}/models/{slug}"),
+            BrowseKind::Category => format!("{base}/c/{slug}"),
+            BrowseKind::Video => {
+                if query.slug.starts_with("http") {
+                    query.slug.clone()
+                } else {
+                    format!("{base}/video.{slug}")
+                }
+            }
+        },
+        "xhamster" => match query.kind {
+            BrowseKind::Search | BrowseKind::Tag => {
+                let page = if query.page > 1 {
+                    format!("?page={}", query.page)
+                } else {
+                    String::new()
+                };
+                format!("{base}/search/{slug}{page}")
+            }
+            BrowseKind::Channel => format!("{base}/channels/{slug}"),
+            BrowseKind::Model => format!("{base}/pornstars/{slug}"),
+            BrowseKind::Category => format!("{base}/categories/{slug}"),
+            BrowseKind::Video => {
+                if query.slug.starts_with("http") {
+                    query.slug.clone()
+                } else {
+                    format!("{base}/videos/{slug}")
+                }
+            }
+        },
+        _ => format!("{base}/?k={q}"),
+    }
+}
+
+fn is_junk_nav_title(title: &str) -> bool {
+    let t = title.trim().to_lowercase();
+    matches!(
+        t.as_str(),
+        "red videos"
+            | "liked videos"
+            | "join"
+            | "login"
+            | "sign in"
+            | "sign up"
+            | "upload"
+            | "home"
+            | "premium"
+            | "remove ads"
+            | "my favourites"
+            | "my favorites"
+    ) || t.len() < 3
+}
+
 fn page_query(page: u32) -> String {
     if page > 1 {
         format!("?page={page}")
@@ -253,22 +314,25 @@ fn build_pornhub_category_url(query: &BrowseQuery) -> String {
 fn parse_video_links(html: &str, base: &str, site_id: &str) -> AppResult<Vec<MediaItem>> {
     use scraper::{Html, Selector};
     let document = Html::parse_document(html);
-    let selectors: &[&str] = if site_id == "pornhub" {
-        &[
+    let selectors: &[&str] = match site_id {
+        "pornhub" => &[
             ".ph-pornstar-videos-list .pcVideoListItem a[href*='view_video']",
             ".pcVideoListItem a[href*='view_video']",
             "a[href*='view_video.php']",
             "a[href*='view_video?']",
-        ]
-    } else {
-        &[
-            "a[href*='view_video']",
-            "a[href*='/video']",
-            "a[href*='watch']",
-            ".pcVideoListItem a",
-            ".ph-video-item a",
-            ".videoBox a",
-        ]
+        ],
+        "xvideos" => &[
+            // Modern XVideos IDs look like /video.abc123/slug — not /videos-i-like nav links.
+            "div.thumb-block a[href*='/video.']",
+            "div.mozaique a[href*='/video.']",
+            "a[href*='/video.']",
+        ],
+        "xhamster" => &[
+            "a[href*='/videos/'][href*='-']",
+            ".thumb-list__item a[href*='/videos/']",
+            "a.video-thumb__image-container[href*='/videos/']",
+        ],
+        _ => &["a[href*='/video.']", "a[href*='/videos/']"],
     };
     let mut items = Vec::new();
     let mut seen = std::collections::HashSet::new();
@@ -281,24 +345,16 @@ fn parse_video_links(html: &str, base: &str, site_id: &str) -> AppResult<Vec<Med
             let Some(href) = el.value().attr("href") else {
                 continue;
             };
-            if site_id == "pornhub" && !is_pornhub_video_href(href) {
+            if !is_site_video_href(site_id, href) {
                 continue;
             }
             let url = if href.starts_with("http") {
                 href.to_string()
+            } else if href.starts_with("//") {
+                format!("https:{href}")
             } else {
                 format!("{base}{href}")
             };
-            if site_id == "pornhub" && !url.contains("view_video") {
-                continue;
-            }
-            if site_id != "pornhub"
-                && !url.contains("video")
-                && !url.contains("view_video")
-                && !url.contains("watch")
-            {
-                continue;
-            }
             if !seen.insert(url.clone()) {
                 continue;
             }
@@ -307,12 +363,13 @@ fn parse_video_links(html: &str, base: &str, site_id: &str) -> AppResult<Vec<Med
                 .attr("title")
                 .map(|s| s.to_string())
                 .unwrap_or_else(|| el.text().collect::<String>().trim().to_string());
-            if title.is_empty() {
+            if title.is_empty() || is_junk_nav_title(&title) {
                 continue;
             }
             let img_sel = Selector::parse("img").ok();
-            let thumbnail = if site_id == "pornhub" {
-                el.value()
+            let thumbnail = match site_id {
+                "pornhub" => el
+                    .value()
                     .attr("data-mediumthumb")
                     .map(|s| s.to_string())
                     .or_else(|| {
@@ -330,9 +387,28 @@ fn parse_video_links(html: &str, base: &str, site_id: &str) -> AppResult<Vec<Med
                                     })
                             })
                         })
+                    }),
+                "xvideos" | "xhamster" => img_sel.as_ref().and_then(|sel| {
+                    el.select(sel).find_map(|img| {
+                        img.value()
+                            .attr("data-src")
+                            .or_else(|| img.value().attr("data-thumb"))
+                            .or_else(|| img.value().attr("src"))
+                            .filter(|s| !s.starts_with("data:"))
+                            .map(|s| {
+                                if s.starts_with("http") || s.starts_with("//") {
+                                    if s.starts_with("//") {
+                                        format!("https:{s}")
+                                    } else {
+                                        s.to_string()
+                                    }
+                                } else {
+                                    format!("{base}{s}")
+                                }
+                            })
                     })
-            } else {
-                None
+                }),
+                _ => None,
             };
             items.push(MediaItem {
                 id: Uuid::new_v4().to_string(),
@@ -343,8 +419,8 @@ fn parse_video_links(html: &str, base: &str, site_id: &str) -> AppResult<Vec<Med
                 site_id: site_id.to_string(),
                 performers: vec![],
                 tags: vec![],
-            description: None,
-            channel: None,
+                description: None,
+                channel: None,
             });
             if items.len() >= 40 {
                 break;
@@ -356,6 +432,29 @@ fn parse_video_links(html: &str, base: &str, site_id: &str) -> AppResult<Vec<Med
     }
 
     Ok(items)
+}
+
+fn is_site_video_href(site_id: &str, href: &str) -> bool {
+    let lower = href.to_lowercase();
+    match site_id {
+        "pornhub" => is_pornhub_video_href(href),
+        "xvideos" => {
+            // Require /video.ID/ — excludes /videos-i-like, /account/..., etc.
+            lower.contains("/video.")
+                && !lower.contains("/videos-")
+                && !lower.contains("/account")
+                && !lower.contains("/profiles/")
+        }
+        "xhamster" => {
+            lower.contains("/videos/")
+                && !lower.contains("/videos/best")
+                && !lower.contains("/videos/newest")
+                && !lower.contains("/categories/")
+                && !lower.contains("/users/")
+                && !lower.contains("/my/")
+        }
+        _ => lower.contains("/video.") || lower.contains("/videos/"),
+    }
 }
 
 fn is_pornhub_video_href(href: &str) -> bool {
@@ -569,5 +668,53 @@ mod category_tests {
             orientation: Some(BrowseOrientation::Straight),
         });
         assert_eq!(url, format!("{PH_BASE}/categories/big-tits"));
+    }
+
+    #[test]
+    fn xvideos_rejects_nav_hrefs() {
+        assert!(!is_site_video_href("xvideos", "/videos-i-like"));
+        assert!(!is_site_video_href("xvideos", "/account"));
+        assert!(is_site_video_href(
+            "xvideos",
+            "/video.opammko7524/3_lesbians_1_staircase"
+        ));
+    }
+
+    #[test]
+    fn xvideos_search_url() {
+        let url = tube_browse_url(
+            "xvideos",
+            "https://www.xvideos.com",
+            &BrowseQuery {
+                kind: BrowseKind::Search,
+                slug: "lesbian".into(),
+                page: 1,
+                orientation: None,
+            },
+        );
+        assert_eq!(url, "https://www.xvideos.com/?k=lesbian");
+    }
+
+    #[test]
+    fn xhamster_search_url() {
+        let url = tube_browse_url(
+            "xhamster",
+            "https://xhamster.com",
+            &BrowseQuery {
+                kind: BrowseKind::Search,
+                slug: "lesbian".into(),
+                page: 1,
+                orientation: None,
+            },
+        );
+        assert_eq!(url, "https://xhamster.com/search/lesbian");
+    }
+
+    #[test]
+    fn junk_nav_titles_detected() {
+        assert!(is_junk_nav_title("RED videos"));
+        assert!(is_junk_nav_title("Liked videos"));
+        assert!(is_junk_nav_title("Join"));
+        assert!(!is_junk_nav_title("Lesbian massage"));
     }
 }
