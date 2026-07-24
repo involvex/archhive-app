@@ -65,7 +65,7 @@ mod streaming;
 use files::{list_files, stream_file};
 use streaming::serve_file_with_range;
 
-use crate::models::{UpdateSceneRequest, BatchUpdateScenesRequest};
+use crate::models::{BatchUpdateScenesRequest, UpdateSceneRequest};
 use serde::Deserialize;
 
 pub struct LanServer {
@@ -80,7 +80,10 @@ impl LanServer {
         token: String,
         static_dir: Option<PathBuf>,
     ) -> AppResult<Self> {
-        let api = ApiState { app, token: token.clone() };
+        let api = ApiState {
+            app,
+            token: token.clone(),
+        };
         let api_router = Router::new()
             .route("/api/health", get(health))
             .route("/api/sites", get(list_sites))
@@ -90,7 +93,10 @@ impl LanServer {
             .route("/api/downloads/{id}/cancel", post(cancel_download))
             .route("/api/downloads/{id}/pause", post(pause_download))
             .route("/api/downloads/{id}/resume", post(resume_download))
-            .route("/api/downloads/{id}", axum::routing::delete(delete_download))
+            .route(
+                "/api/downloads/{id}",
+                axum::routing::delete(delete_download),
+            )
             .route("/api/scenes", get(list_scenes))
             .route("/api/scenes/{id}", get(get_scene).patch(update_scene))
             .route("/api/scenes/{id}/thumb", get(scene_thumb))
@@ -104,7 +110,10 @@ impl LanServer {
             .route("/api/duplicates", get(list_duplicates))
             .route("/api/duplicates/merge", post(merge_duplicates))
             .route("/api/cookies", get(list_cookies))
-            .route("/api/cookies/{id}", post(save_cookies).delete(delete_cookies))
+            .route(
+                "/api/cookies/{id}",
+                post(save_cookies).delete(delete_cookies),
+            )
             .route("/api/settings", get(get_settings).put(put_settings))
             .route("/api/library/scan", post(scan_library))
             .layer(middleware::from_fn_with_state(api.clone(), auth_middleware))
@@ -114,9 +123,7 @@ impl LanServer {
             let index = dir.join("index.html");
             Router::new()
                 .merge(api_router)
-                .fallback_service(
-                    ServeDir::new(dir).not_found_service(ServeFile::new(index)),
-                )
+                .fallback_service(ServeDir::new(dir).not_found_service(ServeFile::new(index)))
         } else {
             api_router
         };
@@ -190,9 +197,7 @@ async fn auth_middleware(
     let expected = format!("Bearer {}", state.token);
     if auth != expected {
         let query_ok = req.uri().query().is_some_and(|q| {
-            url::form_urlencoded::parse(q.as_bytes()).any(|(k, v)| {
-                k == "token" && v == state.token
-            })
+            url::form_urlencoded::parse(q.as_bytes()).any(|(k, v)| k == "token" && v == state.token)
         });
         if !query_ok {
             return (StatusCode::UNAUTHORIZED, "invalid token").into_response();
@@ -237,13 +242,21 @@ async fn browse(
         .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
     let page = state
         .app
-        .browse(&id, kind, &params.slug, params.page.unwrap_or(1), orientation)
+        .browse(
+            &id,
+            kind,
+            &params.slug,
+            params.page.unwrap_or(1),
+            orientation,
+        )
         .await
         .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
     Ok(Json(serde_json::json!(page)))
 }
 
-async fn list_downloads(State(state): State<ApiState>) -> Result<Json<serde_json::Value>, StatusCode> {
+async fn list_downloads(
+    State(state): State<ApiState>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
     let jobs = state
         .app
         .list_downloads()
@@ -290,7 +303,10 @@ async fn pause_download(
     State(state): State<ApiState>,
     Path(id): Path<String>,
 ) -> Result<StatusCode, StatusCode> {
-    state.app.pause_download(&id).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    state
+        .app
+        .pause_download(&id)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -298,7 +314,10 @@ async fn resume_download(
     State(state): State<ApiState>,
     Path(id): Path<String>,
 ) -> Result<StatusCode, StatusCode> {
-    state.app.resume_download(&id).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    state
+        .app
+        .resume_download(&id)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -306,7 +325,10 @@ async fn delete_download(
     State(state): State<ApiState>,
     Path(id): Path<String>,
 ) -> Result<StatusCode, StatusCode> {
-    state.app.delete_download(&id).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    state
+        .app
+        .delete_download(&id)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -314,7 +336,10 @@ async fn cancel_download(
     State(state): State<ApiState>,
     Path(id): Path<String>,
 ) -> Result<StatusCode, StatusCode> {
-    state.app.cancel_download(&id).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    state
+        .app
+        .cancel_download(&id)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -366,10 +391,7 @@ async fn scene_thumb(
         .app
         .get_scene(&id)
         .map_err(|_| StatusCode::NOT_FOUND)?;
-    let thumb_path = scene
-        .thumb
-        .or(scene.path)
-        .ok_or(StatusCode::NOT_FOUND)?;
+    let thumb_path = scene.thumb.or(scene.path).ok_or(StatusCode::NOT_FOUND)?;
     let bytes = tokio::fs::read(&thumb_path)
         .await
         .map_err(|_| StatusCode::NOT_FOUND)?;
@@ -405,16 +427,16 @@ async fn scene_media(
         .app
         .cached_library_root()
         .map_err(|_| StatusCode::FORBIDDEN)?;
-    let canonical_file = path
-        .canonicalize()
-        .map_err(|_| StatusCode::NOT_FOUND)?;
+    let canonical_file = path.canonicalize().map_err(|_| StatusCode::NOT_FOUND)?;
     if !canonical_file.starts_with(&library_root) {
         return Err(StatusCode::FORBIDDEN);
     }
     let mut response = serve_file_with_range(&canonical_file, &headers).await?;
     if streaming::is_video_path(&canonical_file) {
         if let Ok(cd) = HeaderValue::from_str("inline") {
-            response.headers_mut().insert(header::CONTENT_DISPOSITION, cd);
+            response
+                .headers_mut()
+                .insert(header::CONTENT_DISPOSITION, cd);
         }
     }
     Ok(response)
@@ -466,11 +488,16 @@ async fn list_performers(
 }
 
 async fn list_tags(State(state): State<ApiState>) -> Result<Json<serde_json::Value>, StatusCode> {
-    let tags = state.app.list_tags().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let tags = state
+        .app
+        .list_tags()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(serde_json::json!(tags)))
 }
 
-async fn list_duplicates(State(state): State<ApiState>) -> Result<Json<serde_json::Value>, StatusCode> {
+async fn list_duplicates(
+    State(state): State<ApiState>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
     let groups = state
         .app
         .find_duplicates()
@@ -484,12 +511,18 @@ async fn merge_duplicates(
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let result = state
         .app
-        .merge_duplicates(&body.keep_id, &body.remove_ids, body.delete_files.unwrap_or(false))
+        .merge_duplicates(
+            &body.keep_id,
+            &body.remove_ids,
+            body.delete_files.unwrap_or(false),
+        )
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(serde_json::json!(result)))
 }
 
-async fn list_cookies(State(state): State<ApiState>) -> Result<Json<serde_json::Value>, StatusCode> {
+async fn list_cookies(
+    State(state): State<ApiState>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
     let sites = state
         .app
         .list_cookie_sites()
@@ -520,7 +553,9 @@ async fn delete_cookies(
     Ok(StatusCode::NO_CONTENT)
 }
 
-async fn get_settings(State(state): State<ApiState>) -> Result<Json<serde_json::Value>, StatusCode> {
+async fn get_settings(
+    State(state): State<ApiState>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
     let settings = state
         .app
         .get_settings()
@@ -571,9 +606,7 @@ fn parse_orientation(s: &str) -> AppResult<crate::models::BrowseOrientation> {
         "lesbian" => BrowseOrientation::Lesbian,
         "transgender" => BrowseOrientation::Transgender,
         _ => {
-            return Err(AppError::InvalidInput(format!(
-                "unknown orientation: {s}"
-            )));
+            return Err(AppError::InvalidInput(format!("unknown orientation: {s}")));
         }
     })
 }

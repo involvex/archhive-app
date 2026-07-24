@@ -44,7 +44,11 @@ impl SiteAdapter for RedditAdapter {
         })
     }
 
-    async fn resolve_download(&self, _ctx: &SiteContext, item: &MediaItem) -> AppResult<DownloadPlan> {
+    async fn resolve_download(
+        &self,
+        _ctx: &SiteContext,
+        item: &MediaItem,
+    ) -> AppResult<DownloadPlan> {
         let tool = crate::downloads::image::resolve_download_tool(&item.url, "reddit");
         Ok(DownloadPlan {
             url: item.url.clone(),
@@ -91,9 +95,13 @@ fn parse_reddit(html: &str) -> Vec<MediaItem> {
     let mut seen = std::collections::HashSet::new();
 
     for sel_str in selectors {
-        let Ok(sel) = Selector::parse(sel_str) else { continue };
+        let Ok(sel) = Selector::parse(sel_str) else {
+            continue;
+        };
         for el in document.select(&sel) {
-            let Some(href) = el.value().attr("href") else { continue };
+            let Some(href) = el.value().attr("href") else {
+                continue;
+            };
             if !href.contains("/comments/") && !href.contains("v.redd.it") {
                 continue;
             }
@@ -162,6 +170,9 @@ mod tests {
             page: 1,
             orientation: None,
         };
-        assert_eq!(build_browse_url(&q).unwrap(), "https://old.reddit.com/r/nsfw/");
+        assert_eq!(
+            build_browse_url(&q).unwrap(),
+            "https://old.reddit.com/r/nsfw/"
+        );
     }
 }

@@ -28,9 +28,7 @@ impl FfmpegProcessor {
             "2".to_string(),
             thumb_path.to_string_lossy().to_string(),
         ];
-        self.runner
-            .spawn_ffmpeg(&args, |_| {})
-            .await?;
+        self.runner.spawn_ffmpeg(&args, |_| {}).await?;
         Ok(thumb_path)
     }
 

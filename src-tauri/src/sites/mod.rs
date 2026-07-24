@@ -61,5 +61,9 @@ pub trait SiteAdapter: Send + Sync {
 
     async fn browse(&self, ctx: &SiteContext, query: BrowseQuery) -> AppResult<BrowsePage>;
 
-    async fn resolve_download(&self, ctx: &SiteContext, item: &MediaItem) -> AppResult<DownloadPlan>;
+    async fn resolve_download(
+        &self,
+        ctx: &SiteContext,
+        item: &MediaItem,
+    ) -> AppResult<DownloadPlan>;
 }

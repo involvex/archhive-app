@@ -3,9 +3,7 @@ use crate::models::MediaItem;
 use reqwest::Client;
 
 pub async fn resolve(url: &str) -> AppResult<MediaItem> {
-    let client = Client::builder()
-        .user_agent("ArcHive/0.1")
-        .build()?;
+    let client = Client::builder().user_agent("ArcHive/0.1").build()?;
 
     if url.contains("youtube.com") || url.contains("youtu.be") {
         return Ok(MediaItem {
@@ -43,7 +41,9 @@ pub async fn resolve(url: &str) -> AppResult<MediaItem> {
 
 fn is_direct_media(url: &str) -> bool {
     let lower = url.to_lowercase();
-    [".mp4", ".webm", ".mkv", ".m3u8"].iter().any(|ext| lower.contains(ext))
+    [".mp4", ".webm", ".mkv", ".m3u8"]
+        .iter()
+        .any(|ext| lower.contains(ext))
 }
 
 fn extract_title_from_url(url: &str) -> String {

@@ -102,7 +102,10 @@ fn parse_range_header(range: &str, size: u64) -> Option<(u64, u64)> {
 }
 
 /// Stream a file with optional HTTP Range support (for video seeking).
-pub async fn serve_file_with_range(path: &Path, headers: &HeaderMap) -> Result<Response, StatusCode> {
+pub async fn serve_file_with_range(
+    path: &Path,
+    headers: &HeaderMap,
+) -> Result<Response, StatusCode> {
     let meta = tokio::fs::metadata(path)
         .await
         .map_err(|_| StatusCode::NOT_FOUND)?;
@@ -135,10 +138,7 @@ pub async fn serve_file_with_range(path: &Path, headers: &HeaderMap) -> Result<R
             .header(header::ACCEPT_RANGES, "bytes")
             .header(header::CONNECTION, "keep-alive")
             .header(header::CACHE_CONTROL, "no-cache")
-            .header(
-                header::CONTENT_RANGE,
-                format!("bytes {start}-{end}/{size}"),
-            )
+            .header(header::CONTENT_RANGE, format!("bytes {start}-{end}/{size}"))
             .header(header::CONTENT_LENGTH, len.to_string())
             .body(body)
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?);
@@ -158,10 +158,7 @@ pub async fn serve_file_with_range(path: &Path, headers: &HeaderMap) -> Result<R
 }
 
 pub fn content_disposition_inline(path: &Path) -> HeaderValue {
-    let name = path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("file");
+    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("file");
     HeaderValue::from_str(&format!("inline; filename=\"{name}\""))
         .unwrap_or_else(|_| HeaderValue::from_static("inline"))
 }

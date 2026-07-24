@@ -11,7 +11,13 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
-type SceneRow = (String, String, Option<String>, Option<String>, Option<String>);
+type SceneRow = (
+    String,
+    String,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+);
 
 pub struct Database {
     conn: Arc<Mutex<Connection>>,
@@ -34,7 +40,10 @@ impl Database {
     }
 
     pub fn get_settings(&self) -> AppResult<AppSettings> {
-        let conn = self.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
         let raw: Option<String> = conn
             .query_row(
                 "SELECT value FROM app_settings WHERE key = 'settings'",
@@ -50,7 +59,10 @@ impl Database {
     }
 
     pub fn save_settings(&self, settings: &AppSettings) -> AppResult<()> {
-        let conn = self.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
         let json = serde_json::to_string(settings)
             .map_err(|e| AppError::Other(format!("settings serialize: {e}")))?;
         conn.execute(
@@ -61,7 +73,12 @@ impl Database {
         Ok(())
     }
 
-    pub fn insert_download_job(&self, url: &str, adapter: &str, title: Option<&str>) -> AppResult<DownloadJob> {
+    pub fn insert_download_job(
+        &self,
+        url: &str,
+        adapter: &str,
+        title: Option<&str>,
+    ) -> AppResult<DownloadJob> {
         let job = DownloadJob {
             id: Uuid::new_v4().to_string(),
             url: url.to_string(),
@@ -73,7 +90,10 @@ impl Database {
             title: title.map(|s| s.to_string()),
             created_at: Utc::now().to_rfc3339(),
         };
-        let conn = self.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
         conn.execute(
             "INSERT INTO download_jobs (id, url, adapter, status, progress, title, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
@@ -91,7 +111,10 @@ impl Database {
     }
 
     pub fn update_download_job(&self, job: &DownloadJob) -> AppResult<()> {
-        let conn = self.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
         let status = format!("{:?}", job.status).to_lowercase();
         conn.execute(
             "UPDATE download_jobs SET status = ?2, progress = ?3, output_path = ?4, error = ?5, title = ?6
@@ -102,7 +125,10 @@ impl Database {
     }
 
     pub fn list_download_jobs(&self) -> AppResult<Vec<DownloadJob>> {
-        let conn = self.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
         let mut stmt = conn.prepare(
             "SELECT id, url, adapter, status, progress, output_path, error, title, created_at
              FROM download_jobs ORDER BY created_at DESC LIMIT 100",
@@ -125,13 +151,19 @@ impl Database {
     }
 
     pub fn delete_download_job(&self, id: &str) -> AppResult<()> {
-        let conn = self.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
         conn.execute("DELETE FROM download_jobs WHERE id = ?1", params![id])?;
         Ok(())
     }
 
     pub fn get_download_job(&self, id: &str) -> AppResult<Option<DownloadJob>> {
-        let conn = self.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
         conn.query_row(
             "SELECT id, url, adapter, status, progress, output_path, error, title, created_at
              FROM download_jobs WHERE id = ?1",
@@ -156,7 +188,10 @@ impl Database {
     }
 
     pub fn upsert_performer(&self, name: &str) -> AppResult<String> {
-        let conn = self.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
         let existing: Option<String> = conn
             .query_row(
                 "SELECT id FROM performers WHERE name = ?1",
@@ -176,7 +211,10 @@ impl Database {
     }
 
     pub fn upsert_tag(&self, name: &str) -> AppResult<String> {
-        let conn = self.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
         let existing: Option<String> = conn
             .query_row(
                 "SELECT id FROM tags WHERE name = ?1",
@@ -207,7 +245,10 @@ impl Database {
         phash: Option<&str>,
         oshash: Option<&str>,
     ) -> AppResult<String> {
-        let conn = self.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
         let id = Uuid::new_v4().to_string();
         let now = Utc::now().to_rfc3339();
         conn.execute(
@@ -233,7 +274,10 @@ impl Database {
     }
 
     pub fn update_scene_path(&self, id: &str, path: &str, thumb: Option<&str>) -> AppResult<()> {
-        let conn = self.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
         conn.execute(
             "UPDATE scenes SET path = ?2, thumb = COALESCE(?3, thumb) WHERE id = ?1",
             params![id, path, thumb],
@@ -248,7 +292,10 @@ impl Database {
         oshash: Option<&str>,
         thumb: Option<&str>,
     ) -> AppResult<()> {
-        let conn = self.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
         conn.execute(
             "UPDATE scenes SET phash = COALESCE(?2, phash), oshash = COALESCE(?3, oshash), thumb = COALESCE(?4, thumb) WHERE id = ?1",
             params![id, phash, oshash, thumb],
@@ -257,42 +304,44 @@ impl Database {
     }
 
     pub fn list_scenes(&self, query: Option<&str>) -> AppResult<Vec<Scene>> {
-        let conn = self.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
-        let scenes: Vec<SceneRow> =
-            if let Some(q) = query.filter(|s| !s.is_empty()) {
-                let mut stmt = conn.prepare(
-                    "SELECT s.id, s.title, s.path, s.thumb, s.source_url
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let scenes: Vec<SceneRow> = if let Some(q) = query.filter(|s| !s.is_empty()) {
+            let mut stmt = conn.prepare(
+                "SELECT s.id, s.title, s.path, s.thumb, s.source_url
                      FROM scenes s
                      JOIN scenes_fts fts ON s.rowid = fts.rowid
                      WHERE scenes_fts MATCH ?1
                      ORDER BY s.created_at DESC LIMIT 100",
-                )?;
-                let fts_q = format!("\"{}*\"", q.replace('"', ""));
-                let rows = stmt.query_map(params![fts_q], |row| {
-                    Ok((
-                        row.get(0)?,
-                        row.get(1)?,
-                        row.get(2)?,
-                        row.get(3)?,
-                        row.get(4)?,
-                    ))
-                })?;
-                rows.collect::<Result<Vec<_>, _>>()?
-            } else {
-                let mut stmt = conn.prepare(
+            )?;
+            let fts_q = format!("\"{}*\"", q.replace('"', ""));
+            let rows = stmt.query_map(params![fts_q], |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            })?;
+            rows.collect::<Result<Vec<_>, _>>()?
+        } else {
+            let mut stmt = conn.prepare(
                     "SELECT id, title, path, thumb, source_url FROM scenes ORDER BY created_at DESC LIMIT 100",
                 )?;
-                let rows = stmt.query_map([], |row| {
-                    Ok((
-                        row.get(0)?,
-                        row.get(1)?,
-                        row.get(2)?,
-                        row.get(3)?,
-                        row.get(4)?,
-                    ))
-                })?;
-                rows.collect::<Result<Vec<_>, _>>()?
-            };
+            let rows = stmt.query_map([], |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            })?;
+            rows.collect::<Result<Vec<_>, _>>()?
+        };
 
         let mut result = Vec::new();
         for (id, title, path, thumb, source_url) in scenes {
@@ -320,7 +369,10 @@ impl Database {
     }
 
     pub fn scene_by_path(&self, path: &str) -> AppResult<Option<Scene>> {
-        let conn = self.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
         let row = conn
             .query_row(
                 "SELECT id, title, path, thumb, source_url FROM scenes WHERE path = ?1",
@@ -380,7 +432,10 @@ impl Database {
     }
 
     pub fn list_performers(&self, query: Option<&str>) -> AppResult<Vec<Performer>> {
-        let conn = self.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
         let mut sql = String::from(
             "SELECT p.id, p.name, p.aliases, p.image, p.favorite,
                     (SELECT COUNT(*) FROM scene_performers sp WHERE sp.performer_id = p.id) as scene_count
@@ -401,7 +456,10 @@ impl Database {
     }
 
     pub fn list_tags(&self) -> AppResult<Vec<Tag>> {
-        let conn = self.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
         let mut stmt = conn.prepare(
             "SELECT t.id, t.name, t.parent_id,
                     (SELECT COUNT(*) FROM scene_tags st WHERE st.tag_id = t.id) as scene_count
@@ -419,7 +477,10 @@ impl Database {
     }
 
     pub fn scene_exists_by_path(&self, path: &str) -> AppResult<bool> {
-        let conn = self.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
         let count: i64 = conn.query_row(
             "SELECT COUNT(*) FROM scenes WHERE path = ?1",
             params![path],
@@ -429,14 +490,16 @@ impl Database {
     }
 
     pub fn find_duplicate_groups(&self, phash_threshold: u8) -> AppResult<Vec<DuplicateGroup>> {
-        let conn = self.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
         let mut groups = Vec::new();
 
         let mut phash_entries: Vec<(String, String)> = Vec::new();
         {
-            let mut stmt = conn.prepare(
-                "SELECT id, phash FROM scenes WHERE phash IS NOT NULL AND phash != ''",
-            )?;
+            let mut stmt = conn
+                .prepare("SELECT id, phash FROM scenes WHERE phash IS NOT NULL AND phash != ''")?;
             let rows = stmt.query_map([], |row| {
                 Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
             })?;
@@ -445,7 +508,8 @@ impl Database {
             }
         }
 
-        let clusters = crate::library::duplicates::cluster_phash_ids(&phash_entries, phash_threshold);
+        let clusters =
+            crate::library::duplicates::cluster_phash_ids(&phash_entries, phash_threshold);
         for ids in clusters {
             let ids_csv = ids.join(",");
             let scenes = self.scenes_by_ids(&conn, &ids_csv)?;
@@ -482,7 +546,10 @@ impl Database {
     }
 
     pub fn get_scene(&self, scene_id: &str) -> AppResult<Scene> {
-        let conn = self.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
         let row = conn
             .query_row(
                 "SELECT id, title, path, thumb, source_url, phash, oshash FROM scenes WHERE id = ?1",
@@ -544,10 +611,7 @@ impl Database {
                     if name.is_empty() {
                         continue;
                     }
-                    if !performers
-                        .iter()
-                        .any(|p| p.eq_ignore_ascii_case(name))
-                    {
+                    if !performers.iter().any(|p| p.eq_ignore_ascii_case(name)) {
                         performers.push(name.to_string());
                     }
                 }
@@ -586,10 +650,7 @@ impl Database {
             if let Some(ref old_path) = existing.path {
                 let old = std::path::Path::new(old_path);
                 if old.exists() {
-                    let ext = old
-                        .extension()
-                        .and_then(|e| e.to_str())
-                        .unwrap_or("mp4");
+                    let ext = old.extension().and_then(|e| e.to_str()).unwrap_or("mp4");
                     let safe: String = new_title
                         .chars()
                         .map(|c| {
@@ -611,7 +672,10 @@ impl Database {
             }
         }
 
-        let conn = self.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
         conn.execute(
             "UPDATE scenes SET title = ?2, path = COALESCE(?3, path) WHERE id = ?1",
             params![id, new_title, new_path],
@@ -620,12 +684,21 @@ impl Database {
 
         if let Some(p) = performers {
             {
-                let conn = self.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
-                conn.execute("DELETE FROM scene_performers WHERE scene_id = ?1", params![id])?;
+                let conn = self
+                    .conn
+                    .lock()
+                    .map_err(|e| AppError::Other(e.to_string()))?;
+                conn.execute(
+                    "DELETE FROM scene_performers WHERE scene_id = ?1",
+                    params![id],
+                )?;
             }
             for name in p {
                 let pid = self.upsert_performer(name)?;
-                let conn = self.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
+                let conn = self
+                    .conn
+                    .lock()
+                    .map_err(|e| AppError::Other(e.to_string()))?;
                 conn.execute(
                     "INSERT OR IGNORE INTO scene_performers (scene_id, performer_id) VALUES (?1, ?2)",
                     params![id, pid],
@@ -635,12 +708,18 @@ impl Database {
 
         if let Some(t) = tags {
             {
-                let conn = self.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
+                let conn = self
+                    .conn
+                    .lock()
+                    .map_err(|e| AppError::Other(e.to_string()))?;
                 conn.execute("DELETE FROM scene_tags WHERE scene_id = ?1", params![id])?;
             }
             for name in t {
                 let tid = self.upsert_tag(name)?;
-                let conn = self.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
+                let conn = self
+                    .conn
+                    .lock()
+                    .map_err(|e| AppError::Other(e.to_string()))?;
                 conn.execute(
                     "INSERT OR IGNORE INTO scene_tags (scene_id, tag_id) VALUES (?1, ?2)",
                     params![id, tid],
@@ -652,7 +731,10 @@ impl Database {
     }
 
     pub fn delete_scene(&self, id: &str, delete_files: bool) -> AppResult<()> {
-        let conn = self.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
         let row: Option<(Option<String>, Option<String>)> = conn
             .query_row(
                 "SELECT path, thumb FROM scenes WHERE id = ?1",
@@ -664,7 +746,10 @@ impl Database {
             return Err(AppError::NotFound(format!("scene {id}")));
         };
 
-        conn.execute("DELETE FROM scene_performers WHERE scene_id = ?1", params![id])?;
+        conn.execute(
+            "DELETE FROM scene_performers WHERE scene_id = ?1",
+            params![id],
+        )?;
         conn.execute("DELETE FROM scene_tags WHERE scene_id = ?1", params![id])?;
         conn.execute("DELETE FROM scenes WHERE id = ?1", params![id])?;
 
@@ -685,7 +770,10 @@ impl Database {
         remove_ids: &[String],
         delete_files: bool,
     ) -> AppResult<u32> {
-        let conn = self.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
         let exists: bool = conn
             .query_row(
                 "SELECT COUNT(*) FROM scenes WHERE id = ?1",

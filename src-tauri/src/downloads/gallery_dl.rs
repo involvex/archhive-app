@@ -49,10 +49,7 @@ impl DirSnapshot {
             .filter(|e| e.file_type().is_file())
         {
             let path = entry.path().to_path_buf();
-            let modified = entry
-                .metadata()
-                .ok()
-                .and_then(|m| m.modified().ok());
+            let modified = entry.metadata().ok().and_then(|m| m.modified().ok());
             let is_new = match (self.files.get(&path), modified) {
                 (None, Some(_)) => true,
                 (Some(prev), Some(cur)) => cur > *prev,
@@ -147,6 +144,7 @@ fn file_mtime(path: &Path) -> Option<SystemTime> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
     #[test]
     fn parses_hash_prefixed_path() {
@@ -158,5 +156,20 @@ mod tests {
     fn parses_writing_line() {
         let p = parse_gallery_dl_path("Writing downloads/file.png").unwrap();
         assert_eq!(p, "downloads/file.png");
+    }
+
+    #[test]
+    fn snapshot_empty_job_dir_is_cheap() {
+        let dir = std::env::temp_dir().join(format!("archhive-dl-snap-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let snap = DirSnapshot::capture(dir.to_str().unwrap()).unwrap();
+        assert!(snap.files.is_empty());
+
+        let file = dir.join("a.jpg");
+        fs::write(&file, b"x").unwrap();
+        let new = snap.new_files(dir.to_str().unwrap()).unwrap();
+        assert_eq!(new.len(), 1);
+        let _ = fs::remove_dir_all(&dir);
     }
 }

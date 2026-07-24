@@ -40,8 +40,12 @@ impl CookieVault {
     }
 
     pub fn list_sites(&self) -> AppResult<Vec<CookieSiteInfo>> {
-        let conn = self.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
-        let mut stmt = conn.prepare("SELECT site_id, updated_at FROM site_cookies ORDER BY site_id")?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let mut stmt =
+            conn.prepare("SELECT site_id, updated_at FROM site_cookies ORDER BY site_id")?;
         let rows = stmt.query_map([], |row| {
             Ok(CookieSiteInfo {
                 site_id: row.get(0)?,
@@ -56,7 +60,10 @@ impl CookieVault {
         let path = self.cookie_file_path(site_id);
         std::fs::write(&path, netscape_cookies)?;
         let now = Utc::now().to_rfc3339();
-        let conn = self.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
         conn.execute(
             "INSERT INTO site_cookies (site_id, encrypted_data, updated_at) VALUES (?1, ?2, ?3)
              ON CONFLICT(site_id) DO UPDATE SET encrypted_data = excluded.encrypted_data, updated_at = excluded.updated_at",
@@ -66,8 +73,14 @@ impl CookieVault {
     }
 
     pub fn delete_cookies(&self, site_id: &str) -> AppResult<()> {
-        let conn = self.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
-        conn.execute("DELETE FROM site_cookies WHERE site_id = ?1", params![site_id])?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        conn.execute(
+            "DELETE FROM site_cookies WHERE site_id = ?1",
+            params![site_id],
+        )?;
         let path = self.cookie_file_path(site_id);
         if path.exists() {
             std::fs::remove_file(path)?;
@@ -89,7 +102,10 @@ impl CookieVault {
     }
 
     pub fn cookie_header(&self, site_id: &str) -> AppResult<Option<String>> {
-        let conn = self.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
         let blob: Option<Vec<u8>> = conn
             .query_row(
                 "SELECT encrypted_data FROM site_cookies WHERE site_id = ?1",

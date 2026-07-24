@@ -29,7 +29,10 @@ pub struct FilesListResponse {
 }
 
 fn library_root(state: &ApiState) -> Result<std::path::PathBuf, StatusCode> {
-    let settings = state.app.get_settings().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let settings = state
+        .app
+        .get_settings()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     crate::state::AppState::validate_library_path(&settings.library_path, &state.app.data_dir)
         .map(std::path::PathBuf::from)
         .map_err(|_| StatusCode::BAD_REQUEST)
@@ -62,10 +65,7 @@ pub async fn list_files(
         }
         let meta = entry.metadata().ok();
         let is_dir = meta.as_ref().map(|m| m.is_dir()).unwrap_or(false);
-        let size = meta
-            .as_ref()
-            .filter(|m| m.is_file())
-            .map(|m| m.len());
+        let size = meta.as_ref().filter(|m| m.is_file()).map(|m| m.len());
         let abs = entry.path();
         let rel_path = relative_path(&root, &abs);
         let mime = if is_dir {
@@ -81,12 +81,10 @@ pub async fn list_files(
             mime,
         });
     }
-    entries.sort_by(|a, b| {
-        match (a.is_dir, b.is_dir) {
-            (true, false) => std::cmp::Ordering::Less,
-            (false, true) => std::cmp::Ordering::Greater,
-            _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
-        }
+    entries.sort_by(|a, b| match (a.is_dir, b.is_dir) {
+        (true, false) => std::cmp::Ordering::Less,
+        (false, true) => std::cmp::Ordering::Greater,
+        _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
     });
 
     let current = relative_path(&root, &dir);

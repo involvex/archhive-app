@@ -39,11 +39,10 @@ pub fn setup<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
 
     let show_item = MenuItem::with_id(app, MENU_SHOW, "Show ArcHive", true, None::<&str>)
         .map_err(|e| e.to_string())?;
-    let settings_item =
-        MenuItem::with_id(app, MENU_SETTINGS, "Settings", true, None::<&str>)
-            .map_err(|e| e.to_string())?;
-    let quit_item = MenuItem::with_id(app, MENU_QUIT, "Quit", true, None::<&str>)
+    let settings_item = MenuItem::with_id(app, MENU_SETTINGS, "Settings", true, None::<&str>)
         .map_err(|e| e.to_string())?;
+    let quit_item =
+        MenuItem::with_id(app, MENU_QUIT, "Quit", true, None::<&str>).map_err(|e| e.to_string())?;
     let menu = Menu::with_items(app, &[&show_item, &settings_item, &quit_item])
         .map_err(|e| e.to_string())?;
 
@@ -81,7 +80,10 @@ pub fn sync_from_settings<R: Runtime>(app: &AppHandle<R>, settings: &AppSettings
 }
 
 pub fn on_window_event<R: Runtime>(window: &Window<R>, event: &tauri::WindowEvent) {
-    let Ok(settings) = window.app_handle().state::<std::sync::Arc<crate::state::AppState>>().get_settings()
+    let Ok(settings) = window
+        .app_handle()
+        .state::<std::sync::Arc<crate::state::AppState>>()
+        .get_settings()
     else {
         return;
     };

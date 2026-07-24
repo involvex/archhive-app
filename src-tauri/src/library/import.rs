@@ -19,5 +19,7 @@ pub fn import_download(
             return Ok(existing.id);
         }
     }
-    db.insert_scene(title, path, source_url, performers, tags, thumb, phash, oshash)
+    db.insert_scene(
+        title, path, source_url, performers, tags, thumb, phash, oshash,
+    )
 }

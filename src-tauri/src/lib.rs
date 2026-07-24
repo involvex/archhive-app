@@ -18,8 +18,8 @@ mod desktop;
 use db::Database;
 use state::AppState;
 use std::sync::Arc;
-use tauri::Manager;
 use tauri::path::BaseDirectory;
+use tauri::Manager;
 
 fn resolve_lan_static_ui(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
     if let Ok(cwd) = std::env::current_dir() {
@@ -51,7 +51,11 @@ fn bootstrap_mobile_settings(db: &Database, data_dir: &std::path::Path) -> Resul
         settings.engine_mode = crate::models::EngineMode::RemoteLan;
         changed = true;
     }
-    if settings.remote_token.as_ref().is_some_and(|t| t.trim().is_empty()) {
+    if settings
+        .remote_token
+        .as_ref()
+        .is_some_and(|t| t.trim().is_empty())
+    {
         settings.remote_token = None;
         changed = true;
     }
@@ -71,55 +75,55 @@ pub fn run() {
     let builder = builder.plugin(tauri_plugin_global_shortcut::Builder::new().build());
 
     let builder = builder.setup(|app| {
-            let data_dir = app
-                .path()
-                .app_data_dir()
-                .expect("failed to resolve app data dir");
-            std::fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
-            let db = Arc::new(Database::new(data_dir.clone()).map_err(|e| e.to_string())?);
+        let data_dir = app
+            .path()
+            .app_data_dir()
+            .expect("failed to resolve app data dir");
+        std::fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
+        let db = Arc::new(Database::new(data_dir.clone()).map_err(|e| e.to_string())?);
 
-            #[cfg(mobile)]
-            bootstrap_mobile_settings(&db, &data_dir)?;
+        #[cfg(mobile)]
+        bootstrap_mobile_settings(&db, &data_dir)?;
 
-            let static_ui = resolve_lan_static_ui(app.handle());
-            let state = Arc::new(
-                AppState::with_app(db, data_dir, app.handle().clone(), static_ui)
-                    .map_err(|e| e.to_string())?,
-            );
-            app.manage(state.clone());
+        let static_ui = resolve_lan_static_ui(app.handle());
+        let state = Arc::new(
+            AppState::with_app(db, data_dir, app.handle().clone(), static_ui)
+                .map_err(|e| e.to_string())?,
+        );
+        app.manage(state.clone());
 
-            #[cfg(not(mobile))]
-            {
-                app.manage(Arc::new(desktop::TrayHotkeyState::new()));
-                desktop::setup(app.handle())?;
-                if let Ok(settings) = state.get_settings() {
-                    desktop::sync_from_settings(app.handle(), &settings);
-                }
+        #[cfg(not(mobile))]
+        {
+            app.manage(Arc::new(desktop::TrayHotkeyState::new()));
+            desktop::setup(app.handle())?;
+            if let Ok(settings) = state.get_settings() {
+                desktop::sync_from_settings(app.handle(), &settings);
             }
+        }
 
-            #[cfg(not(mobile))]
-            {
-                let auto_lan = std::env::var("ARCHIVE_AUTO_LAN").ok().as_deref() == Some("1");
-                let lan_enabled = state.get_settings().map(|s| s.lan_enabled).unwrap_or(false);
-                if auto_lan || lan_enabled {
-                    if auto_lan {
-                        if let Ok(mut s) = state.get_settings() {
-                            s.lan_token = None;
-                            let _ = state.save_settings(&s);
-                        }
+        #[cfg(not(mobile))]
+        {
+            let auto_lan = std::env::var("ARCHIVE_AUTO_LAN").ok().as_deref() == Some("1");
+            let lan_enabled = state.get_settings().map(|s| s.lan_enabled).unwrap_or(false);
+            if auto_lan || lan_enabled {
+                if auto_lan {
+                    if let Ok(mut s) = state.get_settings() {
+                        s.lan_token = None;
+                        let _ = state.save_settings(&s);
                     }
-                    let st = state.clone();
-                    tauri::async_runtime::spawn(async move {
-                        let port = st.get_settings().map(|s| s.lan_port).unwrap_or(8787);
-                        if let Err(e) = st.ensure_lan_server(port).await {
-                            eprintln!("LAN auto-start failed: {e}");
-                        }
-                    });
                 }
+                let st = state.clone();
+                tauri::async_runtime::spawn(async move {
+                    let port = st.get_settings().map(|s| s.lan_port).unwrap_or(8787);
+                    if let Err(e) = st.ensure_lan_server(port).await {
+                        eprintln!("LAN auto-start failed: {e}");
+                    }
+                });
             }
+        }
 
-            Ok(())
-        });
+        Ok(())
+    });
 
     #[cfg(not(mobile))]
     let builder = builder.on_window_event(|window, event| {

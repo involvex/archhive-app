@@ -162,7 +162,11 @@ impl SiteAdapter for GenericYtDlpAdapter {
         })
     }
 
-    async fn resolve_download(&self, _ctx: &SiteContext, item: &MediaItem) -> AppResult<DownloadPlan> {
+    async fn resolve_download(
+        &self,
+        _ctx: &SiteContext,
+        item: &MediaItem,
+    ) -> AppResult<DownloadPlan> {
         Ok(DownloadPlan {
             url: item.url.clone(),
             output_template: "%(uploader)s/%(title)s.%(ext)s".to_string(),

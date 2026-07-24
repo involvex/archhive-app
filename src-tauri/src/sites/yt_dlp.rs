@@ -33,12 +33,18 @@ impl SidecarRunner {
             "--newline".to_string(),
             "--progress".to_string(),
             "--no-overwrites".to_string(),
+            // Emit final path explicitly (newer yt-dlp); Destination: is not always printed.
+            "--print".to_string(),
+            "after_move:filepath".to_string(),
+            "--print".to_string(),
+            "filepath".to_string(),
         ];
         if let Some(cookies) = cookies_file {
             args.push("--cookies".to_string());
             args.push(cookies.to_string_lossy().to_string());
         }
-        self.spawn_cancellable("yt-dlp", &args, cancel, on_line).await
+        self.spawn_cancellable("yt-dlp", &args, cancel, on_line, Some(output_dir))
+            .await
     }
 
     pub async fn run_gallery_dl(
@@ -136,6 +142,7 @@ impl SidecarRunner {
         args: &[String],
         cancel: Arc<AtomicBool>,
         on_line: impl Fn(&str),
+        output_dir: Option<&str>,
     ) -> AppResult<String> {
         let sidecar_result = self
             .app
@@ -144,7 +151,10 @@ impl SidecarRunner {
             .map(|cmd| cmd.args(args).spawn());
 
         match sidecar_result {
-            Ok(Ok((rx, child))) => self.consume_cancellable(rx, child, name, cancel, on_line).await,
+            Ok(Ok((rx, child))) => {
+                self.consume_cancellable(rx, child, name, cancel, on_line, output_dir)
+                    .await
+            }
             _ => {
                 let (rx, child) = self
                     .app
@@ -153,7 +163,8 @@ impl SidecarRunner {
                     .args(args)
                     .spawn()
                     .map_err(|e| AppError::Download(format!("spawn {name}: {e}")))?;
-                self.consume_cancellable(rx, child, name, cancel, on_line).await
+                self.consume_cancellable(rx, child, name, cancel, on_line, output_dir)
+                    .await
             }
         }
     }
@@ -165,8 +176,10 @@ impl SidecarRunner {
         name: &str,
         cancel: Arc<AtomicBool>,
         on_line: impl Fn(&str),
+        output_dir: Option<&str>,
     ) -> AppResult<String> {
         let mut destination = String::new();
+        let mut line_buf = String::new();
         loop {
             if !cancel.load(Ordering::Relaxed) {
                 let _ = child.kill();
@@ -183,12 +196,14 @@ impl SidecarRunner {
                 break;
             };
             match event {
-                CommandEvent::Stdout(line) | CommandEvent::Stderr(line) => {
-                    let text = String::from_utf8_lossy(&line);
-                    on_line(&text);
-                    if let Some(path) = Self::parse_destination(&text) {
-                        destination = path;
-                    }
+                CommandEvent::Stdout(chunk) | CommandEvent::Stderr(chunk) => {
+                    let text = String::from_utf8_lossy(&chunk);
+                    feed_lines(&mut line_buf, &text, |line| {
+                        on_line(line);
+                        if let Some(path) = Self::parse_destination(line) {
+                            destination = path;
+                        }
+                    });
                 }
                 CommandEvent::Terminated(payload) => {
                     if !cancel.load(Ordering::Relaxed) {
@@ -204,6 +219,23 @@ impl SidecarRunner {
                 }
                 _ => {}
             }
+        }
+        feed_lines_flush(&mut line_buf, |line| {
+            on_line(line);
+            if let Some(path) = Self::parse_destination(line) {
+                destination = path;
+            }
+        });
+
+        if destination.trim().is_empty() {
+            if let Some(dir) = output_dir {
+                if let Some(found) = resolve_newest_media(Path::new(dir)) {
+                    return Ok(found);
+                }
+            }
+            return Err(AppError::Download(format!(
+                "{name} finished but no output destination was reported"
+            )));
         }
         Ok(destination)
     }
@@ -265,11 +297,7 @@ impl SidecarRunner {
         Ok(stdout)
     }
 
-    pub async fn spawn_ffmpeg(
-        &self,
-        args: &[String],
-        on_line: impl Fn(&str),
-    ) -> AppResult<String> {
+    pub async fn spawn_ffmpeg(&self, args: &[String], on_line: impl Fn(&str)) -> AppResult<String> {
         self.spawn("ffmpeg", args, on_line).await
     }
 
@@ -316,13 +344,12 @@ impl SidecarRunner {
                         destination = path;
                     }
                 }
-                CommandEvent::Terminated(payload)
-                    if payload.code != Some(0) => {
-                        return Err(AppError::Download(format!(
-                            "{name} exited with code {:?}",
-                            payload.code
-                        )));
-                    }
+                CommandEvent::Terminated(payload) if payload.code != Some(0) => {
+                    return Err(AppError::Download(format!(
+                        "{name} exited with code {:?}",
+                        payload.code
+                    )));
+                }
                 _ => {}
             }
         }
@@ -348,13 +375,12 @@ impl SidecarRunner {
                         destinations.push(path);
                     }
                 }
-                CommandEvent::Terminated(payload)
-                    if payload.code != Some(0) => {
-                        return Err(AppError::Download(format!(
-                            "{name} exited with code {:?}",
-                            payload.code
-                        )));
-                    }
+                CommandEvent::Terminated(payload) if payload.code != Some(0) => {
+                    return Err(AppError::Download(format!(
+                        "{name} exited with code {:?}",
+                        payload.code
+                    )));
+                }
                 _ => {}
             }
         }
@@ -369,22 +395,103 @@ impl SidecarRunner {
     }
 
     pub fn parse_destination(line: &str) -> Option<String> {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+
         let markers = ["[download] Destination: ", "Destination: "];
         for marker in markers {
-            if let Some(idx) = line.find(marker) {
-                let path = line[idx + marker.len()..].trim();
+            if let Some(idx) = trimmed.find(marker) {
+                let path = trimmed[idx + marker.len()..].trim();
                 if !path.is_empty() {
                     return Some(path.to_string());
                 }
             }
         }
+
+        // [Merger] Merging formats into "path"  or  into path
+        if let Some(idx) = trimmed.find("[Merger] Merging formats into ") {
+            let rest = trimmed[idx + "[Merger] Merging formats into ".len()..].trim();
+            let path = rest.trim_matches('"').trim();
+            if !path.is_empty() {
+                return Some(path.to_string());
+            }
+        }
+
+        // [download] path has already been downloaded
+        if let Some(idx) = trimmed.find(" has already been downloaded") {
+            let prefix = &trimmed[..idx];
+            let path = prefix.strip_prefix("[download] ").unwrap_or(prefix).trim();
+            if !path.is_empty() {
+                return Some(path.to_string());
+            }
+        }
+
+        // Bare filepath from --print (no leading [tag])
+        if !trimmed.starts_with('[') && looks_like_media_path(trimmed) {
+            return Some(trimmed.to_string());
+        }
+
         None
     }
 }
 
+const MEDIA_EXTS: &[&str] = &[
+    ".mp4", ".m4v", ".webm", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".opus", ".m4a", ".mp3",
+];
+
+fn looks_like_media_path(s: &str) -> bool {
+    let lower = s.to_lowercase();
+    MEDIA_EXTS.iter().any(|ext| lower.ends_with(ext))
+}
+
+fn feed_lines(buf: &mut String, chunk: &str, mut on_line: impl FnMut(&str)) {
+    buf.push_str(chunk);
+    while let Some(idx) = buf.find('\n') {
+        let line = buf[..idx].trim_end_matches('\r').to_string();
+        buf.drain(..=idx);
+        if !line.is_empty() {
+            on_line(&line);
+        }
+    }
+}
+
+fn feed_lines_flush(buf: &mut String, mut on_line: impl FnMut(&str)) {
+    let rest = buf.trim().to_string();
+    buf.clear();
+    if !rest.is_empty() {
+        on_line(&rest);
+    }
+}
+
+fn resolve_newest_media(root: &Path) -> Option<String> {
+    if !root.exists() {
+        return None;
+    }
+    let mut best: Option<(std::time::SystemTime, std::path::PathBuf)> = None;
+    for entry in walkdir::WalkDir::new(root)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
+    {
+        let path = entry.path();
+        if !looks_like_media_path(&path.to_string_lossy()) {
+            continue;
+        }
+        let modified = entry.metadata().ok()?.modified().ok()?;
+        match &best {
+            None => best = Some((modified, path.to_path_buf())),
+            Some((prev, _)) if modified > *prev => best = Some((modified, path.to_path_buf())),
+            _ => {}
+        }
+    }
+    best.map(|(_, p)| p.to_string_lossy().to_string())
+}
+
 fn parse_flat_playlist_json(raw: &str) -> AppResult<Vec<(String, String, String, Option<String>)>> {
-    let value: serde_json::Value =
-        serde_json::from_str(raw.trim()).map_err(|e| AppError::Download(format!("yt-dlp JSON: {e}")))?;
+    let value: serde_json::Value = serde_json::from_str(raw.trim())
+        .map_err(|e| AppError::Download(format!("yt-dlp JSON: {e}")))?;
 
     let entries = value
         .get("entries")
@@ -394,7 +501,9 @@ fn parse_flat_playlist_json(raw: &str) -> AppResult<Vec<(String, String, String,
 
     let mut out = Vec::new();
     for entry in entries {
-        let Some(obj) = entry.as_object() else { continue };
+        let Some(obj) = entry.as_object() else {
+            continue;
+        };
         let title = obj
             .get("title")
             .and_then(|v| v.as_str())
@@ -437,4 +546,57 @@ fn thumbnail_from_entry(obj: &serde_json::Map<String, serde_json::Value>) -> Opt
         .and_then(|v| v.get("url"))
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_destination_marker() {
+        let p = SidecarRunner::parse_destination("[download] Destination: C:\\lib\\foo\\bar.mp4")
+            .unwrap();
+        assert!(p.ends_with("bar.mp4"));
+    }
+
+    #[test]
+    fn parses_merger_line() {
+        let p = SidecarRunner::parse_destination(
+            "[Merger] Merging formats into \"/tmp/out/video.mp4\"",
+        )
+        .unwrap();
+        assert_eq!(p, "/tmp/out/video.mp4");
+    }
+
+    #[test]
+    fn parses_already_downloaded() {
+        let p = SidecarRunner::parse_destination(
+            "[download] D:\\lib\\clip.webm has already been downloaded",
+        )
+        .unwrap();
+        assert_eq!(p, "D:\\lib\\clip.webm");
+    }
+
+    #[test]
+    fn parses_bare_print_filepath() {
+        let p = SidecarRunner::parse_destination("/home/user/vid.mkv").unwrap();
+        assert_eq!(p, "/home/user/vid.mkv");
+    }
+
+    #[test]
+    fn ignores_progress_lines() {
+        assert!(SidecarRunner::parse_destination("[download]  45.2% of 10.00MiB").is_none());
+    }
+
+    #[test]
+    fn feed_lines_handles_split_chunks() {
+        let mut buf = String::new();
+        let mut lines = Vec::new();
+        feed_lines(&mut buf, "[download] Destina", |l| {
+            lines.push(l.to_string())
+        });
+        feed_lines(&mut buf, "tion: /a/b.mp4\n", |l| lines.push(l.to_string()));
+        assert_eq!(lines.len(), 1);
+        assert!(lines[0].contains("Destination:"));
+    }
 }

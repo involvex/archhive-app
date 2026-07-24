@@ -7,6 +7,7 @@ use crate::sites::yt_dlp::SidecarRunner;
 use crate::vault::CookieVault;
 use parking_lot::Mutex;
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
@@ -99,9 +100,9 @@ impl DownloadManager {
     }
 
     pub fn queue_plan(&self, plan: DownloadPlan) -> AppResult<DownloadJob> {
-        let job = self
-            .db
-            .insert_download_job(&plan.url, &plan.adapter_id, plan.title.as_deref())?;
+        let job =
+            self.db
+                .insert_download_job(&plan.url, &plan.adapter_id, plan.title.as_deref())?;
         self.register_cancel(&job.id);
         self.enqueue(&job.id)?;
         Ok(job)
@@ -111,10 +112,7 @@ impl DownloadManager {
         let Some(mut job) = self.db.get_download_job(id)? else {
             return Ok(());
         };
-        if !matches!(
-            job.status,
-            DownloadStatus::Active | DownloadStatus::Pending
-        ) {
+        if !matches!(job.status, DownloadStatus::Active | DownloadStatus::Pending) {
             return Ok(());
         }
         self.stop_flag(id);
@@ -184,6 +182,25 @@ fn plan_from_job(db: &Database, job: &DownloadJob) -> AppResult<DownloadPlan> {
     })
 }
 
+fn mark_job_failed(db: &Database, app: &AppHandle, job_id: &str, error: &str) {
+    let Ok(Some(mut job)) = db.get_download_job(job_id) else {
+        return;
+    };
+    if matches!(
+        job.status,
+        DownloadStatus::Paused
+            | DownloadStatus::Cancelled
+            | DownloadStatus::Completed
+            | DownloadStatus::Failed
+    ) {
+        return;
+    }
+    job.status = DownloadStatus::Failed;
+    job.error = Some(error.to_string());
+    let _ = db.update_download_job(&job);
+    let _ = app.emit("download:progress", &job);
+}
+
 async fn worker_loop(
     mut queue_rx: mpsc::UnboundedReceiver<String>,
     db: Arc<Database>,
@@ -218,23 +235,31 @@ async fn worker_loop(
             ) {
                 return;
             }
-            let Ok(plan) = plan_from_job(&db, &job) else {
-                return;
+            let plan = match plan_from_job(&db, &job) {
+                Ok(p) => p,
+                Err(e) => {
+                    mark_job_failed(&db, &app, &job_id, &e.to_string());
+                    return;
+                }
             };
             let library_path = db
                 .get_settings()
                 .map(|s| s.library_path)
                 .unwrap_or_default();
-            let _ = run_job_with_plan(
-                db,
-                app,
+            if let Err(e) = run_job_with_plan(
+                db.clone(),
+                app.clone(),
                 vault,
                 cancel,
-                job_id,
+                job_id.clone(),
                 &plan,
                 &library_path,
             )
-            .await;
+            .await
+            {
+                // run_job_with_plan marks Failed for tool errors; catch early ? failures too
+                mark_job_failed(&db, &app, &job_id, &e.to_string());
+            }
         });
     }
 }
@@ -261,6 +286,7 @@ async fn run_job_with_plan(
     }
 
     job.status = DownloadStatus::Active;
+    job.error = None;
     db.update_download_job(&job)?;
     let _ = app.emit("download:progress", &job);
 
@@ -272,19 +298,18 @@ async fn run_job_with_plan(
     let job_id_emit = job_id.clone();
     let cookies = vault.cookie_file_for_site(&plan.adapter_id);
 
-    let snapshot = if matches!(plan.tool, DownloadTool::GalleryDl) {
-        Some(crate::downloads::gallery_dl::DirSnapshot::capture(library_path)?)
-    } else {
-        None
-    };
-
     let result: AppResult<Vec<String>> = match plan.tool {
         DownloadTool::GalleryDl => {
             if !cancel.load(Ordering::Relaxed) {
                 return handle_stopped(&db, &app, &job_id);
             }
+            // Per-job subdir so DirSnapshot stays cheap (no full-library walk).
+            let job_dir = Path::new(library_path).join("_dl").join(&job_id);
+            std::fs::create_dir_all(&job_dir)?;
+            let job_dir_str = job_dir.to_string_lossy().to_string();
+            let snapshot = crate::downloads::gallery_dl::DirSnapshot::capture(&job_dir_str)?;
             let parsed = runner
-                .run_gallery_dl(&plan.url, library_path, |line| {
+                .run_gallery_dl(&plan.url, &job_dir_str, |line| {
                     update_progress(&db_emit, &app_emit, &job_id_emit, line, None);
                 })
                 .await;
@@ -294,8 +319,8 @@ async fn run_job_with_plan(
             let parsed = parsed?;
             let paths = crate::downloads::gallery_dl::resolve_output_paths(
                 &parsed,
-                snapshot.as_ref().expect("gallery-dl snapshot"),
-                library_path,
+                &snapshot,
+                &job_dir_str,
             )?;
             Ok(paths)
         }
@@ -339,21 +364,28 @@ async fn run_job_with_plan(
 
     match result {
         Ok(output_paths) => {
-            if output_paths.is_empty() {
-                return Err(AppError::Download("Download produced no output files".into()));
+            let existing: Vec<String> = output_paths
+                .into_iter()
+                .filter(|p| !p.trim().is_empty() && Path::new(p).exists())
+                .collect();
+            if existing.is_empty() {
+                let err = AppError::Download("Download produced no output files".into());
+                job.status = DownloadStatus::Failed;
+                job.error = Some(err.to_string());
+                db.update_download_job(&job)?;
+                let _ = app.emit("download:progress", &job);
+                return Err(err);
             }
             job.status = DownloadStatus::Completed;
             job.progress = 100.0;
-            job.output_path = Some(output_paths.last().cloned().unwrap_or_default());
+            job.error = None;
+            job.output_path = Some(existing.last().cloned().unwrap_or_default());
             db.update_download_job(&job)?;
             let _ = app.emit("download:progress", &job);
 
             let title = plan.title.clone().unwrap_or_else(|| job.url.clone());
-            for output_path in &output_paths {
-                if !std::path::Path::new(output_path).exists() {
-                    continue;
-                }
-                let file_title = std::path::Path::new(output_path)
+            for output_path in &existing {
+                let file_title = Path::new(output_path)
                     .file_stem()
                     .and_then(|s| s.to_str())
                     .unwrap_or(&title);
@@ -372,7 +404,7 @@ async fn run_job_with_plan(
                     &db,
                     app.clone(),
                     &scene_id,
-                    std::path::Path::new(output_path),
+                    Path::new(output_path),
                 )
                 .await;
             }
@@ -392,11 +424,7 @@ async fn run_job_with_plan(
     Ok(job)
 }
 
-fn handle_stopped(
-    db: &Database,
-    app: &AppHandle,
-    job_id: &str,
-) -> AppResult<DownloadJob> {
+fn handle_stopped(db: &Database, app: &AppHandle, job_id: &str) -> AppResult<DownloadJob> {
     let Some(mut job) = db.get_download_job(job_id)? else {
         return Err(AppError::NotFound(job_id.to_string()));
     };

@@ -39,7 +39,9 @@ pub fn phash_distance(a: &str, b: &str) -> AppResult<u32> {
 
 pub fn compute_phash_from_image(path: &Path) -> AppResult<String> {
     let image = ImageReader::open(path)?.decode()?;
-    let hasher = HasherConfig::new().hash_alg(HashAlg::DoubleGradient).to_hasher();
+    let hasher = HasherConfig::new()
+        .hash_alg(HashAlg::DoubleGradient)
+        .to_hasher();
     let hash = hasher.hash_image(&image);
     Ok(hash.to_base64())
 }

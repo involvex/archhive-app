@@ -1,4 +1,4 @@
-import { sceneMediaUrl, isVideoScene } from "@/lib/mediaUrl";
+import { sceneMediaUrl, isVideoScene, isHttpMediaSrc } from "@/lib/mediaUrl";
 import type { Scene } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { X } from "lucide-react";
@@ -14,6 +14,7 @@ export function ScenePlayerDialog({ scene, open, onClose }: ScenePlayerDialogPro
 
   const mediaSrc = sceneMediaUrl(scene);
   const playable = isVideoScene(scene) && mediaSrc;
+  const useCors = isHttpMediaSrc(mediaSrc);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
@@ -39,7 +40,7 @@ export function ScenePlayerDialog({ scene, open, onClose }: ScenePlayerDialogPro
             controls
             playsInline
             preload="metadata"
-            crossOrigin="anonymous"
+            {...(useCors ? { crossOrigin: "anonymous" as const } : {})}
             className="aspect-video w-full rounded-md bg-black"
           />
         ) : (

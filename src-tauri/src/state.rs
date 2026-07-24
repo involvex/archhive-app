@@ -3,7 +3,7 @@ use crate::downloads::DownloadManager;
 use crate::error::AppResult;
 use crate::models::{
     AppSettings, BrowseKind, BrowseOrientation, BrowseQuery, DownloadJob, DuplicateGroup,
-    HealthResponse, MediaItem, Performer, Scene, ScanResult, SiteInfo, Tag,
+    HealthResponse, MediaItem, Performer, ScanResult, Scene, SiteInfo, Tag,
 };
 use crate::server::LanServer;
 use crate::sites::registry::SiteRegistry;
@@ -117,9 +117,7 @@ impl AppState {
                 performers: vec![],
                 tags: vec![],
             };
-            let plan = site_adapter
-                .resolve_download(&self.site_ctx, &item)
-                .await?;
+            let plan = site_adapter.resolve_download(&self.site_ctx, &item).await?;
             return self.downloads.queue_plan(plan);
         }
 
@@ -183,7 +181,10 @@ impl AppState {
             }
 
             if (expand_browse || import_all) && is_browse_url(url) {
-                let adapter = self.sites.detect(url).unwrap_or_else(|| "generic_ytdlp".to_string());
+                let adapter = self
+                    .sites
+                    .detect(url)
+                    .unwrap_or_else(|| "generic_ytdlp".to_string());
                 let cookies = self.vault.cookie_file_for_site(&adapter);
                 match runner
                     .list_flat_playlist_all(url, MAX_PER_BROWSE, cookies.as_deref())
@@ -271,9 +272,7 @@ impl AppState {
         if !path.exists() {
             std::fs::create_dir_all(path)?;
         }
-        let canonical = path
-            .canonicalize()
-            .unwrap_or_else(|_| path.to_path_buf());
+        let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
         Ok(canonical.to_string_lossy().to_string())
     }
 
@@ -310,12 +309,15 @@ impl AppState {
         };
         let static_dir = self.static_ui_path();
         let server =
-            crate::server::LanServer::start(self.clone(), port, token.clone(), static_dir)
-                .await?;
+            crate::server::LanServer::start(self.clone(), port, token.clone(), static_dir).await?;
         *self.lan_server.lock() = Some(server);
         settings.lan_enabled = true;
         settings.lan_port = port;
-        settings.lan_token = if token.is_empty() { None } else { Some(token.clone()) };
+        settings.lan_token = if token.is_empty() {
+            None
+        } else {
+            Some(token.clone())
+        };
         self.save_settings(&settings)?;
         eprintln!(
             "[lan] server started on port {port} auth_required={}",
@@ -344,7 +346,8 @@ impl AppState {
         tags: Option<&[String]>,
         rename_file: bool,
     ) -> AppResult<Scene> {
-        self.db.update_scene(id, title, performers, tags, rename_file)
+        self.db
+            .update_scene(id, title, performers, tags, rename_file)
     }
 
     pub fn batch_update_scenes(
@@ -364,7 +367,8 @@ impl AppState {
         let url = crate::sites::adapters::pornhub::categories_page_url(orientation);
         let html = self.site_ctx.fetch_html(&url, "pornhub").await?;
         Ok(crate::sites::adapters::pornhub::parse_pornhub_categories(
-            &html, orientation,
+            &html,
+            orientation,
         ))
     }
 
@@ -379,7 +383,9 @@ impl AppState {
         remove_ids: &[String],
         delete_files: bool,
     ) -> AppResult<crate::models::MergeDuplicatesResult> {
-        let removed = self.db.merge_duplicates(keep_id, remove_ids, delete_files)?;
+        let removed = self
+            .db
+            .merge_duplicates(keep_id, remove_ids, delete_files)?;
         Ok(crate::models::MergeDuplicatesResult { removed })
     }
 

@@ -53,15 +53,16 @@ pub fn cluster_phash_ids(entries: &[(String, String)], threshold: u8) -> Vec<Vec
         buckets.entry(root).or_default().push(id.clone());
     }
 
-    buckets
-        .into_values()
-        .filter(|ids| ids.len() > 1)
-        .collect()
+    buckets.into_values().filter(|ids| ids.len() > 1).collect()
 }
 
 pub fn max_phash_distance_in_group(entries: &[(String, String)], ids: &[String]) -> AppResult<u8> {
-    let lookup =
-        |id: &str| entries.iter().find(|(sid, _)| sid == id).map(|(_, hash)| hash.as_str());
+    let lookup = |id: &str| {
+        entries
+            .iter()
+            .find(|(sid, _)| sid == id)
+            .map(|(_, hash)| hash.as_str())
+    };
 
     let mut max = 0u32;
     for (i, left_id) in ids.iter().enumerate() {
@@ -120,10 +121,7 @@ mod tests {
     #[test]
     fn identical_phash_clusters() {
         let phash = sample_phash(100);
-        let entries = vec![
-            ("a".to_string(), phash.clone()),
-            ("b".to_string(), phash),
-        ];
+        let entries = vec![("a".to_string(), phash.clone()), ("b".to_string(), phash)];
         let clusters = cluster_phash_ids(&entries, 0);
         assert_eq!(clusters.len(), 1);
         assert_eq!(clusters[0].len(), 2);

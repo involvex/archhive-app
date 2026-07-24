@@ -47,7 +47,11 @@ impl SiteAdapter for RedgifsAdapter {
         })
     }
 
-    async fn resolve_download(&self, _ctx: &SiteContext, item: &MediaItem) -> AppResult<DownloadPlan> {
+    async fn resolve_download(
+        &self,
+        _ctx: &SiteContext,
+        item: &MediaItem,
+    ) -> AppResult<DownloadPlan> {
         Ok(DownloadPlan {
             url: item.url.clone(),
             output_template: "redgifs/%(title)s.%(ext)s".to_string(),
@@ -66,7 +70,9 @@ fn parse_redgifs(html: &str) -> AppResult<Vec<MediaItem>> {
     let sel = Selector::parse("a[href*='/watch/']").unwrap();
     let mut items = Vec::new();
     for el in document.select(&sel) {
-        let Some(href) = el.value().attr("href") else { continue };
+        let Some(href) = el.value().attr("href") else {
+            continue;
+        };
         let url = if href.starts_with("http") {
             href.to_string()
         } else {

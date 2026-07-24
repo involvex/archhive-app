@@ -346,11 +346,15 @@ bun run format:check
 - Do not create git commits unless the user explicitly asks
 - Do not edit `Plan.md` when implementing attached plans
 - Run `bun run lint`, `bun run format:check`, and `cd src-tauri && cargo test` before declaring work complete
-- Primary dev clone is `D:\repos\archhive-app`; avoid running scripts or builds on `I:\dev\scrawler-app` while the user is migrating or deleting files there
+- Primary dev clone is `D:\repos\archhive-app`; avoid running scripts or builds on deprecated `I:\dev\scrawler-app`
 - Enable the LAN server on the desktop ArcHive app, not on the mobile client
 - Do not push to remote without explicit user permission
 - Windows `package.json` script entries for `.ps1` helpers should invoke `pwsh -NoProfile` (not Windows PowerShell 5.1)
 - In PowerShell `.ps1` files, use `${Var}:` before colons (not `$Var:`) and avoid Unicode em-dashes in strings
+- Avoid parallel Cursor agent shells or migration jobs against slow I: USB HDD; run one I: file job at a time
+- Use SuperCopy (`D:\repos\supercopy`) for large file moves on I:, not robocopy; during shell work set TEMP/TMP to `D:\temp`
+- Do not proactively run I:\ migration scripts; user runs `scripts/migrate-models-supercopy.ps1` manually when ready
+- Keep C: for Windows/games; Rust `target-dir` globally `I:/dev/cargo-target` via `~/.cargo/config.toml` (not `src-tauri/target` on D:)
 
 ---
 
@@ -366,5 +370,5 @@ bun run format:check
 - Desktop system tray (`src-tauri/src/desktop/tray.rs`): close-to-tray and minimize-to-tray default on, global show/hide hotkey default **Ctrl+Shift+A**, tray menu opens Settings; configure in Settings → **Desktop**
 - Windows Android helpers: `bun run android:dev` (auto-boot AVD + deploy + LAN host) and `bun run android:regen` (regenerate `gen/android` after identifier/icon changes; verify `com.archhive.app`; sets `kotlin.incremental=false` for cross-drive Gradle)
 - Frontend plugins: Bun + TypeScript only, clone into `plugins/`, run `bun run plugins:generate` after changes (`predev`/`prebuild` run it automatically); scrape/download backends still need Rust site adapters
-- Physical Android device: set Remote LAN host to `http://<pc-lan-ip>:8787`; Android emulator uses `http://10.0.2.2:8787`
-- Release Android APK requires `scripts/patch-android-lan.ps1` for cleartext HTTP and mDNS multicast permissions (`gen/android` is gitignored)
+- Physical Android device: Remote LAN host `http://<pc-lan-ip>:8787`; emulator `http://10.0.2.2:8787`; release APK needs `scripts/patch-android-lan.ps1` for cleartext HTTP and mDNS (`gen/android` is gitignored)
+- `scripts/` AI/ComfyUI helpers (`migrate-models-supercopy.ps1`, `lib/supercopy-migrate.ps1`, `stop-agent-io-storm.ps1`, `AI-SETUP-README.md`); canonical AI models on `I:\Models`, Stability Matrix on `I:\StabilityMatrix-win-x64`

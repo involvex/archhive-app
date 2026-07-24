@@ -52,7 +52,9 @@ macro_rules! ytdlp_tube_adapter {
                         }
                     }
                     BrowseKind::Model => format!("{}/pornstar/{}", $base, path_slug(&query.slug)),
-                    BrowseKind::Category => format!("{}/categories/{}", $base, path_slug(&query.slug)),
+                    BrowseKind::Category => {
+                        format!("{}/categories/{}", $base, path_slug(&query.slug))
+                    }
                 };
                 let html = ctx.fetch_html(&url, $id).await?;
                 let mut items = parse_video_links(&html, $base, $id)?;
@@ -132,7 +134,10 @@ impl SiteAdapter for PornhubAdapter {
                 if query.slug.starts_with("http") {
                     query.slug.clone()
                 } else {
-                    format!("{PH_BASE}/view_video.php?viewkey={}", path_slug(&query.slug))
+                    format!(
+                        "{PH_BASE}/view_video.php?viewkey={}",
+                        path_slug(&query.slug)
+                    )
                 }
             }
         };
@@ -172,8 +177,18 @@ impl SiteAdapter for PornhubAdapter {
     }
 }
 
-ytdlp_tube_adapter!(XHamsterAdapter, "xhamster", "xHamster", "https://xhamster.com");
-ytdlp_tube_adapter!(XVideosAdapter, "xvideos", "XVIDEOS", "https://www.xvideos.com");
+ytdlp_tube_adapter!(
+    XHamsterAdapter,
+    "xhamster",
+    "xHamster",
+    "https://xhamster.com"
+);
+ytdlp_tube_adapter!(
+    XVideosAdapter,
+    "xvideos",
+    "XVIDEOS",
+    "https://www.xvideos.com"
+);
 
 fn page_query(page: u32) -> String {
     if page > 1 {
@@ -192,21 +207,24 @@ fn page_amp(page: u32) -> String {
 }
 
 fn build_pornhub_category_url(query: &BrowseQuery) -> String {
-    let orientation = query
-        .orientation
-        .unwrap_or(BrowseOrientation::Straight);
+    let orientation = query.orientation.unwrap_or(BrowseOrientation::Straight);
     let slug = path_slug(&query.slug);
 
     if query.slug.chars().all(|c| c.is_ascii_digit()) {
         let id = &query.slug;
         return match orientation {
+            BrowseOrientation::Straight => {
+                format!("{PH_BASE}/video?c={id}{}", page_amp(query.page))
+            }
             BrowseOrientation::Gay => {
                 format!("{PH_BASE}/gay/video?c={id}{}", page_amp(query.page))
+            }
+            BrowseOrientation::Lesbian => {
+                format!("{PH_BASE}/lesbian/video?c={id}{}", page_amp(query.page))
             }
             BrowseOrientation::Transgender => {
                 format!("{PH_BASE}/transgender/video?c={id}{}", page_amp(query.page))
             }
-            _ => format!("{PH_BASE}/video?c={id}{}", page_amp(query.page)),
         };
     }
 
@@ -214,14 +232,20 @@ fn build_pornhub_category_url(query: &BrowseQuery) -> String {
         BrowseOrientation::Straight => {
             format!("{PH_BASE}/categories/{slug}{}", page_query(query.page))
         }
-        BrowseOrientation::Gay => {
-            format!("{PH_BASE}/gay/categories/{slug}{}", page_query(query.page))
-        }
-        BrowseOrientation::Lesbian => {
-            format!("{PH_BASE}/lesbian/categories/{slug}{}", page_query(query.page))
-        }
-        BrowseOrientation::Transgender => {
-            format!("{PH_BASE}/transgender/categories/{slug}{}", page_query(query.page))
+        // Slug-only paths under gay/lesbian/trans category hubs often have no video grid.
+        // Use orientation search instead (hyphens → +).
+        BrowseOrientation::Gay | BrowseOrientation::Lesbian | BrowseOrientation::Transgender => {
+            let orient = match orientation {
+                BrowseOrientation::Gay => "gay",
+                BrowseOrientation::Lesbian => "lesbian",
+                BrowseOrientation::Transgender => "transgender",
+                BrowseOrientation::Straight => unreachable!(),
+            };
+            let search = slug.replace('-', "+");
+            format!(
+                "{PH_BASE}/{orient}/video/search?search={search}{}",
+                page_amp(query.page)
+            )
         }
     }
 }
@@ -250,7 +274,9 @@ fn parse_video_links(html: &str, base: &str, site_id: &str) -> AppResult<Vec<Med
     let mut seen = std::collections::HashSet::new();
 
     for sel_str in selectors {
-        let Ok(sel) = Selector::parse(sel_str) else { continue };
+        let Ok(sel) = Selector::parse(sel_str) else {
+            continue;
+        };
         for el in document.select(&sel) {
             let Some(href) = el.value().attr("href") else {
                 continue;
@@ -286,22 +312,25 @@ fn parse_video_links(html: &str, base: &str, site_id: &str) -> AppResult<Vec<Med
             }
             let img_sel = Selector::parse("img").ok();
             let thumbnail = if site_id == "pornhub" {
-                el.value().attr("data-mediumthumb").map(|s| s.to_string()).or_else(|| {
-                    img_sel.as_ref().and_then(|sel| {
-                        el.select(sel).find_map(|img| {
-                            img.value()
-                                .attr("data-src")
-                                .or_else(|| img.value().attr("src"))
-                                .map(|s| {
-                                    if s.starts_with("http") {
-                                        s.to_string()
-                                    } else {
-                                        format!("{base}{s}")
-                                    }
-                                })
+                el.value()
+                    .attr("data-mediumthumb")
+                    .map(|s| s.to_string())
+                    .or_else(|| {
+                        img_sel.as_ref().and_then(|sel| {
+                            el.select(sel).find_map(|img| {
+                                img.value()
+                                    .attr("data-src")
+                                    .or_else(|| img.value().attr("src"))
+                                    .map(|s| {
+                                        if s.starts_with("http") {
+                                            s.to_string()
+                                        } else {
+                                            format!("{base}{s}")
+                                        }
+                                    })
+                            })
                         })
                     })
-                })
             } else {
                 None
             };
@@ -365,15 +394,22 @@ pub fn parse_pornhub_categories(
         ".categoriesList li a",
         ".categoryList li a",
         "a[href*='/categories/']",
+        "a[href*='c=']",
     ];
     let mut items = Vec::new();
     let mut seen = std::collections::HashSet::new();
 
     for sel_str in selectors {
-        let Ok(sel) = Selector::parse(sel_str) else { continue };
+        let Ok(sel) = Selector::parse(sel_str) else {
+            continue;
+        };
         for el in document.select(&sel) {
-            let Some(href) = el.value().attr("href") else { continue };
-            let slug = category_slug_from_href(href);
+            let Some(href) = el.value().attr("href") else {
+                continue;
+            };
+            let category_id = category_id_from_href(href);
+            let slug =
+                category_slug_from_href(href).or_else(|| category_id.map(|id| id.to_string()));
             let Some(slug) = slug else { continue };
             let key = format!("{orientation:?}:{slug}");
             if !seen.insert(key) {
@@ -388,11 +424,11 @@ pub fn parse_pornhub_categories(
                 name,
                 slug,
                 orientation,
-                category_id: None,
+                category_id,
                 video_count,
             });
         }
-        if items.len() >= 20 {
+        if items.len() >= 40 {
             break;
         }
     }
@@ -401,17 +437,27 @@ pub fn parse_pornhub_categories(
     items
 }
 
+fn category_id_from_href(href: &str) -> Option<u32> {
+    let lower = href.to_lowercase();
+    for marker in ["?c=", "&c="] {
+        if let Some(idx) = lower.find(marker) {
+            let rest = &href[idx + marker.len()..];
+            let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+            if let Ok(id) = digits.parse::<u32>() {
+                return Some(id);
+            }
+        }
+    }
+    None
+}
+
 fn category_slug_from_href(href: &str) -> Option<String> {
     let lower = href.to_lowercase();
     let marker = "/categories/";
     let idx = lower.find(marker)?;
     let rest = &href[idx + marker.len()..];
-    let slug = rest
-        .split(&['/', '?', '#'][..])
-        .next()
-        .unwrap_or("")
-        .trim();
-    if slug.is_empty() || slug == "categories" {
+    let slug = rest.split(&['/', '?', '#'][..]).next().unwrap_or("").trim();
+    if slug.is_empty() || slug == "categories" || slug.chars().all(|c| c.is_ascii_digit()) {
         return None;
     }
     Some(slug.to_string())
@@ -473,7 +519,53 @@ mod category_tests {
     }
 
     #[test]
+    fn parses_category_id_from_href() {
+        assert_eq!(category_id_from_href("/video?c=8"), Some(8));
+        assert_eq!(
+            category_id_from_href("/lesbian/video?c=27&page=2"),
+            Some(27)
+        );
+        assert_eq!(category_id_from_href("/categories/big-tits"), None);
+    }
+
+    #[test]
     fn parses_count_from_text() {
         assert_eq!(parse_video_count("544,892 Videos"), Some(544892));
+    }
+
+    #[test]
+    fn lesbian_numeric_category_url() {
+        let url = build_pornhub_category_url(&BrowseQuery {
+            kind: BrowseKind::Category,
+            slug: "8".into(),
+            page: 1,
+            orientation: Some(BrowseOrientation::Lesbian),
+        });
+        assert_eq!(url, format!("{PH_BASE}/lesbian/video?c=8"));
+    }
+
+    #[test]
+    fn lesbian_slug_falls_back_to_search() {
+        let url = build_pornhub_category_url(&BrowseQuery {
+            kind: BrowseKind::Category,
+            slug: "big-tits".into(),
+            page: 1,
+            orientation: Some(BrowseOrientation::Lesbian),
+        });
+        assert_eq!(
+            url,
+            format!("{PH_BASE}/lesbian/video/search?search=big+tits")
+        );
+    }
+
+    #[test]
+    fn straight_slug_keeps_categories_path() {
+        let url = build_pornhub_category_url(&BrowseQuery {
+            kind: BrowseKind::Category,
+            slug: "big-tits".into(),
+            page: 1,
+            orientation: Some(BrowseOrientation::Straight),
+        });
+        assert_eq!(url, format!("{PH_BASE}/categories/big-tits"));
     }
 }

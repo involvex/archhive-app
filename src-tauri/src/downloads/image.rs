@@ -92,7 +92,10 @@ pub async fn download_direct(
     Ok(path.to_string_lossy().to_string())
 }
 
-fn extension_from_response(url: &str, content_type: Option<&reqwest::header::HeaderValue>) -> String {
+fn extension_from_response(
+    url: &str,
+    content_type: Option<&reqwest::header::HeaderValue>,
+) -> String {
     if let Some(ct) = content_type.and_then(|v| v.to_str().ok()) {
         if ct.contains("png") {
             return ".png".to_string();
@@ -136,10 +139,7 @@ fn unique_path(path: PathBuf) -> PathBuf {
     if !path.exists() {
         return path;
     }
-    let stem = path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("image");
+    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("image");
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("jpg");
     let parent = path.parent().unwrap_or_else(|| Path::new("."));
     for i in 1..1000 {
@@ -159,7 +159,9 @@ mod tests {
     fn detects_direct_image_urls() {
         assert!(is_direct_image_url("https://i.redd.it/abc123.jpeg"));
         assert!(is_direct_image_url("https://example.com/photo.png"));
-        assert!(!is_direct_image_url("https://www.reddit.com/r/pics/comments/abc/title/"));
+        assert!(!is_direct_image_url(
+            "https://www.reddit.com/r/pics/comments/abc/title/"
+        ));
     }
 
     #[test]

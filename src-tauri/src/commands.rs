@@ -1,7 +1,8 @@
 use crate::error::AppResult;
-use crate::models::{AppSettings, BrowseKind, BrowseOrientation, DownloadJob, DuplicateGroup, HealthResponse,
-    LanHost, MediaItem, MergeDuplicatesResult, Performer, Scene, ScanResult, SiteInfo, Tag,
-    UpdateSceneRequest, BatchUpdateScenesRequest, BatchUpdateScenesResult, PornhubCategoryEntry,
+use crate::models::{
+    AppSettings, BatchUpdateScenesRequest, BatchUpdateScenesResult, BrowseKind, BrowseOrientation,
+    DownloadJob, DuplicateGroup, HealthResponse, LanHost, MediaItem, MergeDuplicatesResult,
+    Performer, PornhubCategoryEntry, ScanResult, Scene, SiteInfo, Tag, UpdateSceneRequest,
 };
 use crate::state::AppState;
 use crate::vault::CookieSiteInfo;
@@ -131,7 +132,10 @@ pub fn save_settings(
     let prev = state.get_settings().ok();
     map_err(state.save_settings(&settings))?;
     #[cfg(not(mobile))]
-    if prev.as_ref().is_none_or(|p| crate::desktop::tray_settings_changed(p, &settings)) {
+    if prev
+        .as_ref()
+        .is_none_or(|p| crate::desktop::tray_settings_changed(p, &settings))
+    {
         crate::desktop::sync_from_settings(&app, &settings);
     }
     Ok(())
@@ -146,9 +150,8 @@ pub async fn scan_library(
     let result = tauri::async_runtime::spawn_blocking(move || {
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let settings = app_state.db.get_settings().map_err(|e| e.to_string())?;
-            let path =
-                AppState::validate_library_path(&settings.library_path, &app_state.data_dir)
-                    .map_err(|e| e.to_string())?;
+            let path = AppState::validate_library_path(&settings.library_path, &app_state.data_dir)
+                .map_err(|e| e.to_string())?;
             let rules = vec![r"(?<performer>[a-zA-Z0-9_]+)-\d+".to_string()];
             let app_for_progress = app.clone();
             crate::library::LibraryScanner::scan(
