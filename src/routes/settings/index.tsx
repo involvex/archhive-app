@@ -19,6 +19,7 @@ import type {
   CookieSiteInfo,
   DuplicateGroup,
   EngineMode,
+  FfmpegStatus,
   LanHost,
   SiteInfo,
   AppSettings,
@@ -74,8 +75,10 @@ function SettingsPage() {
   const [dupStatus, setDupStatus] = useState("");
   const [scanning, setScanning] = useState(false);
   const [generatingThumbs, setGeneratingThumbs] = useState(false);
+  const [probingDurations, setProbingDurations] = useState(false);
   const [scanProgress, setScanProgress] = useState("");
   const [scanResult, setScanResult] = useState("");
+  const [ffmpegAvail, setFfmpegAvail] = useState<FfmpegStatus | null>(null);
   const [discoveredHosts, setDiscoveredHosts] = useState<LanHost[]>([]);
   const [discovering, setDiscovering] = useState(false);
   const [discoverStatus, setDiscoverStatus] = useState("");
@@ -247,6 +250,26 @@ function SettingsPage() {
       setGeneratingThumbs(false);
     }
   }
+
+  async function runProbeDurations() {
+    setProbingDurations(true);
+    setScanResult("");
+    try {
+      const count = await api.probeLibraryDurations(2);
+      setScanResult(`Probed + thumbed ${count} scene${count === 1 ? "" : "s"}`);
+    } catch (e) {
+      setScanResult(e instanceof Error ? e.message : "Probe failed");
+    } finally {
+      setProbingDurations(false);
+    }
+  }
+
+  useEffect(() => {
+    void api
+      .ffmpegStatus()
+      .then(setFfmpegAvail)
+      .catch(() => setFfmpegAvail({ ffmpeg_available: false, ffprobe_available: false }));
+  }, []);
 
   async function saveCookies() {
     if (!selectedSite || !cookieText.trim()) return;
@@ -524,8 +547,8 @@ function SettingsPage() {
                   onChange={(e) => patchHostSettings({ naming_template: e.target.value })}
                 />
                 <p className="mt-1 text-[10px] text-[var(--color-muted-foreground)]">
-                  Placeholders: {"{performer}"}, {"{title}"}, {"{ext}"}, {"{id}"}, {"{site}"}. Example:{" "}
-                  {"{performer}/{title}.{ext}"} → saved under your library path.
+                  Placeholders: {"{performer}"}, {"{title}"}, {"{ext}"}, {"{id}"}, {"{site}"}.
+                  Example: {"{performer}/{title}.{ext}"} → saved under your library path.
                 </p>
               </div>
               <div>
@@ -566,6 +589,29 @@ function SettingsPage() {
                   >
                     {generatingThumbs ? "Generating thumbs…" : "Generate missing thumbs"}
                   </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => void runProbeDurations()}
+                    disabled={probingDurations}
+                  >
+                    {probingDurations ? "Probing…" : "Probe durations + thumbs"}
+                  </Button>
+                  {ffmpegAvail && (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-[var(--color-border)] px-2 py-0.5 text-[10px]">
+                      <span
+                        className={ffmpegAvail.ffmpeg_available ? "text-green-500" : "text-red-500"}
+                      >
+                        ffmpeg {ffmpegAvail.ffmpeg_available ? "✓" : "✗"}
+                      </span>
+                      <span
+                        className={
+                          ffmpegAvail.ffprobe_available ? "text-green-500" : "text-red-500"
+                        }
+                      >
+                        ffprobe {ffmpegAvail.ffprobe_available ? "✓" : "✗"}
+                      </span>
+                    </span>
+                  )}
                   {scanProgress && (
                     <p className="text-xs text-[var(--color-muted-foreground)]">{scanProgress}</p>
                   )}

@@ -358,6 +358,10 @@ impl SidecarRunner {
         self.spawn("ffmpeg", args, on_line).await
     }
 
+    pub async fn spawn_ffprobe(&self, args: &[String]) -> AppResult<String> {
+        self.spawn("ffprobe", args, |_| {}).await
+    }
+
     async fn spawn(
         &self,
         name: &str,

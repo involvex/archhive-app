@@ -1,9 +1,9 @@
 use crate::error::AppResult;
 use crate::models::{
     AppSettings, BatchUpdateScenesRequest, BatchUpdateScenesResult, BrowseKind, BrowseOrientation,
-    DownloadJob, DuplicateGroup, HealthResponse, LanHost, MediaItem, MergeDuplicatesResult,
-    Performer, PornhubCategoryEntry, ScanResult, Scene, SceneSort, SiteInfo, Tag,
-    UpdateSceneRequest,
+    DownloadJob, DuplicateGroup, FfmpegStatus, HealthResponse, LanHost, MediaItem,
+    MergeDuplicatesResult, OrphanSidecar, Performer, PornhubCategoryEntry,
+    ScanResult, Scene, SceneFilter, SceneSort, SiteInfo, Tag, UpdateSceneRequest,
 };
 use crate::state::AppState;
 use crate::vault::CookieSiteInfo;
@@ -359,4 +359,64 @@ pub async fn list_pornhub_categories(
     orientation: BrowseOrientation,
 ) -> CmdResult<Vec<PornhubCategoryEntry>> {
     map_err(state.list_pornhub_categories(orientation).await)
+}
+
+#[tauri::command]
+pub async fn probe_scene_metadata(
+    state: State<'_, Arc<AppState>>,
+    scene_id: String,
+) -> CmdResult<Scene> {
+    map_err(state.probe_scene_metadata(&scene_id).await)
+}
+
+#[tauri::command]
+pub async fn probe_library_durations(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    concurrency: Option<u32>,
+) -> CmdResult<u32> {
+    map_err(
+        state
+            .probe_library_durations(app, concurrency.unwrap_or(2) as usize)
+            .await,
+    )
+}
+
+#[tauri::command]
+pub async fn ffmpeg_status(
+    state: State<'_, Arc<AppState>>,
+) -> CmdResult<FfmpegStatus> {
+    map_err(state.ffmpeg_status().await)
+}
+
+#[tauri::command]
+pub fn list_scenes_with_filter(
+    state: State<'_, Arc<AppState>>,
+    filter: SceneFilter,
+) -> CmdResult<Vec<Scene>> {
+    map_err(state.list_scenes_with_filter(&filter))
+}
+
+#[tauri::command]
+pub fn list_orphan_sidecars(
+    state: State<'_, Arc<AppState>>,
+) -> CmdResult<Vec<OrphanSidecar>> {
+    map_err(state.list_orphan_sidecars())
+}
+
+#[tauri::command]
+pub fn delete_orphan_sidecar(path: String) -> CmdResult<()> {
+    let p = std::path::Path::new(&path);
+    if !p.is_file() {
+        return Err(format!("File not found: {path}"));
+    }
+    std::fs::remove_file(p).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn clear_scene_thumb(
+    state: State<'_, Arc<AppState>>,
+    scene_id: String,
+) -> CmdResult<()> {
+    map_err(state.clear_scene_thumb(&scene_id))
 }

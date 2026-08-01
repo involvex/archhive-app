@@ -117,7 +117,9 @@ impl LibraryScanner {
         Ok(crate::models::ScanResult { added, updated })
     }
 
-    /// Generate JPEG sidecars for library scenes missing thumbs. Caps concurrency to avoid USB thrash.
+    /// Generate JPEG sidecars for library scenes missing thumbs.
+    /// Also probes and writes duration for scenes that don't have one.
+    /// Caps concurrency to avoid USB thrash.
     pub async fn generate_missing_thumbs(
         db: Arc<Database>,
         app: AppHandle,
@@ -149,14 +151,10 @@ impl LibraryScanner {
                     return;
                 }
 
-                // Reuse existing sidecar if present from a prior scan.
-                let sidecar = video_path.with_extension("jpg");
-                let thumb_path = if sidecar.is_file() {
-                    Some(sidecar)
-                } else {
-                    let ffmpeg = FfmpegProcessor::new(app);
-                    ffmpeg.extract_thumbnail(&video_path).await.ok()
-                };
+                let ffmpeg = FfmpegProcessor::new(app);
+
+                // Always re-extract thumbnail (don't rely on potentially stale sidecar).
+                let thumb_path = ffmpeg.extract_thumbnail(&video_path).await.ok();
 
                 if let Some(thumb) = thumb_path {
                     let thumb_str = thumb.to_string_lossy().to_string();
@@ -170,6 +168,13 @@ impl LibraryScanner {
                             Some(&thumb_str),
                         );
                         generated.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    }
+                }
+
+                // Probe duration if not already set.
+                if let Some(dur) = ffmpeg.probe_duration(&video_path).await {
+                    if dur > 0.0 {
+                        let _ = db.update_scene_duration(&scene_id, dur as u32);
                     }
                 }
             }));

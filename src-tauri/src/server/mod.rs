@@ -6,7 +6,7 @@ use axum::{
     http::{header, HeaderValue, Request, StatusCode},
     middleware::{self, Next},
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::{delete, get, post},
     Json, Router,
 };
 use mdns_sd::{ServiceDaemon, ServiceInfo};
@@ -129,6 +129,18 @@ impl LanServer {
             .route("/api/settings", get(get_settings).put(put_settings))
             .route("/api/library/scan", post(scan_library))
             .route("/api/library/thumbs", post(generate_missing_thumbs))
+            .route("/api/library/orphans", get(list_orphan_sidecars))
+            .route("/api/library/filter", post(list_scenes_with_filter))
+            .route("/api/library/ffmpeg-status", get(ffmpeg_status))
+            .route(
+                "/api/scenes/{id}/probe",
+                post(probe_scene_metadata),
+            )
+            .route(
+                "/api/scenes/{id}/thumb",
+                delete(clear_scene_thumb),
+            )
+            .route("/api/library/probe-durations", post(probe_library_durations))
             .layer(middleware::from_fn_with_state(api.clone(), auth_middleware))
             .with_state(api);
 
@@ -687,6 +699,72 @@ async fn ensure_performer(
         .ensure_performer(&body.name)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(serde_json::json!(performer)))
+}
+
+async fn probe_scene_metadata(
+    Path(id): Path<String>,
+    State(state): State<ApiState>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let scene = state
+        .app
+        .probe_scene_metadata(&id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(serde_json::json!(scene)))
+}
+
+async fn clear_scene_thumb(
+    Path(id): Path<String>,
+    State(state): State<ApiState>,
+) -> Result<StatusCode, StatusCode> {
+    state
+        .app
+        .clear_scene_thumb(&id)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn probe_library_durations(
+    State(state): State<ApiState>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let count = state
+        .app
+        .probe_library_durations(state.app.site_ctx.app().clone(), 2)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(serde_json::json!({ "generated": count })))
+}
+
+async fn list_orphan_sidecars(
+    State(state): State<ApiState>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let orphans = state
+        .app
+        .list_orphan_sidecars()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(serde_json::json!(orphans)))
+}
+
+async fn list_scenes_with_filter(
+    State(state): State<ApiState>,
+    Json(filter): Json<crate::models::SceneFilter>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let scenes = state
+        .app
+        .list_scenes_with_filter(&filter)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(serde_json::json!(scenes)))
+}
+
+async fn ffmpeg_status(
+    State(state): State<ApiState>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let status = state
+        .app
+        .ffmpeg_status()
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(serde_json::json!(status)))
 }
 
 fn parse_kind(s: &str) -> AppResult<crate::models::BrowseKind> {

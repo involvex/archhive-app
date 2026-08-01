@@ -10,12 +10,15 @@ import type {
   DuplicateGroup,
   CookieSiteInfo,
   FilesListResponse,
+  FfmpegStatus,
   HealthResponse,
   LanHost,
   MediaItem,
   MergeDuplicatesResult,
+  OrphanSidecar,
   Performer,
   Scene,
+  SceneFilter,
   SiteInfo,
   Tag,
   UpdateSceneRequest,
@@ -253,6 +256,65 @@ export const api = {
       return res.generated;
     }
     return localInvoke<number>("generate_missing_thumbs");
+  },
+
+  async probeSceneMetadata(sceneId: string): Promise<Scene> {
+    if (shouldUseRemoteApi()) {
+      return remoteFetch<Scene>(`/api/scenes/${sceneId}/probe`, { method: "POST" });
+    }
+    return localInvoke<Scene>("probe_scene_metadata", { sceneId });
+  },
+
+  async probeLibraryDurations(concurrency = 2): Promise<number> {
+    if (shouldUseRemoteApi()) {
+      const res = await remoteFetch<{ generated: number }>("/api/library/probe-durations", {
+        method: "POST",
+      });
+      return res.generated;
+    }
+    return localInvoke<number>("probe_library_durations", { concurrency });
+  },
+
+  async ffmpegStatus(): Promise<FfmpegStatus> {
+    if (shouldUseRemoteApi()) {
+      return remoteFetch<FfmpegStatus>("/api/library/ffmpeg-status");
+    }
+    return localInvoke<FfmpegStatus>("ffmpeg_status");
+  },
+
+  async listScenesWithFilter(filter: SceneFilter): Promise<Scene[]> {
+    if (shouldUseRemoteApi()) {
+      return remoteFetch<Scene[]>("/api/library/filter", {
+        method: "POST",
+        body: JSON.stringify(filter),
+      });
+    }
+    return localInvoke<Scene[]>("list_scenes_with_filter", { filter });
+  },
+
+  async listOrphanSidecars(): Promise<OrphanSidecar[]> {
+    if (shouldUseRemoteApi()) {
+      return remoteFetch<OrphanSidecar[]>("/api/library/orphans");
+    }
+    return localInvoke<OrphanSidecar[]>("list_orphan_sidecars");
+  },
+
+  async deleteOrphanSidecar(path: string): Promise<void> {
+    if (shouldUseRemoteApi()) {
+      await remoteFetch<void>(`/api/library/orphans?path=${encodeURIComponent(path)}`, {
+        method: "DELETE",
+      });
+      return;
+    }
+    return localInvoke<void>("delete_orphan_sidecar", { path });
+  },
+
+  async clearSceneThumb(sceneId: string): Promise<void> {
+    if (shouldUseRemoteApi()) {
+      await remoteFetch<void>(`/api/scenes/${sceneId}/thumb`, { method: "DELETE" });
+      return;
+    }
+    return localInvoke<void>("clear_scene_thumb", { sceneId });
   },
 
   async resolveMediaDetails(url: string): Promise<MediaItem> {

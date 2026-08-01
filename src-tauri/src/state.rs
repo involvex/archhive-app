@@ -12,6 +12,7 @@ use crate::vault::{CookieSiteInfo, CookieVault};
 use parking_lot::Mutex;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use tauri_plugin_shell::ShellExt;
 
 pub struct AppState {
     pub db: Arc<Database>,
@@ -514,6 +515,105 @@ impl AppState {
             2,
         )
         .await
+    }
+
+    pub async fn probe_scene_metadata(&self, scene_id: &str) -> AppResult<crate::models::Scene> {
+        let scene = self.db.get_scene(scene_id)?;
+        let video_path = scene
+            .path
+            .as_deref()
+            .ok_or_else(|| crate::error::AppError::NotFound("scene has no path".into()))?;
+        let path = std::path::Path::new(video_path);
+        if !path.is_file() {
+            return Err(crate::error::AppError::NotFound(format!(
+                "file not found: {video_path}"
+            )));
+        }
+        let ffmpeg = crate::media::FfmpegProcessor::new(self.site_ctx.app().clone());
+
+        // Probe duration and write to DB.
+        if let Some(dur) = ffmpeg.probe_duration(path).await {
+            if dur > 0.0 {
+                let _ = self.db.update_scene_duration(scene_id, dur as u32);
+            }
+        }
+
+        // Extract thumbnail if missing.
+        if scene.thumb.as_deref().is_none_or(|t| t.is_empty() || !std::path::Path::new(t).is_file())
+        {
+            if let Ok(thumb) = ffmpeg.extract_thumbnail(path).await {
+                let thumb_str = thumb.to_string_lossy().to_string();
+                let _ = self.db.set_scene_thumb(scene_id, &thumb_str);
+            }
+        }
+
+        self.db.get_scene(scene_id)
+    }
+
+    pub async fn probe_library_durations(
+        &self,
+        app: tauri::AppHandle,
+        concurrency: usize,
+    ) -> AppResult<u32> {
+        crate::library::LibraryScanner::generate_missing_thumbs(
+            self.db.clone(),
+            app,
+            concurrency,
+        )
+        .await
+    }
+
+    pub async fn ffmpeg_status(&self) -> AppResult<crate::models::FfmpegStatus> {
+        let ffmpeg = crate::media::FfmpegProcessor::new(self.site_ctx.app().clone());
+        let available = ffmpeg.check_availability().await.is_ok();
+        // If the combined check passes, both are available.
+        // If it fails, try each individually to give granular info.
+        if available {
+            return Ok(crate::models::FfmpegStatus {
+                ffmpeg_available: true,
+                ffprobe_available: true,
+            });
+        }
+        // Try ffmpeg alone
+        let ffmpeg_ok = {
+            let args = vec!["-version".to_string()];
+            self.site_ctx
+                .app()
+                .shell()
+                .sidecar("binaries/ffmpeg")
+                .and_then(|cmd| cmd.args(&args).spawn())
+                .is_ok()
+        };
+        let ffprobe_ok = {
+            let args = vec!["-version".to_string()];
+            self.site_ctx
+                .app()
+                .shell()
+                .sidecar("binaries/ffprobe")
+                .and_then(|cmd| cmd.args(&args).spawn())
+                .is_ok()
+        };
+        Ok(crate::models::FfmpegStatus {
+            ffmpeg_available: ffmpeg_ok,
+            ffprobe_available: ffprobe_ok,
+        })
+    }
+
+    pub fn list_scenes_with_filter(
+        &self,
+        filter: &crate::models::SceneFilter,
+    ) -> AppResult<Vec<crate::models::Scene>> {
+        self.db.list_scenes_with_filter(filter)
+    }
+
+    pub fn list_orphan_sidecars(&self) -> AppResult<Vec<crate::models::OrphanSidecar>> {
+        let settings = self.get_settings()?;
+        let path = Self::validate_library_path(&settings.library_path, &self.data_dir)?;
+        self.db.list_orphan_sidecars(&path)
+    }
+
+    pub fn clear_scene_thumb(&self, scene_id: &str) -> AppResult<()> {
+        self.db.clear_scene_thumb(scene_id)
     }
 
     pub fn static_ui_path(&self) -> Option<PathBuf> {

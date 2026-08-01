@@ -170,6 +170,13 @@ pub fn run() {
             commands::open_scene_with_default,
             commands::batch_update_scenes,
             commands::list_pornhub_categories,
+            commands::probe_scene_metadata,
+            commands::probe_library_durations,
+            commands::ffmpeg_status,
+            commands::list_scenes_with_filter,
+            commands::list_orphan_sidecars,
+            commands::delete_orphan_sidecar,
+            commands::clear_scene_thumb,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -17,6 +17,7 @@ type SceneRow = (
     Option<String>,
     Option<String>,
     Option<String>,
+    Option<u32>,
 );
 
 pub struct Database {
@@ -303,25 +304,232 @@ impl Database {
         Ok(())
     }
 
-    /// Scenes with a video path but no thumbnail path (or missing thumb file).
+    pub fn update_scene_duration(&self, id: &str, duration_secs: u32) -> AppResult<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        conn.execute(
+            "UPDATE scenes SET duration = ?2 WHERE id = ?1 AND (duration IS NULL OR duration = 0)",
+            params![id, duration_secs],
+        )?;
+        Ok(())
+    }
+
+    /// Scenes with a video path but no usable thumbnail (thumb missing or thumb file deleted).
     pub fn list_scenes_missing_thumbs(&self) -> AppResult<Vec<(String, String)>> {
         let conn = self
             .conn
             .lock()
             .map_err(|e| AppError::Other(e.to_string()))?;
         let mut stmt = conn.prepare(
-            "SELECT id, path FROM scenes
+            "SELECT id, path, thumb FROM scenes
              WHERE path IS NOT NULL AND path != ''
-               AND (thumb IS NULL OR thumb = '')
              LIMIT 500",
         )?;
-        let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Option<String>>(2)?,
+            ))
+        })?;
         let mut out = Vec::new();
         for row in rows {
-            let (id, path): (String, String) = row?;
-            out.push((id, path));
+            let (id, path, thumb): (String, String, Option<String>) = row?;
+            let needs_thumb = match &thumb {
+                None => true,
+                Some(t) if t.is_empty() => true,
+                Some(t) => !std::path::Path::new(t).is_file(),
+            };
+            if needs_thumb {
+                out.push((id, path));
+            }
         }
         Ok(out)
+    }
+
+    /// Scenes whose `thumb` path points to a file that no longer exists on disk.
+    #[allow(dead_code)]
+    pub fn list_orphan_thumbs(&self) -> AppResult<Vec<(String, String)>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let mut stmt = conn.prepare(
+            "SELECT id, thumb FROM scenes
+             WHERE thumb IS NOT NULL AND thumb != ''
+             LIMIT 500",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            let (id, thumb): (String, String) = row?;
+            if !std::path::Path::new(&thumb).is_file() {
+                out.push((id, thumb));
+            }
+        }
+        Ok(out)
+    }
+
+    /// List scenes matching a filter (used by the library UI filter bar).
+    pub fn list_scenes_with_filter(
+        &self,
+        filter: &crate::models::SceneFilter,
+    ) -> AppResult<Vec<Scene>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+
+        // Build dynamic WHERE clause (only SQL-level filters; file-level checks are post-filtered).
+        let mut conditions = Vec::new();
+        if filter.missing_duration {
+            conditions.push("(duration IS NULL OR duration = 0)".to_string());
+        }
+        if let Some(max_dur) = filter.max_duration {
+            conditions.push(format!("duration <= {max_dur}"));
+        }
+
+        let where_clause = if conditions.is_empty() {
+            String::new()
+        } else {
+            format!("WHERE {}", conditions.join(" AND "))
+        };
+
+        let sql = format!(
+            "SELECT id, title, path, thumb, source_url, duration
+             FROM scenes
+             {where_clause}
+             ORDER BY created_at DESC
+             LIMIT 200"
+        );
+
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Option<String>>(2)?,
+                row.get::<_, Option<String>>(3)?,
+                row.get::<_, Option<String>>(4)?,
+                row.get::<_, Option<u32>>(5)?,
+            ))
+        })?;
+
+        let mut result = Vec::new();
+        for row in rows {
+            let (id, title, path, thumb, source_url, duration) = row?;
+
+            // Post-filter: missing_thumb (file-level check not possible in SQL)
+            if filter.missing_thumb {
+                let needs_thumb = match &thumb {
+                    None => true,
+                    Some(t) if t.is_empty() => true,
+                    Some(t) => !std::path::Path::new(t).is_file(),
+                };
+                if !needs_thumb {
+                    continue;
+                }
+            }
+
+            // Post-filter: hash_named (GLOB-based pre-filter in SQL is unreliable across platforms)
+            if filter.hash_named {
+                let is_hash = title.len() > 15
+                    && title.starts_with('-')
+                    && title[1..].chars().all(|c| c.is_ascii_digit())
+                    && title.contains('_');
+                if !is_hash {
+                    continue;
+                }
+            }
+
+            let performers = self.scene_performers(&conn, &id)?;
+            let tags = self.scene_tags(&conn, &id)?;
+            result.push(Scene {
+                id,
+                title,
+                path,
+                duration,
+                thumb,
+                source_url,
+                studio_id: None,
+                studio_name: None,
+                date: None,
+                rating: None,
+                performers,
+                tags,
+                phash: None,
+                oshash: None,
+                file_size: None,
+            });
+        }
+        Ok(result)
+    }
+
+    /// Find jpg files in the library directory that have no matching video in the DB.
+    pub fn list_orphan_sidecars(
+        &self,
+        library_path: &str,
+    ) -> AppResult<Vec<crate::models::OrphanSidecar>> {
+        use walkdir::WalkDir;
+
+        let lib = std::path::Path::new(library_path);
+        if !lib.exists() {
+            return Ok(Vec::new());
+        }
+
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+
+        // Collect all video paths from DB into a HashSet for O(1) lookup.
+        let mut stmt =
+            conn.prepare("SELECT path FROM scenes WHERE path IS NOT NULL AND path != ''")?;
+        let db_paths: std::collections::HashSet<String> = stmt
+            .query_map([], |row| row.get::<_, String>(0))?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        let mut orphans = Vec::new();
+        for entry in WalkDir::new(lib)
+            .max_depth(5)
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
+            let p = entry.path();
+            if !p.is_file() {
+                continue;
+            }
+            let ext = p
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("")
+                .to_lowercase();
+            if ext != "jpg" && ext != "jpeg" {
+                continue;
+            }
+            let p_str = p.to_string_lossy().to_string();
+            // An orphan jpg is one whose path is NOT in the DB scenes table as a video or thumb.
+            if !db_paths.contains(&p_str) {
+                let size = std::fs::metadata(p).map(|m| m.len()).unwrap_or(0);
+                orphans.push(crate::models::OrphanSidecar { path: p_str, size });
+            }
+        }
+        Ok(orphans)
+    }
+
+    /// Clear a scene's thumb reference (set to NULL) — used when cleaning orphan thumbs.
+    pub fn clear_scene_thumb(&self, id: &str) -> AppResult<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        conn.execute("UPDATE scenes SET thumb = NULL WHERE id = ?1", params![id])?;
+        Ok(())
     }
 
     pub fn set_scene_thumb(&self, id: &str, thumb: &str) -> AppResult<()> {
@@ -355,7 +563,7 @@ impl Database {
         };
         let scenes: Vec<SceneRow> = if let Some(q) = query.filter(|s| !s.is_empty()) {
             let sql = format!(
-                "SELECT s.id, s.title, s.path, s.thumb, s.source_url
+                "SELECT s.id, s.title, s.path, s.thumb, s.source_url, s.duration
                      FROM scenes s
                      JOIN scenes_fts fts ON s.rowid = fts.rowid
                      WHERE scenes_fts MATCH ?1
@@ -370,12 +578,13 @@ impl Database {
                     row.get(2)?,
                     row.get(3)?,
                     row.get(4)?,
+                    row.get(5)?,
                 ))
             })?;
             rows.collect::<Result<Vec<_>, _>>()?
         } else {
             let sql = format!(
-                "SELECT id, title, path, thumb, source_url FROM scenes ORDER BY {order_by_plain} LIMIT 100"
+                "SELECT id, title, path, thumb, source_url, duration FROM scenes ORDER BY {order_by_plain} LIMIT 100"
             );
             let mut stmt = conn.prepare(&sql)?;
             let rows = stmt.query_map([], |row| {
@@ -385,20 +594,21 @@ impl Database {
                     row.get(2)?,
                     row.get(3)?,
                     row.get(4)?,
+                    row.get(5)?,
                 ))
             })?;
             rows.collect::<Result<Vec<_>, _>>()?
         };
 
         let mut result = Vec::new();
-        for (id, title, path, thumb, source_url) in scenes {
+        for (id, title, path, thumb, source_url, duration) in scenes {
             let performers = self.scene_performers(&conn, &id)?;
             let tags = self.scene_tags(&conn, &id)?;
             result.push(Scene {
                 id,
                 title,
                 path,
-                duration: None,
+                duration,
                 thumb,
                 source_url,
                 studio_id: None,
@@ -422,7 +632,7 @@ impl Database {
             .map_err(|e| AppError::Other(e.to_string()))?;
         let row = conn
             .query_row(
-                "SELECT id, title, path, thumb, source_url FROM scenes WHERE path = ?1",
+                "SELECT id, title, path, thumb, source_url, duration FROM scenes WHERE path = ?1",
                 params![path],
                 |row| {
                     Ok((
@@ -431,18 +641,19 @@ impl Database {
                         row.get::<_, Option<String>>(2)?,
                         row.get::<_, Option<String>>(3)?,
                         row.get::<_, Option<String>>(4)?,
+                        row.get::<_, Option<u32>>(5)?,
                     ))
                 },
             )
             .optional()?;
-        Ok(row.map(|(id, title, path, thumb, source_url)| {
+        Ok(row.map(|(id, title, path, thumb, source_url, duration)| {
             let performers = self.scene_performers(&conn, &id).unwrap_or_default();
             let tags = self.scene_tags(&conn, &id).unwrap_or_default();
             Scene {
                 id,
                 title,
                 path,
-                duration: None,
+                duration,
                 thumb,
                 source_url,
                 studio_id: None,
@@ -599,7 +810,7 @@ impl Database {
             .map_err(|e| AppError::Other(e.to_string()))?;
         let row = conn
             .query_row(
-                "SELECT id, title, path, thumb, source_url, phash, oshash FROM scenes WHERE id = ?1",
+                "SELECT id, title, path, thumb, source_url, phash, oshash, duration FROM scenes WHERE id = ?1",
                 params![scene_id],
                 |row| {
                     Ok((
@@ -610,11 +821,12 @@ impl Database {
                         row.get::<_, Option<String>>(4)?,
                         row.get::<_, Option<String>>(5)?,
                         row.get::<_, Option<String>>(6)?,
+                        row.get::<_, Option<u32>>(7)?,
                     ))
                 },
             )
             .optional()?;
-        let Some((id, title, path, thumb, source_url, phash, oshash)) = row else {
+        let Some((id, title, path, thumb, source_url, phash, oshash, duration)) = row else {
             return Err(AppError::NotFound(format!("scene {scene_id}")));
         };
         let performers = self.scene_performers(&conn, &id)?;
@@ -627,7 +839,7 @@ impl Database {
             id,
             title,
             path,
-            duration: None,
+            duration,
             thumb,
             source_url,
             studio_id: None,

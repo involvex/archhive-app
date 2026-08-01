@@ -345,3 +345,27 @@ pub struct DuplicateGroup {
 pub struct MergeDuplicatesResult {
     pub removed: u32,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct SceneFilter {
+    #[serde(default)]
+    pub missing_thumb: bool,
+    #[serde(default)]
+    pub missing_duration: bool,
+    #[serde(default)]
+    pub max_duration: Option<u32>,
+    #[serde(default)]
+    pub hash_named: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FfmpegStatus {
+    pub ffmpeg_available: bool,
+    pub ffprobe_available: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OrphanSidecar {
+    pub path: String,
+    pub size: u64,
+}

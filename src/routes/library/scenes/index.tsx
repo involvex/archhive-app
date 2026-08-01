@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api/client";
 import { sceneThumbUrl, isVideoScene } from "@/lib/mediaUrl";
-import type { Scene, SceneSort } from "@/lib/types";
+import type { Scene, SceneFilter, SceneSort } from "@/lib/types";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -23,6 +23,7 @@ function ScenesPage() {
   const [scenes, setScenes] = useState<Scene[]>([]);
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SceneSort>("newest");
+  const [filter, setFilter] = useState<SceneFilter>({});
   const [editScene, setEditScene] = useState<Scene | null>(null);
   const [detailsScene, setDetailsScene] = useState<Scene | null>(null);
   const [playerScene, setPlayerScene] = useState<Scene | null>(null);
@@ -34,12 +35,22 @@ function ScenesPage() {
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressTriggered = useRef(false);
 
+  const hasFilter =
+    filter.missing_thumb ||
+    filter.missing_duration ||
+    filter.hash_named ||
+    filter.max_duration != null;
+
   const refresh = useCallback(() => {
-    void api
-      .listScenes(query || undefined, sort)
-      .then(setScenes)
-      .catch(console.error);
-  }, [query, sort]);
+    if (hasFilter) {
+      void api.listScenesWithFilter(filter).then(setScenes).catch(console.error);
+    } else {
+      void api
+        .listScenes(query || undefined, sort)
+        .then(setScenes)
+        .catch(console.error);
+    }
+  }, [query, sort, filter, hasFilter]);
 
   useEffect(() => {
     refresh();
@@ -188,6 +199,44 @@ function ScenesPage() {
           <option value="name">Name</option>
         </select>
       </div>
+      <div className="flex flex-wrap gap-1.5">
+        {[
+          { key: "all", label: "All" },
+          { key: "missing_thumb", label: "Missing thumb" },
+          { key: "missing_duration", label: "Missing duration" },
+          { key: "short", label: "\u2264 15s" },
+          { key: "hash_named", label: "Hash-named" },
+        ].map(({ key, label }) => {
+          const active =
+            key === "all"
+              ? !hasFilter
+              : key === "short"
+                ? filter.max_duration === 15
+                : !!filter[key as keyof SceneFilter];
+          return (
+            <button
+              key={key}
+              type="button"
+              onClick={() => {
+                if (key === "all") setFilter({});
+                else if (key === "short")
+                  setFilter((f) => ({
+                    ...f,
+                    max_duration: f.max_duration === 15 ? undefined : 15,
+                  }));
+                else setFilter((f) => ({ ...f, [key]: !f[key as keyof SceneFilter] }));
+              }}
+              className={`rounded-full px-3 py-1 text-xs font-medium transition ${
+                active
+                  ? "bg-[var(--color-primary)] text-[var(--color-primary-foreground)]"
+                  : "bg-[var(--color-secondary)] text-[var(--color-secondary-foreground)] hover:bg-[var(--color-muted)]"
+              }`}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-5">
         {scenes.map((scene) => {
           const thumbSrc = sceneThumbUrl(scene);
@@ -268,6 +317,11 @@ function ScenesPage() {
               </div>
               <CardContent className="p-2 space-y-1">
                 <p className="line-clamp-2 text-xs font-medium">{scene.title}</p>
+                {isHashNamed(scene.title) && (
+                  <span className="inline-block rounded bg-amber-500/20 px-1.5 py-0.5 text-[9px] font-medium text-amber-400">
+                    Hash-named
+                  </span>
+                )}
                 {scene.performers.length > 0 && (
                   <p className="text-[10px] text-[var(--color-muted-foreground)] truncate">
                     {scene.performers.join(", ")}
@@ -363,4 +417,8 @@ function ScenesPage() {
       )}
     </div>
   );
+}
+
+function isHashNamed(title: string): boolean {
+  return /^-\d{15,}_\d+$/.test(title);
 }

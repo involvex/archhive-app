@@ -182,3 +182,20 @@ export interface LanHost {
   ip: string;
   port: number;
 }
+
+export interface SceneFilter {
+  missing_thumb?: boolean;
+  missing_duration?: boolean;
+  max_duration?: number;
+  hash_named?: boolean;
+}
+
+export interface FfmpegStatus {
+  ffmpeg_available: boolean;
+  ffprobe_available: boolean;
+}
+
+export interface OrphanSidecar {
+  path: string;
+  size: number;
+}
