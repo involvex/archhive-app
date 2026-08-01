@@ -136,6 +136,7 @@ export interface AppSettings {
   tray_hotkey?: string;
   download_quality?: DownloadQuality;
   prefer_mp4?: boolean;
+  lan_auth_enabled?: boolean;
 }
 
 export interface MergeDuplicatesResult {

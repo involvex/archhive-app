@@ -27,6 +27,7 @@ function ScenesPage() {
   const [editScene, setEditScene] = useState<Scene | null>(null);
   const [detailsScene, setDetailsScene] = useState<Scene | null>(null);
   const [playerScene, setPlayerScene] = useState<Scene | null>(null);
+  const [playerIndex, setPlayerIndex] = useState(0);
   const [contextMenu, setContextMenu] = useState<SceneContextMenuState | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [selectionMode, setSelectionMode] = useState(false);
@@ -241,6 +242,7 @@ function ScenesPage() {
         {scenes.map((scene) => {
           const thumbSrc = sceneThumbUrl(scene);
           const isSelected = selectedIds.has(scene.id);
+          const canPlay = isVideoScene(scene);
           return (
             <Card
               key={scene.id}
@@ -256,8 +258,14 @@ function ScenesPage() {
                   longPressTriggered.current = false;
                   return;
                 }
-                if (isVideoScene(scene)) setPlayerScene(scene);
-                else setDetailsScene(scene);
+                if (canPlay) {
+                  const videoScenes = scenes.filter(isVideoScene);
+                  const idx = videoScenes.findIndex((s) => s.id === scene.id);
+                  if (idx >= 0) setPlayerIndex(idx);
+                  setPlayerScene(scene);
+                } else {
+                  setDetailsScene(scene);
+                }
               }}
             >
               <div className="aspect-video bg-[var(--color-muted)] relative">
@@ -362,11 +370,17 @@ function ScenesPage() {
 
       <ScenePlayerDialog
         scene={playerScene}
+        scenes={scenes.filter(isVideoScene)}
+        currentIndex={playerIndex}
         open={playerScene !== null}
         onClose={() => setPlayerScene(null)}
         onEdit={(s) => {
           setPlayerScene(null);
           setEditScene(s);
+        }}
+        onNavigate={(s, i) => {
+          setPlayerScene(s);
+          setPlayerIndex(i);
         }}
       />
 
@@ -375,7 +389,12 @@ function ScenesPage() {
         onClose={() => setContextMenu(null)}
         onEdit={(s) => setEditScene(s)}
         onDetails={(s) => setDetailsScene(s)}
-        onPlay={(s) => setPlayerScene(s)}
+        onPlay={(s) => {
+          const videoScenes = scenes.filter(isVideoScene);
+          const idx = videoScenes.findIndex((v) => v.id === s.id);
+          if (idx >= 0) setPlayerIndex(idx);
+          setPlayerScene(s);
+        }}
         onOpenExplorer={(s) => void api.openSceneInExplorer(s.id).catch(console.error)}
         onOpenDefault={(s) => void api.openSceneWithDefault(s.id).catch(console.error)}
         onRenameFile={(s) => void renameFileToTitle(s)}

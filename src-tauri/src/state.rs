@@ -329,7 +329,7 @@ impl AppState {
         }
 
         let mut settings = self.get_settings()?;
-        let token = if open_dev {
+        let token = if open_dev || !settings.lan_auth_enabled {
             String::new()
         } else {
             match settings.lan_token.clone() {
@@ -338,8 +338,14 @@ impl AppState {
             }
         };
         let static_dir = self.static_ui_path();
-        let server =
-            crate::server::LanServer::start(self.clone(), port, token.clone(), static_dir).await?;
+        let server = crate::server::LanServer::start(
+            self.clone(),
+            port,
+            token.clone(),
+            settings.lan_auth_enabled,
+            static_dir,
+        )
+        .await?;
         *self.lan_server.lock() = Some(server);
         settings.lan_enabled = true;
         settings.lan_port = port;
@@ -506,6 +512,37 @@ impl AppState {
             description,
             channel,
         })
+    }
+
+    /// Resolve a direct streamable URL for a media item using `yt-dlp --get-url`.
+    /// Used by the in-app Watch button to preview a remote video without downloading.
+    pub async fn resolve_stream_url(&self, url: &str) -> AppResult<String> {
+        let runner = crate::sites::yt_dlp::SidecarRunner::new(self.site_ctx.app().clone());
+        let site_id = self
+            .sites
+            .detect(url)
+            .unwrap_or_else(|| "custom".to_string());
+        let cookies = self.site_ctx.cookie_file_for_site(&site_id);
+        let mut args = vec![
+            url.to_string(),
+            "--get-url".to_string(),
+            "--no-warnings".to_string(),
+            "--no-playlist".to_string(),
+        ];
+        if let Some(cookies) = cookies.as_ref() {
+            args.push("--cookies".to_string());
+            args.push(cookies.to_string_lossy().to_string());
+        }
+        let raw = runner
+            .run_capture_for_stream_url("yt-dlp", &args)
+            .await?;
+        let stream_url = raw
+            .lines()
+            .map(str::trim)
+            .find(|line| !line.is_empty())
+            .ok_or_else(|| crate::error::AppError::Other("No stream URL resolved".to_string()))?
+            .to_string();
+        Ok(stream_url)
     }
 
     pub async fn generate_missing_thumbs(&self) -> AppResult<u32> {

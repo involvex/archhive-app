@@ -21,6 +21,7 @@ use tower_http::services::{ServeDir, ServeFile};
 struct ApiState {
     app: Arc<AppState>,
     token: String,
+    lan_auth_enabled: bool,
 }
 
 #[derive(Deserialize)]
@@ -84,11 +85,13 @@ impl LanServer {
         app: Arc<AppState>,
         port: u16,
         token: String,
+        lan_auth_enabled: bool,
         static_dir: Option<PathBuf>,
     ) -> AppResult<Self> {
         let api = ApiState {
             app,
             token: token.clone(),
+            lan_auth_enabled,
         };
         let api_router = Router::new()
             .route("/api/health", get(health))
@@ -113,6 +116,7 @@ impl LanServer {
             .route("/api/scenes/{id}/media", get(scene_media))
             .route("/api/scenes/batch", post(batch_update_scenes))
             .route("/api/media/resolve", post(resolve_media_details))
+            .route("/api/media/stream-url", post(resolve_stream_url))
             .route("/api/performers/ensure", post(ensure_performer))
             .route("/api/files", get(list_files))
             .route("/api/files/stream", get(stream_file))
@@ -211,7 +215,7 @@ async fn auth_middleware(
     if req.uri().path() == "/api/health" || !req.uri().path().starts_with("/api/") {
         return next.run(req).await;
     }
-    if state.token.is_empty() {
+    if state.token.is_empty() || !state.lan_auth_enabled {
         return next.run(req).await;
     }
     let auth = req
@@ -683,6 +687,18 @@ async fn resolve_media_details(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(serde_json::json!(item)))
+}
+
+async fn resolve_stream_url(
+    State(state): State<ApiState>,
+    Json(body): Json<ResolveBody>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let stream_url = state
+        .app
+        .resolve_stream_url(&body.url)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(serde_json::json!({ "stream_url": stream_url })))
 }
 
 #[derive(Deserialize)]

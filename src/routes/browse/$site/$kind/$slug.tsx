@@ -5,6 +5,7 @@ import { normalizeBrowseInput } from "@/lib/browse/normalize";
 import type { BrowseKind, MediaItem } from "@/lib/types";
 import { SceneCard } from "@/components/SceneCard";
 import { BrowseItemDetailsDialog } from "@/components/BrowseItemDetailsDialog";
+import { UrlPlayerDialog } from "@/components/UrlPlayerDialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { browseCacheKey, useBrowseStore } from "@/lib/stores/browse";
@@ -29,6 +30,7 @@ function BrowseDetailPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [infoItem, setInfoItem] = useState<MediaItem | null>(null);
+  const [watchItem, setWatchItem] = useState<MediaItem | null>(null);
 
   useEffect(() => {
     setCache(cacheKey, { items, page, hasMore, querySlug });
@@ -92,6 +94,7 @@ function BrowseDetailPage() {
             item={item}
             onDownload={(i) => void handleDownload(i)}
             onInfo={setInfoItem}
+            onWatch={setWatchItem}
           />
         ))}
       </div>
@@ -110,6 +113,12 @@ function BrowseDetailPage() {
         item={infoItem}
         open={infoItem !== null}
         onClose={() => setInfoItem(null)}
+      />
+
+      <UrlPlayerDialog
+        item={watchItem}
+        open={watchItem !== null}
+        onClose={() => setWatchItem(null)}
       />
     </div>
   );

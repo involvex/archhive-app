@@ -1,15 +1,17 @@
 import type { MediaItem } from "@/lib/types";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Download, Clock, Info } from "lucide-react";
+import { Clock, Download, Info, Play } from "lucide-react";
 
 interface SceneCardProps {
   item: MediaItem;
   onDownload?: (item: MediaItem) => void;
   onInfo?: (item: MediaItem) => void;
+  onWatch?: (item: MediaItem) => void;
 }
 
-export function SceneCard({ item, onDownload, onInfo }: SceneCardProps) {
+export function SceneCard({ item, onDownload, onInfo, onWatch }: SceneCardProps) {
+  const hasActions = Boolean(onInfo || onDownload || onWatch);
   return (
     <Card className="overflow-hidden transition hover:border-[var(--color-primary)]">
       <div className="aspect-video bg-[var(--color-muted)] relative">
@@ -41,20 +43,33 @@ export function SceneCard({ item, onDownload, onInfo }: SceneCardProps) {
             {item.channel || item.performers.join(", ")}
           </p>
         )}
-        <div className="flex gap-2">
-          {onInfo && (
-            <Button size="sm" variant="outline" className="flex-1" onClick={() => onInfo(item)}>
-              <Info className="h-3.5 w-3.5" />
-              Info
-            </Button>
-          )}
-          {onDownload && (
-            <Button size="sm" className="flex-1" onClick={() => onDownload(item)}>
-              <Download className="h-3.5 w-3.5" />
-              Download
-            </Button>
-          )}
-        </div>
+        {hasActions && (
+          <div className="flex gap-1.5">
+            {onInfo && (
+              <Button size="sm" variant="outline" className="flex-1" onClick={() => onInfo(item)}>
+                <Info className="h-3.5 w-3.5" />
+                Info
+              </Button>
+            )}
+            {onWatch && (
+              <Button size="sm" className="flex-1" onClick={() => onWatch(item)}>
+                <Play className="h-3.5 w-3.5" />
+                Watch
+              </Button>
+            )}
+            {onDownload && (
+              <Button
+                size="sm"
+                variant={onWatch ? "outline" : "default"}
+                className="flex-1"
+                onClick={() => onDownload(item)}
+              >
+                <Download className="h-3.5 w-3.5" />
+                Download
+              </Button>
+            )}
+          </div>
+        )}
       </CardContent>
     </Card>
   );

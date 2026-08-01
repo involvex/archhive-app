@@ -324,6 +324,17 @@ export const api = {
     });
   },
 
+  async resolveStreamUrl(url: string): Promise<string> {
+    if (shouldUseRemoteApi()) {
+      const res = await remoteFetch<{ stream_url: string }>("/api/media/stream-url", {
+        method: "POST",
+        body: JSON.stringify({ url }),
+      });
+      return res.stream_url;
+    }
+    return localInvoke<string>("resolve_stream_url", { url });
+  },
+
   async ensurePerformer(name: string): Promise<Performer> {
     return localOrRemote("ensure_performer", { name }, "/api/performers/ensure", {
       method: "POST",

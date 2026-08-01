@@ -848,6 +848,26 @@ function SettingsPage() {
                     </Switch.Root>
                     <span className="text-sm">Enable LAN server</span>
                   </div>
+                  {settings.lan_enabled && (
+                    <div className="ml-7 flex items-center gap-3">
+                      <Switch.Root
+                        checked={settings.lan_auth_enabled !== false}
+                        onCheckedChange={(checked) => {
+                          updateSettings({ lan_auth_enabled: checked });
+                          if (settings.lan_enabled) void regenerateLanToken();
+                        }}
+                        className="h-5 w-9 rounded-full bg-[var(--color-secondary)] data-[state=checked]:bg-[var(--color-primary)]"
+                      >
+                        <Switch.Thumb className="block h-4 w-4 translate-x-0.5 rounded-full bg-white transition data-[state=checked]:translate-x-[18px]" />
+                      </Switch.Root>
+                      <div>
+                        <span className="text-sm">Require authentication</span>
+                        <p className="text-xs text-[var(--color-muted-foreground)]">
+                          When disabled, any device on your LAN can access the API without a token.
+                        </p>
+                      </div>
+                    </div>
+                  )}
                   <Input
                     type="number"
                     value={settings.lan_port}

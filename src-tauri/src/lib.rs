@@ -160,6 +160,7 @@ pub fn run() {
             commands::delete_site_cookies,
             commands::resolve_standalone,
             commands::resolve_media_details,
+            commands::resolve_stream_url,
             commands::discover_lan_hosts,
             commands::start_lan_server,
             commands::stop_lan_server,

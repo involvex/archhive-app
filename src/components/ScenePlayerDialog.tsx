@@ -4,13 +4,16 @@ import { getCapabilities } from "@/lib/runtime";
 import { api } from "@/lib/api/client";
 import type { Scene } from "@/lib/types";
 import { Button } from "@/components/ui/button";
-import { Pencil, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Pencil, X } from "lucide-react";
 
 interface ScenePlayerDialogProps {
   scene: Scene | null;
+  scenes?: Scene[];
+  currentIndex?: number;
   open: boolean;
   onClose: () => void;
   onEdit?: (scene: Scene) => void;
+  onNavigate?: (scene: Scene, index: number) => void;
 }
 
 function formatBytes(bytes?: number): string | null {
@@ -22,12 +25,18 @@ function formatBytes(bytes?: number): string | null {
 
 function ScenePlayerBody({
   scene,
+  scenes,
+  currentIndex,
   onClose,
   onEdit,
+  onNavigate,
 }: {
   scene: Scene;
+  scenes?: Scene[];
+  currentIndex?: number;
   onClose: () => void;
   onEdit?: (scene: Scene) => void;
+  onNavigate?: (scene: Scene, index: number) => void;
 }) {
   const [detail, setDetail] = useState<Scene | null>(null);
   const caps = getCapabilities();
@@ -106,6 +115,34 @@ function ScenePlayerBody({
               Open with system player
             </Button>
           )}
+        </div>
+      )}
+
+      {scenes && scenes.length > 1 && currentIndex != null && onNavigate && (
+        <div className="mt-3 flex items-center justify-between gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-muted)] px-3 py-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={currentIndex <= 0}
+            onClick={() => onNavigate(scenes[currentIndex - 1], currentIndex - 1)}
+            className="min-h-10"
+          >
+            <ChevronLeft className="h-4 w-4" />
+            Previous
+          </Button>
+          <span className="text-xs text-[var(--color-muted-foreground)]">
+            {currentIndex + 1} / {scenes.length}
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={currentIndex >= scenes.length - 1}
+            onClick={() => onNavigate(scenes[currentIndex + 1], currentIndex + 1)}
+            className="min-h-10"
+          >
+            Next
+            <ChevronRight className="h-4 w-4" />
+          </Button>
         </div>
       )}
 
@@ -193,7 +230,39 @@ function ScenePlayerBody({
   );
 }
 
-export function ScenePlayerDialog({ scene, open, onClose, onEdit }: ScenePlayerDialogProps) {
+export function ScenePlayerDialog({
+  scene,
+  scenes,
+  currentIndex,
+  open,
+  onClose,
+  onEdit,
+  onNavigate,
+}: ScenePlayerDialogProps) {
+  useEffect(() => {
+    if (!open || !scenes || currentIndex == null) return;
+    const idx = currentIndex;
+    const list = scenes;
+    if (!onNavigate) return;
+    const nav = onNavigate;
+    function handleKey(e: KeyboardEvent) {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        if (idx > 0) {
+          nav(list[idx - 1], idx - 1);
+        }
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        if (idx < list.length - 1) {
+          nav(list[idx + 1], idx + 1);
+        }
+      }
+    }
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [open, scenes, currentIndex, onNavigate]);
+
   if (!open || !scene) return null;
 
   return (
@@ -204,7 +273,15 @@ export function ScenePlayerDialog({ scene, open, onClose, onEdit }: ScenePlayerD
         className="flex max-h-[92dvh] w-full max-w-4xl flex-col overflow-hidden rounded-t-xl border border-[var(--color-border)] bg-[var(--color-card)] shadow-xl sm:rounded-lg"
       >
         <div className="overflow-y-auto overscroll-contain p-4">
-          <ScenePlayerBody key={scene.id} scene={scene} onClose={onClose} onEdit={onEdit} />
+          <ScenePlayerBody
+            key={scene.id}
+            scene={scene}
+            scenes={scenes}
+            currentIndex={currentIndex}
+            onClose={onClose}
+            onEdit={onEdit}
+            onNavigate={onNavigate}
+          />
         </div>
       </div>
     </div>

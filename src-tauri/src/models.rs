@@ -212,6 +212,8 @@ pub struct AppSettings {
     pub download_quality: DownloadQuality,
     #[serde(default = "default_prefer_mp4")]
     pub prefer_mp4: bool,
+    #[serde(default = "default_lan_auth_enabled")]
+    pub lan_auth_enabled: bool,
 }
 
 fn default_phash_threshold() -> u8 {
@@ -231,6 +233,10 @@ fn default_tray_hotkey() -> Option<String> {
 }
 
 fn default_prefer_mp4() -> bool {
+    true
+}
+
+fn default_lan_auth_enabled() -> bool {
     true
 }
 
@@ -270,6 +276,7 @@ impl Default for AppSettings {
             tray_hotkey: default_tray_hotkey(),
             download_quality: DownloadQuality::default(),
             prefer_mp4: default_prefer_mp4(),
+            lan_auth_enabled: default_lan_auth_enabled(),
         }
     }
 }

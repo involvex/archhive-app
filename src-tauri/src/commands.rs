@@ -216,6 +216,14 @@ pub async fn resolve_media_details(
 }
 
 #[tauri::command]
+pub async fn resolve_stream_url(
+    state: State<'_, Arc<AppState>>,
+    url: String,
+) -> CmdResult<String> {
+    map_err(state.resolve_stream_url(&url).await)
+}
+
+#[tauri::command]
 pub fn find_duplicates(state: State<'_, Arc<AppState>>) -> CmdResult<Vec<DuplicateGroup>> {
     map_err(state.find_duplicates())
 }

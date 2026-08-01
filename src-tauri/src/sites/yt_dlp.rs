@@ -297,6 +297,14 @@ impl SidecarRunner {
         Ok(destination)
     }
 
+    pub async fn run_capture_for_stream_url(
+        &self,
+        name: &str,
+        args: &[String],
+    ) -> AppResult<String> {
+        self.run_capture(name, args).await
+    }
+
     async fn run_capture(&self, name: &str, args: &[String]) -> AppResult<String> {
         let sidecar_result = self
             .app
