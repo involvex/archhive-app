@@ -372,6 +372,18 @@ pub struct FfmpegStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ThumbGenResult {
+    pub generated: u32,
+    pub errors: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DurationProbeResult {
+    pub probed: u32,
+    pub errors: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OrphanSidecar {
     pub path: String,
     pub size: u64,

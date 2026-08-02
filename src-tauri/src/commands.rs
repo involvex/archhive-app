@@ -203,7 +203,7 @@ pub async fn scan_library(
 #[tauri::command]
 pub async fn generate_missing_thumbs(
     state: State<'_, Arc<AppState>>,
-) -> CmdResult<u32> {
+) -> CmdResult<crate::models::ThumbGenResult> {
     map_err(state.generate_missing_thumbs().await)
 }
 
@@ -382,7 +382,7 @@ pub async fn probe_library_durations(
     app: AppHandle,
     state: State<'_, Arc<AppState>>,
     concurrency: Option<u32>,
-) -> CmdResult<u32> {
+) -> CmdResult<crate::models::DurationProbeResult> {
     map_err(
         state
             .probe_library_durations(app, concurrency.unwrap_or(2) as usize)

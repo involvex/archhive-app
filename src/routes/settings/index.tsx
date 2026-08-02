@@ -242,8 +242,12 @@ function SettingsPage() {
     setGeneratingThumbs(true);
     setScanResult("");
     try {
-      const count = await api.generateMissingThumbs();
-      setScanResult(`Generated ${count} thumbnail${count === 1 ? "" : "s"}`);
+      const result = await api.generateMissingThumbs();
+      const parts = [`Generated ${result.generated} thumbnail${result.generated === 1 ? "" : "s"}`];
+      if (result.errors > 0) {
+        parts.push(`${result.errors} failed`);
+      }
+      setScanResult(parts.join(", "));
     } catch (e) {
       setScanResult(e instanceof Error ? e.message : "Thumb generation failed");
     } finally {
@@ -255,8 +259,12 @@ function SettingsPage() {
     setProbingDurations(true);
     setScanResult("");
     try {
-      const count = await api.probeLibraryDurations(2);
-      setScanResult(`Probed + thumbed ${count} scene${count === 1 ? "" : "s"}`);
+      const result = await api.probeLibraryDurations(2);
+      const parts = [`Probed ${result.probed} duration${result.probed === 1 ? "" : "s"}`];
+      if (result.errors > 0) {
+        parts.push(`${result.errors} failed`);
+      }
+      setScanResult(parts.join(", "));
     } catch (e) {
       setScanResult(e instanceof Error ? e.message : "Probe failed");
     } finally {

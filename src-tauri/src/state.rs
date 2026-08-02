@@ -545,7 +545,7 @@ impl AppState {
         Ok(stream_url)
     }
 
-    pub async fn generate_missing_thumbs(&self) -> AppResult<u32> {
+    pub async fn generate_missing_thumbs(&self) -> AppResult<crate::models::ThumbGenResult> {
         crate::library::LibraryScanner::generate_missing_thumbs(
             self.db.clone(),
             self.site_ctx.app().clone(),
@@ -591,8 +591,8 @@ impl AppState {
         &self,
         app: tauri::AppHandle,
         concurrency: usize,
-    ) -> AppResult<u32> {
-        crate::library::LibraryScanner::generate_missing_thumbs(
+    ) -> AppResult<crate::models::DurationProbeResult> {
+        crate::library::LibraryScanner::probe_library_durations(
             self.db.clone(),
             app,
             concurrency,

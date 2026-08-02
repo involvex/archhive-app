@@ -36,6 +36,9 @@ impl LibraryScanner {
             });
         }
 
+        // Batch-load all known paths for O(1) lookups instead of per-file SQL queries.
+        let mut known_paths = db.all_scene_paths()?;
+
         let mut added = 0u32;
         let mut updated = 0u32;
         let mut scanned = 0u32;
@@ -78,18 +81,7 @@ impl LibraryScanner {
                 .unwrap_or("Unknown")
                 .to_string();
 
-            let exists = match db.scene_exists_by_path(&path_str) {
-                Ok(v) => v,
-                Err(e) => {
-                    eprintln!("scan skip {}: {e}", path_str);
-                    if scanned.is_multiple_of(10) {
-                        emit(scanned, added, updated);
-                    }
-                    continue;
-                }
-            };
-
-            if exists {
+            if known_paths.contains(&path_str) {
                 updated += 1;
             } else {
                 let (performers, tags) = apply_filename_rules(&title, rules);
@@ -103,7 +95,11 @@ impl LibraryScanner {
                     None,
                     None,
                 ) {
-                    Ok(_) => added += 1,
+                    Ok(_) => {
+                        added += 1;
+                        // Add to set so duplicate files in the same scan are caught.
+                        known_paths.insert(path_str);
+                    }
                     Err(e) => eprintln!("scan skip {}: {e}", path_str),
                 }
             }
@@ -124,16 +120,20 @@ impl LibraryScanner {
         db: Arc<Database>,
         app: AppHandle,
         concurrency: usize,
-    ) -> AppResult<u32> {
+    ) -> AppResult<crate::models::ThumbGenResult> {
         let missing = db.list_scenes_missing_thumbs()?;
         if missing.is_empty() {
-            return Ok(0);
+            return Ok(crate::models::ThumbGenResult {
+                generated: 0,
+                errors: 0,
+            });
         }
 
         let limit = concurrency.max(1);
         let sem = Arc::new(Semaphore::new(limit));
         let mut handles = Vec::new();
         let generated = Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let errors = Arc::new(std::sync::atomic::AtomicU32::new(0));
 
         for (scene_id, path_str) in missing {
             let permit = sem
@@ -144,30 +144,51 @@ impl LibraryScanner {
             let db = db.clone();
             let app = app.clone();
             let generated = generated.clone();
+            let errors = errors.clone();
             handles.push(tokio::spawn(async move {
                 let _permit = permit;
                 let video_path = PathBuf::from(&path_str);
                 if !video_path.is_file() {
+                    errors.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     return;
                 }
 
                 let ffmpeg = FfmpegProcessor::new(app);
 
                 // Always re-extract thumbnail (don't rely on potentially stale sidecar).
-                let thumb_path = ffmpeg.extract_thumbnail(&video_path).await.ok();
-
-                if let Some(thumb) = thumb_path {
-                    let thumb_str = thumb.to_string_lossy().to_string();
-                    if db.set_scene_thumb(&scene_id, &thumb_str).is_ok() {
-                        let phash = compute_phash_from_image(&thumb).ok();
-                        let oshash = compute_oshash(&video_path).ok();
-                        let _ = db.update_scene_hashes(
-                            &scene_id,
-                            phash.as_deref(),
-                            oshash.as_deref(),
-                            Some(&thumb_str),
-                        );
-                        generated.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                match ffmpeg.extract_thumbnail(&video_path).await {
+                    Ok(thumb) => {
+                        let thumb_str = thumb.to_string_lossy().to_string();
+                        if db.set_scene_thumb(&scene_id, &thumb_str).is_ok() {
+                            // Offload blocking hash computations to the blocking thread pool.
+                            let phash = {
+                                let t = thumb.clone();
+                                tokio::task::spawn_blocking(move || compute_phash_from_image(&t).ok())
+                                    .await
+                                    .ok()
+                                    .flatten()
+                            };
+                            let oshash = {
+                                let p = video_path.clone();
+                                tokio::task::spawn_blocking(move || compute_oshash(&p).ok())
+                                    .await
+                                    .ok()
+                                    .flatten()
+                            };
+                            let _ = db.update_scene_hashes(
+                                &scene_id,
+                                phash.as_deref(),
+                                oshash.as_deref(),
+                                Some(&thumb_str),
+                            );
+                            generated.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        } else {
+                            errors.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("[thumb] failed for {path_str}: {e}");
+                        errors.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     }
                 }
 
@@ -183,7 +204,74 @@ impl LibraryScanner {
         for h in handles {
             let _ = h.await;
         }
-        Ok(generated.load(std::sync::atomic::Ordering::Relaxed))
+        Ok(crate::models::ThumbGenResult {
+            generated: generated.load(std::sync::atomic::Ordering::Relaxed),
+            errors: errors.load(std::sync::atomic::Ordering::Relaxed),
+        })
+    }
+
+    /// Probe durations for all scenes that don't have one set.
+    /// Returns the count of durations successfully probed.
+    pub async fn probe_library_durations(
+        db: Arc<Database>,
+        app: AppHandle,
+        concurrency: usize,
+    ) -> AppResult<crate::models::DurationProbeResult> {
+        let missing = db.list_scenes_missing_durations()?;
+        if missing.is_empty() {
+            return Ok(crate::models::DurationProbeResult {
+                probed: 0,
+                errors: 0,
+            });
+        }
+
+        let limit = concurrency.max(1);
+        let sem = Arc::new(Semaphore::new(limit));
+        let mut handles = Vec::new();
+        let probed = Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let errors = Arc::new(std::sync::atomic::AtomicU32::new(0));
+
+        for (scene_id, path_str) in missing {
+            let permit = sem
+                .clone()
+                .acquire_owned()
+                .await
+                .map_err(|e| crate::error::AppError::Other(format!("probe semaphore: {e}")))?;
+            let db = db.clone();
+            let app = app.clone();
+            let probed = probed.clone();
+            let errors = errors.clone();
+            handles.push(tokio::spawn(async move {
+                let _permit = permit;
+                let video_path = PathBuf::from(&path_str);
+                if !video_path.is_file() {
+                    errors.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    return;
+                }
+
+                let ffmpeg = FfmpegProcessor::new(app);
+                match ffmpeg.probe_duration(&video_path).await {
+                    Some(dur) if dur > 0.0 => {
+                        if db.update_scene_duration(&scene_id, dur as u32).is_ok() {
+                            probed.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        } else {
+                            errors.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        }
+                    }
+                    _ => {
+                        errors.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    }
+                }
+            }));
+        }
+
+        for h in handles {
+            let _ = h.await;
+        }
+        Ok(crate::models::DurationProbeResult {
+            probed: probed.load(std::sync::atomic::Ordering::Relaxed),
+            errors: errors.load(std::sync::atomic::Ordering::Relaxed),
+        })
     }
 
     pub async fn post_process_file(

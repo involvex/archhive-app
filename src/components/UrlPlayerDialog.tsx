@@ -58,13 +58,13 @@ export function UrlPlayerDialog({ item, open, onClose }: UrlPlayerDialogProps) {
     <button
       type="button"
       aria-label="Close player"
-      className="fixed inset-0 z-[100] flex cursor-default items-end justify-center bg-black/80 p-0 sm:items-center sm:p-4"
+      className="fixed inset-0 z-[100] flex cursor-default items-stretch justify-center bg-black/80 p-0 sm:items-center sm:p-4"
       onClick={onClose}
     >
       <div
         role="dialog"
         aria-modal="true"
-        className="flex max-h-[92dvh] w-full max-w-4xl cursor-default flex-col overflow-hidden rounded-t-xl border border-[var(--color-border)] bg-[var(--color-card)] shadow-xl sm:rounded-lg"
+        className="flex h-full max-h-[100dvh] w-full max-w-4xl cursor-default flex-col overflow-hidden border border-[var(--color-border)] bg-[var(--color-card)] shadow-xl sm:max-h-[92dvh] sm:rounded-lg"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => e.stopPropagation()}
       >

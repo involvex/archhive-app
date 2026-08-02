@@ -664,12 +664,12 @@ async fn scan_library(
 async fn generate_missing_thumbs(
     State(state): State<ApiState>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
-    let count = state
+    let result = state
         .app
         .generate_missing_thumbs()
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    Ok(Json(serde_json::json!({ "generated": count })))
+    Ok(Json(serde_json::json!(result)))
 }
 
 #[derive(Deserialize)]
@@ -743,12 +743,12 @@ async fn clear_scene_thumb(
 async fn probe_library_durations(
     State(state): State<ApiState>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
-    let count = state
+    let result = state
         .app
         .probe_library_durations(state.app.site_ctx.app().clone(), 2)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    Ok(Json(serde_json::json!({ "generated": count })))
+    Ok(Json(serde_json::json!(result)))
 }
 
 async fn list_orphan_sidecars(

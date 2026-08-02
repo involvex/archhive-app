@@ -46,26 +46,38 @@ export function SceneCard({ item, onDownload, onInfo, onWatch }: SceneCardProps)
         {hasActions && (
           <div className="flex gap-1.5">
             {onInfo && (
-              <Button size="sm" variant="outline" className="flex-1" onClick={() => onInfo(item)}>
+              <Button
+                size="sm"
+                variant="outline"
+                className="flex-1 px-1.5 sm:px-3"
+                onClick={() => onInfo(item)}
+                aria-label="Info"
+              >
                 <Info className="h-3.5 w-3.5" />
-                Info
+                <span className="hidden sm:inline">Info</span>
               </Button>
             )}
             {onWatch && (
-              <Button size="sm" className="flex-1" onClick={() => onWatch(item)}>
+              <Button
+                size="sm"
+                className="flex-1 px-1.5 sm:px-3"
+                onClick={() => onWatch(item)}
+                aria-label="Watch"
+              >
                 <Play className="h-3.5 w-3.5" />
-                Watch
+                <span className="hidden sm:inline">Watch</span>
               </Button>
             )}
             {onDownload && (
               <Button
                 size="sm"
                 variant={onWatch ? "outline" : "default"}
-                className="flex-1"
+                className="flex-1 px-1.5 sm:px-3"
                 onClick={() => onDownload(item)}
+                aria-label="Download"
               >
                 <Download className="h-3.5 w-3.5" />
-                Download
+                <span className="hidden sm:inline">Download</span>
               </Button>
             )}
           </div>

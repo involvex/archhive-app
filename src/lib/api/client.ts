@@ -24,8 +24,10 @@ import type {
   UpdateSceneRequest,
   BatchUpdateScenesRequest,
   BatchUpdateScenesResult,
+  DurationProbeResult,
   PornhubCategoryEntry,
   SceneSort,
+  ThumbGenResult,
 } from "../types";
 import { getAppRuntime, shouldUseRemoteApi } from "../runtime";
 import { useSettingsStore } from "../stores/settings";
@@ -248,14 +250,13 @@ export const api = {
     return localInvoke("delete_scene", { id, deleteFiles });
   },
 
-  async generateMissingThumbs(): Promise<number> {
+  async generateMissingThumbs(): Promise<ThumbGenResult> {
     if (shouldUseRemoteApi()) {
-      const res = await remoteFetch<{ generated: number }>("/api/library/thumbs", {
+      return remoteFetch<ThumbGenResult>("/api/library/thumbs", {
         method: "POST",
       });
-      return res.generated;
     }
-    return localInvoke<number>("generate_missing_thumbs");
+    return localInvoke<ThumbGenResult>("generate_missing_thumbs");
   },
 
   async probeSceneMetadata(sceneId: string): Promise<Scene> {
@@ -265,14 +266,13 @@ export const api = {
     return localInvoke<Scene>("probe_scene_metadata", { sceneId });
   },
 
-  async probeLibraryDurations(concurrency = 2): Promise<number> {
+  async probeLibraryDurations(concurrency = 2): Promise<DurationProbeResult> {
     if (shouldUseRemoteApi()) {
-      const res = await remoteFetch<{ generated: number }>("/api/library/probe-durations", {
+      return remoteFetch<DurationProbeResult>("/api/library/probe-durations", {
         method: "POST",
       });
-      return res.generated;
     }
-    return localInvoke<number>("probe_library_durations", { concurrency });
+    return localInvoke<DurationProbeResult>("probe_library_durations", { concurrency });
   },
 
   async ffmpegStatus(): Promise<FfmpegStatus> {

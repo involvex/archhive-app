@@ -196,6 +196,16 @@ export interface FfmpegStatus {
   ffprobe_available: boolean;
 }
 
+export interface ThumbGenResult {
+  generated: number;
+  errors: number;
+}
+
+export interface DurationProbeResult {
+  probed: number;
+  errors: number;
+}
+
 export interface OrphanSidecar {
   path: string;
   size: number;

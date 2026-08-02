@@ -324,8 +324,7 @@ impl Database {
             .map_err(|e| AppError::Other(e.to_string()))?;
         let mut stmt = conn.prepare(
             "SELECT id, path, thumb FROM scenes
-             WHERE path IS NOT NULL AND path != ''
-             LIMIT 500",
+             WHERE path IS NOT NULL AND path != ''",
         )?;
         let rows = stmt.query_map([], |row| {
             Ok((
@@ -349,6 +348,23 @@ impl Database {
         Ok(out)
     }
 
+    /// Scenes with a video path but no duration set.
+    pub fn list_scenes_missing_durations(&self) -> AppResult<Vec<(String, String)>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let mut stmt = conn.prepare(
+            "SELECT id, path FROM scenes
+             WHERE path IS NOT NULL AND path != ''
+             AND (duration IS NULL OR duration = 0)",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(AppError::from)
+    }
+
     /// Scenes whose `thumb` path points to a file that no longer exists on disk.
     #[allow(dead_code)]
     pub fn list_orphan_thumbs(&self) -> AppResult<Vec<(String, String)>> {
@@ -358,8 +374,7 @@ impl Database {
             .map_err(|e| AppError::Other(e.to_string()))?;
         let mut stmt = conn.prepare(
             "SELECT id, thumb FROM scenes
-             WHERE thumb IS NOT NULL AND thumb != ''
-             LIMIT 500",
+             WHERE thumb IS NOT NULL AND thumb != ''",
         )?;
         let rows = stmt.query_map([], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
@@ -745,6 +760,22 @@ impl Database {
             |row| row.get(0),
         )?;
         Ok(count > 0)
+    }
+
+    /// Load all known scene paths into a HashSet for O(1) lookups during scan.
+    pub fn all_scene_paths(&self) -> AppResult<std::collections::HashSet<String>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let mut stmt =
+            conn.prepare("SELECT path FROM scenes WHERE path IS NOT NULL AND path != ''")?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        let mut set = std::collections::HashSet::new();
+        for row in rows {
+            set.insert(row?);
+        }
+        Ok(set)
     }
 
     pub fn find_duplicate_groups(&self, phash_threshold: u8) -> AppResult<Vec<DuplicateGroup>> {
