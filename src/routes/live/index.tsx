@@ -6,7 +6,7 @@ import { SceneCard } from "@/components/SceneCard";
 import { BrowseItemDetailsDialog } from "@/components/BrowseItemDetailsDialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Radio } from "lucide-react";
+import { Radio, Settings, AlertTriangle } from "lucide-react";
 
 export const Route = createFileRoute("/live/")({
   component: LiveIndexPage,
@@ -26,8 +26,9 @@ function LiveIndexPage() {
       const result = await api.browse("chaturbate", "livestream", "", 1);
       setItems(result.items);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "Failed to load streams";
-      setError(msg.replace(/^site error:\s*/i, ""));
+      const raw = e instanceof Error ? e.message : "Failed to load streams";
+      console.error("[live] loadPopular failed:", e);
+      setError(raw.replace(/^site error:\s*/i, ""));
     } finally {
       setLoading(false);
     }
@@ -41,8 +42,9 @@ function LiveIndexPage() {
       const result = await api.browse("chaturbate", "search", query.trim(), 1);
       setItems(result.items);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "Search failed";
-      setError(msg.replace(/^site error:\s*/i, ""));
+      const raw = e instanceof Error ? e.message : "Search failed";
+      console.error("[live] loadSearch failed:", e);
+      setError(raw.replace(/^site error:\s*/i, ""));
     } finally {
       setLoading(false);
     }
@@ -74,9 +76,21 @@ function LiveIndexPage() {
       </div>
 
       {error && (
-        <p className="text-sm text-red-400 rounded-md border border-red-400/30 bg-red-400/10 px-3 py-2">
-          {error}
-        </p>
+        <div className="flex items-start gap-2 rounded-md border border-red-400/30 bg-red-400/10 px-3 py-2 text-sm text-red-400">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <div className="space-y-1">
+            <p>{error}</p>
+            <p className="text-xs text-red-300/80">
+              Chaturbate lists are scraped server-side without yt-dlp. If you repeatedly see no
+              rooms, make sure cookies for <code className="font-mono">chaturbate</code> are
+              configured in{" "}
+              <Link to="/settings" className="underline">
+                Settings &rarr; Cookies
+              </Link>
+              .
+            </p>
+          </div>
+        </div>
       )}
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
@@ -93,8 +107,17 @@ function LiveIndexPage() {
 
       {loading && <p className="text-sm text-[var(--color-muted-foreground)]">Loading...</p>}
 
-      {!loading && items.length === 0 && (
-        <p className="text-sm text-[var(--color-muted-foreground)]">No live streams found.</p>
+      {!loading && items.length === 0 && !error && (
+        <div className="flex flex-col items-start gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-muted)]/30 px-4 py-3 text-sm text-[var(--color-muted-foreground)]">
+          <p>No live streams found.</p>
+          <p className="flex items-center gap-1.5 text-xs">
+            <Settings className="h-3.5 w-3.5" />
+            <Link to="/settings" className="underline">
+              Configure Chaturbate cookies
+            </Link>{" "}
+            for the public room list to load reliably.
+          </p>
+        </div>
       )}
 
       <BrowseItemDetailsDialog
