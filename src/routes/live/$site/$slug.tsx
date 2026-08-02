@@ -13,7 +13,7 @@ export const Route = createFileRoute("/live/$site/$slug")({
 function LivePlayerPage() {
   const { site, slug } = Route.useParams();
   const videoRef = useRef<HTMLVideoElement>(null);
-  const hlsRef = useRef<any>(null);
+  const hlsRef = useRef<import("hls.js").default | null>(null);
 
   const [streamUrl, setStreamUrl] = useState("");
   const [embedUrl, setEmbedUrl] = useState("");

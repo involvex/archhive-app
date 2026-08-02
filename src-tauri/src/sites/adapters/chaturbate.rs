@@ -36,12 +36,23 @@ impl SiteAdapter for ChaturbateAdapter {
     }
 
     async fn browse(&self, ctx: &SiteContext, query: BrowseQuery) -> AppResult<BrowsePage> {
-        // yt-dlp's Chaturbate extractor only handles individual room URLs, NOT listings.
-        // Passing /tags/<x>/ or /search/?q=... to yt-dlp fails with
-        // "ERROR: [Chaturbate] <slug>: Room is currently offline". So we NEVER use the
-        // yt-dlp browse fallback here. Instead we scrape the server-rendered HTML for
-        // every listing kind, and return an empty page (with has_more=false) if no
-        // rooms are found. The frontend surfaces a "no rooms found" message.
+        // Chaturbate is a JS SPA: room cards are hydrated client-side by
+        // `web2.static.mmcdn.com/cachebust/roomlist-prefetch.bfbd95a4a9e3.js`. The
+        // server-rendered HTML (root `/`, `/tags/<x>/`, `/discover/<x>/`) only contains
+        // empty `<li class="roomCard placeholder camBgColor">` placeholders inside
+        // `<div id="roomlist_root" data-testid="room-list">`.
+        //
+        // The internal API the SPA calls (`/api/ts/roomlist/room-list/`) returns the same
+        // placeholder-only HTML page gated by the age-verification overlay, and the
+        // affiliates endpoint (`affiliates/api/onlinerooms/?format=json`) returns `[]`
+        // without a valid `wm=` token. yt-dlp's `[Chaturbate]` extractor only handles
+        // individual room URLs (treats anything else as `Room is currently offline`), so
+        // it cannot list rooms either.
+        //
+        // Net result: room LISTINGS (Livestream/Tag/Search) always come back empty.
+        // Per-room navigation (`browse_model`) and `resolve_livestream` still work via
+        // yt-dlp `--get-url`. The frontend surfaces a clear "no rooms from listing page"
+        // message instead of a generic empty grid.
 
         match query.kind {
             BrowseKind::Model => self.browse_model(ctx, query).await,
@@ -71,16 +82,18 @@ impl SiteAdapter for ChaturbateAdapter {
 
 impl ChaturbateAdapter {
     /// `livestream` / `tag` / `search` / generic: render an HTML listing page and scrape it.
-    /// Never falls back to yt-dlp — it cannot list Chaturbate rooms.
+    /// Never falls back to yt-dlp — its `[Chaturbate]` extractor rejects listing URLs.
+    /// Chaturbate's server-rendered HTML only ever contains placeholder `<li class="roomCard
+    /// placeholder">` elements, so this returns an empty item list. The frontend displays a
+    /// helpful message rather than a generic empty grid.
     async fn browse_listing(&self, ctx: &SiteContext, query: BrowseQuery) -> AppResult<BrowsePage> {
         let url = build_listing_url(&query);
         let html = ctx.fetch_html(&url, "chaturbate").await?;
         let items = parse_room_list(&html);
-        let has_more = items.len() >= 48;
         Ok(BrowsePage {
             items,
             page: query.page,
-            has_more,
+            has_more: false,
             total: None,
         })
     }
