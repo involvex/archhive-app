@@ -1,8 +1,8 @@
 use crate::models::SiteInfo;
 use crate::sites::adapters::{
-    custom::CustomUrlAdapter, generic_ytdlp::GenericYtDlpAdapter, reddit::RedditAdapter,
-    redgifs::RedgifsAdapter, thothub::ThotHubAdapter, PornhubAdapter, XHamsterAdapter,
-    XVideosAdapter, XnxxAdapter, YouPornAdapter,
+    chaturbate::ChaturbateAdapter, custom::CustomUrlAdapter, generic_ytdlp::GenericYtDlpAdapter,
+    reddit::RedditAdapter, redgifs::RedgifsAdapter, thothub::ThotHubAdapter, PornhubAdapter,
+    XHamsterAdapter, XVideosAdapter, XnxxAdapter, YouPornAdapter,
 };
 use crate::sites::SiteAdapter;
 use std::sync::Arc;
@@ -14,6 +14,7 @@ pub struct SiteRegistry {
 impl SiteRegistry {
     pub fn new() -> Self {
         let adapters: Vec<Arc<dyn SiteAdapter>> = vec![
+            Arc::new(ChaturbateAdapter),
             Arc::new(ThotHubAdapter),
             Arc::new(PornhubAdapter),
             Arc::new(YouPornAdapter),
@@ -84,6 +85,9 @@ impl SiteRegistry {
         }
         if lower.contains("pornhub.com") {
             return Some("pornhub".to_string());
+        }
+        if lower.contains("chaturbate.com") {
+            return Some("chaturbate".to_string());
         }
         for adapter in &self.adapters {
             if lower.contains(&adapter.id().to_lowercase()) {

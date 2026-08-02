@@ -224,6 +224,33 @@ pub async fn resolve_stream_url(
 }
 
 #[tauri::command]
+pub async fn resolve_livestream(
+    state: State<'_, Arc<AppState>>,
+    url: String,
+) -> CmdResult<serde_json::Value> {
+    let stream_url = state.resolve_stream_url(&url).await.map_err(|e| e.to_string())?;
+    let embed_url = derive_embed_url(&url);
+    Ok(serde_json::json!({
+        "stream_url": stream_url,
+        "embed_url": embed_url,
+    }))
+}
+
+fn derive_embed_url(url: &str) -> String {
+    if url.contains("chaturbate.com") {
+        let username = url
+            .trim_end_matches('/')
+            .split('/')
+            .next_back()
+            .unwrap_or("");
+        if !username.is_empty() && !username.contains('?') {
+            return format!("https://chaturbate.com/embed/{username}/");
+        }
+    }
+    url.to_string()
+}
+
+#[tauri::command]
 pub fn find_duplicates(state: State<'_, Arc<AppState>>) -> CmdResult<Vec<DuplicateGroup>> {
     map_err(state.find_duplicates())
 }

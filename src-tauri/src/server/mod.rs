@@ -117,6 +117,7 @@ impl LanServer {
             .route("/api/scenes/batch", post(batch_update_scenes))
             .route("/api/media/resolve", post(resolve_media_details))
             .route("/api/media/stream-url", post(resolve_stream_url))
+            .route("/api/media/livestream", post(resolve_livestream))
             .route("/api/performers/ensure", post(ensure_performer))
             .route("/api/files", get(list_files))
             .route("/api/files/stream", get(stream_file))
@@ -699,6 +700,36 @@ async fn resolve_stream_url(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(serde_json::json!({ "stream_url": stream_url })))
+}
+
+async fn resolve_livestream(
+    State(state): State<ApiState>,
+    Json(body): Json<ResolveBody>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let stream_url = state
+        .app
+        .resolve_stream_url(&body.url)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let embed_url = if body.url.contains("chaturbate.com") {
+        let username = body
+            .url
+            .trim_end_matches('/')
+            .split('/')
+            .next_back()
+            .unwrap_or("");
+        if !username.is_empty() && !username.contains('?') {
+            format!("https://chaturbate.com/embed/{username}/")
+        } else {
+            body.url.clone()
+        }
+    } else {
+        body.url.clone()
+    };
+    Ok(Json(serde_json::json!({
+        "stream_url": stream_url,
+        "embed_url": embed_url,
+    })))
 }
 
 #[derive(Deserialize)]

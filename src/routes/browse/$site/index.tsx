@@ -16,6 +16,7 @@ const KIND_LABELS: Record<BrowseKind, string> = {
   search: "Search",
   video: "Video",
   category: "Category",
+  livestream: "Livestream",
 };
 
 function SiteHubPage() {

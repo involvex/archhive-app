@@ -55,6 +55,16 @@ export function normalizeBrowseInput(
         return { kind: "channel", slug: user };
       }
     }
+    if (site === "chaturbate") {
+      const room = parsed.pathname.match(/^\/([^/]+)\/?$/)?.[1];
+      if (room && !["tags", "search", "models", "faq", "rules", "affiliates"].includes(room)) {
+        return { kind: "livestream", slug: room };
+      }
+      const tag = parsed.pathname.match(/\/tags\/([^/]+)/)?.[1];
+      if (tag) return { kind: "tag", slug: decodeURIComponent(tag) };
+      const search = parsed.searchParams.get("q");
+      if (search) return { kind: "search", slug: search };
+    }
   } catch {
     /* keep defaults */
   }

@@ -135,6 +135,12 @@ fn parse_reddit(html: &str) -> Vec<MediaItem> {
                 tags: vec![],
             description: None,
             channel: None,
+                is_live: None,
+                viewers: None,
+                age: None,
+                gender: None,
+                stream_url: None,
+                embed_url: None,
             });
             if items.len() >= 30 {
                 return items;

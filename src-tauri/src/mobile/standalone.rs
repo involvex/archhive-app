@@ -17,6 +17,12 @@ pub async fn resolve(url: &str) -> AppResult<MediaItem> {
             tags: vec![],
         description: None,
         channel: None,
+            is_live: None,
+            viewers: None,
+            age: None,
+            gender: None,
+            stream_url: None,
+            embed_url: None,
         });
     }
 
@@ -32,8 +38,14 @@ pub async fn resolve(url: &str) -> AppResult<MediaItem> {
                 site_id: "direct".to_string(),
                 performers: vec![],
                 tags: vec![],
-            description: None,
-            channel: None,
+        description: None,
+        channel: None,
+                is_live: None,
+                viewers: None,
+                age: None,
+                gender: None,
+                stream_url: None,
+                embed_url: None,
             });
         }
     }

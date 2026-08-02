@@ -29,6 +29,12 @@ pub async fn ytdlp_browse_fallback(
             tags: vec![],
         description: None,
         channel: None,
+            is_live: None,
+            viewers: None,
+            age: None,
+            gender: None,
+            stream_url: None,
+            embed_url: None,
         })
         .collect())
 }

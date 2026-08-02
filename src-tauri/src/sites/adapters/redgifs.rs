@@ -28,6 +28,13 @@ impl SiteAdapter for RedgifsAdapter {
         let url = match query.kind {
             BrowseKind::Tag => format!("https://www.redgifs.com/tags/{}", query.slug),
             BrowseKind::Search => format!("https://www.redgifs.com/search/{}", query.slug),
+            BrowseKind::Livestream => {
+                if query.slug.starts_with("http") {
+                    query.slug.clone()
+                } else {
+                    format!("https://www.redgifs.com/watch/{}", query.slug)
+                }
+            }
             _ => {
                 if query.slug.starts_with("http") {
                     query.slug.clone()
@@ -89,6 +96,12 @@ fn parse_redgifs(html: &str) -> AppResult<Vec<MediaItem>> {
             tags: vec![],
         description: None,
         channel: None,
+            is_live: None,
+            viewers: None,
+            age: None,
+            gender: None,
+            stream_url: None,
+            embed_url: None,
         });
         if items.len() >= 30 {
             break;

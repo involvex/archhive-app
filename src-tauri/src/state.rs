@@ -122,6 +122,12 @@ impl AppState {
                 tags: vec![],
             description: None,
             channel: None,
+                is_live: None,
+                viewers: None,
+                age: None,
+                gender: None,
+                stream_url: None,
+                embed_url: None,
             };
             let plan = site_adapter.resolve_download(&self.site_ctx, &item).await?;
             return self.downloads.queue_plan(plan);
@@ -511,6 +517,12 @@ impl AppState {
             tags,
             description,
             channel,
+            is_live: None,
+            viewers: None,
+            age: None,
+            gender: None,
+            stream_url: None,
+            embed_url: None,
         })
     }
 

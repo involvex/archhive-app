@@ -3,6 +3,13 @@ import type { BrowseKind, SiteInfo } from "../types";
 /** Static fallback when LAN/API is unavailable — mirrors SiteRegistry in Rust. */
 export const SITE_CATALOG: SiteInfo[] = [
   {
+    id: "chaturbate",
+    display_name: "Chaturbate",
+    base_url: "https://chaturbate.com",
+    supported_kinds: ["livestream", "tag", "search", "model"] as BrowseKind[],
+    requires_cookies: true,
+  },
+  {
     id: "thothub",
     display_name: "ThotHub",
     base_url: "https://thethothub.com",

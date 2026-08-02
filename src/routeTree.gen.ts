@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SettingsIndexRouteImport } from './routes/settings/index'
+import { Route as LiveIndexRouteImport } from './routes/live/index'
 import { Route as FilesIndexRouteImport } from './routes/files/index'
 import { Route as DownloadsIndexRouteImport } from './routes/downloads/index'
 import { Route as BrowseIndexRouteImport } from './routes/browse/index'
@@ -19,6 +20,7 @@ import { Route as LibraryTagsIndexRouteImport } from './routes/library/tags/inde
 import { Route as LibraryScenesIndexRouteImport } from './routes/library/scenes/index'
 import { Route as LibraryPerformersIndexRouteImport } from './routes/library/performers/index'
 import { Route as BrowseSiteIndexRouteImport } from './routes/browse/$site/index'
+import { Route as LiveSiteSlugRouteImport } from './routes/live/$site/$slug'
 import { Route as BrowseSiteKindSlugRouteImport } from './routes/browse/$site/$kind/$slug'
 
 const IndexRoute = IndexRouteImport.update({
@@ -29,6 +31,11 @@ const IndexRoute = IndexRouteImport.update({
 const SettingsIndexRoute = SettingsIndexRouteImport.update({
   id: '/settings/',
   path: '/settings/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LiveIndexRoute = LiveIndexRouteImport.update({
+  id: '/live/',
+  path: '/live/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const FilesIndexRoute = FilesIndexRouteImport.update({
@@ -71,6 +78,11 @@ const BrowseSiteIndexRoute = BrowseSiteIndexRouteImport.update({
   path: '/browse/$site/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LiveSiteSlugRoute = LiveSiteSlugRouteImport.update({
+  id: '/live/$site/$slug',
+  path: '/live/$site/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const BrowseSiteKindSlugRoute = BrowseSiteKindSlugRouteImport.update({
   id: '/browse/$site/$kind/$slug',
   path: '/browse/$site/$kind/$slug',
@@ -83,7 +95,9 @@ export interface FileRoutesByFullPath {
   '/browse/': typeof BrowseIndexRoute
   '/downloads/': typeof DownloadsIndexRoute
   '/files/': typeof FilesIndexRoute
+  '/live/': typeof LiveIndexRoute
   '/settings/': typeof SettingsIndexRoute
+  '/live/$site/$slug': typeof LiveSiteSlugRoute
   '/browse/$site/': typeof BrowseSiteIndexRoute
   '/library/performers/': typeof LibraryPerformersIndexRoute
   '/library/scenes/': typeof LibraryScenesIndexRoute
@@ -96,7 +110,9 @@ export interface FileRoutesByTo {
   '/browse': typeof BrowseIndexRoute
   '/downloads': typeof DownloadsIndexRoute
   '/files': typeof FilesIndexRoute
+  '/live': typeof LiveIndexRoute
   '/settings': typeof SettingsIndexRoute
+  '/live/$site/$slug': typeof LiveSiteSlugRoute
   '/browse/$site': typeof BrowseSiteIndexRoute
   '/library/performers': typeof LibraryPerformersIndexRoute
   '/library/scenes': typeof LibraryScenesIndexRoute
@@ -110,7 +126,9 @@ export interface FileRoutesById {
   '/browse/': typeof BrowseIndexRoute
   '/downloads/': typeof DownloadsIndexRoute
   '/files/': typeof FilesIndexRoute
+  '/live/': typeof LiveIndexRoute
   '/settings/': typeof SettingsIndexRoute
+  '/live/$site/$slug': typeof LiveSiteSlugRoute
   '/browse/$site/': typeof BrowseSiteIndexRoute
   '/library/performers/': typeof LibraryPerformersIndexRoute
   '/library/scenes/': typeof LibraryScenesIndexRoute
@@ -125,7 +143,9 @@ export interface FileRouteTypes {
     | '/browse/'
     | '/downloads/'
     | '/files/'
+    | '/live/'
     | '/settings/'
+    | '/live/$site/$slug'
     | '/browse/$site/'
     | '/library/performers/'
     | '/library/scenes/'
@@ -138,7 +158,9 @@ export interface FileRouteTypes {
     | '/browse'
     | '/downloads'
     | '/files'
+    | '/live'
     | '/settings'
+    | '/live/$site/$slug'
     | '/browse/$site'
     | '/library/performers'
     | '/library/scenes'
@@ -151,7 +173,9 @@ export interface FileRouteTypes {
     | '/browse/'
     | '/downloads/'
     | '/files/'
+    | '/live/'
     | '/settings/'
+    | '/live/$site/$slug'
     | '/browse/$site/'
     | '/library/performers/'
     | '/library/scenes/'
@@ -165,7 +189,9 @@ export interface RootRouteChildren {
   BrowseIndexRoute: typeof BrowseIndexRoute
   DownloadsIndexRoute: typeof DownloadsIndexRoute
   FilesIndexRoute: typeof FilesIndexRoute
+  LiveIndexRoute: typeof LiveIndexRoute
   SettingsIndexRoute: typeof SettingsIndexRoute
+  LiveSiteSlugRoute: typeof LiveSiteSlugRoute
   BrowseSiteIndexRoute: typeof BrowseSiteIndexRoute
   LibraryPerformersIndexRoute: typeof LibraryPerformersIndexRoute
   LibraryScenesIndexRoute: typeof LibraryScenesIndexRoute
@@ -187,6 +213,13 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings/'
       preLoaderRoute: typeof SettingsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/live/': {
+      id: '/live/'
+      path: '/live'
+      fullPath: '/live/'
+      preLoaderRoute: typeof LiveIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/files/': {
@@ -245,6 +278,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BrowseSiteIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/live/$site/$slug': {
+      id: '/live/$site/$slug'
+      path: '/live/$site/$slug'
+      fullPath: '/live/$site/$slug'
+      preLoaderRoute: typeof LiveSiteSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/browse/$site/$kind/$slug': {
       id: '/browse/$site/$kind/$slug'
       path: '/browse/$site/$kind/$slug'
@@ -261,7 +301,9 @@ const rootRouteChildren: RootRouteChildren = {
   BrowseIndexRoute: BrowseIndexRoute,
   DownloadsIndexRoute: DownloadsIndexRoute,
   FilesIndexRoute: FilesIndexRoute,
+  LiveIndexRoute: LiveIndexRoute,
   SettingsIndexRoute: SettingsIndexRoute,
+  LiveSiteSlugRoute: LiveSiteSlugRoute,
   BrowseSiteIndexRoute: BrowseSiteIndexRoute,
   LibraryPerformersIndexRoute: LibraryPerformersIndexRoute,
   LibraryScenesIndexRoute: LibraryScenesIndexRoute,

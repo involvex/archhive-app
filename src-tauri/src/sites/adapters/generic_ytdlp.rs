@@ -152,6 +152,13 @@ impl SiteAdapter for GenericYtDlpAdapter {
             BrowseKind::Tag | BrowseKind::Category => {
                 format!("{}/tags/{}", self.base, query.slug)
             }
+            BrowseKind::Livestream => {
+                if query.slug.starts_with("http") {
+                    query.slug.clone()
+                } else {
+                    format!("{}/{}", self.base, query.slug.trim_start_matches('/'))
+                }
+            }
         };
 
         if matches!(
@@ -182,6 +189,12 @@ impl SiteAdapter for GenericYtDlpAdapter {
                     tags: vec![],
                     description: None,
                     channel: None,
+                    is_live: None,
+                    viewers: None,
+                    age: None,
+                    gender: None,
+                    stream_url: None,
+                    embed_url: None,
                 })
                 .collect::<Vec<_>>();
             if items.is_empty() {
@@ -211,6 +224,12 @@ impl SiteAdapter for GenericYtDlpAdapter {
                 tags: vec![],
                 description: None,
                 channel: None,
+                is_live: None,
+                viewers: None,
+                age: None,
+                gender: None,
+                stream_url: None,
+                embed_url: None,
             }],
             page: query.page,
             has_more: false,

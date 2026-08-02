@@ -125,6 +125,11 @@ impl SiteAdapter for PornhubAdapter {
             }
             BrowseKind::Model => format!("{PH_BASE}/pornstar/{}", path_slug(&query.slug)),
             BrowseKind::Channel => format!("{PH_BASE}/channels/{}", path_slug(&query.slug)),
+            BrowseKind::Livestream => {
+                return Err(crate::error::AppError::Site(
+                    "PornHub does not expose a livestream browse kind.".to_string(),
+                ));
+            }
             BrowseKind::Video => {
                 if query.slug.starts_with("http") {
                     query.slug.clone()
@@ -215,6 +220,7 @@ fn tube_browse_url(site_id: &str, base: &str, query: &BrowseQuery) -> String {
                     format!("{base}/video.{slug}")
                 }
             }
+            BrowseKind::Livestream => format!("{base}/live/{slug}"),
         },
         "xhamster" => match query.kind {
             BrowseKind::Search | BrowseKind::Tag => {
@@ -235,6 +241,7 @@ fn tube_browse_url(site_id: &str, base: &str, query: &BrowseQuery) -> String {
                     format!("{base}/videos/{slug}")
                 }
             }
+            BrowseKind::Livestream => format!("{base}/live/{slug}"),
         },
         "youporn" => match query.kind {
             BrowseKind::Search | BrowseKind::Tag => {
@@ -257,6 +264,7 @@ fn tube_browse_url(site_id: &str, base: &str, query: &BrowseQuery) -> String {
                     format!("{base}/watch/{slug}/")
                 }
             }
+            BrowseKind::Livestream => format!("{base}/live/{slug}"),
         },
         "xnxx" => match query.kind {
             BrowseKind::Search | BrowseKind::Tag => {
@@ -269,6 +277,7 @@ fn tube_browse_url(site_id: &str, base: &str, query: &BrowseQuery) -> String {
             }
             BrowseKind::Model | BrowseKind::Channel => format!("{base}/pornstars/{slug}"),
             BrowseKind::Category => format!("{base}/search/{slug}"),
+            BrowseKind::Livestream => format!("{base}/live/{slug}"),
             BrowseKind::Video => {
                 if query.slug.starts_with("http") {
                     query.slug.clone()
@@ -483,6 +492,12 @@ fn parse_video_links(html: &str, base: &str, site_id: &str) -> AppResult<Vec<Med
                 tags: vec![],
                 description: None,
                 channel: None,
+                is_live: None,
+                viewers: None,
+                age: None,
+                gender: None,
+                stream_url: None,
+                embed_url: None,
             });
             if items.len() >= 40 {
                 break;

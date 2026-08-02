@@ -10,6 +10,7 @@ import {
   Settings,
   Puzzle,
   FolderOpen,
+  Radio,
 } from "lucide-react";
 import { resolveAppVersion } from "@/lib/appVersion";
 import { getPluginNavItems } from "@/lib/plugins/loader";
@@ -18,6 +19,7 @@ import { cn } from "@/lib/utils";
 const desktopNavItems = [
   { to: "/", label: "Home", icon: Home },
   { to: "/browse", label: "Browse", icon: Compass },
+  { to: "/live", label: "Live", icon: Radio },
   { to: "/library/scenes", label: "Library", icon: Library },
   { to: "/files", label: "Files", icon: FolderOpen },
   { to: "/downloads", label: "Downloads", icon: Download },
@@ -29,6 +31,7 @@ const desktopNavItems = [
 const mobileNavItems = [
   { to: "/", label: "Home", icon: Home },
   { to: "/browse", label: "Browse", icon: Compass },
+  { to: "/live", label: "Live", icon: Radio },
   { to: "/downloads", label: "Downloads", icon: Download },
   { to: "/library/scenes", label: "Library", icon: Library },
   { to: "/files", label: "Files", icon: FolderOpen },

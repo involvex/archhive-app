@@ -161,6 +161,7 @@ pub fn run() {
             commands::resolve_standalone,
             commands::resolve_media_details,
             commands::resolve_stream_url,
+            commands::resolve_livestream,
             commands::discover_lan_hosts,
             commands::start_lan_server,
             commands::stop_lan_server,

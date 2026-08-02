@@ -1,4 +1,5 @@
-export type BrowseKind = "tag" | "model" | "channel" | "search" | "video" | "category";
+export type BrowseKind =
+  "tag" | "model" | "channel" | "search" | "video" | "category" | "livestream";
 
 export type BrowseOrientation = "straight" | "gay" | "lesbian" | "transgender";
 
@@ -13,6 +14,12 @@ export interface MediaItem {
   tags: string[];
   description?: string;
   channel?: string;
+  is_live?: boolean;
+  viewers?: number;
+  age?: number;
+  gender?: string;
+  stream_url?: string;
+  embed_url?: string;
 }
 
 export interface BrowsePage {

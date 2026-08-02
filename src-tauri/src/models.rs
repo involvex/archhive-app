@@ -9,6 +9,7 @@ pub enum BrowseKind {
     Search,
     Video,
     Category,
+    Livestream,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -35,6 +36,18 @@ pub struct MediaItem {
     pub description: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub channel: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_live: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub viewers: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub age: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gender: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stream_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub embed_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

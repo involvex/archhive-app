@@ -1,3 +1,4 @@
+pub mod chaturbate;
 pub mod custom;
 pub mod generic_ytdlp;
 pub mod pornhub;

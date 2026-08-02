@@ -94,6 +94,12 @@ fn build_browse_url(query: &BrowseQuery) -> AppResult<String> {
         }
         BrowseKind::Channel => format!("/channels/{}/", path_slug(&query.slug)),
         BrowseKind::Category => format!("/tags/{}/", path_slug(&query.slug)),
+        BrowseKind::Livestream => {
+            if query.slug.starts_with("http") {
+                return Ok(query.slug.clone());
+            }
+            format!("/models/{}/", path_slug(&query.slug))
+        }
     };
 
     let page_suffix = if query.page > 1 {
@@ -209,6 +215,12 @@ fn parse_listing(html: &str, site_id: &str) -> Vec<MediaItem> {
                     tags: vec![],
                     description: None,
                     channel: None,
+                    is_live: None,
+                    viewers: None,
+                    age: None,
+                    gender: None,
+                    stream_url: None,
+                    embed_url: None,
                 });
 
                 if items.len() >= 48 {
