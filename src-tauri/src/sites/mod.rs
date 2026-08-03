@@ -30,6 +30,10 @@ impl SiteContext {
         &self.app
     }
 
+    pub fn vault(&self) -> &CookieVault {
+        &self.vault
+    }
+
     pub fn cookie_file_for_site(&self, site_id: &str) -> Option<std::path::PathBuf> {
         self.vault.cookie_file_for_site(site_id)
     }

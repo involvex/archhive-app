@@ -81,19 +81,22 @@ impl SiteAdapter for ChaturbateAdapter {
 }
 
 impl ChaturbateAdapter {
-    /// `livestream` / `tag` / `search` / generic: render an HTML listing page and scrape it.
-    /// Never falls back to yt-dlp — its `[Chaturbate]` extractor rejects listing URLs.
-    /// Chaturbate's server-rendered HTML only ever contains placeholder `<li class="roomCard
-    /// placeholder">` elements, so this returns an empty item list. The frontend displays a
-    /// helpful message rather than a generic empty grid.
+    /// `livestream` / `tag` / `search` / generic: open the listing URL in a hidden
+    /// Tauri webview (which runs the site's JS bundle) and extract the hydrated
+    /// room cards. yt-dlp's `[Chaturbate]` extractor rejects listing URLs, and
+    /// the server-rendered HTML only contains placeholder `<li class="roomCard
+    /// placeholder">` elements, so we must run the SPA to get real cards.
     async fn browse_listing(&self, ctx: &SiteContext, query: BrowseQuery) -> AppResult<BrowsePage> {
         let url = build_listing_url(&query);
-        let html = ctx.fetch_html(&url, "chaturbate").await?;
-        let items = parse_room_list(&html);
+        let rooms =
+            crate::sites::adapters::chaturbate_webview::fetch_listing(ctx.app(), ctx.vault(), &url)
+                .await?;
+        let items: Vec<MediaItem> = rooms.into_iter().map(map_room).collect();
+        let has_more = items.len() >= 30;
         Ok(BrowsePage {
             items,
             page: query.page,
-            has_more: false,
+            has_more,
             total: None,
         })
     }
@@ -180,7 +183,9 @@ fn build_listing_url(query: &BrowseQuery) -> String {
 fn extract_username_from_url(url: &str) -> Option<String> {
     // Accept https://chaturbate.com/<user>/ or trailing path junk; return the first
     // path segment that looks like a username.
-    let path = url.strip_prefix("https://").or_else(|| url.strip_prefix("http://"))?;
+    let path = url
+        .strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"))?;
     let path = path.split('?').next().unwrap_or(path);
     let after_host = path.split_once('/').map(|(_, rest)| rest).unwrap_or("");
     let first = after_host.split('/').find(|s| !s.is_empty())?;
@@ -190,113 +195,28 @@ fn extract_username_from_url(url: &str) -> Option<String> {
     Some(first.to_string())
 }
 
-fn parse_room_list(html: &str) -> Vec<MediaItem> {
-    use scraper::{Html, Selector};
-
-    let document = Html::parse_document(html);
-
-    // Primary selector: room list items on the main page and tag/search pages.
-    let room_sel =
-        Selector::parse("ul#room_list li, div.room-list-tile, div.model-link-div, li.room-list-tile, div.room_list > div").unwrap();
-    let link_sel = Selector::parse("a[href]").unwrap();
-    let img_sel = Selector::parse("img").unwrap();
-
-    let mut items = Vec::new();
-    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
-
-    for room_el in document.select(&room_sel) {
-        // Find the first link that looks like a room link (path-only username).
-        let Some(link_el) = room_el
-            .select(&link_sel)
-            .find(|a| {
-                let href = a.value().attr("href").unwrap_or("");
-                href.starts_with('/')
-                    && !href.contains("/tags/")
-                    && !href.contains("/search/")
-                    && !href.contains("/embed/")
-            })
-        else {
-            continue;
-        };
-
-        let href = link_el.value().attr("href").unwrap_or("/");
-        let username_raw = href.trim_start_matches('/').trim_end_matches('/');
-        // strip any trailing query/fragment
-        let username = username_raw.split(['?', '#']).next().unwrap_or(username_raw);
-
-        if username.is_empty() || username.contains('/') {
-            continue;
-        }
-
-        // dedupe by username (room list sometimes repeats)
-        if !seen.insert(username.to_string()) {
-            continue;
-        }
-
-        let room_url = format!("{BASE}/{username}/");
-        let embed_url = format!("{BASE}/embed/{username}/");
-
-        // Extract title / room title
-        let title = room_el
-            .text()
-            .map(|t| t.trim().to_string())
-            .find(|t| !t.is_empty())
-            .unwrap_or_else(|| username.to_string());
-
-        // Extract thumbnail
-        let thumbnail = room_el
-            .select(&img_sel)
-            .find_map(|img| {
-                img.value()
-                    .attr("src")
-                    .or_else(|| img.value().attr("data-src"))
-                    .or_else(|| img.value().attr("data-lazy-src"))
-                    .filter(|s| !s.starts_with("data:") && !s.is_empty())
-                    .map(|s| {
-                        if s.starts_with("http") {
-                            s.to_string()
-                        } else if s.starts_with("//") {
-                            format!("https:{s}")
-                        } else {
-                            format!("https:{s}")
-                        }
-                    })
-            });
-
-        // Try to extract viewer count from text content
-        let viewers = extract_viewers_from_text(&room_el.text().collect::<Vec<_>>().join(" "));
-
-        // Try to extract gender from room title or classes
-        let gender = detect_gender(&room_el.html());
-
-        // Try to extract age from room title
-        let age = extract_age_from_text(&title);
-
-        items.push(MediaItem {
-            id: Uuid::new_v4().to_string(),
-            title,
-            url: room_url,
-            thumbnail,
-            duration: None,
-            site_id: "chaturbate".to_string(),
-            performers: vec![username.to_string()],
-            tags: vec![],
-            description: None,
-            channel: Some(username.to_string()),
-            is_live: Some(true),
-            viewers,
-            age,
-            gender,
-            stream_url: None,
-            embed_url: Some(embed_url),
-        });
-
-        if items.len() >= 48 {
-            break;
-        }
+fn map_room(room: crate::sites::adapters::chaturbate_webview::RawRoom) -> MediaItem {
+    let username = room.username;
+    let room_url = format!("{BASE}/{username}/");
+    let embed_url = format!("{BASE}/embed/{username}/");
+    MediaItem {
+        id: Uuid::new_v4().to_string(),
+        title: room.title,
+        url: room_url,
+        thumbnail: room.thumbnail,
+        duration: None,
+        site_id: "chaturbate".to_string(),
+        performers: vec![username.clone()],
+        tags: vec![],
+        description: None,
+        channel: Some(username.clone()),
+        is_live: Some(true),
+        viewers: room.viewers,
+        age: room.age,
+        gender: room.gender,
+        stream_url: None,
+        embed_url: Some(embed_url),
     }
-
-    items
 }
 
 fn path_slug(slug: &str) -> String {
@@ -315,44 +235,4 @@ fn url_slug(slug: &str) -> String {
             _ => format!("%{b:02X}"),
         })
         .collect()
-}
-
-fn extract_viewers_from_text(text: &str) -> Option<u32> {
-    // Look for patterns like "123 viewers", "123 people watching", etc.
-    let digits: String = text.chars().filter(|c| c.is_ascii_digit()).collect();
-    // Heuristic: if there's a number followed by "viewers" or similar
-    let lower = text.to_lowercase();
-    if lower.contains("viewer") || lower.contains("watching") || lower.contains("people") {
-        digits.parse().ok()
-    } else {
-        None
-    }
-}
-
-fn detect_gender(html: &str) -> Option<String> {
-    let lower = html.to_lowercase();
-    if lower.contains("gender-female") || lower.contains("females") || lower.contains("girl") {
-        Some("female".to_string())
-    } else if lower.contains("gender-male") || lower.contains("males") || lower.contains("guy") {
-        Some("male".to_string())
-    } else if lower.contains("gender-couple") || lower.contains("couples") {
-        Some("couple".to_string())
-    } else if lower.contains("gender-trans") || lower.contains("trans") {
-        Some("trans".to_string())
-    } else {
-        None
-    }
-}
-
-fn extract_age_from_text(text: &str) -> Option<u32> {
-    // Look for common patterns like "19", "22f", "21F" in room titles
-    for word in text.split_whitespace() {
-        let cleaned: String = word.chars().filter(|c| c.is_ascii_digit()).collect();
-        if let Ok(age) = cleaned.parse::<u32>() {
-            if (18..=99).contains(&age) {
-                return Some(age);
-            }
-        }
-    }
-    None
 }

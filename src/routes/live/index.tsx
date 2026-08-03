@@ -6,6 +6,7 @@ import { SceneCard } from "@/components/SceneCard";
 import { BrowseItemDetailsDialog } from "@/components/BrowseItemDetailsDialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Radio, Settings, AlertTriangle } from "lucide-react";
 
 export const Route = createFileRoute("/live/")({
@@ -105,7 +106,13 @@ function LiveIndexPage() {
         ))}
       </div>
 
-      {loading && <p className="text-sm text-[var(--color-muted-foreground)]">Loading...</p>}
+      {loading && !error && (
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
+          {Array.from({ length: 12 }, (_, i) => i + 1).map((n) => (
+            <Skeleton key={n} className="aspect-[11/16] w-full" />
+          ))}
+        </div>
+      )}
 
       {!loading && items.length === 0 && !error && (
         <div className="flex flex-col items-start gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-muted)]/30 px-4 py-3 text-sm text-[var(--color-muted-foreground)]">
@@ -113,35 +120,18 @@ function LiveIndexPage() {
             No live streams returned from the Chaturbate listing page.
           </p>
           <p>
-            Chaturbate renders its room list client-side after JavaScript hydration, so static HTML
-            scraping cannot retrieve room cards. The room listing APIs (e.g.
-            <code className="mx-1 font-mono">/api/ts/roomlist/room-list/</code>
-            and <code className="font-mono">affiliates/api/onlinerooms/</code>) are also gated by
-            the age-verification cookie and do not return JSON to anonymous requests.
+            Chaturbate renders its room list client-side after JavaScript hydration. The desktop
+            webview bridge scrapes the hydrated page, so an empty list usually means the
+            age-verification cookie is missing or the listing URL changed. Try a different tag or
+            search below, or open a known model directly.
           </p>
-          <p>What you can do instead:</p>
-          <ul className="ml-5 list-disc space-y-1">
-            <li>
-              Open a known model directly (e.g.{" "}
-              <code className="font-mono">/live/chaturbate/example_model</code>). Use the search box
-              above to open any specific room by name.
-            </li>
-            <li>
-              Search results scrape the public search page; once the model name is known you can
-              open the live stream page directly.
-            </li>
-            <li>
-              Future yt-dlp releases may gain Chaturbate listing support; we currently fall back to
-              per-room navigation only.
-            </li>
-          </ul>
           <p className="flex items-center gap-1.5 text-xs">
             <Settings className="h-3.5 w-3.5" />
             Configuring Chaturbate cookies in{" "}
             <Link to="/settings" className="underline">
               Settings &rarr; Cookies
             </Link>{" "}
-            helps per-room streams resolve but does not unlock the listing page.
+            helps per-room streams resolve and may unlock the listing page.
           </p>
         </div>
       )}
