@@ -127,7 +127,6 @@ pub async fn fetch_listing(
     let builder = WebviewWindowBuilder::new(app, &label, WebviewUrl::External(parsed_url))
         .inner_size(1.0, 1.0)
         .visible(false)
-        .skip_taskbar(true)
         .initialization_script(init_script)
         .on_page_load(move |wv, payload| {
             // On Finished, kick off the extractor JS. We don't touch the webview
