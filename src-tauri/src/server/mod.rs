@@ -822,7 +822,8 @@ fn parse_kind(s: &str) -> AppResult<crate::models::BrowseKind> {
         "channel" => BrowseKind::Channel,
         "search" => BrowseKind::Search,
         "video" => BrowseKind::Video,
-        "category" => BrowseKind::Category,
+         "category" => BrowseKind::Category,
+        "livestream" => BrowseKind::Livestream,
         _ => return Err(AppError::InvalidInput(format!("unknown kind: {s}"))),
     })
 }
