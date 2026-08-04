@@ -12,6 +12,7 @@ pub mod auto_tag;
 pub mod duplicates;
 pub mod hashing;
 pub mod import;
+pub mod thumbnail;
 
 pub struct LibraryScanner;
 
@@ -91,6 +92,7 @@ impl LibraryScanner {
                     None,
                     &performers,
                     &tags,
+                    None,
                     None,
                     None,
                     None,

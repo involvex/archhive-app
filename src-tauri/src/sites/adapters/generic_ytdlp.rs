@@ -250,6 +250,8 @@ impl SiteAdapter for GenericYtDlpAdapter {
             performers: item.performers.clone(),
             tags: item.tags.clone(),
             adapter_id: self.site_id.to_string(),
+            thumbnail_url: item.thumbnail.clone(),
+            duration: item.duration,
         })
     }
 }

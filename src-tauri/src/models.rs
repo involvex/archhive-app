@@ -116,6 +116,10 @@ pub struct DownloadPlan {
     pub performers: Vec<String>,
     pub tags: Vec<String>,
     pub adapter_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thumbnail_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

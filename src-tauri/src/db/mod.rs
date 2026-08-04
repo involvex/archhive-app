@@ -1,6 +1,6 @@
 mod migrations;
 
-use crate::db::migrations::{MIGRATION_001, MIGRATION_002};
+use crate::db::migrations::{MIGRATION_001, MIGRATION_002, MIGRATION_003};
 use crate::error::{AppError, AppResult};
 use crate::models::{
     AppSettings, DownloadJob, DownloadStatus, DuplicateGroup, Performer, Scene, Tag,
@@ -31,6 +31,7 @@ impl Database {
         let conn = Connection::open(db_path)?;
         conn.execute_batch(MIGRATION_001)?;
         conn.execute_batch(MIGRATION_002)?;
+        conn.execute_batch(MIGRATION_003)?;
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
         })
@@ -79,6 +80,7 @@ impl Database {
         url: &str,
         adapter: &str,
         title: Option<&str>,
+        metadata: Option<&str>,
     ) -> AppResult<DownloadJob> {
         let job = DownloadJob {
             id: Uuid::new_v4().to_string(),
@@ -96,8 +98,8 @@ impl Database {
             .lock()
             .map_err(|e| AppError::Other(e.to_string()))?;
         conn.execute(
-            "INSERT INTO download_jobs (id, url, adapter, status, progress, title, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            "INSERT INTO download_jobs (id, url, adapter, status, progress, title, metadata, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 job.id,
                 job.url,
@@ -105,6 +107,7 @@ impl Database {
                 format!("{:?}", job.status).to_lowercase(),
                 job.progress,
                 job.title,
+                metadata,
                 job.created_at,
             ],
         )?;
@@ -123,6 +126,83 @@ impl Database {
             params![job.id, status, job.progress, job.output_path, job.error, job.title],
         )?;
         Ok(())
+    }
+
+    pub fn store_download_job_metadata(
+        &self,
+        job_id: &str,
+        performers: &[String],
+        tags: &[String],
+        thumbnail_url: Option<&str>,
+        duration: Option<u32>,
+    ) -> AppResult<()> {
+        let metadata = serde_json::json!({
+            "performers": performers,
+            "tags": tags,
+            "thumbnail_url": thumbnail_url,
+            "duration": duration,
+        });
+        let json = serde_json::to_string(&metadata)
+            .map_err(|e| AppError::Other(format!("metadata serialize: {e}")))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        conn.execute(
+            "UPDATE download_jobs SET metadata = ?2 WHERE id = ?1",
+            params![job_id, json],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_download_job_metadata(
+        &self,
+        job_id: &str,
+    ) -> AppResult<(Vec<String>, Vec<String>, Option<String>, Option<u32>)> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let metadata: Option<String> = conn
+            .query_row(
+                "SELECT metadata FROM download_jobs WHERE id = ?1",
+                params![job_id],
+                |row| row.get(0),
+            )
+            .optional()?
+            .flatten();
+        match metadata {
+            Some(json) => {
+                let v: serde_json::Value = serde_json::from_str(&json)
+                    .map_err(|e| AppError::Other(format!("metadata parse: {e}")))?;
+                let performers = v
+                    .get("performers")
+                    .and_then(|p| p.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(String::from))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let tags = v
+                    .get("tags")
+                    .and_then(|t| t.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(String::from))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let thumbnail_url = v
+                    .get("thumbnail_url")
+                    .and_then(|t| t.as_str())
+                    .filter(|s| !s.is_empty())
+                    .map(String::from);
+                let duration = v.get("duration").and_then(|d| d.as_u64()).map(|d| d as u32);
+                Ok((performers, tags, thumbnail_url, duration))
+            }
+            None => Ok((vec![], vec![], None, None)),
+        }
     }
 
     pub fn list_download_jobs(&self) -> AppResult<Vec<DownloadJob>> {
@@ -245,6 +325,7 @@ impl Database {
         thumb: Option<&str>,
         phash: Option<&str>,
         oshash: Option<&str>,
+        duration: Option<u32>,
     ) -> AppResult<String> {
         let conn = self
             .conn
@@ -253,9 +334,9 @@ impl Database {
         let id = Uuid::new_v4().to_string();
         let now = Utc::now().to_rfc3339();
         conn.execute(
-            "INSERT INTO scenes (id, title, path, source_url, thumb, phash, oshash, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            params![id, title, path, source_url, thumb, phash, oshash, now],
+            "INSERT INTO scenes (id, title, path, source_url, thumb, phash, oshash, duration, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![id, title, path, source_url, thumb, phash, oshash, duration, now],
         )?;
         for p in performers {
             let pid = self.upsert_performer(p)?;

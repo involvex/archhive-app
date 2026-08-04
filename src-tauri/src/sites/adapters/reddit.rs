@@ -58,6 +58,8 @@ impl SiteAdapter for RedditAdapter {
             performers: vec![],
             tags: vec!["reddit".to_string()],
             adapter_id: "reddit".to_string(),
+            thumbnail_url: item.thumbnail.clone(),
+            duration: item.duration,
         })
     }
 }

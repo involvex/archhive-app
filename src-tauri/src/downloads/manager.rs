@@ -1,6 +1,7 @@
 use crate::db::Database;
 use crate::error::{AppError, AppResult};
 use crate::library::import::import_download;
+use crate::library::thumbnail::download_remote_thumbnail;
 use crate::library::LibraryScanner;
 use crate::models::{DownloadJob, DownloadPlan, DownloadStatus, DownloadTool};
 use crate::sites::yt_dlp::SidecarRunner;
@@ -97,14 +98,26 @@ impl DownloadManager {
             performers: vec![],
             tags: vec![],
             adapter_id: adapter.to_string(),
+            thumbnail_url: None,
+            duration: None,
         };
         self.queue_plan(plan)
     }
 
     pub fn queue_plan(&self, plan: DownloadPlan) -> AppResult<DownloadJob> {
-        let job =
-            self.db
-                .insert_download_job(&plan.url, &plan.adapter_id, plan.title.as_deref())?;
+        let job = self.db.insert_download_job(
+            &plan.url,
+            &plan.adapter_id,
+            plan.title.as_deref(),
+            None,
+        )?;
+        self.db.store_download_job_metadata(
+            &job.id,
+            &plan.performers,
+            &plan.tags,
+            plan.thumbnail_url.as_deref(),
+            plan.duration,
+        )?;
         self.register_cancel(&job.id);
         self.enqueue(&job.id)?;
         Ok(job)
@@ -194,6 +207,8 @@ impl DownloadManager {
 fn plan_from_job(db: &Database, job: &DownloadJob) -> AppResult<DownloadPlan> {
     let settings = db.get_settings()?;
     let tool = crate::downloads::image::resolve_download_tool(&job.url, &job.adapter);
+    let (performers, tags, thumbnail_url, duration) =
+        deserialize_job_metadata(db, &job.id).unwrap_or_default();
     Ok(DownloadPlan {
         url: job.url.clone(),
         output_template: crate::downloads::naming::to_ytdlp_output_template(
@@ -201,10 +216,19 @@ fn plan_from_job(db: &Database, job: &DownloadJob) -> AppResult<DownloadPlan> {
         ),
         tool,
         title: job.title.clone(),
-        performers: vec![],
-        tags: vec![],
+        performers,
+        tags,
         adapter_id: job.adapter.clone(),
+        thumbnail_url,
+        duration,
     })
+}
+
+fn deserialize_job_metadata(
+    db: &Database,
+    job_id: &str,
+) -> AppResult<(Vec<String>, Vec<String>, Option<String>, Option<u32>)> {
+    db.get_download_job_metadata(job_id)
 }
 
 fn mark_job_failed(db: &Database, app: &AppHandle, job_id: &str, error: &str) {
@@ -414,12 +438,21 @@ async fn run_job_with_plan(
             db.update_download_job(&job)?;
             let _ = app.emit("download:progress", &job);
 
-            let title = plan.title.clone().unwrap_or_else(|| job.url.clone());
+            let plan_title = plan.title.clone().unwrap_or_else(|| job.url.clone());
             for output_path in &existing {
                 let file_title = Path::new(output_path)
                     .file_stem()
                     .and_then(|s| s.to_str())
-                    .unwrap_or(&title);
+                    .unwrap_or(&plan_title);
+                let downloaded_thumb = if let Some(ref thumb_url) = plan.thumbnail_url {
+                    download_remote_thumbnail(thumb_url, Path::new(output_path)).await
+                } else {
+                    None
+                };
+                let thumb_path = downloaded_thumb
+                    .as_ref()
+                    .map(|p| p.to_string_lossy().to_string());
+                let thumb_str = thumb_path.as_deref();
                 let scene_id = import_download(
                     &db,
                     file_title,
@@ -427,9 +460,10 @@ async fn run_job_with_plan(
                     Some(&job.url),
                     &plan.performers,
                     &plan.tags,
+                    thumb_str,
                     None,
                     None,
-                    None,
+                    plan.duration,
                 )?;
                 let _ = LibraryScanner::post_process_file(
                     &db,

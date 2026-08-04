@@ -78,6 +78,8 @@ macro_rules! ytdlp_tube_adapter {
                     performers: item.performers.clone(),
                     tags: item.tags.clone(),
                     adapter_id: $id.to_string(),
+                    thumbnail_url: item.thumbnail.clone(),
+                    duration: item.duration,
                 })
             }
         }
@@ -173,6 +175,8 @@ impl SiteAdapter for PornhubAdapter {
             performers: item.performers.clone(),
             tags: item.tags.clone(),
             adapter_id: self.id().to_string(),
+            thumbnail_url: item.thumbnail.clone(),
+            duration: item.duration,
         })
     }
 }

@@ -84,3 +84,7 @@ CREATE TABLE IF NOT EXISTS site_cookies (
     updated_at TEXT NOT NULL
 );
 "#;
+
+pub const MIGRATION_003: &str = r#"
+ALTER TABLE download_jobs ADD COLUMN metadata TEXT;
+"#;

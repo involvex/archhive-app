@@ -92,6 +92,8 @@ impl SiteAdapter for CustomUrlAdapter {
             performers: item.performers.clone(),
             tags: item.tags.clone(),
             adapter_id: self.id().to_string(),
+            thumbnail_url: item.thumbnail.clone(),
+            duration: item.duration,
         })
     }
 }

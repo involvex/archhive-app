@@ -76,6 +76,8 @@ impl SiteAdapter for ChaturbateAdapter {
             performers: item.performers.clone(),
             tags: item.tags.clone(),
             adapter_id: "chaturbate".to_string(),
+            thumbnail_url: item.thumbnail.clone(),
+            duration: item.duration,
         })
     }
 }
