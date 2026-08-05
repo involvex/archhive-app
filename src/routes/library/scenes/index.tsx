@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api/client";
 import { sceneThumbUrl, isVideoScene } from "@/lib/mediaUrl";
@@ -11,19 +11,73 @@ import { SceneDetailsDialog } from "@/components/SceneDetailsDialog";
 import { ScenePlayerDialog } from "@/components/ScenePlayerDialog";
 import { SceneBulkEditBar } from "@/components/SceneBulkEditBar";
 import { SceneContextMenu, type SceneContextMenuState } from "@/components/SceneContextMenu";
-import { MoreVertical, Pencil } from "lucide-react";
+import { MoreVertical, Pencil, RefreshCw, X } from "lucide-react";
 
 export const Route = createFileRoute("/library/scenes/")({
+  validateSearch: (search: Record<string, unknown>): { performers?: string[]; tags?: string[] } => {
+    const parseArray = (key: string): string[] | undefined => {
+      const v = search[key];
+      if (Array.isArray(v)) return v.filter((x): x is string => typeof x === "string");
+      if (typeof v === "string") return [v];
+      return undefined;
+    };
+    return {
+      performers: parseArray("performers"),
+      tags: parseArray("tags"),
+    };
+  },
   component: ScenesPage,
 });
 
 const LONG_PRESS_MS = 480;
 
+function FilterPill({ label, onRemove }: { label: string; onRemove: () => void }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full border border-[var(--color-border)] bg-[var(--color-card)] px-2 py-0.5 text-xs">
+      {label}
+      <button
+        type="button"
+        onClick={onRemove}
+        className="hover:text-red-400"
+        aria-label="Remove filter"
+      >
+        <X className="h-3 w-3" />
+      </button>
+    </span>
+  );
+}
+
 function ScenesPage() {
+  const navigate = useNavigate();
+  const urlSearch = Route.useSearch();
   const [scenes, setScenes] = useState<Scene[]>([]);
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SceneSort>("newest");
   const [filter, setFilter] = useState<SceneFilter>({});
+  const [performerInput, setPerformerInput] = useState("");
+  const [tagInput, setTagInput] = useState("");
+
+  useEffect(() => {
+    setFilter((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      const urlPerf = urlSearch.performers ?? [];
+      const prevPerf = prev.performer_names ?? [];
+      if (urlPerf.length !== prevPerf.length || !urlPerf.every((n, i) => n === prevPerf[i])) {
+        next.performer_names = urlPerf;
+        setPerformerInput(urlPerf.join(", "));
+        changed = true;
+      }
+      const urlTagsArr = urlSearch.tags ?? [];
+      const prevTags = prev.tag_names ?? [];
+      if (urlTagsArr.length !== prevTags.length || !urlTagsArr.every((n, i) => n === prevTags[i])) {
+        next.tag_names = urlTagsArr;
+        setTagInput(urlTagsArr.join(", "));
+        changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [urlSearch.performers, urlSearch.tags]);
   const [editScene, setEditScene] = useState<Scene | null>(null);
   const [detailsScene, setDetailsScene] = useState<Scene | null>(null);
   const [playerScene, setPlayerScene] = useState<Scene | null>(null);
@@ -40,7 +94,13 @@ function ScenesPage() {
     filter.missing_thumb ||
     filter.missing_duration ||
     filter.hash_named ||
-    filter.max_duration != null;
+    filter.max_duration != null ||
+    (filter.performer_names?.length ?? 0) > 0 ||
+    (filter.tag_names?.length ?? 0) > 0;
+
+  const missingThumbCount = scenes.filter((s) => !s.thumb).length;
+  const [genThumbsLoading, setGenThumbsLoading] = useState(false);
+  const [genThumbsResult, setGenThumbsResult] = useState("");
 
   const refresh = useCallback(() => {
     if (hasFilter) {
@@ -140,6 +200,31 @@ function ScenesPage() {
     }
   }
 
+  async function regenerateThumb(scene: Scene) {
+    try {
+      const updated = await api.probeSceneMetadata(scene.id);
+      handleSaved(updated);
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  async function generateAllMissingThumbs() {
+    setGenThumbsLoading(true);
+    setGenThumbsResult("");
+    try {
+      const result = await api.generateMissingThumbs();
+      setGenThumbsResult(
+        `Generated ${result.generated} thumbnail${result.generated === 1 ? "" : "s"}`,
+      );
+      refresh();
+    } catch (e) {
+      setGenThumbsResult(e instanceof Error ? e.message : "Generation failed");
+    } finally {
+      setGenThumbsLoading(false);
+    }
+  }
+
   async function confirmDelete(deleteFiles: boolean) {
     if (!deleteTarget) return;
     setDeleting(true);
@@ -159,6 +244,9 @@ function ScenesPage() {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-2xl font-bold">Library — Scenes</h2>
         <div className="flex gap-2">
+          <Button size="sm" variant="ghost" onClick={refresh} title="Refresh">
+            <RefreshCw className="h-4 w-4" />
+          </Button>
           <Button
             size="sm"
             variant={selectionMode ? "default" : "outline"}
@@ -238,6 +326,155 @@ function ScenesPage() {
           );
         })}
       </div>
+
+      {hasFilter && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-[var(--color-muted-foreground)]">Active filters:</span>
+          {filter.missing_thumb && (
+            <FilterPill
+              label="Missing thumb"
+              onRemove={() => setFilter((f) => ({ ...f, missing_thumb: false }))}
+            />
+          )}
+          {filter.missing_duration && (
+            <FilterPill
+              label="Missing duration"
+              onRemove={() => setFilter((f) => ({ ...f, missing_duration: false }))}
+            />
+          )}
+          {filter.hash_named && (
+            <FilterPill
+              label="Hash-named"
+              onRemove={() => setFilter((f) => ({ ...f, hash_named: false }))}
+            />
+          )}
+          {filter.max_duration != null && (
+            <FilterPill
+              label={`≤ ${filter.max_duration}s`}
+              onRemove={() => setFilter((f) => ({ ...f, max_duration: undefined }))}
+            />
+          )}
+          {(filter.performer_names?.length ?? 0) > 0 ? (
+            filter.performer_names!.map((name) => (
+              <FilterPill
+                key={name}
+                label={`Performer: ${name}`}
+                onRemove={() => {
+                  setFilter((f) => {
+                    const names = (f.performer_names ?? []).filter((n) => n !== name);
+                    return { ...f, performer_names: names.length > 0 ? names : undefined };
+                  });
+                  setPerformerInput(filter.performer_names!.filter((n) => n !== name).join(", "));
+                  const remaining = filter.performer_names!.filter((n) => n !== name);
+                  navigate({
+                    to: "/library/scenes",
+                    search: remaining.length > 0 ? { performers: remaining } : {},
+                  });
+                }}
+              />
+            ))
+          ) : (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const v = performerInput.trim();
+                if (v) {
+                  const names = [...(filter.performer_names ?? []), v];
+                  setFilter((f) => ({ ...f, performer_names: names }));
+                  navigate({
+                    to: "/library/scenes",
+                    search: { performers: names },
+                  });
+                }
+              }}
+              className="flex items-center gap-1"
+            >
+              <Input
+                placeholder="Filter performer…"
+                value={performerInput}
+                onChange={(e) => setPerformerInput(e.target.value)}
+                className="h-7 w-36 text-xs"
+              />
+            </form>
+          )}
+          {(filter.tag_names?.length ?? 0) > 0 ? (
+            filter.tag_names!.map((name) => (
+              <FilterPill
+                key={name}
+                label={`Tag: ${name}`}
+                onRemove={() => {
+                  setFilter((f) => {
+                    const names = (f.tag_names ?? []).filter((n) => n !== name);
+                    return { ...f, tag_names: names.length > 0 ? names : undefined };
+                  });
+                  setTagInput(filter.tag_names!.filter((n) => n !== name).join(", "));
+                  const remaining = filter.tag_names!.filter((n) => n !== name);
+                  navigate({
+                    to: "/library/scenes",
+                    search: remaining.length > 0 ? { tags: remaining } : {},
+                  });
+                }}
+              />
+            ))
+          ) : (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const v = tagInput.trim();
+                if (v) {
+                  const names = [...(filter.tag_names ?? []), v];
+                  setFilter((f) => ({ ...f, tag_names: names }));
+                  navigate({
+                    to: "/library/scenes",
+                    search: { tags: names },
+                  });
+                }
+              }}
+              className="flex items-center gap-1"
+            >
+              <Input
+                placeholder="Filter tag…"
+                value={tagInput}
+                onChange={(e) => setTagInput(e.target.value)}
+                className="h-7 w-36 text-xs"
+              />
+            </form>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              setFilter({});
+              setPerformerInput("");
+              setTagInput("");
+              navigate({ to: "/library/scenes", search: {} });
+            }}
+            className="text-xs text-[var(--color-muted-foreground)] underline hover:text-[var(--color-foreground)]"
+          >
+            Clear all
+          </button>
+        </div>
+      )}
+      {genThumbsResult && (
+        <p className="rounded-md border border-green-400/30 bg-green-400/10 px-3 py-2 text-sm text-green-400">
+          {genThumbsResult}
+        </p>
+      )}
+      {missingThumbCount > 0 && (
+        <div className="flex flex-wrap items-center gap-3 rounded-md border border-amber-400/30 bg-amber-400/10 px-3 py-2">
+          <p className="text-sm text-amber-400">
+            {missingThumbCount} scene{missingThumbCount === 1 ? "" : "s"} missing thumbnail
+            {missingThumbCount === 1 ? "" : "s"}.
+          </p>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => void generateAllMissingThumbs()}
+            disabled={genThumbsLoading}
+          >
+            {genThumbsLoading ? "Generating…" : "Generate now"}
+          </Button>
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-5">
         {scenes.map((scene) => {
           const thumbSrc = sceneThumbUrl(scene);
@@ -398,6 +635,7 @@ function ScenesPage() {
         onOpenExplorer={(s) => void api.openSceneInExplorer(s.id).catch(console.error)}
         onOpenDefault={(s) => void api.openSceneWithDefault(s.id).catch(console.error)}
         onRenameFile={(s) => void renameFileToTitle(s)}
+        onRegenThumb={(s) => void regenerateThumb(s)}
         onDelete={(s) => setDeleteTarget(s)}
       />
 

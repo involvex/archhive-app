@@ -153,6 +153,12 @@ function ScenePlayerBody({
             <dd>{data.performers.join(", ")}</dd>
           </div>
         )}
+        {data.channel && (
+          <div>
+            <dt className="text-xs text-[var(--color-muted-foreground)]">Channel</dt>
+            <dd>{data.channel}</dd>
+          </div>
+        )}
         {data.tags.length > 0 && (
           <div>
             <dt className="text-xs text-[var(--color-muted-foreground)]">Tags</dt>

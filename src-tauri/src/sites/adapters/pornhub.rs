@@ -67,19 +67,25 @@ macro_rules! ytdlp_tube_adapter {
 
             async fn resolve_download(
                 &self,
-                _ctx: &SiteContext,
+                ctx: &SiteContext,
                 item: &MediaItem,
             ) -> AppResult<DownloadPlan> {
+                let (performers, tags, channel) = ctx
+                    .fetch_html(&item.url, $id)
+                    .await
+                    .map(|html| scrape_tube_video_page(&html, $id))
+                    .unwrap_or_default();
                 Ok(DownloadPlan {
                     url: item.url.clone(),
                     output_template: "%(uploader)s/%(title)s.%(ext)s".to_string(),
                     tool: DownloadTool::YtDlp,
                     title: Some(item.title.clone()),
-                    performers: item.performers.clone(),
-                    tags: item.tags.clone(),
+                    performers,
+                    tags,
                     adapter_id: $id.to_string(),
                     thumbnail_url: item.thumbnail.clone(),
                     duration: item.duration,
+                    channel,
                 })
             }
         }
@@ -164,19 +170,25 @@ impl SiteAdapter for PornhubAdapter {
 
     async fn resolve_download(
         &self,
-        _ctx: &SiteContext,
+        ctx: &SiteContext,
         item: &MediaItem,
     ) -> AppResult<DownloadPlan> {
+        let (performers, tags, channel) = ctx
+            .fetch_html(&item.url, self.id())
+            .await
+            .map(|html| scrape_tube_video_page(&html, self.id()))
+            .unwrap_or_default();
         Ok(DownloadPlan {
             url: item.url.clone(),
             output_template: "%(uploader)s/%(title)s.%(ext)s".to_string(),
             tool: DownloadTool::YtDlp,
             title: Some(item.title.clone()),
-            performers: item.performers.clone(),
-            tags: item.tags.clone(),
+            performers,
+            tags,
             adapter_id: self.id().to_string(),
             thumbnail_url: item.thumbnail.clone(),
             duration: item.duration,
+            channel,
         })
     }
 }
@@ -708,6 +720,117 @@ fn parse_video_count(text: &str) -> Option<u32> {
         return None;
     }
     digits.replace(',', "").parse().ok()
+}
+
+/// Scrape performers, tags, and channel from a tube site video page.
+pub(crate) fn scrape_tube_video_page(
+    html: &str,
+    site_id: &str,
+) -> (Vec<String>, Vec<String>, Option<String>) {
+    use scraper::{Html, Selector};
+    let doc = Html::parse_document(html);
+
+    let performer_selectors: &[&str] = match site_id {
+        "pornhub" => &[
+            ".video-info-row a[href*='/pornstar/']",
+            ".pornstarsWrapper a[href*='/pornstar/']",
+            "a[href*='/model/']",
+        ],
+        "xhamster" => &[
+            ".pornstars-list a[href*='/pornstars/']",
+            "a[href*='/pornstars/']",
+        ],
+        "xvideos" => &[
+            ".pornstars a[href*='/pornstar/']",
+            "a[href*='/pornstar/']",
+        ],
+        "xnxx" => &[
+            ".pornstar a[href*='/pornstar/']",
+            "a[href*='/pornstar/']",
+        ],
+        "youporn" => &[
+            ".pornstar-list a[href*='/pornstar/']",
+            "a[href*='/pornstar/']",
+        ],
+        _ => &[],
+    };
+
+    let tag_selectors: &[&str] = match site_id {
+        "pornhub" => &[
+            ".tagsWrapper a[href*='/video/search']",
+            ".categoriesWrapper a[href*='?search=']",
+            "a[href*='/video/search?search=']",
+        ],
+        "xhamster" => &[
+            ".tags a[href*='/tags/']",
+            ".video-tags a[href*='/tags/']",
+        ],
+        "xvideos" => &[
+            ".tags a.is-keyword",
+            ".tags-label a[href*='/tags/']",
+        ],
+        "xnxx" => &[
+            ".metadata-row a[href*='/tags/']",
+            ".tags a[href*='/tags/']",
+        ],
+        "youporn" => &[
+            ".tags a[href*='/tags/']",
+            ".video-tags a",
+        ],
+        _ => &[],
+    };
+
+    let channel_selectors: &[&str] = match site_id {
+        "pornhub" => &[
+            ".userInfo a[href*='/users/']",
+            ".usernameWrap a[href*='/model/']",
+            "a[href*='/channels/']",
+        ],
+        "xhamster" => &[
+            ".author a[href*='/users/']",
+            ".uploader-name a[href*='/users/']",
+        ],
+        "xvideos" => &[
+            ".uploader a[href*='/channels/']",
+            ".video-uploader a[href*='/channels/']",
+        ],
+        "xnxx" => &[
+            ".uploader a",
+            ".video-uploader a[href*='/profiles/']",
+        ],
+        "youporn" => &[
+            ".username a[href*='/channels/']",
+            ".uploader a[href*='/channels/']",
+        ],
+        _ => &[],
+    };
+
+    fn extract_texts(doc: &Html, selectors: &[&str]) -> Vec<String> {
+        let mut seen = std::collections::HashSet::new();
+        let mut out = Vec::new();
+        for sel_str in selectors {
+            let Ok(sel) = Selector::parse(sel_str) else {
+                continue;
+            };
+            for el in doc.select(&sel) {
+                let text = el.text().collect::<String>().trim().to_string();
+                if text.is_empty() || text.len() > 80 {
+                    continue;
+                }
+                if seen.insert(text.to_lowercase()) {
+                    out.push(text);
+                }
+            }
+        }
+        out
+    }
+
+    let performers = extract_texts(&doc, performer_selectors);
+    let tags = extract_texts(&doc, tag_selectors);
+    let channels = extract_texts(&doc, channel_selectors);
+    let channel = channels.into_iter().next();
+
+    (performers, tags, channel)
 }
 
 #[cfg(test)]

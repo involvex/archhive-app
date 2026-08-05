@@ -120,6 +120,8 @@ pub struct DownloadPlan {
     pub thumbnail_url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub duration: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub channel: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -144,6 +146,8 @@ pub struct Scene {
     pub rating: Option<u8>,
     pub performers: Vec<String>,
     pub tags: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub channel: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub phash: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -380,6 +384,10 @@ pub struct SceneFilter {
     pub max_duration: Option<u32>,
     #[serde(default)]
     pub hash_named: bool,
+    #[serde(default)]
+    pub performer_names: Vec<String>,
+    #[serde(default)]
+    pub tag_names: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

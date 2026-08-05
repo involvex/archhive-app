@@ -252,6 +252,7 @@ impl SiteAdapter for GenericYtDlpAdapter {
             adapter_id: self.site_id.to_string(),
             thumbnail_url: item.thumbnail.clone(),
             duration: item.duration,
+            channel: None,
         })
     }
 }

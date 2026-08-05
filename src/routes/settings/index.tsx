@@ -602,7 +602,7 @@ function SettingsPage() {
                     onClick={() => void runProbeDurations()}
                     disabled={probingDurations}
                   >
-                    {probingDurations ? "Probing…" : "Probe durations + thumbs"}
+                    {probingDurations ? "Probing…" : "Probe durations"}
                   </Button>
                   {ffmpegAvail && (
                     <span className="inline-flex items-center gap-1 rounded-full border border-[var(--color-border)] px-2 py-0.5 text-[10px]">

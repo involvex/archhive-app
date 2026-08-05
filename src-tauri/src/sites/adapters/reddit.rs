@@ -60,6 +60,7 @@ impl SiteAdapter for RedditAdapter {
             adapter_id: "reddit".to_string(),
             thumbnail_url: item.thumbnail.clone(),
             duration: item.duration,
+            channel: None,
         })
     }
 }

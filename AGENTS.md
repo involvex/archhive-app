@@ -201,6 +201,96 @@ User Action → React Component → api.client.ts
   └─ Remote LAN mode → fetch("http://desktop:8787/api/...") → Axum handlers → AppState
 ```
 
+### Key Data Flows
+
+#### Download → Library Metadata Pipeline
+
+When a download completes, site adapters pass metadata through to the SQLite library:
+
+```
+SiteAdapter.search() → MediaItem { thumbnail_url, duration, performers, tags }
+  → DownloadPlan { thumbnail_url, duration, performers, tags, title }
+  → download_jobs.metadata (JSON blob, survives restarts)
+  → on complete: download_remote_thumbnail() writes {stem}.jpg sidecar
+  → import_download() creates scene row with duration + thumb path
+  → LibraryScanner::post_process_file() generates pHash + OSHash
+```
+
+- **`DownloadPlan.thumbnail_url`**: Set by all 11 site adapters (Pornhub, RedGifs, ThotHub, Reddit, Chaturbate, XVIDEOS, xHamster, XNXX, YouPorn, generic_ytdlp, custom). Streamed down as a sidecar `.jpg` next to the video file.
+- **`DownloadPlan.duration`**: Set by adapters that scrape it, stored in `scenes.duration` column.
+- **`DownloadPlan.performers` / `tags`**: Serialized to `download_jobs.metadata` JSON so they survive app restarts. Re-applied when the download completes.
+- **`DownloadPlan.title`**: Used as the scene title (not filename stem). Falls back to URL if no title is available.
+
+#### Thumbnail Pipeline
+
+Thumbnails follow a three-tier priority:
+
+1. **Remote download** (best): `DownloadPlan.thumbnail_url` → `download_remote_thumbnail()` writes `{video_filename_stem}.jpg` as a sidecar during download completion.
+2. **Probe-generated** (fallback): `ffprobe` extracts a frame from the video. Triggered manually via:
+   - "Probe durations" in Settings
+   - "Probe metadata" in Scene Details dialog
+   - "Regenerate thumbnail" in Scene context menu
+   - "Generate now" banner on Library Scenes page when thumbnails are missing
+3. **Missing** (empty state): Library Scenes page shows a "Generate now" banner when any scenes lack thumbnails.
+
+Thumbnails are stored as sidecar files (`{stem}.jpg`) next to the video, not in the database.
+
+#### LAN Streaming Architecture
+
+The LAN server (`src-tauri/src/server/streaming.rs`) streams media files directly from disk with HTML5-compatible HTTP Range support:
+
+- **Path security**: `resolve_under_library()` canonicalizes paths and rejects `..` traversal — all streams must be within the library root.
+- **HTTP Range**: `serve_file_with_range()` parses `Range: bytes=` headers (both `start-end` and suffix `-length`) for video seeking.
+- **MIME detection**: `mime_from_path()` maps file extensions to MIME types (mp4→video/mp4, webm→video/webm, mkv→video/x-matroska, etc.).
+- **Streaming**: Uses `tokio_util::io::ReaderStream` with 256KB chunks for low latency.
+- **Routes**: `/api/scenes/{id}/media` for scenes, `/api/files/stream` for arbitrary library files.
+- **Live streaming**: `/api/media/livestream` resolves yt-dlp stream URLs for live content (Chaturbate). Returns both a `stream_url` (direct HLS) and `embed_url` (embed page fallback).
+
+#### Desktop System Tray
+
+The tray implementation (`src-tauri/src/desktop/tray.rs`):
+
+- **Close-to-tray** (default ON): Prevents window close, hides to tray instead (persistent background operation).
+- **Minimize-to-tray** (default ON): Hides window to tray when minimized. **Uses a transition guard (`was_minimized` Mutex)** to avoid spurious hides from DPI changes, virtual desktop switches, and other `Resized` events.
+- **Global hotkey** (default `Ctrl+Shift+A`): Toggles the main window visibility. Hotkey is unregistered/re-registered on settings change.
+- **Tray menu**: Show ArcHive, Settings, Quit. Left-click toggles visibility.
+- **Window label guard**: Only the `"main"` window triggers tray behavior — secondary webview windows (Chaturbate bridge) are ignored.
+- **State**: `TrayHotkeyState` (registered shortcut + tracked minimize state) is managed via Tauri state.
+
+### Site Adapters
+
+17. **Implement `SiteAdapter` trait** from `src-tauri/src/sites/adapters/`. See existing adapters for patterns.
+18. **Register new adapters** in `src-tauri/src/sites/registry.rs`.
+19. **Download strategy**: Most sites resolve to yt-dlp. Use `DownloadTool::GalleryDl` for image galleries. Use `DownloadTool::DirectHttp` for direct media URLs.
+20. **Cookie handling**: Access cookies via `SiteContext` and `CookieVault`. Never store cookies in plaintext outside the vault.
+
+#### Chaturbate HTTP Scraping
+
+Chaturbate uses a three-tier scraping strategy (no webview bridge required for browse/search):
+
+1. **Primary — HTTP + scraper**: `fetch_html(url)` gets the raw HTML, `scraper` crate parses it with CSS selectors for room listings (username, thumbnail, viewer count, tags).
+2. **Fallback — API endpoint**: If HTML parsing fails, tries JSON API endpoints the page uses internally.
+3. **Desktop fallback — webview bridge** (`chaturbate_webview.rs`): On desktop only, opens a hidden secondary webview window to execute JS and extract data. This is the nuclear option when HTML+API both fail.
+4. **Error**: All three failing returns a descriptive error.
+
+Key files:
+- `src-tauri/src/sites/adapters/chaturbate.rs` — primary scraping (browse + search)
+- `src-tauri/src/sites/adapters/chaturbate_webview.rs` — desktop-only webview bridge fallback
+
+### Runtime Modes & Feature Gating
+
+| Mode           | Platform         | Capability                        | yt-dlp/ffmpeg | Chaturbate | LAN Server | Tray    | Global Hotkey |
+| -------------- | ---------------- | --------------------------------- | ------------- | ---------- | ---------- | ------- | ------------- |
+| **Local**      | Desktop          | Full yt-dlp / gallery-dl / ffmpeg | ✓ (sidecar)   | HTTP+WV    | ✓ (serve)  | ✓       | ✓             |
+| **Standalone** | Mobile           | YouTube + direct media URLs only  | ✗             | API only   | ✗          | ✗       | ✗             |
+| **Remote LAN** | Mobile → desktop | Full parity via REST API          | Via desktop   | Via desktop| ✓ (client) | ✗       | ✗             |
+
+Configure in **Settings → Engine**. The frontend client (`api/client.ts`) automatically switches between local IPC and remote HTTP based on this setting.
+
+- **Mobile defaults to `RemoteLan`**: `src-tauri/src/lib.rs` sets `settings.engine_mode = EngineMode::RemoteLan` on mobile startup.
+- **Desktop-only code paths**: Webview bridge (`chaturbate_webview.rs`), tray (`desktop/tray.rs`), system tray hotkey, LAN server hosting.
+- **Mobile standalone**: `src-tauri/src/mobile/standalone.rs` — limited to `resolve_standalone()` which handles YouTube + direct URLs only.
+
 ---
 
 ## Best Practices & Guidelines
@@ -234,13 +324,6 @@ User Action → React Component → api.client.ts
 15. **Command handlers**: Keep `commands.rs` thin — delegate to `AppState` methods. The command layer is only responsible for type conversion and error mapping.
 16. **Testing**: Write unit tests in-module (`#[cfg(test)]` mod tests). Use `tempfile` for filesystem tests. Test site adapters with saved HTML fixtures.
 
-### Site Adapters
-
-17. **Implement `SiteAdapter` trait** from `src-tauri/src/sites/adapters/`. See existing adapters for patterns.
-18. **Register new adapters** in `src-tauri/src/sites/registry.rs`.
-19. **Download strategy**: Most sites resolve to yt-dlp. Use `DownloadTool::GalleryDl` for image galleries. Use `DownloadTool::DirectHttp` for direct media URLs.
-20. **Cookie handling**: Access cookies via `SiteContext` and `CookieVault`. Never store cookies in plaintext outside the vault.
-
 ### Security
 
 21. **Cookie vault**: Cookies are encrypted at rest with AES-256-GCM. Plaintext cookie files are written only temporarily for yt-dlp `--cookies` usage.
@@ -260,18 +343,6 @@ User Action → React Component → api.client.ts
 29. **Windows paths**: Use backslashes in file paths but forward slashes work in most tools. When cross-platform compatibility matters, use `path::PathBuf` (Rust) or `path` module (Node).
 30. **Binary sidecars**: Bundled binaries (`yt-dlp`, `ffmpeg`) live in `src-tauri/binaries/`. The `.gitignore` excludes them except for `.gitkeep` and `README.md`. Run `bun run setup:binaries` to download.
 31. **Generated files**: Never edit `src/routeTree.gen.ts` manually. It is auto-generated by the TanStack Router Vite plugin.
-
----
-
-## Runtime Modes
-
-| Mode           | Platform         | Capability                        |
-| -------------- | ---------------- | --------------------------------- |
-| **Local**      | Desktop          | Full yt-dlp / gallery-dl / ffmpeg |
-| **Standalone** | Mobile           | YouTube + direct media URLs only  |
-| **Remote LAN** | Mobile → desktop | Full parity via REST API          |
-
-Configure in **Settings → Engine**. The frontend client (`api/client.ts`) automatically switches between local IPC and remote HTTP based on this setting.
 
 ---
 
@@ -319,11 +390,19 @@ bun run format:check
 
 ### Modifying the database schema
 
-1. Add migration SQL in `src-tauri/src/db/`
-2. Update `Database` methods in the same module
-3. Update or add Rust models in `models.rs`
-4. Mirror changes in `src/lib/types.ts`
-5. Add any new commands in `commands.rs`
+1. Add migration SQL in `src-tauri/src/db/migrations.rs` as a new `MIGRATION_00X` constant.
+2. Check for column/table existence in `Database::new()` before running the migration — the bundled SQLite may not support `IF NOT EXISTS` on `ALTER TABLE`:
+   ```rust
+   // db/mod.rs — Database::new()
+   if !column_exists(&conn, "table_name", "column_name") {
+       conn.execute_batch(MIGRATION_00X)?;
+   }
+   ```
+   The `column_exists()` helper uses `PRAGMA table_info()` to check for column existence in Rust rather than relying on SQLite version-specific syntax.
+3. Update `Database` methods in the same module.
+4. Update or add Rust models in `models.rs`.
+5. Mirror changes in `src/lib/types.ts`.
+6. Add any new commands in `commands.rs`.
 
 ---
 

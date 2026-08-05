@@ -1,4 +1,4 @@
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 use crate::models::{BrowseKind, BrowsePage, BrowseQuery, DownloadPlan, DownloadTool, MediaItem};
 use crate::sites::{SiteAdapter, SiteContext};
 use async_trait::async_trait;
@@ -36,29 +36,11 @@ impl SiteAdapter for ChaturbateAdapter {
     }
 
     async fn browse(&self, ctx: &SiteContext, query: BrowseQuery) -> AppResult<BrowsePage> {
-        // Chaturbate is a JS SPA: room cards are hydrated client-side by
-        // `web2.static.mmcdn.com/cachebust/roomlist-prefetch.bfbd95a4a9e3.js`. The
-        // server-rendered HTML (root `/`, `/tags/<x>/`, `/discover/<x>/`) only contains
-        // empty `<li class="roomCard placeholder camBgColor">` placeholders inside
-        // `<div id="roomlist_root" data-testid="room-list">`.
-        //
-        // The internal API the SPA calls (`/api/ts/roomlist/room-list/`) returns the same
-        // placeholder-only HTML page gated by the age-verification overlay, and the
-        // affiliates endpoint (`affiliates/api/onlinerooms/?format=json`) returns `[]`
-        // without a valid `wm=` token. yt-dlp's `[Chaturbate]` extractor only handles
-        // individual room URLs (treats anything else as `Room is currently offline`), so
-        // it cannot list rooms either.
-        //
-        // Net result: room LISTINGS (Livestream/Tag/Search) always come back empty.
-        // Per-room navigation (`browse_model`) and `resolve_livestream` still work via
-        // yt-dlp `--get-url`. The frontend surfaces a clear "no rooms from listing page"
-        // message instead of a generic empty grid.
-
         match query.kind {
             BrowseKind::Model => self.browse_model(ctx, query).await,
-            BrowseKind::Livestream => self.browse_listing(ctx, query).await,
-            BrowseKind::Tag => self.browse_listing(ctx, query).await,
-            BrowseKind::Search => self.browse_listing(ctx, query).await,
+            BrowseKind::Livestream | BrowseKind::Tag | BrowseKind::Search => {
+                self.browse_listing(ctx, query).await
+            }
             _ => self.browse_listing(ctx, query).await,
         }
     }
@@ -78,29 +60,59 @@ impl SiteAdapter for ChaturbateAdapter {
             adapter_id: "chaturbate".to_string(),
             thumbnail_url: item.thumbnail.clone(),
             duration: item.duration,
+            channel: None,
         })
     }
 }
 
 impl ChaturbateAdapter {
-    /// `livestream` / `tag` / `search` / generic: open the listing URL in a hidden
-    /// Tauri webview (which runs the site's JS bundle) and extract the hydrated
-    /// room cards. yt-dlp's `[Chaturbate]` extractor rejects listing URLs, and
-    /// the server-rendered HTML only contains placeholder `<li class="roomCard
-    /// placeholder">` elements, so we must run the SPA to get real cards.
     async fn browse_listing(&self, ctx: &SiteContext, query: BrowseQuery) -> AppResult<BrowsePage> {
         let url = build_listing_url(&query);
-        let rooms =
-            crate::sites::adapters::chaturbate_webview::fetch_listing(ctx.app(), ctx.vault(), &url)
-                .await?;
-        let items: Vec<MediaItem> = rooms.into_iter().map(map_room).collect();
-        let has_more = items.len() >= 30;
-        Ok(BrowsePage {
-            items,
-            page: query.page,
-            has_more,
-            total: None,
-        })
+
+        // Primary: HTTP scraping with vault cookies as Cookie header.
+        if let Ok(html) = ctx.fetch_html(&url, &self.id()).await {
+            if let Some(rooms) = parse_listing_html(&html) {
+                let items: Vec<MediaItem> = rooms.into_iter().map(|r| http_room_to_item(&r)).collect();
+                let has_more = items.len() >= 30;
+                return Ok(BrowsePage { items, page: query.page, has_more, total: None });
+            }
+        }
+
+        // Secondary: try the internal API endpoint with cookies.
+        let api_url = build_api_url(&query);
+        if api_url != url {
+            if let Ok(body) = ctx.fetch_html(&api_url, &self.id()).await {
+                if let Some(rooms) = parse_listing_html(&body) {
+                    let items: Vec<MediaItem> = rooms.into_iter().map(|r| http_room_to_item(&r)).collect();
+                    let has_more = items.len() >= 30;
+                    return Ok(BrowsePage { items, page: query.page, has_more, total: None });
+                }
+                // If the API returned JSON directly, try parsing that.
+                if let Some(rooms) = parse_api_json(&body) {
+                    let items: Vec<MediaItem> = rooms.into_iter().map(|r| http_room_to_item(&r)).collect();
+                    let has_more = items.len() >= 30;
+                    return Ok(BrowsePage { items, page: query.page, has_more, total: None });
+                }
+            }
+        }
+
+        // Tertiary: webview bridge (desktop only).
+        #[cfg(desktop)]
+        {
+            let rooms =
+                crate::sites::adapters::chaturbate_webview::fetch_listing(ctx.app(), ctx.vault(), &url)
+                    .await?;
+            if !rooms.is_empty() {
+                let items: Vec<MediaItem> = rooms.into_iter().map(map_room).collect();
+                let has_more = items.len() >= 30;
+                return Ok(BrowsePage { items, page: query.page, has_more, total: None });
+            }
+        }
+
+        // Nothing worked.
+        Err(AppError::Site(
+            "No rooms found from Chaturbate — import cookies in Settings → Cookies or the listing page may have changed.".into(),
+        ))
     }
 
     /// `model` kind: return a single synthetic `MediaItem` pointing at the model's room.
@@ -154,6 +166,267 @@ impl ChaturbateAdapter {
             has_more: false,
             total: Some(1),
         })
+    }
+}
+
+/// Room data parsed from server-rendered HTML or API response.
+struct HttpRoom {
+    username: String,
+    title: String,
+    thumbnail: Option<String>,
+    viewers: Option<u32>,
+    age: Option<u32>,
+    gender: Option<String>,
+}
+
+fn http_room_to_item(room: &HttpRoom) -> MediaItem {
+    let room_url = format!("{BASE}/{}/", room.username);
+    let embed_url = format!("{BASE}/embed/{}/", room.username);
+    MediaItem {
+        id: Uuid::new_v4().to_string(),
+        title: room.title.clone(),
+        url: room_url,
+        thumbnail: room.thumbnail.clone(),
+        duration: None,
+        site_id: "chaturbate".to_string(),
+        performers: vec![room.username.clone()],
+        tags: vec![],
+        description: None,
+        channel: Some(room.username.clone()),
+        is_live: Some(true),
+        viewers: room.viewers,
+        age: room.age,
+        gender: room.gender.clone(),
+        stream_url: None,
+        embed_url: Some(embed_url),
+    }
+}
+
+fn build_api_url(query: &BrowseQuery) -> String {
+    match query.kind {
+        BrowseKind::Tag => format!("{BASE}/api/ts/roomlist/room-list/?tag={}", path_slug(&query.slug)),
+        BrowseKind::Search => format!("{BASE}/api/ts/roomlist/room-list/?q={}", url_slug(&query.slug)),
+        _ => format!("{BASE}/api/ts/roomlist/room-list/"),
+    }
+}
+
+/// Try to parse the HTML response as a list of room cards.
+/// Handles both server-rendered full cards and placeholder-placeholder markup.
+fn parse_listing_html(html: &str) -> Option<Vec<HttpRoom>> {
+    use scraper::{Html, Selector};
+
+    let document = Html::parse_document(html);
+
+    // Try multiple selector strategies for room cards.
+    let link_selectors = [
+        // Direct room links: <a href="/username/"> inside room cards
+        "li.roomCard a[href^='/']:not([href*='tags']):not([href*='search']):not([href*='embed'])",
+        "a.roomCard__title[href^='/']",
+        // Generic room links
+        ".room_list_room a[href^='/']",
+        "a[data-room][href^='/']",
+    ];
+
+    let mut rooms: Vec<HttpRoom> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+
+    for sel_str in &link_selectors {
+        let Ok(sel) = Selector::parse(sel_str) else {
+            continue;
+        };
+        for el in document.select(&sel) {
+            let href = el.value().attr("href").unwrap_or("");
+            let username = href
+                .trim_matches('/')
+                .split('/')
+                .next()
+                .filter(|s| !s.is_empty() && !s.contains('?') && !s.contains('#'))?;
+
+            // Filter out non-username paths.
+            if username.len() < 2
+                || username.contains('.')
+                || username == "api"
+                || username == "tags"
+                || username == "search"
+                || username == "embed"
+                || username == "affiliates"
+                || username == "auth"
+            {
+                continue;
+            }
+
+            if !seen.insert(username.to_string()) {
+                continue;
+            }
+
+            let title = el
+                .value()
+                .attr("title")
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| el.text().collect::<String>().trim().to_string())
+                .replace('\n', " ")
+                .trim()
+                .to_string();
+
+            if title.is_empty() || title.len() < 2 {
+                continue;
+            }
+
+            // Extract thumbnail from parent/ancestor img elements.
+            let thumbnail = find_thumbnail_in_ancestors(&document);
+            let viewers = extract_viewers_from_text(&title);
+            let age = extract_age_from_text(&title);
+
+            rooms.push(HttpRoom {
+                username: username.to_string(),
+                title,
+                thumbnail,
+                viewers,
+                age,
+                gender: None,
+            });
+
+            if rooms.len() >= 48 {
+                break;
+            }
+        }
+        if !rooms.is_empty() {
+            break;
+        }
+    }
+
+    if rooms.is_empty() {
+        None
+    } else {
+        Some(rooms)
+    }
+}
+
+fn find_thumbnail_in_ancestors(
+    document: &scraper::Html,
+) -> Option<String> {
+    use scraper::Selector;
+    let img_sel = Selector::parse(
+        "img[src*='mmcdn.com'], img[data-src*='mmcdn.com'], img[src*='highwebmedia.com']",
+    )
+    .ok()?;
+    document
+        .select(&img_sel)
+        .find_map(|img| {
+            img.value()
+                .attr("src")
+                .or_else(|| img.value().attr("data-src"))
+                .filter(|s| !s.starts_with("data:"))
+                .map(|s| {
+                    if s.starts_with("//") {
+                        format!("https:{s}")
+                    } else if s.starts_with('/') {
+                        format!("https://static.mmcdn.com{s}")
+                    } else if !s.starts_with("http") {
+                        format!("https://{BASE}{s}")
+                    } else {
+                        s.to_string()
+                    }
+                })
+        })
+}
+
+fn extract_viewers_from_text(text: &str) -> Option<u32> {
+    // Patterns: "1.2k viewers", "500 watching", "120 viewers"
+    for pattern in &["viewers", "watching"] {
+        if let Some(idx) = text.to_lowercase().find(pattern) {
+            let before = &text[..idx];
+            let num_str: String = before
+                .chars()
+                .rev()
+                .take_while(|c| c.is_ascii_digit() || *c == '.' || *c == ',' || *c == 'k' || *c == 'K')
+                .collect::<String>()
+                .chars()
+                .rev()
+                .collect();
+            if !num_str.is_empty() {
+                if let Some(num) = parse_viewer_count(&num_str) {
+                    return Some(num);
+                }
+            }
+        }
+    }
+    None
+}
+
+fn parse_viewer_count(raw: &str) -> Option<u32> {
+    let lower = raw.trim().to_lowercase();
+    if let Some(num_str) = lower.strip_suffix('k') {
+        if let Ok(num) = num_str.parse::<f64>() {
+            return Some((num * 1000.0) as u32);
+        }
+    }
+    lower.replace(',', "").parse::<u32>().ok()
+}
+
+fn extract_age_from_text(text: &str) -> Option<u32> {
+    for word in text.split_whitespace() {
+        if let Ok(age) = word.parse::<u32>() {
+            if (18..=99).contains(&age) {
+                return Some(age);
+            }
+        }
+    }
+    None
+}
+
+/// Try to parse a JSON API response for room data.
+fn parse_api_json(body: &str) -> Option<Vec<HttpRoom>> {
+    let v: serde_json::Value = serde_json::from_str(body).ok()?;
+    let rooms_val = v
+        .get("rooms")
+        .or_else(|| v.get("results"))
+        .or_else(|| v.get("data"))
+        .or_else(|| v.as_array().and_then(|_| Some(&v)));
+    let arr = rooms_val?.as_array()?;
+    if arr.is_empty() {
+        return None;
+    }
+    let rooms: Vec<HttpRoom> = arr
+        .iter()
+        .filter_map(|r| {
+            let username = r.get("username")?.as_str()?;
+            let title = r
+                .get("title")
+                .and_then(|t| t.as_str())
+                .unwrap_or(username)
+                .to_string();
+            let thumbnail = r
+                .get("thumbnail")
+                .or_else(|| r.get("image_url"))
+                .and_then(|t| t.as_str())
+                .map(|s| s.to_string());
+            let viewers = r
+                .get("num_users")
+                .or_else(|| r.get("viewers"))
+                .and_then(|v| v.as_u64())
+                .map(|n| n as u32);
+            let age = r.get("age").and_then(|a| a.as_u64()).map(|n| n as u32);
+            let gender = r.get("gender").and_then(|g| g.as_str()).map(|s| s.to_string());
+            Some(HttpRoom {
+                username: username.to_string(),
+                title: if title.is_empty() {
+                    username.to_string()
+                } else {
+                    title
+                },
+                thumbnail,
+                viewers,
+                age,
+                gender,
+            })
+        })
+        .take(48)
+        .collect();
+    if rooms.is_empty() {
+        None
+    } else {
+        Some(rooms)
     }
 }
 

@@ -12,6 +12,7 @@ import {
 import type { MediaItem } from "@/lib/types";
 import { SceneCard } from "@/components/SceneCard";
 import { BrowseItemDetailsDialog } from "@/components/BrowseItemDetailsDialog";
+import { UrlPlayerDialog } from "@/components/UrlPlayerDialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -31,6 +32,7 @@ export function PornhubCategoryBrowser() {
   const [refreshing, setRefreshing] = useState(false);
   const [refreshStatus, setRefreshStatus] = useState("");
   const [infoItem, setInfoItem] = useState<MediaItem | null>(null);
+  const [watchItem, setWatchItem] = useState<MediaItem | null>(null);
 
   const setCache = useBrowseStore((s) => s.set);
   const getCache = useBrowseStore((s) => s.get);
@@ -206,6 +208,7 @@ export function PornhubCategoryBrowser() {
             item={item}
             onDownload={(i) => void handleDownload(i)}
             onInfo={setInfoItem}
+            onWatch={setWatchItem}
           />
         ))}
       </div>
@@ -230,6 +233,11 @@ export function PornhubCategoryBrowser() {
         item={infoItem}
         open={infoItem !== null}
         onClose={() => setInfoItem(null)}
+      />
+      <UrlPlayerDialog
+        item={watchItem}
+        open={watchItem !== null}
+        onClose={() => setWatchItem(null)}
       />
     </div>
   );

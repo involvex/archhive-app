@@ -1,6 +1,6 @@
 mod migrations;
 
-use crate::db::migrations::{MIGRATION_001, MIGRATION_002, MIGRATION_003};
+use crate::db::migrations::{MIGRATION_001, MIGRATION_002, MIGRATION_003, MIGRATION_004};
 use crate::error::{AppError, AppResult};
 use crate::models::{
     AppSettings, DownloadJob, DownloadStatus, DuplicateGroup, Performer, Scene, Tag,
@@ -11,6 +11,19 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
+fn column_exists(conn: &Connection, table: &str, column: &str) -> bool {
+    let sql = format!("PRAGMA table_info('{table}')");
+    let mut stmt = match conn.prepare(&sql) {
+        Ok(s) => s,
+        Err(_) => return false,
+    };
+    let names: Vec<String> = match stmt.query_map([], |row| row.get::<_, String>(1)) {
+        Ok(rows) => rows.filter_map(|r| r.ok()).collect(),
+        Err(_) => return false,
+    };
+    names.iter().any(|name| name == column)
+}
+
 type SceneRow = (
     String,
     String,
@@ -18,6 +31,7 @@ type SceneRow = (
     Option<String>,
     Option<String>,
     Option<u32>,
+    Option<String>,
 );
 
 pub struct Database {
@@ -31,7 +45,12 @@ impl Database {
         let conn = Connection::open(db_path)?;
         conn.execute_batch(MIGRATION_001)?;
         conn.execute_batch(MIGRATION_002)?;
-        conn.execute_batch(MIGRATION_003)?;
+        if !column_exists(&conn, "download_jobs", "metadata") {
+            conn.execute_batch(MIGRATION_003)?;
+        }
+        if !column_exists(&conn, "scenes", "channel") {
+            conn.execute_batch(MIGRATION_004)?;
+        }
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
         })
@@ -135,12 +154,14 @@ impl Database {
         tags: &[String],
         thumbnail_url: Option<&str>,
         duration: Option<u32>,
+        channel: Option<&str>,
     ) -> AppResult<()> {
         let metadata = serde_json::json!({
             "performers": performers,
             "tags": tags,
             "thumbnail_url": thumbnail_url,
             "duration": duration,
+            "channel": channel,
         });
         let json = serde_json::to_string(&metadata)
             .map_err(|e| AppError::Other(format!("metadata serialize: {e}")))?;
@@ -158,7 +179,13 @@ impl Database {
     pub fn get_download_job_metadata(
         &self,
         job_id: &str,
-    ) -> AppResult<(Vec<String>, Vec<String>, Option<String>, Option<u32>)> {
+    ) -> AppResult<(
+        Vec<String>,
+        Vec<String>,
+        Option<String>,
+        Option<u32>,
+        Option<String>,
+    )> {
         let conn = self
             .conn
             .lock()
@@ -199,9 +226,14 @@ impl Database {
                     .filter(|s| !s.is_empty())
                     .map(String::from);
                 let duration = v.get("duration").and_then(|d| d.as_u64()).map(|d| d as u32);
-                Ok((performers, tags, thumbnail_url, duration))
+                let channel = v
+                    .get("channel")
+                    .and_then(|c| c.as_str())
+                    .filter(|s| !s.is_empty())
+                    .map(String::from);
+                Ok((performers, tags, thumbnail_url, duration, channel))
             }
-            None => Ok((vec![], vec![], None, None)),
+            None => Ok((vec![], vec![], None, None, None)),
         }
     }
 
@@ -326,6 +358,7 @@ impl Database {
         phash: Option<&str>,
         oshash: Option<&str>,
         duration: Option<u32>,
+        channel: Option<&str>,
     ) -> AppResult<String> {
         let conn = self
             .conn
@@ -334,9 +367,9 @@ impl Database {
         let id = Uuid::new_v4().to_string();
         let now = Utc::now().to_rfc3339();
         conn.execute(
-            "INSERT INTO scenes (id, title, path, source_url, thumb, phash, oshash, duration, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-            params![id, title, path, source_url, thumb, phash, oshash, duration, now],
+            "INSERT INTO scenes (id, title, path, source_url, thumb, phash, oshash, duration, channel, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            params![id, title, path, source_url, thumb, phash, oshash, duration, channel, now],
         )?;
         for p in performers {
             let pid = self.upsert_performer(p)?;
@@ -482,11 +515,35 @@ impl Database {
 
         // Build dynamic WHERE clause (only SQL-level filters; file-level checks are post-filtered).
         let mut conditions = Vec::new();
+        let mut joins = Vec::new();
+
         if filter.missing_duration {
-            conditions.push("(duration IS NULL OR duration = 0)".to_string());
+            conditions.push("(scenes.duration IS NULL OR scenes.duration = 0)".to_string());
         }
         if let Some(max_dur) = filter.max_duration {
-            conditions.push(format!("duration <= {max_dur}"));
+            conditions.push(format!("scenes.duration <= {max_dur}"));
+        }
+        if !filter.performer_names.is_empty() {
+            let in_clause = filter
+                .performer_names
+                .iter()
+                .map(|n| format!("'{}'", n.replace('\'', "''")))
+                .collect::<Vec<_>>()
+                .join(", ");
+            joins.push("JOIN scene_performers spf ON scenes.id = spf.scene_id".to_string());
+            joins.push("JOIN performers pf ON spf.performer_id = pf.id".to_string());
+            conditions.push(format!("pf.name IN ({in_clause})"));
+        }
+        if !filter.tag_names.is_empty() {
+            let in_clause = filter
+                .tag_names
+                .iter()
+                .map(|n| format!("'{}'", n.replace('\'', "''")))
+                .collect::<Vec<_>>()
+                .join(", ");
+            joins.push("JOIN scene_tags stf ON scenes.id = stf.scene_id".to_string());
+            joins.push("JOIN tags tf ON stf.tag_id = tf.id".to_string());
+            conditions.push(format!("tf.name IN ({in_clause})"));
         }
 
         let where_clause = if conditions.is_empty() {
@@ -495,11 +552,35 @@ impl Database {
             format!("WHERE {}", conditions.join(" AND "))
         };
 
+        let joins_sql = if joins.is_empty() {
+            String::new()
+        } else {
+            format!("\n             {}", joins.join("\n             "))
+        };
+
+        let mut group_by = String::new();
+        if !filter.performer_names.is_empty() || !filter.tag_names.is_empty() {
+            let mut conditions = Vec::new();
+            if !filter.performer_names.is_empty() {
+                conditions.push(format!(
+                    "COUNT(DISTINCT pf.name) = {}",
+                    filter.performer_names.len()
+                ));
+            }
+            if !filter.tag_names.is_empty() {
+                conditions.push(format!(
+                    "COUNT(DISTINCT tf.name) = {}",
+                    filter.tag_names.len()
+                ));
+            }
+            group_by = format!(" GROUP BY scenes.id HAVING {}", conditions.join(" AND "));
+        }
+
         let sql = format!(
-            "SELECT id, title, path, thumb, source_url, duration
-             FROM scenes
-             {where_clause}
-             ORDER BY created_at DESC
+            "SELECT scenes.id, scenes.title, scenes.path, scenes.thumb, scenes.source_url, scenes.duration, scenes.channel
+             FROM scenes{joins_sql}
+             {where_clause}{group_by}
+             ORDER BY scenes.created_at DESC
              LIMIT 200"
         );
 
@@ -512,12 +593,13 @@ impl Database {
                 row.get::<_, Option<String>>(3)?,
                 row.get::<_, Option<String>>(4)?,
                 row.get::<_, Option<u32>>(5)?,
+                row.get::<_, Option<String>>(6)?,
             ))
         })?;
 
         let mut result = Vec::new();
         for row in rows {
-            let (id, title, path, thumb, source_url, duration) = row?;
+            let (id, title, path, thumb, source_url, duration, channel) = row?;
 
             // Post-filter: missing_thumb (file-level check not possible in SQL)
             if filter.missing_thumb {
@@ -557,6 +639,7 @@ impl Database {
                 rating: None,
                 performers,
                 tags,
+                channel,
                 phash: None,
                 oshash: None,
                 file_size: None,
@@ -649,38 +732,61 @@ impl Database {
             .conn
             .lock()
             .map_err(|e| AppError::Other(e.to_string()))?;
-        let order_by = match sort {
-            crate::models::SceneSort::Newest => "s.created_at DESC",
-            crate::models::SceneSort::Name => "s.title COLLATE NOCASE ASC",
-        };
         let order_by_plain = match sort {
             crate::models::SceneSort::Newest => "created_at DESC",
             crate::models::SceneSort::Name => "title COLLATE NOCASE ASC",
         };
         let scenes: Vec<SceneRow> = if let Some(q) = query.filter(|s| !s.is_empty()) {
+            let fts_q = format!("\"{}*\"", q.replace('"', ""));
+            let like_q = format!("%{}%", q.replace('\'', "''"));
+            let order_direction = match sort {
+                crate::models::SceneSort::Newest => "DESC",
+                crate::models::SceneSort::Name => "COLLATE NOCASE ASC",
+            };
             let sql = format!(
-                "SELECT s.id, s.title, s.path, s.thumb, s.source_url, s.duration
-                     FROM scenes s
-                     JOIN scenes_fts fts ON s.rowid = fts.rowid
+                "SELECT * FROM (
+                     SELECT s.id, s.title, s.path, s.thumb, s.source_url, s.duration, s.channel, s.created_at
+                     FROM scenes s JOIN scenes_fts fts ON s.rowid = fts.rowid
                      WHERE scenes_fts MATCH ?1
-                     ORDER BY {order_by} LIMIT 100"
+                     ORDER BY s.created_at DESC LIMIT 100
+                 )
+                 UNION
+                 SELECT * FROM (
+                     SELECT s.id, s.title, s.path, s.thumb, s.source_url, s.duration, s.channel, s.created_at
+                     FROM scenes s
+                     JOIN scene_performers sp ON s.id = sp.scene_id
+                     JOIN performers p ON sp.performer_id = p.id
+                     WHERE p.name LIKE ?2
+                     ORDER BY s.created_at DESC LIMIT 100
+                 )
+                 UNION
+                  SELECT * FROM (
+                     SELECT s.id, s.title, s.path, s.thumb, s.source_url, s.duration, s.channel, s.created_at
+                     FROM scenes s
+                     JOIN scene_tags st ON s.id = st.scene_id
+                     JOIN tags t ON st.tag_id = t.id
+                     WHERE t.name LIKE ?2
+                     ORDER BY s.created_at DESC LIMIT 100
+                 )
+                 ORDER BY created_at {order_direction}
+                 LIMIT 100"
             );
             let mut stmt = conn.prepare(&sql)?;
-            let fts_q = format!("\"{}*\"", q.replace('"', ""));
-            let rows = stmt.query_map(params![fts_q], |row| {
+            let rows = stmt.query_map(params![fts_q, like_q], |row| {
                 Ok((
-                    row.get(0)?,
-                    row.get(1)?,
-                    row.get(2)?,
-                    row.get(3)?,
-                    row.get(4)?,
-                    row.get(5)?,
+                    row.get(0)?, // id
+                    row.get(1)?, // title
+                    row.get(2)?, // path
+                    row.get(3)?, // thumb
+                    row.get(4)?, // source_url
+                    row.get(5)?, // duration
+                    row.get(6)?, // channel
                 ))
             })?;
             rows.collect::<Result<Vec<_>, _>>()?
         } else {
             let sql = format!(
-                "SELECT id, title, path, thumb, source_url, duration FROM scenes ORDER BY {order_by_plain} LIMIT 100"
+                "SELECT id, title, path, thumb, source_url, duration, channel FROM scenes ORDER BY {order_by_plain} LIMIT 100"
             );
             let mut stmt = conn.prepare(&sql)?;
             let rows = stmt.query_map([], |row| {
@@ -691,13 +797,14 @@ impl Database {
                     row.get(3)?,
                     row.get(4)?,
                     row.get(5)?,
+                    row.get(6)?,
                 ))
             })?;
             rows.collect::<Result<Vec<_>, _>>()?
         };
 
         let mut result = Vec::new();
-        for (id, title, path, thumb, source_url, duration) in scenes {
+        for (id, title, path, thumb, source_url, duration, channel) in scenes {
             let performers = self.scene_performers(&conn, &id)?;
             let tags = self.scene_tags(&conn, &id)?;
             result.push(Scene {
@@ -713,6 +820,7 @@ impl Database {
                 rating: None,
                 performers,
                 tags,
+                channel,
                 phash: None,
                 oshash: None,
                 file_size: None,
@@ -728,7 +836,7 @@ impl Database {
             .map_err(|e| AppError::Other(e.to_string()))?;
         let row = conn
             .query_row(
-                "SELECT id, title, path, thumb, source_url, duration FROM scenes WHERE path = ?1",
+                "SELECT id, title, path, thumb, source_url, duration, channel FROM scenes WHERE path = ?1",
                 params![path],
                 |row| {
                     Ok((
@@ -738,31 +846,35 @@ impl Database {
                         row.get::<_, Option<String>>(3)?,
                         row.get::<_, Option<String>>(4)?,
                         row.get::<_, Option<u32>>(5)?,
+                        row.get::<_, Option<String>>(6)?,
                     ))
                 },
             )
             .optional()?;
-        Ok(row.map(|(id, title, path, thumb, source_url, duration)| {
-            let performers = self.scene_performers(&conn, &id).unwrap_or_default();
-            let tags = self.scene_tags(&conn, &id).unwrap_or_default();
-            Scene {
-                id,
-                title,
-                path,
-                duration,
-                thumb,
-                source_url,
-                studio_id: None,
-                studio_name: None,
-                date: None,
-                rating: None,
-                performers,
-                tags,
-                phash: None,
-                oshash: None,
-                file_size: None,
-            }
-        }))
+        Ok(
+            row.map(|(id, title, path, thumb, source_url, duration, channel)| {
+                let performers = self.scene_performers(&conn, &id).unwrap_or_default();
+                let tags = self.scene_tags(&conn, &id).unwrap_or_default();
+                Scene {
+                    id,
+                    title,
+                    path,
+                    duration,
+                    thumb,
+                    source_url,
+                    studio_id: None,
+                    studio_name: None,
+                    date: None,
+                    rating: None,
+                    performers,
+                    tags,
+                    channel,
+                    phash: None,
+                    oshash: None,
+                    file_size: None,
+                }
+            }),
+        )
     }
 
     fn scene_performers(&self, conn: &Connection, scene_id: &str) -> AppResult<Vec<String>> {
@@ -828,19 +940,6 @@ impl Database {
             })
         })?;
         rows.collect::<Result<Vec<_>, _>>().map_err(AppError::from)
-    }
-
-    pub fn scene_exists_by_path(&self, path: &str) -> AppResult<bool> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| AppError::Other(e.to_string()))?;
-        let count: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM scenes WHERE path = ?1",
-            params![path],
-            |row| row.get(0),
-        )?;
-        Ok(count > 0)
     }
 
     /// Load all known scene paths into a HashSet for O(1) lookups during scan.
@@ -922,7 +1021,7 @@ impl Database {
             .map_err(|e| AppError::Other(e.to_string()))?;
         let row = conn
             .query_row(
-                "SELECT id, title, path, thumb, source_url, phash, oshash, duration FROM scenes WHERE id = ?1",
+                "SELECT id, title, path, thumb, source_url, phash, oshash, duration, channel FROM scenes WHERE id = ?1",
                 params![scene_id],
                 |row| {
                     Ok((
@@ -934,11 +1033,13 @@ impl Database {
                         row.get::<_, Option<String>>(5)?,
                         row.get::<_, Option<String>>(6)?,
                         row.get::<_, Option<u32>>(7)?,
+                        row.get::<_, Option<String>>(8)?,
                     ))
                 },
             )
             .optional()?;
-        let Some((id, title, path, thumb, source_url, phash, oshash, duration)) = row else {
+        let Some((id, title, path, thumb, source_url, phash, oshash, duration, channel)) = row
+        else {
             return Err(AppError::NotFound(format!("scene {scene_id}")));
         };
         let performers = self.scene_performers(&conn, &id)?;
@@ -960,6 +1061,7 @@ impl Database {
             rating: None,
             performers,
             tags,
+            channel,
             phash,
             oshash,
             file_size,
@@ -1177,7 +1279,7 @@ impl Database {
             }
             if let Some(row) = conn
                 .query_row(
-                    "SELECT id, title, path, thumb, source_url FROM scenes WHERE id = ?1",
+                    "SELECT id, title, path, thumb, source_url, channel FROM scenes WHERE id = ?1",
                     params![id],
                     |row| {
                         Ok((
@@ -1186,12 +1288,13 @@ impl Database {
                             row.get::<_, Option<String>>(2)?,
                             row.get::<_, Option<String>>(3)?,
                             row.get::<_, Option<String>>(4)?,
+                            row.get::<_, Option<String>>(5)?,
                         ))
                     },
                 )
                 .optional()?
             {
-                let (id, title, path, thumb, source_url) = row;
+                let (id, title, path, thumb, source_url, channel) = row;
                 let performers = self.scene_performers(conn, &id)?;
                 let tags = self.scene_tags(conn, &id)?;
                 scenes.push(Scene {
@@ -1207,6 +1310,7 @@ impl Database {
                     rating: None,
                     performers,
                     tags,
+                    channel,
                     phash: None,
                     oshash: None,
                     file_size: None,

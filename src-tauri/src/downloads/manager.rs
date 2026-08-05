@@ -100,6 +100,7 @@ impl DownloadManager {
             adapter_id: adapter.to_string(),
             thumbnail_url: None,
             duration: None,
+            channel: None,
         };
         self.queue_plan(plan)
     }
@@ -117,6 +118,7 @@ impl DownloadManager {
             &plan.tags,
             plan.thumbnail_url.as_deref(),
             plan.duration,
+            plan.channel.as_deref(),
         )?;
         self.register_cancel(&job.id);
         self.enqueue(&job.id)?;
@@ -207,7 +209,7 @@ impl DownloadManager {
 fn plan_from_job(db: &Database, job: &DownloadJob) -> AppResult<DownloadPlan> {
     let settings = db.get_settings()?;
     let tool = crate::downloads::image::resolve_download_tool(&job.url, &job.adapter);
-    let (performers, tags, thumbnail_url, duration) =
+    let (performers, tags, thumbnail_url, duration, channel) =
         deserialize_job_metadata(db, &job.id).unwrap_or_default();
     Ok(DownloadPlan {
         url: job.url.clone(),
@@ -221,13 +223,14 @@ fn plan_from_job(db: &Database, job: &DownloadJob) -> AppResult<DownloadPlan> {
         adapter_id: job.adapter.clone(),
         thumbnail_url,
         duration,
+        channel,
     })
 }
 
 fn deserialize_job_metadata(
     db: &Database,
     job_id: &str,
-) -> AppResult<(Vec<String>, Vec<String>, Option<String>, Option<u32>)> {
+) -> AppResult<(Vec<String>, Vec<String>, Option<String>, Option<u32>, Option<String>)> {
     db.get_download_job_metadata(job_id)
 }
 
@@ -464,6 +467,7 @@ async fn run_job_with_plan(
                     None,
                     None,
                     plan.duration,
+                    plan.channel.as_deref(),
                 )?;
                 let _ = LibraryScanner::post_process_file(
                     &db,

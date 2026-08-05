@@ -96,6 +96,7 @@ impl LibraryScanner {
                     None,
                     None,
                     None,
+                    None,
                 ) {
                     Ok(_) => {
                         added += 1;

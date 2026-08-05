@@ -18,6 +18,7 @@ interface SceneContextMenuProps {
   onOpenExplorer?: (scene: Scene) => void;
   onOpenDefault?: (scene: Scene) => void;
   onRenameFile?: (scene: Scene) => void;
+  onRegenThumb?: (scene: Scene) => void;
   onDelete?: (scene: Scene) => void;
 }
 
@@ -30,6 +31,7 @@ export function SceneContextMenu({
   onOpenExplorer,
   onOpenDefault,
   onRenameFile,
+  onRegenThumb,
   onDelete,
 }: SceneContextMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
@@ -87,6 +89,14 @@ export function SceneContextMenu({
         onDetails(menu.scene);
         onClose();
       },
+    },
+    {
+      label: "Regenerate thumbnail",
+      action: () => {
+        onRegenThumb?.(menu.scene);
+        onClose();
+      },
+      show: Boolean(menu.scene.path) && isVideoScene(menu.scene) && Boolean(onRegenThumb),
     },
     {
       label: "Open in Explorer",

@@ -70,6 +70,7 @@ export interface Scene {
   rating?: number;
   performers: string[];
   tags: string[];
+  channel?: string;
   phash?: string;
   oshash?: string;
   file_size?: number;
@@ -196,6 +197,8 @@ export interface SceneFilter {
   missing_duration?: boolean;
   max_duration?: number;
   hash_named?: boolean;
+  performer_names?: string[];
+  tag_names?: string[];
 }
 
 export interface FfmpegStatus {

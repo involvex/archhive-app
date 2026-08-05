@@ -69,6 +69,7 @@ impl SiteAdapter for RedgifsAdapter {
             adapter_id: "redgifs".to_string(),
             thumbnail_url: item.thumbnail.clone(),
             duration: item.duration,
+            channel: None,
         })
     }
 }

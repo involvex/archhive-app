@@ -6,10 +6,11 @@ import { getCapabilities } from "@/lib/runtime";
 import { useSettingsStore } from "@/lib/stores/settings";
 import { isMobileDevice } from "@/lib/tauri";
 import type { DownloadJob, Scene } from "@/lib/types";
-import { sceneThumbUrl } from "@/lib/mediaUrl";
+import { sceneThumbUrl, isVideoScene } from "@/lib/mediaUrl";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DownloadProgressRow } from "@/components/DownloadProgress";
 import { Button } from "@/components/ui/button";
+import { ScenePlayerDialog } from "@/components/ScenePlayerDialog";
 
 export const Route = createFileRoute("/")({
   component: HomePage,
@@ -20,6 +21,8 @@ function HomePage() {
   const [scenes, setScenes] = useState<Scene[]>([]);
   const [downloads, setDownloads] = useState<DownloadJob[]>([]);
   const [loadError, setLoadError] = useState("");
+  const [playerScene, setPlayerScene] = useState<Scene | null>(null);
+  const [playerIndex, setPlayerIndex] = useState(0);
   const caps = getCapabilities();
   const isMobile = isMobileDevice();
   const needsSetup = (isMobile || caps.showBrowserBanner) && !settings.remote_host;
@@ -47,6 +50,15 @@ function HomePage() {
   }, [needsSetup, settings.remote_host, settings.remote_token]);
 
   const active = downloads.filter((d) => d.status === "active" || d.status === "pending");
+
+  const videoScenes = scenes.filter(isVideoScene);
+
+  function handlePlay(scene: Scene) {
+    const idx = videoScenes.findIndex((s) => s.id === scene.id);
+    if (idx === -1) return;
+    setPlayerIndex(idx);
+    setPlayerScene(scene);
+  }
 
   return (
     <div className="space-y-6">
@@ -104,7 +116,11 @@ function HomePage() {
           {scenes.slice(0, 10).map((scene) => {
             const thumbSrc = sceneThumbUrl(scene);
             return (
-              <Card key={scene.id} className="overflow-hidden">
+              <Card
+                key={scene.id}
+                className="cursor-pointer overflow-hidden hover:border-[var(--color-primary)] transition-colors"
+                onClick={() => handlePlay(scene)}
+              >
                 <div className="aspect-video bg-[var(--color-muted)]">
                   {thumbSrc ? (
                     <img src={thumbSrc} alt={scene.title} className="h-full w-full object-cover" />
@@ -123,6 +139,18 @@ function HomePage() {
           )}
         </div>
       </div>
+
+      <ScenePlayerDialog
+        scene={playerScene}
+        scenes={videoScenes}
+        currentIndex={playerIndex}
+        open={playerScene !== null}
+        onClose={() => setPlayerScene(null)}
+        onNavigate={(scene, idx) => {
+          setPlayerScene(scene);
+          setPlayerIndex(idx);
+        }}
+      />
     </div>
   );
 }

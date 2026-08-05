@@ -23,6 +23,8 @@ function SceneDetailsBody({ scene, onClose }: { scene: Scene; onClose: () => voi
   const [detail, setDetail] = useState<Scene | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [probing, setProbing] = useState(false);
+  const [probeResult, setProbeResult] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -48,6 +50,21 @@ function SceneDetailsBody({ scene, onClose }: { scene: Scene; onClose: () => voi
   const showVideo = isWebPlayableScene(data) && mediaSrc;
   const useCors = isHttpMediaSrc(mediaSrc) && getAppRuntime() === "desktop-tauri";
   const fileSize = formatBytes(data.file_size);
+
+  async function probeMetadata() {
+    if (probing) return;
+    setProbing(true);
+    setProbeResult("");
+    try {
+      const updated = await api.probeSceneMetadata(scene.id);
+      setDetail(updated);
+      setProbeResult("Done");
+    } catch (e) {
+      setProbeResult(e instanceof Error ? e.message : "Probe failed");
+    } finally {
+      setProbing(false);
+    }
+  }
 
   return (
     <>
@@ -129,6 +146,12 @@ function SceneDetailsBody({ scene, onClose }: { scene: Scene; onClose: () => voi
             <dd>{data.performers.join(", ")}</dd>
           </div>
         )}
+        {data.channel && (
+          <div>
+            <dt className="text-[var(--color-muted-foreground)]">Channel</dt>
+            <dd>{data.channel}</dd>
+          </div>
+        )}
         {data.tags.length > 0 && (
           <div>
             <dt className="text-[var(--color-muted-foreground)]">Tags</dt>
@@ -146,7 +169,14 @@ function SceneDetailsBody({ scene, onClose }: { scene: Scene; onClose: () => voi
         )}
       </dl>
 
-      <div className="mt-4 flex justify-end">
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        {probeResult && (
+          <span className="text-xs text-[var(--color-muted-foreground)]">{probeResult}</span>
+        )}
+        <div className="flex-1" />
+        <Button variant="outline" size="sm" onClick={() => void probeMetadata()} disabled={probing}>
+          {probing ? "Probing…" : "Probe metadata"}
+        </Button>
         <Button variant="outline" onClick={onClose}>
           Close
         </Button>

@@ -10,12 +10,14 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 
 pub struct TrayHotkeyState {
     registered: Mutex<Option<Shortcut>>,
+    was_minimized: Mutex<bool>,
 }
 
 impl TrayHotkeyState {
     pub fn new() -> Self {
         Self {
             registered: Mutex::new(None),
+            was_minimized: Mutex::new(false),
         }
     }
 }
@@ -80,29 +82,40 @@ pub fn sync_from_settings<R: Runtime>(app: &AppHandle<R>, settings: &AppSettings
 }
 
 pub fn on_window_event<R: Runtime>(window: &Window<R>, event: &tauri::WindowEvent) {
-    let Ok(settings) = window
-        .app_handle()
-        .state::<std::sync::Arc<crate::state::AppState>>()
-        .get_settings()
-    else {
+    // Only process events for the main window — secondary webview windows
+    // (Chaturbate bridge, etc.) must not trigger tray behavior.
+    if window.label() != MAIN_WINDOW {
+        return;
+    }
+
+    let app = window.app_handle();
+    let Ok(settings) = app.state::<Arc<crate::state::AppState>>().get_settings() else {
         return;
     };
+    let hotkey_state = app.state::<Arc<TrayHotkeyState>>();
 
     match event {
         tauri::WindowEvent::CloseRequested { api, .. } => {
             if settings.close_to_tray {
                 api.prevent_close();
-                hide_main_window(window.app_handle());
+                hide_main_window(app);
             }
         }
         tauri::WindowEvent::Resized(_) => {
             if !settings.minimize_to_tray {
                 return;
             }
-            if window.is_minimized().unwrap_or(false) {
-                hide_main_window(window.app_handle());
+            let is_minimized = window.is_minimized().unwrap_or(false);
+            let mut was_minimized = hotkey_state.was_minimized.lock();
+            if is_minimized && !*was_minimized {
+                // Only hide on the transition non-minimized → minimized.
+                // Resized fires for DPI changes, virtual desktop switches,
+                // taskbar show/hide, and other non-user events where
+                // is_minimized() may transiently return true.
+                hide_main_window(app);
                 let _ = window.unminimize();
             }
+            *was_minimized = is_minimized;
         }
         _ => {}
     }

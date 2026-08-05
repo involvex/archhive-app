@@ -13,6 +13,7 @@ pub fn import_download(
     phash: Option<&str>,
     oshash: Option<&str>,
     duration: Option<u32>,
+    channel: Option<&str>,
 ) -> AppResult<String> {
     if let Some(p) = path {
         if let Some(existing) = db.scene_by_path(p)? {
@@ -24,6 +25,6 @@ pub fn import_download(
         }
     }
     db.insert_scene(
-        title, path, source_url, performers, tags, thumb, phash, oshash, duration,
+        title, path, source_url, performers, tags, thumb, phash, oshash, duration, channel,
     )
 }

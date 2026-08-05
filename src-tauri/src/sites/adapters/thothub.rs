@@ -67,6 +67,7 @@ impl SiteAdapter for ThotHubAdapter {
             adapter_id: self.id().to_string(),
             thumbnail_url: item.thumbnail.clone(),
             duration: item.duration,
+            channel: None,
         })
     }
 }
