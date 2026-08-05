@@ -1,6 +1,6 @@
 [package]
 name = "archhive-app"
-version = "0.2.0"
+version = "0.3.0"
 description = "Cross-platform media browser, downloader, and library manager"
 authors = ["you"]
 edition = "2021"
