@@ -1,17 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import {
-  Home,
-  Compass,
-  Library,
-  Download,
-  Users,
-  Tags,
-  Settings,
-  Puzzle,
-  FolderOpen,
-  Radio,
-} from "lucide-react";
+import { Home, Compass, Library, Download, Settings, Puzzle, Radio } from "lucide-react";
 import { resolveAppVersion } from "@/lib/appVersion";
 import { getPluginNavItems } from "@/lib/plugins/loader";
 import { cn } from "@/lib/utils";
@@ -19,22 +8,18 @@ import { cn } from "@/lib/utils";
 const desktopNavItems = [
   { to: "/", label: "Home", icon: Home },
   { to: "/browse", label: "Browse", icon: Compass },
+  { to: "/library", label: "Library", icon: Library },
   { to: "/live", label: "Live", icon: Radio },
-  { to: "/library/scenes", label: "Library", icon: Library },
-  { to: "/files", label: "Files", icon: FolderOpen },
   { to: "/downloads", label: "Downloads", icon: Download },
-  { to: "/library/performers", label: "Performers", icon: Users },
-  { to: "/library/tags", label: "Tags", icon: Tags },
   { to: "/settings", label: "Settings", icon: Settings },
 ] as const;
 
 const mobileNavItems = [
   { to: "/", label: "Home", icon: Home },
   { to: "/browse", label: "Browse", icon: Compass },
+  { to: "/library", label: "Library", icon: Library },
   { to: "/live", label: "Live", icon: Radio },
   { to: "/downloads", label: "Downloads", icon: Download },
-  { to: "/library/scenes", label: "Library", icon: Library },
-  { to: "/files", label: "Files", icon: FolderOpen },
   { to: "/settings", label: "Settings", icon: Settings },
 ] as const;
 

@@ -1,168 +1,309 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api/client";
 import { getCapabilities } from "@/lib/runtime";
 import { getPluginBrowseSites } from "@/lib/plugins/loader";
 import { mergeSiteLists } from "@/lib/sites/catalog";
 import { useSettingsStore } from "@/lib/stores/settings";
 import type { SiteInfo } from "@/lib/types";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Globe, Link2, Search } from "lucide-react";
+import { ConnectionStatusChip } from "@/components/ConnectionStatusChip";
+import { Globe, Link2, Search, Clock, Radio, ArrowRight } from "lucide-react";
+import { isMobileDevice } from "@/lib/tauri";
 
 export const Route = createFileRoute("/browse/")({
   component: BrowsePage,
 });
 
+function useRecentSearches() {
+  const [recent, setRecent] = useState<Array<{ site: string; kind: string; slug: string }>>(() => {
+    try {
+      const raw = localStorage.getItem("archhive_recent_searches");
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const addRecent = useCallback((entry: { site: string; kind: string; slug: string }) => {
+    setRecent((prev) => {
+      const filtered = prev.filter((r) => r.slug !== entry.slug || r.site !== entry.site);
+      const next = [entry, ...filtered].slice(0, 10);
+      try {
+        localStorage.setItem("archhive_recent_searches", JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }, []);
+
+  return { recent, addRecent };
+}
+
 function BrowsePage() {
   const caps = getCapabilities();
+  const navigate = useNavigate();
   const { settings } = useSettingsStore();
+  const isMobile = isMobileDevice();
+  const { recent, addRecent } = useRecentSearches();
   const [sites, setSites] = useState<SiteInfo[]>(() => mergeSiteLists([], getPluginBrowseSites()));
-  const [url, setUrl] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [selectedSite, setSelectedSite] = useState("auto");
+  const [searchInput, setSearchInput] = useState("");
+  const [urlInput, setUrlInput] = useState("");
+  const [loadError, setLoadError] = useState("");
+  const [urlError, setUrlError] = useState("");
+  const [urlLoading, setUrlLoading] = useState(false);
   const needsRemoteSetup =
     caps.showBrowserBanner ||
     (settings.engine_mode === "remote_lan" && !settings.remote_host?.trim());
 
   useEffect(() => {
-    if (needsRemoteSetup && caps.showBrowserBanner) {
-      void queueMicrotask(() => setLoading(false));
-      return;
-    }
-    void queueMicrotask(() => {
-      setLoading(true);
-      setError("");
-    });
+    if (needsRemoteSetup && caps.showBrowserBanner) return;
     void api
       .listSites()
       .then((apiSites) => setSites(mergeSiteLists(apiSites, getPluginBrowseSites())))
       .catch((e) => {
-        setError(e instanceof Error ? e.message : "Failed to load sites");
+        setLoadError(e instanceof Error ? e.message : "Failed to load sites");
         setSites(mergeSiteLists([], getPluginBrowseSites()));
-      })
-      .finally(() => setLoading(false));
-  }, [needsRemoteSetup, caps.showBrowserBanner, settings.remote_host]);
+      });
+  }, [needsRemoteSetup, caps.showBrowserBanner]);
 
-  async function handlePasteDownload() {
-    if (!url.trim()) return;
-    setLoading(true);
-    try {
-      await api.queueDownload(url.trim());
-      setUrl("");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Download failed");
-    } finally {
-      setLoading(false);
+  const handleSearch = useCallback(() => {
+    const slug = searchInput.trim();
+    if (!slug) return;
+
+    let site = selectedSite;
+    let kind = "search";
+
+    if (site === "auto") {
+      if (slug.startsWith("http")) {
+        navigate({ to: "/browse/by-url", search: { url: slug } });
+        return;
+      }
+      site = sites[0]?.id ?? "custom";
     }
-  }
+
+    const targetSite = sites.find((s) => s.id === site);
+    if (targetSite) {
+      if (!targetSite.supported_kinds.includes("search")) {
+        kind = targetSite.supported_kinds[0];
+      }
+      addRecent({ site: targetSite.id, kind, slug });
+      navigate({
+        to: "/browse/$site/$kind/$slug",
+        params: { site: targetSite.id, kind, slug: encodeURIComponent(slug) },
+      });
+    }
+  }, [searchInput, selectedSite, sites, navigate, addRecent]);
+
+  const handlePasteUrl = useCallback(async () => {
+    const url = urlInput.trim();
+    if (!url) return;
+    setUrlLoading(true);
+    setUrlError("");
+    try {
+      await api.queueDownload(url);
+      setUrlInput("");
+    } catch (e) {
+      setUrlError(e instanceof Error ? e.message : "Download failed");
+    } finally {
+      setUrlLoading(false);
+    }
+  }, [urlInput]);
+
+  const handleSiteChip = useCallback((siteId: string) => {
+    setSelectedSite(siteId);
+  }, []);
 
   return (
     <div className="space-y-6">
       <div>
         <h2 className="text-2xl font-bold">Browse</h2>
         <p className="text-sm text-[var(--color-muted-foreground)]">
-          Pick a site or paste any supported URL
+          Search across sites or paste a URL
         </p>
       </div>
 
-      {caps.showBrowserBanner && (
-        <Card className="border-[var(--color-primary)]">
-          <CardContent className="p-4 text-sm">
-            You are viewing the dev UI in a browser. Configure{" "}
-            <strong>Settings → Engine → Remote LAN</strong> with{" "}
-            <code>http://&lt;pc-ip&gt;:8787</code> and your desktop LAN token, or use the desktop /
-            Android app.
+      {(isMobile || caps.showBrowserBanner) && <ConnectionStatusChip />}
+
+      {caps.showBrowserBanner && !needsRemoteSetup && (
+        <Card className="border-[var(--color-border)]">
+          <CardContent className="p-3 text-xs text-[var(--color-muted-foreground)]">
+            Browser mode — API calls go to your configured Remote LAN host.
           </CardContent>
         </Card>
       )}
 
-      {error && (
-        <p className="rounded-md border border-yellow-600/50 bg-yellow-950/30 p-3 text-sm text-yellow-200">
-          {error} — showing offline site list.
-        </p>
+      {needsRemoteSetup && (
+        <Card className="border-[var(--color-primary)]">
+          <CardContent className="space-y-2 p-4 text-sm">
+            <p>
+              Connect to your desktop ArcHive: open <strong>Settings → Engine → Remote LAN</strong>.
+            </p>
+            <p className="text-xs text-[var(--color-muted-foreground)]">
+              Host: <code>http://192.168.178.69:8787</code> — enable LAN on the PC app first.
+            </p>
+          </CardContent>
+        </Card>
       )}
 
-      <Card className="border-[var(--color-primary)]">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Link2 className="h-4 w-4" />
-            Custom URL
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          <p className="text-sm text-[var(--color-muted-foreground)]">
-            Paste any supported profile or playlist URL and browse via yt-dlp on the desktop host.
-          </p>
-          <Button asChild className="w-full sm:w-auto">
-            <Link to="/browse/by-url">Open Custom URL</Link>
-          </Button>
+      {loadError && (
+        <Card className="border-yellow-600/50 bg-yellow-950/30">
+          <CardContent className="p-3 text-sm text-yellow-200">
+            {loadError} — showing offline site list.
+          </CardContent>
+        </Card>
+      )}
+
+      <Card>
+        <CardContent className="p-4 space-y-3">
+          <div className="flex flex-col sm:flex-row gap-2">
+            <div className="flex-1 flex gap-2">
+              <select
+                className="h-10 shrink-0 rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-3 text-sm"
+                value={selectedSite}
+                onChange={(e) => setSelectedSite(e.target.value)}
+              >
+                <option value="auto">Auto-detect</option>
+                {sites.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.display_name}
+                  </option>
+                ))}
+              </select>
+              <Input
+                placeholder='Search (e.g. "model name", "#tag", or paste URL)'
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+                className="flex-1"
+              />
+            </div>
+            <Button onClick={handleSearch} disabled={!searchInput.trim()} className="h-10 shrink-0">
+              <Search className="h-4 w-4 sm:mr-2" />
+              <span className="hidden sm:inline">Browse</span>
+            </Button>
+          </div>
+
+          <div className="flex flex-wrap gap-1.5">
+            {sites.map((site) => (
+              <button
+                key={site.id}
+                type="button"
+                onClick={() => handleSiteChip(site.id)}
+                className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium transition ${
+                  selectedSite === site.id
+                    ? "bg-[var(--color-primary)] text-[var(--color-primary-foreground)]"
+                    : "bg-[var(--color-secondary)] hover:bg-[var(--color-muted)]"
+                }`}
+              >
+                <Globe className="h-3 w-3" />
+                {site.display_name}
+                {site.requires_cookies && <span className="text-[10px] opacity-70">(cookies)</span>}
+              </button>
+            ))}
+          </div>
         </CardContent>
       </Card>
 
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Search className="h-4 w-4" />
-            Paste URL
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="flex gap-2">
-          <Input
-            placeholder="https://..."
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && void handlePasteDownload()}
-          />
-          <Button onClick={() => void handlePasteDownload()} disabled={loading}>
-            Download
-          </Button>
+        <CardContent className="p-4 space-y-3">
+          <div className="flex items-center gap-2 text-sm font-medium">
+            <Link2 className="h-4 w-4" />
+            Quick paste URL
+          </div>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <Input
+              placeholder="https://..."
+              value={urlInput}
+              onChange={(e) => setUrlInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && void handlePasteUrl()}
+            />
+            <Button
+              onClick={() => void handlePasteUrl()}
+              disabled={urlLoading || !urlInput.trim()}
+              className="shrink-0"
+            >
+              Download
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() =>
+                urlInput.trim() &&
+                navigate({ to: "/browse/by-url", search: { url: urlInput.trim() } })
+              }
+              disabled={!urlInput.trim()}
+              className="shrink-0"
+            >
+              Browse URL
+            </Button>
+          </div>
+          {urlError && <p className="text-xs text-red-400">{urlError}</p>}
         </CardContent>
       </Card>
 
-      <div>
-        <h3 className="mb-3 text-sm font-medium text-[var(--color-muted-foreground)]">
-          Pick a site
-        </h3>
-        {loading ? (
-          <p className="text-sm text-[var(--color-muted-foreground)]">Loading sites…</p>
-        ) : (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {sites.map((site) => (
-              <Card key={site.id} className="hover:border-[var(--color-primary)] transition">
-                <CardHeader className="pb-2">
-                  <CardTitle className="flex items-center gap-2 text-base">
-                    <Globe className="h-4 w-4" />
-                    {site.display_name}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  <p className="text-xs text-[var(--color-muted-foreground)]">{site.base_url}</p>
-                  <div className="flex flex-wrap gap-1">
-                    {site.supported_kinds.map((kind) => (
-                      <span
-                        key={kind}
-                        className="rounded-full bg-[var(--color-secondary)] px-2 py-0.5 text-xs capitalize"
-                      >
-                        {kind}
-                      </span>
-                    ))}
-                  </div>
-                  {site.requires_cookies && (
-                    <span className="text-xs text-yellow-400">Requires cookies</span>
-                  )}
-                  <Button asChild variant="outline" size="sm" className="w-full">
-                    <Link to="/browse/$site" params={{ site: site.id }}>
-                      Open site
-                    </Link>
-                  </Button>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        )}
+      {recent.length > 0 && (
+        <Card>
+          <CardContent className="p-4 space-y-3">
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <Clock className="h-4 w-4" />
+              Recent searches
+            </div>
+            <div className="grid gap-1">
+              {recent.map((r) => (
+                <button
+                  key={`${r.site}-${r.kind}-${r.slug}`}
+                  type="button"
+                  className="flex items-center justify-between rounded-md px-3 py-2 text-sm hover:bg-[var(--color-muted)] transition text-left"
+                  onClick={() => {
+                    setSelectedSite(r.site);
+                    setSearchInput(r.slug);
+                    navigate({
+                      to: "/browse/$site/$kind/$slug",
+                      params: { site: r.site, kind: r.kind, slug: encodeURIComponent(r.slug) },
+                    });
+                  }}
+                >
+                  <span className="flex items-center gap-2">
+                    <span className="text-xs text-[var(--color-muted-foreground)] capitalize">
+                      {r.site}
+                    </span>
+                    <span className="text-xs text-[var(--color-muted-foreground)]">{r.kind}:</span>
+                    <span>{r.slug}</span>
+                  </span>
+                  <ArrowRight className="h-3.5 w-3.5 text-[var(--color-muted-foreground)]" />
+                </button>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      <div className="flex items-center gap-2 text-sm font-medium">
+        <Radio className="h-4 w-4 text-red-500" />
+        <span>Live Streams</span>
       </div>
+      <Card>
+        <CardContent className="p-4">
+          <p className="text-sm text-[var(--color-muted-foreground)] mb-3">
+            Browse live Chaturbate streams.
+          </p>
+          <Button asChild variant="outline">
+            <a
+              href="/live"
+              onClick={(e) => {
+                e.preventDefault();
+                navigate({ to: "/live" });
+              }}
+            >
+              Open Live Streams
+            </a>
+          </Button>
+        </CardContent>
+      </Card>
     </div>
   );
 }

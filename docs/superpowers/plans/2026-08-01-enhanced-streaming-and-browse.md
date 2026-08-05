@@ -23,32 +23,34 @@
 
 ## File Map
 
-| File | Action | Purpose |
-|------|--------|---------|
-| `src/components/ScenePlayerDialog.tsx` | Modify | Add scene list navigation, keyboard shortcuts, prev/next buttons |
-| `src/components/SceneCard.tsx` | Modify | Add Watch button alongside Download |
-| `src/components/UrlPlayerDialog.tsx` | Create | New dialog for streaming remote URLs via resolved direct video URLs |
-| `src/routes/library/scenes/index.tsx` | Modify | Pass scene list + current index to ScenePlayerDialog |
-| `src/routes/browse/$site/$kind/$slug.tsx` | Modify | Add Watch handler, pass to SceneCard |
-| `src/routes/browse/by-url.tsx` | Modify | Add Watch handler, pass to SceneCard |
-| `src-tauri/src/commands.rs` | Modify | Add `resolve_stream_url` IPC command |
-| `src-tauri/src/lib.rs` | Modify | Register `resolve_stream_url` in invoke handler |
-| `src/lib/api/client.ts` | Modify | Add `resolveStreamUrl` method |
-| `src/lib/types.ts` | Modify | (no changes needed — MediaItem already sufficient) |
-| `src/routes/settings/index.tsx` | Modify | Add "Disable token" toggle in LAN section |
-| `src-tauri/src/models.rs` | Modify | Add `lan_auth_enabled` field to AppSettings |
-| `src-tauri/src/state.rs` | Modify | Respect `lan_auth_enabled` when starting LAN server |
-| `src-tauri/src/server/mod.rs` | Modify | Check `lan_auth_enabled` in auth middleware |
+| File                                      | Action | Purpose                                                             |
+| ----------------------------------------- | ------ | ------------------------------------------------------------------- |
+| `src/components/ScenePlayerDialog.tsx`    | Modify | Add scene list navigation, keyboard shortcuts, prev/next buttons    |
+| `src/components/SceneCard.tsx`            | Modify | Add Watch button alongside Download                                 |
+| `src/components/UrlPlayerDialog.tsx`      | Create | New dialog for streaming remote URLs via resolved direct video URLs |
+| `src/routes/library/scenes/index.tsx`     | Modify | Pass scene list + current index to ScenePlayerDialog                |
+| `src/routes/browse/$site/$kind/$slug.tsx` | Modify | Add Watch handler, pass to SceneCard                                |
+| `src/routes/browse/by-url.tsx`            | Modify | Add Watch handler, pass to SceneCard                                |
+| `src-tauri/src/commands.rs`               | Modify | Add `resolve_stream_url` IPC command                                |
+| `src-tauri/src/lib.rs`                    | Modify | Register `resolve_stream_url` in invoke handler                     |
+| `src/lib/api/client.ts`                   | Modify | Add `resolveStreamUrl` method                                       |
+| `src/lib/types.ts`                        | Modify | (no changes needed — MediaItem already sufficient)                  |
+| `src/routes/settings/index.tsx`           | Modify | Add "Disable token" toggle in LAN section                           |
+| `src-tauri/src/models.rs`                 | Modify | Add `lan_auth_enabled` field to AppSettings                         |
+| `src-tauri/src/state.rs`                  | Modify | Respect `lan_auth_enabled` when starting LAN server                 |
+| `src-tauri/src/server/mod.rs`             | Modify | Check `lan_auth_enabled` in auth middleware                         |
 
 ---
 
 ## Task 1: Library Player — Scene List Navigation with Arrow Keys
 
 **Files:**
+
 - Modify: `src/components/ScenePlayerDialog.tsx`
 - Modify: `src/routes/library/scenes/index.tsx`
 
 **Interfaces:**
+
 - Consumes: `Scene[]` list and current scene index from library page
 - Produces: Updated `ScenePlayerDialog` with `scenes` and `currentIndex` props, keyboard navigation, prev/next buttons
 
@@ -59,12 +61,12 @@ In `src/components/ScenePlayerDialog.tsx`, update the `ScenePlayerDialogProps` i
 ```typescript
 interface ScenePlayerDialogProps {
   scene: Scene | null;
-  scenes?: Scene[];        // Full list for navigation
-  currentIndex?: number;   // Current index in the list
+  scenes?: Scene[]; // Full list for navigation
+  currentIndex?: number; // Current index in the list
   open: boolean;
   onClose: () => void;
   onEdit?: (scene: Scene) => void;
-  onNavigate?: (scene: Scene, index: number) => void;  // Called when navigating to next/prev
+  onNavigate?: (scene: Scene, index: number) => void; // Called when navigating to next/prev
 }
 ```
 
@@ -98,29 +100,31 @@ useEffect(() => {
 Inside the `ScenePlayerBody` component, below the video element and above the metadata, add a navigation bar when `scenes` has multiple items:
 
 ```tsx
-{scenes && scenes.length > 1 && currentIndex != null && (
-  <div className="mt-3 flex items-center justify-between">
-    <Button
-      variant="outline"
-      size="sm"
-      disabled={currentIndex <= 0}
-      onClick={() => onNavigate?.(scenes[currentIndex - 1], currentIndex - 1)}
-    >
-      ← Previous
-    </Button>
-    <span className="text-xs text-[var(--color-muted-foreground)]">
-      {currentIndex + 1} / {scenes.length}
-    </span>
-    <Button
-      variant="outline"
-      size="sm"
-      disabled={currentIndex >= scenes.length - 1}
-      onClick={() => onNavigate?.(scenes[currentIndex + 1], currentIndex + 1)}
-    >
-      Next →
-    </Button>
-  </div>
-)}
+{
+  scenes && scenes.length > 1 && currentIndex != null && (
+    <div className="mt-3 flex items-center justify-between">
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={currentIndex <= 0}
+        onClick={() => onNavigate?.(scenes[currentIndex - 1], currentIndex - 1)}
+      >
+        ← Previous
+      </Button>
+      <span className="text-xs text-[var(--color-muted-foreground)]">
+        {currentIndex + 1} / {scenes.length}
+      </span>
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={currentIndex >= scenes.length - 1}
+        onClick={() => onNavigate?.(scenes[currentIndex + 1], currentIndex + 1)}
+      >
+        Next →
+      </Button>
+    </div>
+  );
+}
 ```
 
 ### Step 4: Update ScenePlayerDialog to pass new props through
@@ -168,8 +172,14 @@ Update the `ScenePlayerDialog` usage:
   currentIndex={playerIndex}
   open={playerScene !== null}
   onClose={() => setPlayerScene(null)}
-  onEdit={(s) => { setPlayerScene(null); setEditScene(s); }}
-  onNavigate={(s, i) => { setPlayerScene(s); setPlayerIndex(i); }}
+  onEdit={(s) => {
+    setPlayerScene(null);
+    setEditScene(s);
+  }}
+  onNavigate={(s, i) => {
+    setPlayerScene(s);
+    setPlayerIndex(i);
+  }}
 />
 ```
 
@@ -179,7 +189,7 @@ Note: The `scenes` passed should be filtered to only video scenes (since non-vid
 const videoScenes = scenes.filter(isVideoScene);
 
 // When clicking a scene card:
-const idx = videoScenes.findIndex(v => v.id === scene.id);
+const idx = videoScenes.findIndex((v) => v.id === scene.id);
 if (idx >= 0) {
   setPlayerIndex(idx);
   setPlayerScene(scene);
@@ -196,6 +206,7 @@ Expected: No errors
 ## Task 2: Browse SceneCard — Add Watch Button
 
 **Files:**
+
 - Modify: `src/components/SceneCard.tsx`
 - Create: `src/components/UrlPlayerDialog.tsx`
 - Modify: `src-tauri/src/commands.rs`
@@ -205,6 +216,7 @@ Expected: No errors
 - Modify: `src/routes/browse/by-url.tsx`
 
 **Interfaces:**
+
 - Consumes: `MediaItem` from browse results
 - Produces: `resolveStreamUrl` API method, `UrlPlayerDialog` component, Watch button on SceneCard
 
@@ -545,6 +557,7 @@ Expected: No errors
 ## Task 3: LAN Token Disable Option
 
 **Files:**
+
 - Modify: `src-tauri/src/models.rs`
 - Modify: `src-tauri/src/state.rs`
 - Modify: `src-tauri/src/server/mod.rs`
@@ -552,6 +565,7 @@ Expected: No errors
 - Modify: `src/lib/types.ts`
 
 **Interfaces:**
+
 - Consumes: AppSettings with new `lan_auth_enabled` field
 - Produces: Toggle in LAN settings, middleware checks the flag
 
@@ -653,23 +667,25 @@ export interface AppSettings {
 In `src/routes/settings/index.tsx`, add a "Require authentication" toggle below the Enable LAN switch:
 
 ```tsx
-{settings.lan_enabled && (
-  <div className="flex items-center gap-3">
-    <Switch.Root
-      checked={settings.lan_auth_enabled !== false}
-      onCheckedChange={(checked) => updateSettings({ lan_auth_enabled: checked })}
-      className="h-5 w-9 rounded-full bg-[var(--color-secondary)] data-[state=checked]:bg-[var(--color-primary)]"
-    >
-      <Switch.Thumb className="block h-4 w-4 translate-x-0.5 rounded-full bg-white transition data-[state=checked]:translate-x-[18px]" />
-    </Switch.Root>
-    <div>
-      <span className="text-sm">Require authentication</span>
-      <p className="text-xs text-[var(--color-muted-foreground)]">
-        When disabled, any device on your LAN can access the API without a token.
-      </p>
+{
+  settings.lan_enabled && (
+    <div className="flex items-center gap-3">
+      <Switch.Root
+        checked={settings.lan_auth_enabled !== false}
+        onCheckedChange={(checked) => updateSettings({ lan_auth_enabled: checked })}
+        className="h-5 w-9 rounded-full bg-[var(--color-secondary)] data-[state=checked]:bg-[var(--color-primary)]"
+      >
+        <Switch.Thumb className="block h-4 w-4 translate-x-0.5 rounded-full bg-white transition data-[state=checked]:translate-x-[18px]" />
+      </Switch.Root>
+      <div>
+        <span className="text-sm">Require authentication</span>
+        <p className="text-xs text-[var(--color-muted-foreground)]">
+          When disabled, any device on your LAN can access the API without a token.
+        </p>
+      </div>
     </div>
-  </div>
-)}
+  );
+}
 ```
 
 ### Step 6: Verify

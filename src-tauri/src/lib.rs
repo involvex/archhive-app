@@ -179,6 +179,7 @@ pub fn run() {
             commands::list_orphan_sidecars,
             commands::delete_orphan_sidecar,
             commands::clear_scene_thumb,
+            commands::get_library_stats,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

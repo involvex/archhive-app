@@ -274,16 +274,17 @@ Chaturbate uses a three-tier scraping strategy (no webview bridge required for b
 4. **Error**: All three failing returns a descriptive error.
 
 Key files:
+
 - `src-tauri/src/sites/adapters/chaturbate.rs` — primary scraping (browse + search)
 - `src-tauri/src/sites/adapters/chaturbate_webview.rs` — desktop-only webview bridge fallback
 
 ### Runtime Modes & Feature Gating
 
-| Mode           | Platform         | Capability                        | yt-dlp/ffmpeg | Chaturbate | LAN Server | Tray    | Global Hotkey |
-| -------------- | ---------------- | --------------------------------- | ------------- | ---------- | ---------- | ------- | ------------- |
-| **Local**      | Desktop          | Full yt-dlp / gallery-dl / ffmpeg | ✓ (sidecar)   | HTTP+WV    | ✓ (serve)  | ✓       | ✓             |
-| **Standalone** | Mobile           | YouTube + direct media URLs only  | ✗             | API only   | ✗          | ✗       | ✗             |
-| **Remote LAN** | Mobile → desktop | Full parity via REST API          | Via desktop   | Via desktop| ✓ (client) | ✗       | ✗             |
+| Mode           | Platform         | Capability                        | yt-dlp/ffmpeg | Chaturbate  | LAN Server | Tray | Global Hotkey |
+| -------------- | ---------------- | --------------------------------- | ------------- | ----------- | ---------- | ---- | ------------- |
+| **Local**      | Desktop          | Full yt-dlp / gallery-dl / ffmpeg | ✓ (sidecar)   | HTTP+WV     | ✓ (serve)  | ✓    | ✓             |
+| **Standalone** | Mobile           | YouTube + direct media URLs only  | ✗             | API only    | ✗          | ✗    | ✗             |
+| **Remote LAN** | Mobile → desktop | Full parity via REST API          | Via desktop   | Via desktop | ✓ (client) | ✗    | ✗             |
 
 Configure in **Settings → Engine**. The frontend client (`api/client.ts`) automatically switches between local IPC and remote HTTP based on this setting.
 

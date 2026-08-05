@@ -16,6 +16,7 @@ import type {
   MediaItem,
   MergeDuplicatesResult,
   OrphanSidecar,
+  LibraryStats,
   Performer,
   Scene,
   SceneFilter,
@@ -574,5 +575,9 @@ export const api = {
       onProgress(event.payload);
     });
     return unlisten;
+  },
+
+  async getLibraryStats(): Promise<LibraryStats> {
+    return localInvoke<LibraryStats>("get_library_stats");
   },
 };

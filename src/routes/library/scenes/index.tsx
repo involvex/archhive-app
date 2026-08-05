@@ -4,14 +4,18 @@ import { api } from "@/lib/api/client";
 import { sceneThumbUrl, isVideoScene } from "@/lib/mediaUrl";
 import type { Scene, SceneFilter, SceneSort } from "@/lib/types";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { SceneEditDialog } from "@/components/SceneEditDialog";
 import { SceneDetailsDialog } from "@/components/SceneDetailsDialog";
 import { ScenePlayerDialog } from "@/components/ScenePlayerDialog";
 import { SceneBulkEditBar } from "@/components/SceneBulkEditBar";
 import { SceneContextMenu, type SceneContextMenuState } from "@/components/SceneContextMenu";
-import { MoreVertical, Pencil, RefreshCw, X } from "lucide-react";
+import { SceneCard } from "@/components/SceneCard";
+import { SkeletonGrid } from "@/components/SkeletonGrid";
+import { ErrorState } from "@/components/ErrorState";
+import { EmptyState } from "@/components/EmptyState";
+import { usePullToRefresh } from "@/lib/hooks/usePullToRefresh";
+import { Film, LayoutGrid, List, RefreshCw, X } from "lucide-react";
 
 export const Route = createFileRoute("/library/scenes/")({
   validateSearch: (search: Record<string, unknown>): { performers?: string[]; tags?: string[] } => {
@@ -56,6 +60,8 @@ function ScenesPage() {
   const [filter, setFilter] = useState<SceneFilter>({});
   const [performerInput, setPerformerInput] = useState("");
   const [tagInput, setTagInput] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     setFilter((prev) => {
@@ -87,6 +93,7 @@ function ScenesPage() {
   const [selectionMode, setSelectionMode] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Scene | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressTriggered = useRef(false);
 
@@ -103,14 +110,18 @@ function ScenesPage() {
   const [genThumbsResult, setGenThumbsResult] = useState("");
 
   const refresh = useCallback(() => {
-    if (hasFilter) {
-      void api.listScenesWithFilter(filter).then(setScenes).catch(console.error);
-    } else {
-      void api
-        .listScenes(query || undefined, sort)
-        .then(setScenes)
-        .catch(console.error);
-    }
+    setLoading(true);
+    setError(null);
+    const promise = hasFilter
+      ? api.listScenesWithFilter(filter)
+      : api.listScenes(query || undefined, sort);
+    promise
+      .then(setScenes)
+      .catch((e) => {
+        console.error(e);
+        setError(e instanceof Error ? e.message : "Failed to load scenes");
+      })
+      .finally(() => setLoading(false));
   }, [query, sort, filter, hasFilter]);
 
   useEffect(() => {
@@ -122,6 +133,15 @@ function ScenesPage() {
       if (longPressTimer.current) clearTimeout(longPressTimer.current);
     };
   }, []);
+
+  const handleRefresh = useCallback(async () => {
+    refresh();
+  }, [refresh]);
+
+  const { containerRef, pullDistance, refreshing } = usePullToRefresh({
+    onRefresh: handleRefresh,
+    disabled: false,
+  });
 
   function handleSaved(scene: Scene) {
     setScenes((prev) => prev.map((s) => (s.id === scene.id ? scene : s)));
@@ -146,11 +166,6 @@ function ScenesPage() {
       x: Math.max(8, Math.min(x, maxX)),
       y: Math.max(8, Math.min(y, maxY)),
     });
-  }
-
-  function handleContextMenu(e: React.MouseEvent, scene: Scene) {
-    e.preventDefault();
-    openMenuAt(scene, e.clientX, e.clientY);
   }
 
   function clearLongPress() {
@@ -240,13 +255,50 @@ function ScenesPage() {
   }
 
   return (
-    <div className="space-y-4">
+    <div ref={containerRef} className="space-y-4">
+      {pullDistance > 0 && (
+        <div
+          className="flex items-center justify-center transition-height overflow-hidden"
+          style={{ height: pullDistance }}
+        >
+          <div
+            className={`text-xs transition-opacity ${pullDistance > 60 ? "text-[var(--color-primary)]" : "text-[var(--color-muted-foreground)]"}`}
+          >
+            {refreshing
+              ? "Refreshing..."
+              : pullDistance > 60
+                ? "Release to refresh"
+                : "Pull to refresh"}
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-2xl font-bold">Library — Scenes</h2>
         <div className="flex gap-2">
           <Button size="sm" variant="ghost" onClick={refresh} title="Refresh">
             <RefreshCw className="h-4 w-4" />
           </Button>
+          {scenes.length > 0 && (
+            <div className="flex rounded-md border border-[var(--color-border)] overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setViewMode("grid")}
+                className={`p-1.5 transition-colors ${viewMode === "grid" ? "bg-[var(--color-muted)] text-[var(--color-foreground)]" : "text-[var(--color-muted-foreground)] hover:text-[var(--color-foreground)]"}`}
+                aria-label="Grid view"
+              >
+                <LayoutGrid className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode("list")}
+                className={`p-1.5 transition-colors ${viewMode === "list" ? "bg-[var(--color-muted)] text-[var(--color-foreground)]" : "text-[var(--color-muted-foreground)] hover:text-[var(--color-foreground)]"}`}
+                aria-label="List view"
+              >
+                <List className="h-4 w-4" />
+              </button>
+            </div>
+          )}
           <Button
             size="sm"
             variant={selectionMode ? "default" : "outline"}
@@ -475,120 +527,111 @@ function ScenesPage() {
           </Button>
         </div>
       )}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-5">
-        {scenes.map((scene) => {
-          const thumbSrc = sceneThumbUrl(scene);
-          const isSelected = selectedIds.has(scene.id);
-          const canPlay = isVideoScene(scene);
-          return (
-            <Card
-              key={scene.id}
-              className={`overflow-hidden group cursor-pointer ${isSelected ? "ring-2 ring-[var(--color-primary)]" : ""}`}
-              onContextMenu={(e) => handleContextMenu(e, scene)}
-              onPointerDown={(e) => onCardPointerDown(e, scene)}
-              onPointerUp={onCardPointerUp}
-              onPointerCancel={onCardPointerUp}
-              onPointerLeave={onCardPointerUp}
-              onClick={() => {
-                if (selectionMode) return;
-                if (longPressTriggered.current) {
-                  longPressTriggered.current = false;
-                  return;
-                }
-                if (canPlay) {
-                  const videoScenes = scenes.filter(isVideoScene);
-                  const idx = videoScenes.findIndex((s) => s.id === scene.id);
-                  if (idx >= 0) setPlayerIndex(idx);
-                  setPlayerScene(scene);
-                } else {
-                  setDetailsScene(scene);
-                }
-              }}
-            >
-              <div className="aspect-video bg-[var(--color-muted)] relative">
-                {selectionMode && (
-                  <label className="absolute top-1 left-1 z-10 flex h-8 w-8 items-center justify-center rounded bg-black/60">
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      onChange={() => toggleSelect(scene.id)}
-                      className="h-4 w-4"
-                    />
-                  </label>
-                )}
-                {thumbSrc ? (
-                  <img
-                    src={thumbSrc}
-                    alt={scene.title}
-                    className="h-full w-full object-cover"
-                    onError={(e) => {
-                      e.currentTarget.style.display = "none";
-                    }}
-                  />
-                ) : (
-                  <div className="flex h-full items-center justify-center text-[var(--color-muted-foreground)] text-xs">
-                    No preview
-                  </div>
-                )}
-                {!selectionMode && (
-                  <div className="absolute top-1 right-1 z-10 flex gap-1">
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      className="h-8 w-8 p-0 bg-black/65 text-white hover:bg-black/80"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setEditScene(scene);
-                      }}
-                      aria-label="Edit scene"
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      className="h-8 w-8 p-0 bg-black/65 text-white hover:bg-black/80"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const rect = e.currentTarget.getBoundingClientRect();
-                        openMenuAt(scene, rect.left, rect.bottom + 4);
-                      }}
-                      aria-label="More actions"
-                    >
-                      <MoreVertical className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                )}
-              </div>
-              <CardContent className="p-2 space-y-1">
-                <p className="line-clamp-2 text-xs font-medium">{scene.title}</p>
-                {isHashNamed(scene.title) && (
-                  <span className="inline-block rounded bg-amber-500/20 px-1.5 py-0.5 text-[9px] font-medium text-amber-400">
-                    Hash-named
-                  </span>
-                )}
-                {scene.performers.length > 0 && (
-                  <p className="text-[10px] text-[var(--color-muted-foreground)] truncate">
-                    {scene.performers.join(", ")}
-                  </p>
-                )}
-                <div className="flex flex-wrap gap-1">
-                  {scene.tags.slice(0, 3).map((tag) => (
-                    <span
-                      key={tag}
-                      className="rounded bg-[var(--color-secondary)] px-1.5 py-0.5 text-[10px]"
-                    >
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
-      {scenes.length === 0 && (
-        <p className="text-sm text-[var(--color-muted-foreground)]">No scenes in library.</p>
+      {loading ? (
+        <SkeletonGrid count={12} cols={3} />
+      ) : error ? (
+        <ErrorState message={error} onRetry={refresh} />
+      ) : scenes.length === 0 ? (
+        <EmptyState
+          icon={<Film className="h-12 w-12" />}
+          title="No scenes found"
+          description="Try adjusting your search or filter criteria."
+        />
+      ) : viewMode === "grid" ? (
+        <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+          {scenes.map((scene) => {
+            const thumbSrc = sceneThumbUrl(scene);
+            const isSelected = selectedIds.has(scene.id);
+            const canPlay = isVideoScene(scene);
+            return (
+              <button
+                key={scene.id}
+                type="button"
+                className="w-full text-left [appearance:button] bg-transparent border-0 p-0"
+                onPointerDown={(e) => onCardPointerDown(e, scene)}
+                onPointerUp={onCardPointerUp}
+                onPointerCancel={onCardPointerUp}
+                onPointerLeave={onCardPointerUp}
+                onClick={() => {
+                  if (!selectionMode) return;
+                  toggleSelect(scene.id);
+                }}
+              >
+                <SceneCard
+                  item={scene}
+                  thumbSrc={thumbSrc}
+                  selected={isSelected}
+                  selectionMode={selectionMode}
+                  onEdit={setEditScene}
+                  onContextMenu={(item, x, y) => openMenuAt(item as Scene, x, y)}
+                  onClick={(item) => {
+                    const s = item as Scene;
+                    if (longPressTriggered.current) {
+                      longPressTriggered.current = false;
+                      return;
+                    }
+                    if (canPlay) {
+                      const videoScenes = scenes.filter(isVideoScene);
+                      const idx = videoScenes.findIndex((v) => v.id === s.id);
+                      if (idx >= 0) setPlayerIndex(idx);
+                      setPlayerScene(s);
+                    } else {
+                      setDetailsScene(s);
+                    }
+                  }}
+                />
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {scenes.map((scene) => {
+            const thumbSrc = sceneThumbUrl(scene);
+            const isSelected = selectedIds.has(scene.id);
+            const canPlay = isVideoScene(scene);
+            return (
+              <button
+                key={scene.id}
+                type="button"
+                className="w-full text-left [appearance:button] bg-transparent border-0 p-0"
+                onPointerDown={(e) => onCardPointerDown(e, scene)}
+                onPointerUp={onCardPointerUp}
+                onPointerCancel={onCardPointerUp}
+                onPointerLeave={onCardPointerUp}
+                onClick={() => {
+                  if (!selectionMode) return;
+                  toggleSelect(scene.id);
+                }}
+              >
+                <SceneCard
+                  item={scene}
+                  thumbSrc={thumbSrc}
+                  selected={isSelected}
+                  selectionMode={selectionMode}
+                  listView
+                  onEdit={setEditScene}
+                  onContextMenu={(item, x, y) => openMenuAt(item as Scene, x, y)}
+                  onClick={(item) => {
+                    const s = item as Scene;
+                    if (longPressTriggered.current) {
+                      longPressTriggered.current = false;
+                      return;
+                    }
+                    if (canPlay) {
+                      const videoScenes = scenes.filter(isVideoScene);
+                      const idx = videoScenes.findIndex((v) => v.id === s.id);
+                      if (idx >= 0) setPlayerIndex(idx);
+                      setPlayerScene(s);
+                    } else {
+                      setDetailsScene(s);
+                    }
+                  }}
+                />
+              </button>
+            );
+          })}
+        </div>
       )}
 
       <SceneEditDialog
@@ -648,7 +691,7 @@ function ScenesPage() {
           >
             <h3 className="text-lg font-semibold">Delete scene</h3>
             <p className="mt-2 text-sm text-[var(--color-muted-foreground)]">
-              Remove “{deleteTarget.title}” from the library?
+              Remove "{deleteTarget.title}" from the library?
             </p>
             <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:justify-end">
               <Button variant="outline" onClick={() => setDeleteTarget(null)} disabled={deleting}>
@@ -674,8 +717,4 @@ function ScenesPage() {
       )}
     </div>
   );
-}
-
-function isHashNamed(title: string): boolean {
-  return /^-\d{15,}_\d+$/.test(title);
 }

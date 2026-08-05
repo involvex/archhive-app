@@ -16,8 +16,12 @@ import { UrlPlayerDialog } from "@/components/UrlPlayerDialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { RefreshCw } from "lucide-react";
+import { SkeletonGrid } from "@/components/SkeletonGrid";
+import { ErrorState } from "@/components/ErrorState";
+import { EmptyState } from "@/components/EmptyState";
+import { RefreshCw, Search } from "lucide-react";
 import { browseCacheKey, useBrowseStore } from "@/lib/stores/browse";
+import { useInfiniteScroll } from "@/lib/hooks/useInfiniteScroll";
 
 export function PornhubCategoryBrowser() {
   const [orientation, setOrientation] = useState<BrowseOrientation>("straight");
@@ -27,6 +31,7 @@ export function PornhubCategoryBrowser() {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [initial, setInitial] = useState(true);
   const [error, setError] = useState("");
   const [liveCatalog, setLiveCatalog] = useState<PornhubCategory[] | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -75,6 +80,7 @@ export function PornhubCategoryBrowser() {
         setHasMore(result.has_more);
         setPage(p);
         setSelected(cat);
+        setInitial(false);
       } catch (e) {
         const msg = e instanceof Error ? e.message : "Browse failed";
         setError(msg.replace(/^site error:\s*/i, ""));
@@ -85,6 +91,14 @@ export function PornhubCategoryBrowser() {
     },
     [setCache],
   );
+
+  const loadMore = useCallback(() => {
+    if (selected && !loading && hasMore) {
+      void load(selected, page + 1, true);
+    }
+  }, [selected, loading, hasMore, page, load]);
+
+  const { sentinelRef } = useInfiniteScroll(loadMore, hasMore, loading);
 
   async function refreshCategories() {
     setRefreshing(true);
@@ -127,6 +141,8 @@ export function PornhubCategoryBrowser() {
                   setSelected(null);
                   setItems([]);
                   setFilter("");
+                  setInitial(true);
+                  setError("");
                 }}
               >
                 {o.label}
@@ -171,8 +187,10 @@ export function PornhubCategoryBrowser() {
                       setPage(cached.page);
                       setHasMore(cached.hasMore);
                       setError("");
+                      setInitial(false);
                       return;
                     }
+                    setInitial(true);
                     void load(cat, 1);
                   }}
                 >
@@ -196,12 +214,20 @@ export function PornhubCategoryBrowser() {
       )}
 
       {error && (
-        <p className="rounded-md border border-red-400/30 bg-red-400/10 px-3 py-2 text-sm text-red-400">
-          {error}
-        </p>
+        <ErrorState message={error} onRetry={() => selected && void load(selected, page, false)} />
       )}
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
+      {loading && initial && items.length === 0 && <SkeletonGrid count={12} cols={3} />}
+
+      {!loading && !error && items.length === 0 && !initial && selected && (
+        <EmptyState
+          icon={<Search className="h-8 w-8" />}
+          title="No videos found"
+          description="Import PornHub cookies in Settings to unlock more results."
+        />
+      )}
+
+      <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
         {items.map((item) => (
           <SceneCard
             key={item.id}
@@ -213,20 +239,12 @@ export function PornhubCategoryBrowser() {
         ))}
       </div>
 
-      {hasMore && selected && (
-        <Button
-          variant="outline"
-          onClick={() => void load(selected, page + 1, true)}
-          disabled={loading}
-        >
-          Load more
-        </Button>
-      )}
+      {hasMore && <div ref={sentinelRef} className="h-4" />}
 
-      {!loading && selected && items.length === 0 && (
-        <p className="text-sm text-[var(--color-muted-foreground)]">
-          No videos — import PornHub cookies in Settings.
-        </p>
+      {loading && !initial && items.length > 0 && (
+        <div className="flex justify-center py-4 text-xs text-[var(--color-muted-foreground)]">
+          Loading more...
+        </div>
       )}
 
       <BrowseItemDetailsDialog

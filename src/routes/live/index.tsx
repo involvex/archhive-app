@@ -4,10 +4,12 @@ import { api } from "@/lib/api/client";
 import type { MediaItem } from "@/lib/types";
 import { SceneCard } from "@/components/SceneCard";
 import { BrowseItemDetailsDialog } from "@/components/BrowseItemDetailsDialog";
+import { ErrorState } from "@/components/ErrorState";
+import { SkeletonGrid } from "@/components/SkeletonGrid";
+import { EmptyState } from "@/components/EmptyState";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Radio, Settings, AlertTriangle } from "lucide-react";
+import { Radio, Search } from "lucide-react";
 
 export const Route = createFileRoute("/live/")({
   component: LiveIndexPage,
@@ -77,24 +79,20 @@ function LiveIndexPage() {
       </div>
 
       {error && (
-        <div className="flex items-start gap-2 rounded-md border border-red-400/30 bg-red-400/10 px-3 py-2 text-sm text-red-400">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-          <div className="space-y-1">
-            <p>{error}</p>
-            <p className="text-xs text-red-300/80">
-              Chaturbate lists are scraped server-side without yt-dlp. If you repeatedly see no
-              rooms, make sure cookies for <code className="font-mono">chaturbate</code> are
-              configured in{" "}
-              <Link to="/settings" className="underline">
-                Settings &rarr; Cookies
-              </Link>
-              .
-            </p>
-          </div>
-        </div>
+        <>
+          <ErrorState message={error} onRetry={loadPopular} />
+          <p className="text-xs text-red-300/80">
+            Chaturbate lists are scraped server-side without yt-dlp. If you repeatedly see no rooms,
+            make sure cookies for <code className="font-mono">chaturbate</code> are configured in{" "}
+            <Link to="/settings" className="underline">
+              Settings &rarr; Cookies
+            </Link>
+            .
+          </p>
+        </>
       )}
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
+      <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
         {items.map((item) => (
           <Link
             key={item.id}
@@ -106,34 +104,14 @@ function LiveIndexPage() {
         ))}
       </div>
 
-      {loading && !error && (
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
-          {Array.from({ length: 12 }, (_, i) => i + 1).map((n) => (
-            <Skeleton key={n} className="aspect-[11/16] w-full" />
-          ))}
-        </div>
-      )}
+      {loading && !error && <SkeletonGrid count={12} cols={3} />}
 
       {!loading && items.length === 0 && !error && (
-        <div className="flex flex-col items-start gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-muted)]/30 px-4 py-3 text-sm text-[var(--color-muted-foreground)]">
-          <p className="font-medium text-[var(--color-foreground)]">
-            No live streams returned from the Chaturbate listing page.
-          </p>
-          <p>
-            Chaturbate renders its room list client-side after JavaScript hydration. The desktop
-            webview bridge scrapes the hydrated page, so an empty list usually means the
-            age-verification cookie is missing or the listing URL changed. Try a different tag or
-            search below, or open a known model directly.
-          </p>
-          <p className="flex items-center gap-1.5 text-xs">
-            <Settings className="h-3.5 w-3.5" />
-            Configuring Chaturbate cookies in{" "}
-            <Link to="/settings" className="underline">
-              Settings &rarr; Cookies
-            </Link>{" "}
-            helps per-room streams resolve and may unlock the listing page.
-          </p>
-        </div>
+        <EmptyState
+          icon={<Search className="h-8 w-8" />}
+          title="No streams found"
+          description="Try a different search term."
+        />
       )}
 
       <BrowseItemDetailsDialog

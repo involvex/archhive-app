@@ -11,6 +11,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DownloadProgressRow } from "@/components/DownloadProgress";
 import { Button } from "@/components/ui/button";
 import { ScenePlayerDialog } from "@/components/ScenePlayerDialog";
+import { SkeletonGrid } from "@/components/SkeletonGrid";
+import { ErrorState } from "@/components/ErrorState";
+import { EmptyState } from "@/components/EmptyState";
+import { SceneCard } from "@/components/SceneCard";
+import { Compass, Link2, Radio, Film } from "lucide-react";
 
 export const Route = createFileRoute("/")({
   component: HomePage,
@@ -21,6 +26,7 @@ function HomePage() {
   const [scenes, setScenes] = useState<Scene[]>([]);
   const [downloads, setDownloads] = useState<DownloadJob[]>([]);
   const [loadError, setLoadError] = useState("");
+  const [loading, setLoading] = useState(true);
   const [playerScene, setPlayerScene] = useState<Scene | null>(null);
   const [playerIndex, setPlayerIndex] = useState(0);
   const caps = getCapabilities();
@@ -29,15 +35,20 @@ function HomePage() {
 
   useEffect(() => {
     if (needsSetup) return;
-    void queueMicrotask(() => setLoadError(""));
-    void api
+    setLoading(true);
+    setLoadError("");
+
+    const scenesP = api
       .listScenes()
       .then(setScenes)
       .catch((e) => setLoadError(e instanceof Error ? e.message : "Failed to load scenes"));
-    void api
+    const downloadsP = api
       .listDownloads()
       .then(setDownloads)
       .catch((e) => setLoadError(e instanceof Error ? e.message : "Failed to load downloads"));
+
+    Promise.allSettled([scenesP, downloadsP]).finally(() => setLoading(false));
+
     void api.subscribeDownloadProgress((job) => {
       setDownloads((prev) => {
         const idx = prev.findIndex((j) => j.id === job.id);
@@ -47,7 +58,7 @@ function HomePage() {
         return next;
       });
     });
-  }, [needsSetup, settings.remote_host, settings.remote_token]);
+  }, [needsSetup]);
 
   const active = downloads.filter((d) => d.status === "active" || d.status === "pending");
 
@@ -97,10 +108,65 @@ function HomePage() {
 
       {loadError && <p className="text-sm text-[var(--color-destructive)]">{loadError}</p>}
 
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-xs text-[var(--color-muted-foreground)]">Total Scenes</p>
+            <p className="text-2xl font-bold tabular-nums">{scenes.length}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-xs text-[var(--color-muted-foreground)]">Downloads</p>
+            <p className="text-2xl font-bold tabular-nums">{downloads.length}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-xs text-[var(--color-muted-foreground)]">Active</p>
+            <p className="text-2xl font-bold tabular-nums">{active.length}</p>
+          </CardContent>
+        </Card>
+        <Link to="/library/scenes" className="block">
+          <Card className="hover:border-[var(--color-primary)] transition-colors cursor-pointer">
+            <CardContent className="p-4">
+              <p className="text-xs text-[var(--color-muted-foreground)]">Library</p>
+              <p className="text-2xl font-bold">{scenes.length}</p>
+            </CardContent>
+          </Card>
+        </Link>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <Button asChild size="sm" variant="secondary">
+          <Link to="/browse">
+            <Compass className="h-4 w-4 mr-2" />
+            Browse Sites
+          </Link>
+        </Button>
+        <Button asChild size="sm" variant="secondary">
+          <Link to="/browse/by-url">
+            <Link2 className="h-4 w-4 mr-2" />
+            Paste URL
+          </Link>
+        </Button>
+        <Button asChild size="sm" variant="secondary">
+          <Link to="/live">
+            <Radio className="h-4 w-4 mr-2" />
+            Live Streams
+          </Link>
+        </Button>
+      </div>
+
       {active.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>Active Downloads</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              Active Downloads
+              <span className="rounded-full bg-[var(--color-primary)]/20 px-2 py-0.5 text-xs text-[var(--color-primary)]">
+                {active.length} Active
+              </span>
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
             {active.map((job) => (
@@ -112,32 +178,48 @@ function HomePage() {
 
       <div>
         <h3 className="mb-3 text-lg font-semibold">Recent Scenes</h3>
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-5">
-          {scenes.slice(0, 10).map((scene) => {
-            const thumbSrc = sceneThumbUrl(scene);
-            return (
-              <Card
+        {loading && !scenes.length && !loadError ? (
+          <SkeletonGrid count={12} cols={6} />
+        ) : loadError ? (
+          <ErrorState
+            message={loadError}
+            onRetry={() => {
+              setLoading(true);
+              setLoadError("");
+              Promise.allSettled([
+                api.listScenes().then(setScenes),
+                api.listDownloads().then(setDownloads),
+              ])
+                .catch((e) => setLoadError(e instanceof Error ? e.message : "Failed to load data"))
+                .finally(() => setLoading(false));
+            }}
+          />
+        ) : scenes.length === 0 ? (
+          <EmptyState
+            icon={<Film className="h-8 w-8" />}
+            title="No Scenes Yet"
+            description="Browse sites or paste a URL to start downloading media."
+            action={
+              <Button asChild size="sm">
+                <Link to="/browse">
+                  <Compass className="h-4 w-4 mr-2" />
+                  Browse Sites
+                </Link>
+              </Button>
+            }
+          />
+        ) : (
+          <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+            {scenes.slice(0, 12).map((scene) => (
+              <SceneCard
                 key={scene.id}
-                className="cursor-pointer overflow-hidden hover:border-[var(--color-primary)] transition-colors"
-                onClick={() => handlePlay(scene)}
-              >
-                <div className="aspect-video bg-[var(--color-muted)]">
-                  {thumbSrc ? (
-                    <img src={thumbSrc} alt={scene.title} className="h-full w-full object-cover" />
-                  ) : null}
-                </div>
-                <CardContent className="p-2">
-                  <p className="line-clamp-2 text-xs font-medium">{scene.title}</p>
-                </CardContent>
-              </Card>
-            );
-          })}
-          {scenes.length === 0 && (
-            <p className="col-span-full text-sm text-[var(--color-muted-foreground)]">
-              No scenes yet. Browse sites or paste a URL to download.
-            </p>
-          )}
-        </div>
+                item={scene}
+                thumbSrc={sceneThumbUrl(scene)}
+                onClick={(item) => handlePlay(item as Scene)}
+              />
+            ))}
+          </div>
+        )}
       </div>
 
       <ScenePlayerDialog

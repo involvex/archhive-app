@@ -413,3 +413,12 @@ pub struct OrphanSidecar {
     pub path: String,
     pub size: u64,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LibraryStats {
+    pub scene_count: u64,
+    pub performer_count: u64,
+    pub tag_count: u64,
+    pub total_size_bytes: u64,
+    pub free_space_bytes: u64,
+}

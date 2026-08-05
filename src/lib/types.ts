@@ -220,3 +220,11 @@ export interface OrphanSidecar {
   path: string;
   size: number;
 }
+
+export interface LibraryStats {
+  scene_count: number;
+  performer_count: number;
+  tag_count: number;
+  total_size_bytes: number;
+  free_space_bytes: number;
+}

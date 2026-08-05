@@ -1,7 +1,7 @@
 use crate::error::AppResult;
 use crate::models::{
     AppSettings, BatchUpdateScenesRequest, BatchUpdateScenesResult, BrowseKind, BrowseOrientation,
-    DownloadJob, DuplicateGroup, FfmpegStatus, HealthResponse, LanHost, MediaItem,
+    DownloadJob, DuplicateGroup, FfmpegStatus, HealthResponse, LanHost, LibraryStats, MediaItem,
     MergeDuplicatesResult, OrphanSidecar, Performer, PornhubCategoryEntry,
     ScanResult, Scene, SceneFilter, SceneSort, SiteInfo, Tag, UpdateSceneRequest,
 };
@@ -454,4 +454,9 @@ pub fn clear_scene_thumb(
     scene_id: String,
 ) -> CmdResult<()> {
     map_err(state.clear_scene_thumb(&scene_id))
+}
+
+#[tauri::command]
+pub fn get_library_stats(state: State<'_, Arc<AppState>>) -> CmdResult<LibraryStats> {
+    map_err(state.get_library_stats())
 }

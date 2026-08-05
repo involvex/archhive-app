@@ -665,6 +665,37 @@ impl AppState {
         self.db.clear_scene_thumb(scene_id)
     }
 
+    pub fn get_library_stats(&self) -> AppResult<crate::models::LibraryStats> {
+        let scenes = self.db.list_scenes(None, crate::models::SceneSort::Newest)?;
+        let performers = self.db.list_performers(None)?;
+        let tags = self.db.list_tags()?;
+
+        let settings = self.get_settings()?;
+        let library_path = Self::validate_library_path(&settings.library_path, &self.data_dir)?;
+        let library_dir = std::path::Path::new(&library_path);
+
+        let mut total_size: u64 = 0;
+        if library_dir.exists() {
+            for entry in walkdir::WalkDir::new(library_dir)
+                .min_depth(1)
+                .into_iter()
+                .filter_map(|e| e.ok())
+            {
+                if entry.file_type().is_file() {
+                    total_size += entry.metadata().map(|m| m.len()).unwrap_or(0);
+                }
+            }
+        }
+
+        Ok(crate::models::LibraryStats {
+            scene_count: scenes.len() as u64,
+            performer_count: performers.len() as u64,
+            tag_count: tags.len() as u64,
+            total_size_bytes: total_size,
+            free_space_bytes: 0,
+        })
+    }
+
     pub fn static_ui_path(&self) -> Option<PathBuf> {
         self.static_ui_dir.lock().clone()
     }
