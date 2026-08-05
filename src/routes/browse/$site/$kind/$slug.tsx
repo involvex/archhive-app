@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { LayoutGrid, List, Search } from "lucide-react";
 import { api } from "@/lib/api/client";
 import { normalizeBrowseInput } from "@/lib/browse/normalize";
-import type { BrowseKind, MediaItem } from "@/lib/types";
+import type { BrowseKind, BrowseOrientation, MediaItem } from "@/lib/types";
 import { SceneCard } from "@/components/SceneCard";
 import { BrowseItemDetailsDialog } from "@/components/BrowseItemDetailsDialog";
 import { UrlPlayerDialog } from "@/components/UrlPlayerDialog";
@@ -20,11 +20,33 @@ export const Route = createFileRoute("/browse/$site/$kind/$slug")({
   component: BrowseDetailPage,
 });
 
+function normalizeInitialSlug(rawSlug: string): string {
+  if (rawSlug === "example") return "";
+  if (rawSlug.startsWith("#")) return rawSlug.slice(1).trim();
+  return rawSlug;
+}
+
 function BrowseDetailPage() {
   const { site, kind, slug } = Route.useParams();
+  const cleanSlug = normalizeInitialSlug(slug);
+  const [orientation, setOrientation] = useState<BrowseOrientation>("straight");
+  const isPornhubAnimal =
+    site === "pornhub" && (kind === "category" || kind === "tag" || kind === "search");
+  const ORIENT_TABS: { value: BrowseOrientation; label: string }[] = [
+    { value: "straight", label: "Straight" },
+    { value: "gay", label: "Gay" },
+    { value: "lesbian", label: "Lesbian" },
+    { value: "transgender", label: "Trans" },
+  ];
+
   const cacheKey = useMemo(
-    () => browseCacheKey({ site, kind, slug: slug === "example" ? "" : slug }),
-    [site, kind, slug],
+    () =>
+      browseCacheKey({
+        site,
+        kind,
+        slug: cleanSlug,
+      }),
+    [site, kind, cleanSlug],
   );
   const cached = useBrowseStore((s) => s.caches[cacheKey]);
   const setCache = useBrowseStore((s) => s.set);
@@ -32,7 +54,7 @@ function BrowseDetailPage() {
   const [items, setItems] = useState<MediaItem[]>(cached?.items ?? []);
   const [page, setPage] = useState(cached?.page ?? 1);
   const [hasMore, setHasMore] = useState(cached?.hasMore ?? false);
-  const [querySlug, setQuerySlug] = useState(cached?.querySlug ?? (slug === "example" ? "" : slug));
+  const [querySlug, setQuerySlug] = useState(cached?.querySlug ?? cleanSlug);
   const [loading, setLoading] = useState(false);
   const [initial, setInitial] = useState(!cached?.items?.length);
   const [error, setError] = useState("");
@@ -51,7 +73,13 @@ function BrowseDetailPage() {
       setError("");
       try {
         const normalized = normalizeBrowseInput(site, kind as BrowseKind, querySlug.trim());
-        const result = await api.browse(site, normalized.kind, normalized.slug, p);
+        const result = await api.browse(
+          site,
+          normalized.kind,
+          normalized.slug,
+          p,
+          isPornhubAnimal ? orientation : undefined,
+        );
         setItems((prev) => (append ? [...prev, ...result.items] : result.items));
         setHasMore(result.has_more);
         setPage(p);
@@ -65,7 +93,7 @@ function BrowseDetailPage() {
         setLoading(false);
       }
     },
-    [site, kind, querySlug],
+    [site, kind, querySlug, orientation, isPornhubAnimal],
   );
 
   const loadMore = useCallback(() => {
@@ -144,16 +172,48 @@ function BrowseDetailPage() {
             </div>
           )}
         </div>
+        {isPornhubAnimal && (
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {ORIENT_TABS.map((o) => (
+              <button
+                key={o.value}
+                type="button"
+                onClick={() => {
+                  setOrientation(o.value);
+                  setInitial(true);
+                  setItems([]);
+                  void load(1);
+                }}
+                className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium transition ${
+                  orientation === o.value
+                    ? "bg-[var(--color-primary)] text-[var(--color-primary-foreground)]"
+                    : "bg-[var(--color-secondary)] hover:bg-[var(--color-muted)]"
+                }`}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="mt-3 flex gap-2 max-w-md">
           <Input
             placeholder={`Enter ${kind} slug...`}
             value={querySlug}
-            onChange={(e) => setQuerySlug(e.target.value)}
+            onChange={(e) => {
+              let val = e.target.value;
+              if (val.startsWith("#")) val = val.slice(1);
+              setQuerySlug(val);
+            }}
             onKeyDown={(e) => {
               if (e.key === "Enter") {
-                setInitial(true);
-                setItems([]);
-                void load(1);
+                let val = querySlug;
+                if (val.startsWith("#")) val = val.slice(1).trim();
+                if (val) {
+                  setQuerySlug(val);
+                  setInitial(true);
+                  setItems([]);
+                  void load(1);
+                }
               }
             }}
           />

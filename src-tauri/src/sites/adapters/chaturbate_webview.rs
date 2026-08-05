@@ -31,13 +31,13 @@ use uuid::Uuid;
 /// Custom URL scheme used as a JS -> Rust return channel. JS sets
 /// `window.location.href = "cb-bridge://done?p=<base64-json>"` and Rust's
 /// `on_navigation` callback decodes the payload and cancels the navigation.
-const BRIDGE_SCHEME: &str = "cb-bridge";
+const _BRIDGE_SCHEME: &str = "cb-bridge";
 
 /// How long the bridge waits for the SPA to render before giving up.
 /// 8 seconds is generous: in practice room cards appear within 1-2s on a
 /// warm connection, 5-6s on a cold one. Past 8s we assume the page failed
 /// to hydrate (e.g. age-gate cookie missing, region blockCDN, etc.).
-const BRIDGE_TIMEOUT: Duration = Duration::from_secs(8);
+const _BRIDGE_TIMEOUT: Duration = Duration::from_secs(8);
 
 /// Raw room data extracted by the injected JS. Fields mirror what's visible
 /// in the rendered card DOM; `null`/missing values come back as `None`.
@@ -45,7 +45,7 @@ const BRIDGE_TIMEOUT: Duration = Duration::from_secs(8);
 /// Keep field names in `camelCase` because the JS bridge produces JSON with
 /// camelCase keys (matches the JS-side style and `MediaItem` casing).
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct RawRoom {
+pub struct _RawRoom {
     pub username: String,
     pub title: String,
     #[serde(default)]
@@ -67,11 +67,11 @@ pub struct RawRoom {
 /// surfacing the failure to the user as a hard error would be worse than
 /// showing the (now-empty) grid with the existing "no rooms from this
 /// listing" message.
-pub async fn fetch_listing(
+pub async fn _fetch_listing(
     app: &AppHandle,
     vault: &CookieVault,
     url: &str,
-) -> AppResult<Vec<RawRoom>> {
+) -> AppResult<Vec<_RawRoom>> {
     let label = format!("cb-bridge-{}", Uuid::new_v4().simple());
 
     let cookie_header = vault
@@ -83,7 +83,7 @@ pub async fn fetch_listing(
     // Wrapped in Arc<Mutex<Option<..>>> so the Fn on_navigation closure can
     // take-and-send only on the first match (a bridge URL could surface more
     // than once during redirect chains, but we only need the first payload).
-    let (tx, rx) = oneshot::channel::<Option<Vec<RawRoom>>>();
+    let (tx, rx) = oneshot::channel::<Option<Vec<_RawRoom>>>();
     let tx_guard = Arc::new(Mutex::new(Some(tx)));
 
     // Build the initialization script. Cookies are injected by inserting
@@ -132,7 +132,7 @@ pub async fn fetch_listing(
             // On Finished, kick off the extractor JS. We don't touch the webview
             // for Started events because the SPA bundle hasn't run yet.
             if matches!(payload.event(), PageLoadEvent::Finished) {
-                if let Err(e) = wv.eval(EXTRACT_JS) {
+                if let Err(e) = wv.eval(_EXTRACT_JS) {
                     tracing::warn!("[cb-bridge] eval EXTRACT_JS failed: {e}");
                 }
             }
@@ -140,11 +140,11 @@ pub async fn fetch_listing(
         .on_navigation({
             let tx_guard = tx_guard.clone();
             move |nav_url| {
-                if nav_url.scheme() != BRIDGE_SCHEME {
+                if nav_url.scheme() != _BRIDGE_SCHEME {
                     return true;
                 }
 
-                let report = |rooms: Option<Vec<RawRoom>>| {
+                let report = |rooms: Option<Vec<_RawRoom>>| {
                     if let Some(tx) = tx_guard.lock().unwrap().take() {
                         let _ = tx.send(rooms);
                     }
@@ -183,7 +183,7 @@ pub async fn fetch_listing(
                     }
                 };
 
-                match serde_json::from_str::<Vec<RawRoom>>(&json) {
+                match serde_json::from_str::<Vec<_RawRoom>>(&json) {
                     Ok(rooms) => report(Some(rooms)),
                     Err(e) => {
                         tracing::warn!("[cb-bridge] JSON decode failed: {e}");
@@ -204,12 +204,12 @@ pub async fn fetch_listing(
 
     // Wait for the result with a timeout. If we time out, the SPA failed to
     // render in time — return an empty list and clean up the window.
-    let result = match tokio::time::timeout(BRIDGE_TIMEOUT, rx).await {
+    let result = match tokio::time::timeout(_BRIDGE_TIMEOUT, rx).await {
         Ok(Ok(Some(rooms))) => rooms,
         Ok(Ok(None)) => vec![],
         Ok(Err(_)) => vec![], // tx dropped without sending
         Err(_) => {
-            tracing::warn!("[cb-bridge] timed out after {BRIDGE_TIMEOUT:?} for {label}");
+            tracing::warn!("[cb-bridge] timed out after {_BRIDGE_TIMEOUT:?} for {label}");
             vec![]
         }
     };
@@ -235,7 +235,7 @@ pub async fn fetch_listing(
 ///    `cb-bridge://done?p=<base64(json)>` via `location.href`.
 ///
 /// The JS is wrapped in an IIFE so no window globals leak past completion.
-const EXTRACT_JS: &str = r##"
+const _EXTRACT_JS: &str = r##"
 (function () {
   function emit(rooms) {
     if (window.__CB_BRIDGE_DONE__) return;

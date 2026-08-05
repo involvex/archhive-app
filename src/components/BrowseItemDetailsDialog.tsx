@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import { api } from "@/lib/api/client";
 import type { MediaItem } from "@/lib/types";
 import { Button } from "@/components/ui/button";
@@ -48,7 +49,15 @@ function ExpandableText({
   );
 }
 
-function ExpandableList({ label, items }: { label: string; items: string[] }) {
+function ExpandableList({
+  label,
+  items,
+  onItemClick,
+}: {
+  label: string;
+  items: string[];
+  onItemClick?: (item: string) => void;
+}) {
   const [expanded, setExpanded] = useState(false);
   if (items.length === 0) return null;
   const shown = expanded ? items : items.slice(0, 8);
@@ -56,19 +65,22 @@ function ExpandableList({ label, items }: { label: string; items: string[] }) {
     <div>
       <dt className="text-xs text-[var(--color-muted-foreground)]">{label}</dt>
       <dd className="mt-1 flex flex-wrap gap-1">
-        {shown.map((t) => (
-          <span
-            key={t}
-            className="rounded bg-[var(--color-secondary)] px-1.5 py-0.5 text-xs"
-            title="Click to copy"
-            onClick={() => void navigator.clipboard.writeText(t).catch(() => undefined)}
-            onKeyDown={() => undefined}
-            role="button"
-            tabIndex={0}
-          >
-            {t}
-          </span>
-        ))}
+        {shown.map((t) =>
+          onItemClick ? (
+            <button
+              key={t}
+              type="button"
+              className="rounded-full bg-[var(--color-secondary)] px-2 py-0.5 text-xs hover:bg-[var(--color-primary)]/30 hover:text-[var(--color-primary)] transition-colors"
+              onClick={() => onItemClick(t)}
+            >
+              {t}
+            </button>
+          ) : (
+            <span key={t} className="rounded bg-[var(--color-secondary)] px-1.5 py-0.5 text-xs">
+              {t}
+            </span>
+          ),
+        )}
       </dd>
       {items.length > 8 && (
         <button
@@ -90,6 +102,7 @@ function isThinMetadata(item: MediaItem): boolean {
 }
 
 function BrowseItemDetailsBody({ item, onClose }: { item: MediaItem; onClose: () => void }) {
+  const navigate = useNavigate();
   const [resolved, setResolved] = useState<MediaItem | null>(null);
   const [loading, setLoading] = useState(isThinMetadata(item));
   const [error, setError] = useState<string | null>(null);
@@ -198,7 +211,17 @@ function BrowseItemDetailsBody({ item, onClose }: { item: MediaItem; onClose: ()
             </dd>
           </div>
         )}
-        <ExpandableList label="Tags" items={data.tags} />
+        <ExpandableList
+          label="Tags"
+          items={data.tags}
+          onItemClick={(tag) => {
+            navigate({
+              to: "/browse/$site/$kind/$slug",
+              params: { site: data.site_id, kind: "tag", slug: tag },
+            });
+            onClose();
+          }}
+        />
         <div>
           <dt className="text-xs text-[var(--color-muted-foreground)]">URL</dt>
           <dd className="break-all text-xs text-[var(--color-muted-foreground)]">{data.url}</dd>

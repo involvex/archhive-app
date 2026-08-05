@@ -30,7 +30,7 @@ impl SiteContext {
         &self.app
     }
 
-    pub fn vault(&self) -> &CookieVault {
+    pub fn _vault(&self) -> &CookieVault {
         &self.vault
     }
 

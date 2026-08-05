@@ -5,13 +5,20 @@ import { getCapabilities } from "@/lib/runtime";
 import { getPluginBrowseSites } from "@/lib/plugins/loader";
 import { mergeSiteLists } from "@/lib/sites/catalog";
 import { useSettingsStore } from "@/lib/stores/settings";
-import type { SiteInfo } from "@/lib/types";
+import type { BrowseOrientation, PornhubCategoryEntry, SiteInfo } from "@/lib/types";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ConnectionStatusChip } from "@/components/ConnectionStatusChip";
-import { Globe, Link2, Search, Clock, Radio, ArrowRight } from "lucide-react";
+import { Globe, Link2, Search, Clock, Radio, ArrowRight, Tags } from "lucide-react";
 import { isMobileDevice } from "@/lib/tauri";
+
+const ORIENTATIONS: { value: BrowseOrientation; label: string }[] = [
+  { value: "straight", label: "Straight" },
+  { value: "gay", label: "Gay" },
+  { value: "lesbian", label: "Lesbian" },
+  { value: "transgender", label: "Trans" },
+];
 
 export const Route = createFileRoute("/browse/")({
   component: BrowsePage,
@@ -72,11 +79,17 @@ function BrowsePage() {
   }, [needsRemoteSetup, caps.showBrowserBanner]);
 
   const handleSearch = useCallback(() => {
-    const slug = searchInput.trim();
+    let slug = searchInput.trim();
     if (!slug) return;
 
     let site = selectedSite;
-    let kind = "search";
+    let kind: string = "search";
+
+    if (slug.startsWith("#")) {
+      slug = slug.slice(1).trim();
+      if (!slug) return;
+      kind = "tag";
+    }
 
     if (site === "auto") {
       if (slug.startsWith("http")) {
@@ -88,13 +101,13 @@ function BrowsePage() {
 
     const targetSite = sites.find((s) => s.id === site);
     if (targetSite) {
-      if (!targetSite.supported_kinds.includes("search")) {
+      if (kind === "search" && !targetSite.supported_kinds.includes("search")) {
         kind = targetSite.supported_kinds[0];
       }
       addRecent({ site: targetSite.id, kind, slug });
       navigate({
         to: "/browse/$site/$kind/$slug",
-        params: { site: targetSite.id, kind, slug: encodeURIComponent(slug) },
+        params: { site: targetSite.id, kind, slug },
       });
     }
   }, [searchInput, selectedSite, sites, navigate, addRecent]);
@@ -117,6 +130,23 @@ function BrowsePage() {
   const handleSiteChip = useCallback((siteId: string) => {
     setSelectedSite(siteId);
   }, []);
+
+  const [categories, setCategories] = useState<PornhubCategoryEntry[]>([]);
+  const [catOrientation, setCatOrientation] = useState<BrowseOrientation>("straight");
+  const [catLoading, setCatLoading] = useState(false);
+
+  useEffect(() => {
+    if (selectedSite !== "pornhub") {
+      setCategories([]);
+      return;
+    }
+    setCatLoading(true);
+    void api
+      .listPornhubCategories(catOrientation)
+      .then(setCategories)
+      .catch(() => setCategories([]))
+      .finally(() => setCatLoading(false));
+  }, [selectedSite, catOrientation]);
 
   return (
     <div className="space-y-6">
@@ -208,6 +238,63 @@ function BrowsePage() {
           </div>
         </CardContent>
       </Card>
+
+      {selectedSite === "pornhub" && (
+        <Card>
+          <CardContent className="p-4 space-y-3">
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <Tags className="h-4 w-4" />
+              <span>PornHub Categories</span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {ORIENTATIONS.map((o) => (
+                <button
+                  key={o.value}
+                  type="button"
+                  onClick={() => setCatOrientation(o.value)}
+                  className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium transition ${
+                    catOrientation === o.value
+                      ? "bg-[var(--color-primary)] text-[var(--color-primary-foreground)]"
+                      : "bg-[var(--color-secondary)] hover:bg-[var(--color-muted)]"
+                  }`}
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
+            {catLoading ? (
+              <p className="text-xs text-[var(--color-muted-foreground)]">Loading categories…</p>
+            ) : (
+              <div className="flex flex-wrap gap-1.5 max-h-60 overflow-y-auto">
+                {categories.map((cat) => (
+                  <button
+                    key={`${cat.orientation}:${cat.slug}`}
+                    type="button"
+                    onClick={() => {
+                      navigate({
+                        to: "/browse/$site/$kind/$slug",
+                        params: {
+                          site: "pornhub",
+                          kind: "category",
+                          slug: cat.slug,
+                        },
+                      });
+                    }}
+                    className="inline-flex items-center gap-1 rounded-full bg-[var(--color-secondary)] px-2.5 py-1 text-xs hover:bg-[var(--color-primary)]/30 hover:text-[var(--color-primary)] transition-colors"
+                  >
+                    {cat.name}
+                    {cat.video_count !== undefined && (
+                      <span className="text-[10px] opacity-60 tabular-nums">
+                        {cat.video_count.toLocaleString()}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardContent className="p-4 space-y-3">

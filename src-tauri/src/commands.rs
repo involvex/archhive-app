@@ -149,18 +149,18 @@ pub fn get_settings(state: State<'_, Arc<AppState>>) -> CmdResult<AppSettings> {
 
 #[tauri::command]
 pub fn save_settings(
-    app: tauri::AppHandle,
+    _app: tauri::AppHandle,
     state: State<'_, Arc<AppState>>,
     settings: AppSettings,
 ) -> CmdResult<()> {
-    let prev = state.get_settings().ok();
+    let _prev = state.get_settings().ok();
     map_err(state.save_settings(&settings))?;
     #[cfg(not(mobile))]
-    if prev
+    if _prev
         .as_ref()
         .is_none_or(|p| crate::desktop::tray_settings_changed(p, &settings))
     {
-        crate::desktop::sync_from_settings(&app, &settings);
+        crate::desktop::sync_from_settings(&_app, &settings);
     }
     Ok(())
 }

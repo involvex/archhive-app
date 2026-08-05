@@ -100,10 +100,10 @@ impl ChaturbateAdapter {
         #[cfg(desktop)]
         {
             let rooms =
-                crate::sites::adapters::chaturbate_webview::fetch_listing(ctx.app(), ctx.vault(), &url)
+                crate::sites::adapters::chaturbate_webview::_fetch_listing(ctx.app(), ctx._vault(), &url)
                     .await?;
             if !rooms.is_empty() {
-                let items: Vec<MediaItem> = rooms.into_iter().map(map_room).collect();
+                let items: Vec<MediaItem> = rooms.into_iter().map(_map_room).collect();
                 let has_more = items.len() >= 30;
                 return Ok(BrowsePage { items, page: query.page, has_more, total: None });
             }
@@ -470,7 +470,7 @@ fn extract_username_from_url(url: &str) -> Option<String> {
     Some(first.to_string())
 }
 
-fn map_room(room: crate::sites::adapters::chaturbate_webview::RawRoom) -> MediaItem {
+fn _map_room(room: crate::sites::adapters::chaturbate_webview::_RawRoom) -> MediaItem {
     let username = room.username;
     let room_url = format!("{BASE}/{username}/");
     let embed_url = format!("{BASE}/embed/{username}/");
