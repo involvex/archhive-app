@@ -14,11 +14,11 @@ export interface LanConnectionStatus {
 }
 
 export function useLanConnection(pollMs = 15000): LanConnectionStatus {
-  const { settings } = useSettingsStore();
+  const remoteHost = useSettingsStore((s) => s.settings.remote_host);
+  const engineMode = useSettingsStore((s) => s.settings.engine_mode);
   const caps = getCapabilities();
   const needsRemote =
-    caps.showBrowserBanner ||
-    (settings.engine_mode === "remote_lan" && Boolean(settings.remote_host?.trim()));
+    caps.showBrowserBanner || (engineMode === "remote_lan" && Boolean(remoteHost?.trim()));
 
   const [state, setState] = useState<LanConnectionState>("idle");
   const [health, setHealth] = useState<HealthResponse | null>(null);
@@ -31,7 +31,7 @@ export function useLanConnection(pollMs = 15000): LanConnectionStatus {
       setMessage("Local desktop engine");
       return;
     }
-    if (!settings.remote_host?.trim()) {
+    if (!remoteHost?.trim()) {
       setState("error");
       setHealth(null);
       setMessage("No remote host — open Settings and pick a discovered LAN host.");
@@ -50,14 +50,14 @@ export function useLanConnection(pollMs = 15000): LanConnectionStatus {
       setState("error");
       setMessage(e instanceof Error ? e.message : "Connection failed");
     }
-  }, [needsRemote, settings.remote_host]);
+  }, [needsRemote, remoteHost]);
 
   useEffect(() => {
     void queueMicrotask(() => void refresh());
-    if (!needsRemote || !settings.remote_host?.trim()) return;
+    if (!needsRemote || !remoteHost?.trim()) return;
     const id = window.setInterval(() => void refresh(), pollMs);
     return () => window.clearInterval(id);
-  }, [refresh, needsRemote, settings.remote_host, pollMs]);
+  }, [refresh, needsRemote, remoteHost, pollMs]);
 
   return { state, health, message, refresh };
 }

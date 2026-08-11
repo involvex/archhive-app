@@ -49,15 +49,23 @@ function HomePage() {
 
     Promise.allSettled([scenesP, downloadsP]).finally(() => setLoading(false));
 
-    void api.subscribeDownloadProgress((job) => {
-      setDownloads((prev) => {
-        const idx = prev.findIndex((j) => j.id === job.id);
-        if (idx === -1) return [job, ...prev];
-        const next = [...prev];
-        next[idx] = job;
-        return next;
+    let unsubDownload: (() => void) | undefined;
+    void api
+      .subscribeDownloadProgress((job) => {
+        setDownloads((prev) => {
+          const idx = prev.findIndex((j) => j.id === job.id);
+          if (idx === -1) return [job, ...prev];
+          const next = [...prev];
+          next[idx] = job;
+          return next;
+        });
+      })
+      .then((fn) => {
+        unsubDownload = fn;
       });
-    });
+    return () => {
+      unsubDownload?.();
+    };
   }, [needsSetup]);
 
   const active = downloads.filter((d) => d.status === "active" || d.status === "pending");

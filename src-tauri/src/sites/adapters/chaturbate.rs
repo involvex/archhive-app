@@ -72,9 +72,15 @@ impl ChaturbateAdapter {
         // Primary: HTTP scraping with vault cookies as Cookie header.
         if let Ok(html) = ctx.fetch_html(&url, &self.id()).await {
             if let Some(rooms) = parse_listing_html(&html) {
-                let items: Vec<MediaItem> = rooms.into_iter().map(|r| http_room_to_item(&r)).collect();
+                let items: Vec<MediaItem> =
+                    rooms.into_iter().map(|r| http_room_to_item(&r)).collect();
                 let has_more = items.len() >= 30;
-                return Ok(BrowsePage { items, page: query.page, has_more, total: None });
+                return Ok(BrowsePage {
+                    items,
+                    page: query.page,
+                    has_more,
+                    total: None,
+                });
             }
         }
 
@@ -83,15 +89,27 @@ impl ChaturbateAdapter {
         if api_url != url {
             if let Ok(body) = ctx.fetch_html(&api_url, &self.id()).await {
                 if let Some(rooms) = parse_listing_html(&body) {
-                    let items: Vec<MediaItem> = rooms.into_iter().map(|r| http_room_to_item(&r)).collect();
+                    let items: Vec<MediaItem> =
+                        rooms.into_iter().map(|r| http_room_to_item(&r)).collect();
                     let has_more = items.len() >= 30;
-                    return Ok(BrowsePage { items, page: query.page, has_more, total: None });
+                    return Ok(BrowsePage {
+                        items,
+                        page: query.page,
+                        has_more,
+                        total: None,
+                    });
                 }
                 // If the API returned JSON directly, try parsing that.
                 if let Some(rooms) = parse_api_json(&body) {
-                    let items: Vec<MediaItem> = rooms.into_iter().map(|r| http_room_to_item(&r)).collect();
+                    let items: Vec<MediaItem> =
+                        rooms.into_iter().map(|r| http_room_to_item(&r)).collect();
                     let has_more = items.len() >= 30;
-                    return Ok(BrowsePage { items, page: query.page, has_more, total: None });
+                    return Ok(BrowsePage {
+                        items,
+                        page: query.page,
+                        has_more,
+                        total: None,
+                    });
                 }
             }
         }
@@ -99,13 +117,21 @@ impl ChaturbateAdapter {
         // Tertiary: webview bridge (desktop only).
         #[cfg(desktop)]
         {
-            let rooms =
-                crate::sites::adapters::chaturbate_webview::_fetch_listing(ctx.app(), ctx._vault(), &url)
-                    .await?;
+            let rooms = crate::sites::adapters::chaturbate_webview::_fetch_listing(
+                ctx.app(),
+                ctx._vault(),
+                &url,
+            )
+            .await?;
             if !rooms.is_empty() {
                 let items: Vec<MediaItem> = rooms.into_iter().map(_map_room).collect();
                 let has_more = items.len() >= 30;
-                return Ok(BrowsePage { items, page: query.page, has_more, total: None });
+                return Ok(BrowsePage {
+                    items,
+                    page: query.page,
+                    has_more,
+                    total: None,
+                });
             }
         }
 
@@ -204,8 +230,14 @@ fn http_room_to_item(room: &HttpRoom) -> MediaItem {
 
 fn build_api_url(query: &BrowseQuery) -> String {
     match query.kind {
-        BrowseKind::Tag => format!("{BASE}/api/ts/roomlist/room-list/?tag={}", path_slug(&query.slug)),
-        BrowseKind::Search => format!("{BASE}/api/ts/roomlist/room-list/?q={}", url_slug(&query.slug)),
+        BrowseKind::Tag => format!(
+            "{BASE}/api/ts/roomlist/room-list/?tag={}",
+            path_slug(&query.slug)
+        ),
+        BrowseKind::Search => format!(
+            "{BASE}/api/ts/roomlist/room-list/?q={}",
+            url_slug(&query.slug)
+        ),
         _ => format!("{BASE}/api/ts/roomlist/room-list/"),
     }
 }
@@ -302,33 +334,29 @@ fn parse_listing_html(html: &str) -> Option<Vec<HttpRoom>> {
     }
 }
 
-fn find_thumbnail_in_ancestors(
-    document: &scraper::Html,
-) -> Option<String> {
+fn find_thumbnail_in_ancestors(document: &scraper::Html) -> Option<String> {
     use scraper::Selector;
     let img_sel = Selector::parse(
         "img[src*='mmcdn.com'], img[data-src*='mmcdn.com'], img[src*='highwebmedia.com']",
     )
     .ok()?;
-    document
-        .select(&img_sel)
-        .find_map(|img| {
-            img.value()
-                .attr("src")
-                .or_else(|| img.value().attr("data-src"))
-                .filter(|s| !s.starts_with("data:"))
-                .map(|s| {
-                    if s.starts_with("//") {
-                        format!("https:{s}")
-                    } else if s.starts_with('/') {
-                        format!("https://static.mmcdn.com{s}")
-                    } else if !s.starts_with("http") {
-                        format!("https://{BASE}{s}")
-                    } else {
-                        s.to_string()
-                    }
-                })
-        })
+    document.select(&img_sel).find_map(|img| {
+        img.value()
+            .attr("src")
+            .or_else(|| img.value().attr("data-src"))
+            .filter(|s| !s.starts_with("data:"))
+            .map(|s| {
+                if s.starts_with("//") {
+                    format!("https:{s}")
+                } else if s.starts_with('/') {
+                    format!("https://static.mmcdn.com{s}")
+                } else if !s.starts_with("http") {
+                    format!("https://{BASE}{s}")
+                } else {
+                    s.to_string()
+                }
+            })
+    })
 }
 
 fn extract_viewers_from_text(text: &str) -> Option<u32> {
@@ -339,7 +367,9 @@ fn extract_viewers_from_text(text: &str) -> Option<u32> {
             let num_str: String = before
                 .chars()
                 .rev()
-                .take_while(|c| c.is_ascii_digit() || *c == '.' || *c == ',' || *c == 'k' || *c == 'K')
+                .take_while(|c| {
+                    c.is_ascii_digit() || *c == '.' || *c == ',' || *c == 'k' || *c == 'K'
+                })
                 .collect::<String>()
                 .chars()
                 .rev()
@@ -407,7 +437,10 @@ fn parse_api_json(body: &str) -> Option<Vec<HttpRoom>> {
                 .and_then(|v| v.as_u64())
                 .map(|n| n as u32);
             let age = r.get("age").and_then(|a| a.as_u64()).map(|n| n as u32);
-            let gender = r.get("gender").and_then(|g| g.as_str()).map(|s| s.to_string());
+            let gender = r
+                .get("gender")
+                .and_then(|g| g.as_str())
+                .map(|s| s.to_string());
             Some(HttpRoom {
                 username: username.to_string(),
                 title: if title.is_empty() {

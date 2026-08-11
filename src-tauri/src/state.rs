@@ -120,8 +120,8 @@ impl AppState {
                 site_id: adapter_id.clone(),
                 performers: vec![],
                 tags: vec![],
-            description: None,
-            channel: None,
+                description: None,
+                channel: None,
                 is_live: None,
                 viewers: None,
                 age: None,
@@ -458,9 +458,7 @@ impl AppState {
             .detect(url)
             .unwrap_or_else(|| "custom".to_string());
         let cookies = self.site_ctx.cookie_file_for_site(&site_id);
-        let json = runner
-            .resolve_media_json(url, cookies.as_deref())
-            .await?;
+        let json = runner.resolve_media_json(url, cookies.as_deref()).await?;
 
         let title = json
             .get("title")
@@ -549,9 +547,7 @@ impl AppState {
             args.push("--cookies".to_string());
             args.push(cookies.to_string_lossy().to_string());
         }
-        let raw = runner
-            .run_capture_for_stream_url("yt-dlp", &args)
-            .await?;
+        let raw = runner.run_capture_for_stream_url("yt-dlp", &args).await?;
         let stream_url = raw
             .lines()
             .map(str::trim)
@@ -592,7 +588,10 @@ impl AppState {
         }
 
         // Extract thumbnail if missing.
-        if scene.thumb.as_deref().is_none_or(|t| t.is_empty() || !std::path::Path::new(t).is_file())
+        if scene
+            .thumb
+            .as_deref()
+            .is_none_or(|t| t.is_empty() || !std::path::Path::new(t).is_file())
         {
             if let Ok(thumb) = ffmpeg.extract_thumbnail(path).await {
                 let thumb_str = thumb.to_string_lossy().to_string();
@@ -608,12 +607,8 @@ impl AppState {
         app: tauri::AppHandle,
         concurrency: usize,
     ) -> AppResult<crate::models::DurationProbeResult> {
-        crate::library::LibraryScanner::probe_library_durations(
-            self.db.clone(),
-            app,
-            concurrency,
-        )
-        .await
+        crate::library::LibraryScanner::probe_library_durations(self.db.clone(), app, concurrency)
+            .await
     }
 
     pub async fn ffmpeg_status(&self) -> AppResult<crate::models::FfmpegStatus> {
@@ -670,7 +665,9 @@ impl AppState {
     }
 
     pub fn get_library_stats(&self) -> AppResult<crate::models::LibraryStats> {
-        let scenes = self.db.list_scenes(None, crate::models::SceneSort::Newest)?;
+        let scenes = self
+            .db
+            .list_scenes(None, crate::models::SceneSort::Newest)?;
         let performers = self.db.list_performers(None)?;
         let tags = self.db.list_tags()?;
 

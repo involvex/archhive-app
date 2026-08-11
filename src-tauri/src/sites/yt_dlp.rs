@@ -619,7 +619,13 @@ fn thumbnail_from_entry(obj: &serde_json::Map<String, serde_json::Value>) -> Opt
 
 pub fn enrich_metadata_from_ytdlp_json(
     json: &serde_json::Value,
-) -> (Vec<String>, Vec<String>, Option<String>, Option<u32>, Option<String>) {
+) -> (
+    Vec<String>,
+    Vec<String>,
+    Option<String>,
+    Option<u32>,
+    Option<String>,
+) {
     let performers = extract_string_array(json, &["performers", "artist", "artists"])
         .or_else(|| extract_single_string(json, "uploader").map(|s| vec![s]))
         .unwrap_or_default();
@@ -667,7 +673,11 @@ fn extract_string_array(json: &serde_json::Value, keys: &[&str]) -> Option<Vec<S
                 return Some(items);
             }
         }
-        if let Some(s) = json.get(*key).and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+        if let Some(s) = json
+            .get(*key)
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+        {
             return Some(vec![s.to_string()]);
         }
     }
@@ -713,8 +723,12 @@ mod tests {
     fn format_selection_prefers_mp4_with_height_cap() {
         use crate::models::DownloadQuality;
         let args = SidecarRunner::format_selection_args(DownloadQuality::Height720, true);
-        assert!(args.windows(2).any(|w| w[0] == "-f" && w[1].contains("height<=720")));
-        assert!(args.windows(2).any(|w| w[0] == "-S" && w[1].contains("ext:mp4")));
+        assert!(args
+            .windows(2)
+            .any(|w| w[0] == "-f" && w[1].contains("height<=720")));
+        assert!(args
+            .windows(2)
+            .any(|w| w[0] == "-S" && w[1].contains("ext:mp4")));
     }
 
     #[test]

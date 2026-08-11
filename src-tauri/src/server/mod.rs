@@ -138,15 +138,12 @@ impl LanServer {
             .route("/api/library/orphans", get(list_orphan_sidecars))
             .route("/api/library/filter", post(list_scenes_with_filter))
             .route("/api/library/ffmpeg-status", get(ffmpeg_status))
+            .route("/api/scenes/{id}/probe", post(probe_scene_metadata))
+            .route("/api/scenes/{id}/thumb", delete(clear_scene_thumb))
             .route(
-                "/api/scenes/{id}/probe",
-                post(probe_scene_metadata),
+                "/api/library/probe-durations",
+                post(probe_library_durations),
             )
-            .route(
-                "/api/scenes/{id}/thumb",
-                delete(clear_scene_thumb),
-            )
-            .route("/api/library/probe-durations", post(probe_library_durations))
             .layer(middleware::from_fn_with_state(api.clone(), auth_middleware))
             .with_state(api);
 
@@ -840,7 +837,7 @@ fn parse_kind(s: &str) -> AppResult<crate::models::BrowseKind> {
         "channel" => BrowseKind::Channel,
         "search" => BrowseKind::Search,
         "video" => BrowseKind::Video,
-         "category" => BrowseKind::Category,
+        "category" => BrowseKind::Category,
         "livestream" => BrowseKind::Livestream,
         _ => return Err(AppError::InvalidInput(format!("unknown kind: {s}"))),
     })

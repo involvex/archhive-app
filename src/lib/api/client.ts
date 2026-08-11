@@ -58,25 +58,32 @@ async function remoteFetch<T>(path: string, init?: RequestInit): Promise<T> {
       "Remote host not configured. Open Settings → Engine and pick a discovered LAN host.",
     );
   }
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15_000);
   const doFetch = (headers: HeadersInit) =>
     fetch(`${base}${path}`, {
       ...init,
       headers: { ...headers, ...init?.headers },
+      signal: controller.signal,
     });
 
   let res: Response;
   try {
     res = await doFetch(remoteHeaders(true));
   } catch (e) {
+    clearTimeout(timeoutId);
     const host = base.replace(/^https?:\/\//, "");
     const hint =
-      e instanceof TypeError
-        ? `Cannot reach ${host}. Check PC IP, Windows Firewall (TCP 8787), same Wi‑Fi, and cleartext HTTP on Android.`
-        : e instanceof Error
-          ? e.message
-          : "Network error";
+      e instanceof DOMException && e.name === "AbortError"
+        ? `Request to ${host} timed out. Check PC IP and network.`
+        : e instanceof TypeError
+          ? `Cannot reach ${host}. Check PC IP, Windows Firewall (TCP 8787), same Wi‑Fi, and cleartext HTTP on Android.`
+          : e instanceof Error
+            ? e.message
+            : "Network error";
     throw new Error(hint, e instanceof Error ? { cause: e } : undefined);
   }
+  clearTimeout(timeoutId);
   if (res.status === 401) {
     const text = await res.text();
     const hadToken = Boolean(useSettingsStore.getState().settings.remote_token?.trim());

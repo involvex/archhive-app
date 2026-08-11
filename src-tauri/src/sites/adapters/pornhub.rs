@@ -418,7 +418,11 @@ fn parse_video_links(html: &str, base: &str, site_id: &str) -> AppResult<Vec<Med
             "div.thumb-block a[href*='/video-']",
             "a[href*='/video-']",
         ],
-        _ => &["a[href*='/video.']", "a[href*='/videos/']", "a[href*='/watch/']"],
+        _ => &[
+            "a[href*='/video.']",
+            "a[href*='/videos/']",
+            "a[href*='/watch/']",
+        ],
     };
     let mut items = Vec::new();
     let mut seen = std::collections::HashSet::new();
@@ -740,14 +744,8 @@ pub(crate) fn scrape_tube_video_page(
             ".pornstars-list a[href*='/pornstars/']",
             "a[href*='/pornstars/']",
         ],
-        "xvideos" => &[
-            ".pornstars a[href*='/pornstar/']",
-            "a[href*='/pornstar/']",
-        ],
-        "xnxx" => &[
-            ".pornstar a[href*='/pornstar/']",
-            "a[href*='/pornstar/']",
-        ],
+        "xvideos" => &[".pornstars a[href*='/pornstar/']", "a[href*='/pornstar/']"],
+        "xnxx" => &[".pornstar a[href*='/pornstar/']", "a[href*='/pornstar/']"],
         "youporn" => &[
             ".pornstar-list a[href*='/pornstar/']",
             "a[href*='/pornstar/']",
@@ -761,22 +759,10 @@ pub(crate) fn scrape_tube_video_page(
             ".categoriesWrapper a[href*='?search=']",
             "a[href*='/video/search?search=']",
         ],
-        "xhamster" => &[
-            ".tags a[href*='/tags/']",
-            ".video-tags a[href*='/tags/']",
-        ],
-        "xvideos" => &[
-            ".tags a.is-keyword",
-            ".tags-label a[href*='/tags/']",
-        ],
-        "xnxx" => &[
-            ".metadata-row a[href*='/tags/']",
-            ".tags a[href*='/tags/']",
-        ],
-        "youporn" => &[
-            ".tags a[href*='/tags/']",
-            ".video-tags a",
-        ],
+        "xhamster" => &[".tags a[href*='/tags/']", ".video-tags a[href*='/tags/']"],
+        "xvideos" => &[".tags a.is-keyword", ".tags-label a[href*='/tags/']"],
+        "xnxx" => &[".metadata-row a[href*='/tags/']", ".tags a[href*='/tags/']"],
+        "youporn" => &[".tags a[href*='/tags/']", ".video-tags a"],
         _ => &[],
     };
 
@@ -794,10 +780,7 @@ pub(crate) fn scrape_tube_video_page(
             ".uploader a[href*='/channels/']",
             ".video-uploader a[href*='/channels/']",
         ],
-        "xnxx" => &[
-            ".uploader a",
-            ".video-uploader a[href*='/profiles/']",
-        ],
+        "xnxx" => &[".uploader a", ".video-uploader a[href*='/profiles/']"],
         "youporn" => &[
             ".username a[href*='/channels/']",
             ".uploader a[href*='/channels/']",

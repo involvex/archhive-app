@@ -231,7 +231,13 @@ fn plan_from_job(db: &Database, job: &DownloadJob) -> AppResult<DownloadPlan> {
 fn deserialize_job_metadata(
     db: &Database,
     job_id: &str,
-) -> AppResult<(Vec<String>, Vec<String>, Option<String>, Option<u32>, Option<String>)> {
+) -> AppResult<(
+    Vec<String>,
+    Vec<String>,
+    Option<String>,
+    Option<u32>,
+    Option<String>,
+)> {
     db.get_download_job_metadata(job_id)
 }
 
@@ -453,7 +459,10 @@ async fn run_job_with_plan(
                 && enriched_tags.is_empty()
             {
                 let cookies = vault.cookie_file_for_site(&plan.adapter_id);
-                if let Ok(json) = runner.resolve_media_json(&plan.url, cookies.as_deref()).await {
+                if let Ok(json) = runner
+                    .resolve_media_json(&plan.url, cookies.as_deref())
+                    .await
+                {
                     let (yt_performers, yt_tags, yt_channel, yt_dur, yt_thumb) =
                         enrich_metadata_from_ytdlp_json(&json);
                     if enriched_performers.is_empty() && !yt_performers.is_empty() {

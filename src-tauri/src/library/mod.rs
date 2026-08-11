@@ -168,10 +168,12 @@ impl LibraryScanner {
                             // Offload blocking hash computations to the blocking thread pool.
                             let phash = {
                                 let t = thumb.clone();
-                                tokio::task::spawn_blocking(move || compute_phash_from_image(&t).ok())
-                                    .await
-                                    .ok()
-                                    .flatten()
+                                tokio::task::spawn_blocking(move || {
+                                    compute_phash_from_image(&t).ok()
+                                })
+                                .await
+                                .ok()
+                                .flatten()
                             };
                             let oshash = {
                                 let p = video_path.clone();
@@ -294,10 +296,24 @@ impl LibraryScanner {
         };
 
         let final_path: &Path = remuxed.as_deref().unwrap_or(video_path);
-        let oshash = compute_oshash(final_path).ok();
-        let phash = thumb
-            .as_ref()
-            .and_then(|t| compute_phash_from_image(t).ok());
+
+        // Offload blocking hash computations to the blocking thread pool.
+        let oshash = {
+            let path = final_path.to_path_buf();
+            tokio::task::spawn_blocking(move || compute_oshash(&path).ok())
+                .await
+                .ok()
+                .flatten()
+        };
+        let phash = {
+            let t = thumb.clone();
+            tokio::task::spawn_blocking(move || {
+                t.as_ref().and_then(|p| compute_phash_from_image(p).ok())
+            })
+            .await
+            .ok()
+            .flatten()
+        };
 
         let thumb_str = thumb.as_ref().map(|p| p.to_string_lossy().to_string());
         let path_str = final_path.to_string_lossy().to_string();

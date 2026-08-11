@@ -2,8 +2,8 @@ use crate::error::AppResult;
 use crate::models::{
     AppSettings, BatchUpdateScenesRequest, BatchUpdateScenesResult, BrowseKind, BrowseOrientation,
     DownloadJob, DuplicateGroup, FfmpegStatus, HealthResponse, LanHost, LibraryStats, MediaItem,
-    MergeDuplicatesResult, OrphanSidecar, Performer, PornhubCategoryEntry,
-    ScanResult, Scene, SceneFilter, SceneSort, SiteInfo, Tag, UpdateSceneRequest,
+    MergeDuplicatesResult, OrphanSidecar, Performer, PornhubCategoryEntry, ScanResult, Scene,
+    SceneFilter, SceneSort, SiteInfo, Tag, UpdateSceneRequest,
 };
 use crate::state::AppState;
 use crate::vault::CookieSiteInfo;
@@ -22,8 +22,8 @@ pub fn health() -> HealthResponse {
 }
 
 #[tauri::command]
-pub fn list_sites(state: State<'_, Arc<AppState>>) -> Vec<SiteInfo> {
-    tauri::async_runtime::block_on(state.list_sites())
+pub async fn list_sites(state: State<'_, Arc<AppState>>) -> Result<Vec<SiteInfo>, String> {
+    Ok(state.list_sites().await)
 }
 
 #[tauri::command]
@@ -122,10 +122,7 @@ pub fn delete_scene(
 }
 
 #[tauri::command]
-pub fn ensure_performer(
-    state: State<'_, Arc<AppState>>,
-    name: String,
-) -> CmdResult<Performer> {
+pub fn ensure_performer(state: State<'_, Arc<AppState>>, name: String) -> CmdResult<Performer> {
     map_err(state.ensure_performer(&name))
 }
 
@@ -216,10 +213,7 @@ pub async fn resolve_media_details(
 }
 
 #[tauri::command]
-pub async fn resolve_stream_url(
-    state: State<'_, Arc<AppState>>,
-    url: String,
-) -> CmdResult<String> {
+pub async fn resolve_stream_url(state: State<'_, Arc<AppState>>, url: String) -> CmdResult<String> {
     map_err(state.resolve_stream_url(&url).await)
 }
 
@@ -228,7 +222,10 @@ pub async fn resolve_livestream(
     state: State<'_, Arc<AppState>>,
     url: String,
 ) -> CmdResult<serde_json::Value> {
-    let stream_url = state.resolve_stream_url(&url).await.map_err(|e| e.to_string())?;
+    let stream_url = state
+        .resolve_stream_url(&url)
+        .await
+        .map_err(|e| e.to_string())?;
     let embed_url = derive_embed_url(&url);
     Ok(serde_json::json!({
         "stream_url": stream_url,
@@ -418,9 +415,7 @@ pub async fn probe_library_durations(
 }
 
 #[tauri::command]
-pub async fn ffmpeg_status(
-    state: State<'_, Arc<AppState>>,
-) -> CmdResult<FfmpegStatus> {
+pub async fn ffmpeg_status(state: State<'_, Arc<AppState>>) -> CmdResult<FfmpegStatus> {
     map_err(state.ffmpeg_status().await)
 }
 
@@ -433,9 +428,7 @@ pub fn list_scenes_with_filter(
 }
 
 #[tauri::command]
-pub fn list_orphan_sidecars(
-    state: State<'_, Arc<AppState>>,
-) -> CmdResult<Vec<OrphanSidecar>> {
+pub fn list_orphan_sidecars(state: State<'_, Arc<AppState>>) -> CmdResult<Vec<OrphanSidecar>> {
     map_err(state.list_orphan_sidecars())
 }
 
@@ -449,16 +442,17 @@ pub fn delete_orphan_sidecar(path: String) -> CmdResult<()> {
 }
 
 #[tauri::command]
-pub fn clear_scene_thumb(
-    state: State<'_, Arc<AppState>>,
-    scene_id: String,
-) -> CmdResult<()> {
+pub fn clear_scene_thumb(state: State<'_, Arc<AppState>>, scene_id: String) -> CmdResult<()> {
     map_err(state.clear_scene_thumb(&scene_id))
 }
 
 #[tauri::command]
-pub fn get_library_stats(state: State<'_, Arc<AppState>>) -> CmdResult<LibraryStats> {
-    map_err(state.get_library_stats())
+pub async fn get_library_stats(state: State<'_, Arc<AppState>>) -> CmdResult<LibraryStats> {
+    let s = Arc::clone(&state);
+    let result = tauri::async_runtime::spawn_blocking(move || s.get_library_stats())
+        .await
+        .map_err(|e| e.to_string())?;
+    map_err(result)
 }
 
 #[tauri::command]

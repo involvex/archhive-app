@@ -22,6 +22,5 @@ fn thumb_path_for_video(video_path: &Path) -> PathBuf {
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("thumb");
-    video_path
-        .with_file_name(format!("{stem}.jpg"))
+    video_path.with_file_name(format!("{stem}.jpg"))
 }

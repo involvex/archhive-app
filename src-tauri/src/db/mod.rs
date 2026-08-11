@@ -311,6 +311,10 @@ impl Database {
             .conn
             .lock()
             .map_err(|e| AppError::Other(e.to_string()))?;
+        Self::upsert_performer_with_conn(&conn, name)
+    }
+
+    fn upsert_performer_with_conn(conn: &Connection, name: &str) -> AppResult<String> {
         let existing: Option<String> = conn
             .query_row(
                 "SELECT id FROM performers WHERE name = ?1",
@@ -341,11 +345,16 @@ impl Database {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn upsert_tag(&self, name: &str) -> AppResult<String> {
         let conn = self
             .conn
             .lock()
             .map_err(|e| AppError::Other(e.to_string()))?;
+        Self::upsert_tag_with_conn(&conn, name)
+    }
+
+    fn upsert_tag_with_conn(conn: &Connection, name: &str) -> AppResult<String> {
         let existing: Option<String> = conn
             .query_row(
                 "SELECT id FROM tags WHERE name = ?1",
@@ -391,14 +400,14 @@ impl Database {
             params![id, title, path, source_url, thumb, phash, oshash, duration, channel, file_size.map(|v| v as i64), now],
         )?;
         for p in performers {
-            let pid = self.upsert_performer(p)?;
+            let pid = Self::upsert_performer_with_conn(&conn, p)?;
             conn.execute(
                 "INSERT OR IGNORE INTO scene_performers (scene_id, performer_id) VALUES (?1, ?2)",
                 params![id, pid],
             )?;
         }
         for t in tags {
-            let tid = self.upsert_tag(t)?;
+            let tid = Self::upsert_tag_with_conn(&conn, t)?;
             conn.execute(
                 "INSERT OR IGNORE INTO scene_tags (scene_id, tag_id) VALUES (?1, ?2)",
                 params![id, tid],
@@ -417,7 +426,7 @@ impl Database {
             params![scene_id],
         )?;
         for p in performers {
-            let pid = self.upsert_performer(p)?;
+            let pid = Self::upsert_performer_with_conn(&conn, p)?;
             conn.execute(
                 "INSERT OR IGNORE INTO scene_performers (scene_id, performer_id) VALUES (?1, ?2)",
                 params![scene_id, pid],
@@ -436,7 +445,7 @@ impl Database {
             params![scene_id],
         )?;
         for t in tags {
-            let tid = self.upsert_tag(t)?;
+            let tid = Self::upsert_tag_with_conn(&conn, t)?;
             conn.execute(
                 "INSERT OR IGNORE INTO scene_tags (scene_id, tag_id) VALUES (?1, ?2)",
                 params![scene_id, tid],
@@ -733,18 +742,20 @@ impl Database {
             return Ok(Vec::new());
         }
 
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| AppError::Other(e.to_string()))?;
-
-        // Collect all video paths from DB into a HashSet for O(1) lookup.
-        let mut stmt =
-            conn.prepare("SELECT path FROM scenes WHERE path IS NOT NULL AND path != ''")?;
-        let db_paths: std::collections::HashSet<String> = stmt
-            .query_map([], |row| row.get::<_, String>(0))?
-            .filter_map(|r| r.ok())
-            .collect();
+        // Collect DB paths under lock, then release before filesystem walk.
+        let db_paths = {
+            let conn = self
+                .conn
+                .lock()
+                .map_err(|e| AppError::Other(e.to_string()))?;
+            let mut stmt =
+                conn.prepare("SELECT path FROM scenes WHERE path IS NOT NULL AND path != ''")?;
+            let set: std::collections::HashSet<String> = stmt
+                .query_map([], |row| row.get::<_, String>(0))?
+                .filter_map(|r| r.ok())
+                .collect();
+            set
+        };
 
         let mut orphans = Vec::new();
         for entry in WalkDir::new(lib)
@@ -765,7 +776,6 @@ impl Database {
                 continue;
             }
             let p_str = p.to_string_lossy().to_string();
-            // An orphan jpg is one whose path is NOT in the DB scenes table as a video or thumb.
             if !db_paths.contains(&p_str) {
                 let size = std::fs::metadata(p).map(|m| m.len()).unwrap_or(0);
                 orphans.push(crate::models::OrphanSidecar { path: p_str, size });
@@ -1036,29 +1046,52 @@ impl Database {
     }
 
     pub fn find_duplicate_groups(&self, phash_threshold: u8) -> AppResult<Vec<DuplicateGroup>> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| AppError::Other(e.to_string()))?;
-        let mut groups = Vec::new();
+        // Phase 1: Load all data under lock, then release.
+        let (phash_entries, oshash_groups) = {
+            let conn = self
+                .conn
+                .lock()
+                .map_err(|e| AppError::Other(e.to_string()))?;
 
-        let mut phash_entries: Vec<(String, String)> = Vec::new();
-        {
-            let mut stmt = conn
-                .prepare("SELECT id, phash FROM scenes WHERE phash IS NOT NULL AND phash != ''")?;
-            let rows = stmt.query_map([], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-            })?;
-            for row in rows {
-                phash_entries.push(row?);
+            let mut phash_entries: Vec<(String, String)> = Vec::new();
+            {
+                let mut stmt = conn.prepare(
+                    "SELECT id, phash FROM scenes WHERE phash IS NOT NULL AND phash != ''",
+                )?;
+                let rows = stmt.query_map([], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                })?;
+                for row in rows {
+                    phash_entries.push(row?);
+                }
             }
-        }
+
+            let mut oshash_groups: Vec<(String, String)> = Vec::new();
+            {
+                let mut stmt = conn.prepare(
+                    "SELECT oshash, GROUP_CONCAT(id) FROM scenes
+                     WHERE oshash IS NOT NULL AND oshash != ''
+                     GROUP BY oshash HAVING COUNT(*) > 1",
+                )?;
+                let rows = stmt.query_map([], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                })?;
+                for row in rows {
+                    oshash_groups.push(row?);
+                }
+            }
+
+            (phash_entries, oshash_groups)
+        };
+
+        // Phase 2: Compute duplicates without holding the lock.
+        let mut groups = Vec::new();
 
         let clusters =
             crate::library::duplicates::cluster_phash_ids(&phash_entries, phash_threshold);
         for ids in clusters {
             let ids_csv = ids.join(",");
-            let scenes = self.scenes_by_ids(&conn, &ids_csv)?;
+            let scenes = self.scenes_by_ids_from_csv(&ids_csv)?;
             if scenes.len() < 2 {
                 continue;
             }
@@ -1069,17 +1102,8 @@ impl Database {
             )?);
         }
 
-        let mut stmt = conn.prepare(
-            "SELECT oshash, GROUP_CONCAT(id) FROM scenes
-             WHERE oshash IS NOT NULL AND oshash != ''
-             GROUP BY oshash HAVING COUNT(*) > 1",
-        )?;
-        let oshash_rows = stmt.query_map([], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-        })?;
-        for row in oshash_rows {
-            let (oshash, ids_csv) = row?;
-            let scenes = self.scenes_by_ids(&conn, &ids_csv)?;
+        for (oshash, ids_csv) in oshash_groups {
+            let scenes = self.scenes_by_ids_from_csv(&ids_csv)?;
             groups.push(DuplicateGroup {
                 match_type: "oshash".to_string(),
                 hash: oshash,
@@ -1243,12 +1267,12 @@ impl Database {
                     params![id],
                 )?;
             }
+            let conn = self
+                .conn
+                .lock()
+                .map_err(|e| AppError::Other(e.to_string()))?;
             for name in p {
-                let pid = self.upsert_performer(name)?;
-                let conn = self
-                    .conn
-                    .lock()
-                    .map_err(|e| AppError::Other(e.to_string()))?;
+                let pid = Self::upsert_performer_with_conn(&conn, name)?;
                 conn.execute(
                     "INSERT OR IGNORE INTO scene_performers (scene_id, performer_id) VALUES (?1, ?2)",
                     params![id, pid],
@@ -1264,12 +1288,12 @@ impl Database {
                     .map_err(|e| AppError::Other(e.to_string()))?;
                 conn.execute("DELETE FROM scene_tags WHERE scene_id = ?1", params![id])?;
             }
+            let conn = self
+                .conn
+                .lock()
+                .map_err(|e| AppError::Other(e.to_string()))?;
             for name in t {
-                let tid = self.upsert_tag(name)?;
-                let conn = self
-                    .conn
-                    .lock()
-                    .map_err(|e| AppError::Other(e.to_string()))?;
+                let tid = Self::upsert_tag_with_conn(&conn, name)?;
                 conn.execute(
                     "INSERT OR IGNORE INTO scene_tags (scene_id, tag_id) VALUES (?1, ?2)",
                     params![id, tid],
@@ -1281,27 +1305,30 @@ impl Database {
     }
 
     pub fn delete_scene(&self, id: &str, delete_files: bool) -> AppResult<()> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| AppError::Other(e.to_string()))?;
-        let row: Option<(Option<String>, Option<String>)> = conn
-            .query_row(
-                "SELECT path, thumb FROM scenes WHERE id = ?1",
-                params![id],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .optional()?;
-        let Some((path, thumb)) = row else {
-            return Err(AppError::NotFound(format!("scene {id}")));
-        };
+        let (path, thumb) = {
+            let conn = self
+                .conn
+                .lock()
+                .map_err(|e| AppError::Other(e.to_string()))?;
+            let row: Option<(Option<String>, Option<String>)> = conn
+                .query_row(
+                    "SELECT path, thumb FROM scenes WHERE id = ?1",
+                    params![id],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .optional()?;
+            let Some(row) = row else {
+                return Err(AppError::NotFound(format!("scene {id}")));
+            };
 
-        conn.execute(
-            "DELETE FROM scene_performers WHERE scene_id = ?1",
-            params![id],
-        )?;
-        conn.execute("DELETE FROM scene_tags WHERE scene_id = ?1", params![id])?;
-        conn.execute("DELETE FROM scenes WHERE id = ?1", params![id])?;
+            conn.execute(
+                "DELETE FROM scene_performers WHERE scene_id = ?1",
+                params![id],
+            )?;
+            conn.execute("DELETE FROM scene_tags WHERE scene_id = ?1", params![id])?;
+            conn.execute("DELETE FROM scenes WHERE id = ?1", params![id])?;
+            row
+        };
 
         if delete_files {
             if let Some(p) = path {
@@ -1396,6 +1423,15 @@ impl Database {
             }
         }
         Ok(scenes)
+    }
+
+    /// Like `scenes_by_ids` but acquires the lock internally — for use outside the lock.
+    fn scenes_by_ids_from_csv(&self, ids_csv: &str) -> AppResult<Vec<Scene>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        self.scenes_by_ids(&conn, ids_csv)
     }
 }
 
