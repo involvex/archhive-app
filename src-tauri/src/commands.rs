@@ -338,6 +338,7 @@ pub fn update_scene(
         body.performers.as_deref(),
         body.tags.as_deref(),
         body.rename_file.unwrap_or(false),
+        body.notes.as_deref(),
     ))
 }
 

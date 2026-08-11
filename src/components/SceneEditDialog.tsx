@@ -28,6 +28,7 @@ function SceneEditForm({
   const [performers, setPerformers] = useState(scene.performers.join(", "));
   const [tags, setTags] = useState(scene.tags.join(", "));
   const [renameFile, setRenameFile] = useState(false);
+  const [notes, setNotes] = useState(scene.notes ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -50,6 +51,7 @@ function SceneEditForm({
         performers: performerList,
         tags: tagList,
         rename_file: renameFile,
+        notes: notes.trim() || undefined,
       });
       onSaved(updated);
       onClose();
@@ -102,6 +104,16 @@ function SceneEditForm({
             Tags (comma-separated)
           </label>
           <Input value={tags} onChange={(e) => setTags(e.target.value)} />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs text-[var(--color-muted-foreground)]">Notes</label>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            rows={4}
+            className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-input)] p-2 text-sm"
+            placeholder="Personal notes, timestamps, ratings..."
+          />
         </div>
         {scene.path && (
           <label className="flex items-center gap-2 text-sm">

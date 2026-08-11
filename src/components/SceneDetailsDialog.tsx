@@ -167,6 +167,12 @@ function SceneDetailsBody({ scene, onClose }: { scene: Scene; onClose: () => voi
             </dd>
           </div>
         )}
+        {data.notes && (
+          <div>
+            <dt className="text-[var(--color-muted-foreground)]">Notes</dt>
+            <dd className="whitespace-pre-wrap text-xs">{data.notes}</dd>
+          </div>
+        )}
       </dl>
 
       <div className="mt-4 flex flex-wrap items-center gap-2">

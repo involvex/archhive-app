@@ -96,3 +96,7 @@ ALTER TABLE scenes ADD COLUMN channel TEXT;
 pub const MIGRATION_005: &str = r#"
 ALTER TABLE scenes ADD COLUMN file_size INTEGER;
 "#;
+
+pub const MIGRATION_006: &str = r#"
+ALTER TABLE scenes ADD COLUMN notes TEXT;
+"#;

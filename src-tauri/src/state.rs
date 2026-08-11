@@ -391,9 +391,10 @@ impl AppState {
         performers: Option<&[String]>,
         tags: Option<&[String]>,
         rename_file: bool,
+        notes: Option<&str>,
     ) -> AppResult<Scene> {
         self.db
-            .update_scene(id, title, performers, tags, rename_file)
+            .update_scene(id, title, performers, tags, rename_file, notes)
     }
 
     pub fn batch_update_scenes(

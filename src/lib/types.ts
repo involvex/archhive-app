@@ -74,6 +74,7 @@ export interface Scene {
   phash?: string;
   oshash?: string;
   file_size?: number;
+  notes?: string;
 }
 
 export interface UpdateSceneRequest {
@@ -81,6 +82,7 @@ export interface UpdateSceneRequest {
   performers?: string[];
   tags?: string[];
   rename_file?: boolean;
+  notes?: string;
 }
 
 export interface BatchUpdateScenesRequest {

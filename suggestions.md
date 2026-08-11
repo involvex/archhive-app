@@ -8,6 +8,7 @@
 
 ### 1. Smart Auto-Tagging from Metadata
 
+**Status:** 🔵 Partial  
 **Area:** Library / Auto-Tagger  
 **Currently:** Filename regex rules + metadata from download jobs.  
 **Suggestion:** Expand auto-tagger to extract performers, studios, and tags from yt-dlp `--dump-json` output, site-scraped metadata, and filename conventions. Apply heuristics like:
@@ -24,6 +25,7 @@
 
 ### 3. Bulk Download Queue Management
 
+**Status:** 🔵 Partial  
 **Area:** Downloads  
 **Currently:** Queue has basic pause/resume/cancel.  
 **Suggestion:** Add:
@@ -41,6 +43,7 @@
 
 ### 5. Improved Duplicate Detection UI
 
+**Status:** 🔵 Partial  
 **Area:** Library / Duplicates  
 **Currently:** `DuplicateGroupCard` shows groups.  
 **Suggestion:**
@@ -61,6 +64,7 @@
 
 ### 7. Studio / Channel Tracking
 
+**Status:** 🔵 Partial  
 **Area:** Library / Browse  
 **Currently:** `Studio` model exists in Rust with `#[allow(dead_code)]`.  
 **Suggestion:** Fully wire up studios:
@@ -77,6 +81,7 @@
 
 ### 9. Custom Naming Templates with Preview
 
+**Status:** 🔵 Partial  
 **Area:** Settings / Library  
 **Currently:** `naming_template` is a plain string (`{performer}/{title}.{ext}`).  
 **Suggestion:**
@@ -125,6 +130,7 @@
 
 ### 13. Auto-Organize Files on Download
 
+**Status:** 🔵 Partial  
 **Area:** Downloads / Library  
 **Currently:** `naming_template` controls output path.  
 **Suggestion:** Post-download auto-organize:
@@ -146,6 +152,7 @@
 
 ### 15. Scene Notes / Annotations
 
+**Status:** ⚪ Not started  
 **Area:** Library  
 **Suggestion:** Add a free-text `notes` field to scenes. Users can annotate scenes with personal notes, ratings, or timestamps of interesting moments. Notes are searchable via FTS5.
 
@@ -202,6 +209,7 @@
 
 ### 21. Database Migration Tooling
 
+**Status:** 🔵 Partial  
 **Area:** Rust / DB  
 **Suggestion:** Add a `db migrate` CLI command (via Tauri CLI or standalone) to:
 
@@ -216,6 +224,7 @@
 
 ### 23. Performance Monitoring Dashboard
 
+**Status:** 🔵 Partial  
 **Area:** Settings  
 **Suggestion:** Show in Settings:
 
@@ -264,4 +273,4 @@
 
 ---
 
-_Last updated: 2026-08-11_
+_Last updated: 2026-08-12_

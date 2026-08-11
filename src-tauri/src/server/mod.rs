@@ -436,6 +436,7 @@ async fn update_scene(
             body.performers.as_deref(),
             body.tags.as_deref(),
             body.rename_file.unwrap_or(false),
+            body.notes.as_deref(),
         )
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(serde_json::json!(scene)))

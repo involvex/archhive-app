@@ -1,7 +1,7 @@
 mod migrations;
 
 use crate::db::migrations::{
-    MIGRATION_001, MIGRATION_002, MIGRATION_003, MIGRATION_004, MIGRATION_005,
+    MIGRATION_001, MIGRATION_002, MIGRATION_003, MIGRATION_004, MIGRATION_005, MIGRATION_006,
 };
 use crate::error::{AppError, AppResult};
 use crate::models::{
@@ -56,6 +56,9 @@ impl Database {
         }
         if !column_exists(&conn, "scenes", "file_size") {
             conn.execute_batch(MIGRATION_005)?;
+        }
+        if !column_exists(&conn, "scenes", "notes") {
+            conn.execute_batch(MIGRATION_006)?;
         }
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
@@ -725,6 +728,7 @@ impl Database {
                 phash: None,
                 oshash: None,
                 file_size: file_size.map(|v| v as u64),
+                notes: None,
             });
         }
         Ok(result)
@@ -910,6 +914,7 @@ impl Database {
                 phash: None,
                 oshash: None,
                 file_size: file_size.map(|v| v as u64),
+                notes: None,
             });
         }
         Ok(result)
@@ -959,6 +964,7 @@ impl Database {
                     phash: None,
                     oshash: None,
                     file_size: file_size.map(|v| v as u64),
+                    notes: None,
                 }
             },
         ))
@@ -1122,7 +1128,7 @@ impl Database {
             .map_err(|e| AppError::Other(e.to_string()))?;
         let row = conn
             .query_row(
-                "SELECT id, title, path, thumb, source_url, phash, oshash, duration, channel FROM scenes WHERE id = ?1",
+                "SELECT id, title, path, thumb, source_url, phash, oshash, duration, channel, notes FROM scenes WHERE id = ?1",
                 params![scene_id],
                 |row| {
                     Ok((
@@ -1135,11 +1141,13 @@ impl Database {
                         row.get::<_, Option<String>>(6)?,
                         row.get::<_, Option<u32>>(7)?,
                         row.get::<_, Option<String>>(8)?,
+                        row.get::<_, Option<String>>(9)?,
                     ))
                 },
             )
             .optional()?;
-        let Some((id, title, path, thumb, source_url, phash, oshash, duration, channel)) = row
+        let Some((id, title, path, thumb, source_url, phash, oshash, duration, channel, notes)) =
+            row
         else {
             return Err(AppError::NotFound(format!("scene {scene_id}")));
         };
@@ -1166,6 +1174,7 @@ impl Database {
             phash,
             oshash,
             file_size,
+            notes,
         })
     }
 
@@ -1202,7 +1211,7 @@ impl Database {
                     }
                 }
             }
-            self.update_scene(id, None, Some(&performers), Some(&tags), false)?;
+            self.update_scene(id, None, Some(&performers), Some(&tags), false, None)?;
             updated += 1;
         }
         Ok(updated)
@@ -1215,9 +1224,11 @@ impl Database {
         performers: Option<&[String]>,
         tags: Option<&[String]>,
         rename_file: bool,
+        notes: Option<&str>,
     ) -> AppResult<Scene> {
         let existing = self.get_scene(id)?;
         let new_title = title.unwrap_or(&existing.title);
+        let new_notes = notes.unwrap_or(existing.notes.as_deref().unwrap_or(""));
         let mut new_path = existing.path.clone();
 
         if rename_file {
@@ -1251,8 +1262,8 @@ impl Database {
             .lock()
             .map_err(|e| AppError::Other(e.to_string()))?;
         conn.execute(
-            "UPDATE scenes SET title = ?2, path = COALESCE(?3, path) WHERE id = ?1",
-            params![id, new_title, new_path],
+            "UPDATE scenes SET title = ?2, path = COALESCE(?3, path), notes = ?4 WHERE id = ?1",
+            params![id, new_title, new_path, new_notes],
         )?;
         drop(conn);
 
@@ -1419,6 +1430,7 @@ impl Database {
                     phash: None,
                     oshash: None,
                     file_size: file_size.map(|v| v as u64),
+                notes: None,
                 });
             }
         }

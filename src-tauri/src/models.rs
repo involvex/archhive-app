@@ -154,6 +154,8 @@ pub struct Scene {
     pub oshash: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub file_size: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -345,6 +347,8 @@ pub struct UpdateSceneRequest {
     pub performers: Option<Vec<String>>,
     pub tags: Option<Vec<String>>,
     pub rename_file: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
