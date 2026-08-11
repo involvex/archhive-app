@@ -55,6 +55,11 @@ function getItemDescription(item: CardItem): string | undefined {
   return undefined;
 }
 
+function getItemFileSize(item: CardItem): number | undefined {
+  if (isMediaItem(item)) return undefined;
+  return (item as Scene).file_size;
+}
+
 export function SceneCard({
   item,
   onDownload,
@@ -73,6 +78,7 @@ export function SceneCard({
   const channel = getItemChannel(item);
   const tags = getItemTags(item);
   const duration = getItemDuration(item);
+  const fileSize = getItemFileSize(item);
   const thumb = getItemThumb(item, thumbSrc);
   const description = getItemDescription(item);
 
@@ -328,6 +334,11 @@ export function SceneCard({
           <span className="absolute bottom-2 right-2 rounded bg-black/70 px-1.5 py-0.5 text-xs flex items-center gap-1">
             <Clock className="h-3 w-3" />
             {formatDuration(duration)}
+            {fileSize != null && fileSize > 0 && (
+              <span className="text-[var(--color-muted-foreground)]">
+                · {formatFileSize(fileSize)}
+              </span>
+            )}
           </span>
         )}
 
@@ -440,4 +451,14 @@ function formatDuration(seconds: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-export { formatDuration };
+function formatFileSize(bytes: number): string {
+  if (bytes >= 1073741824) {
+    return `${(bytes / 1073741824).toFixed(1)} GB`;
+  }
+  if (bytes >= 1048576) {
+    return `${(bytes / 1048576).toFixed(0)} MB`;
+  }
+  return `${(bytes / 1024).toFixed(0)} KB`;
+}
+
+export { formatDuration, formatFileSize };

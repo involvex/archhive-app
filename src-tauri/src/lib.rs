@@ -180,6 +180,8 @@ pub fn run() {
             commands::delete_orphan_sidecar,
             commands::clear_scene_thumb,
             commands::get_library_stats,
+            commands::export_performers,
+            commands::set_performer_image,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

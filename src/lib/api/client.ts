@@ -580,4 +580,15 @@ export const api = {
   async getLibraryStats(): Promise<LibraryStats> {
     return localInvoke<LibraryStats>("get_library_stats");
   },
+
+  async exportPerformers(): Promise<Performer[]> {
+    return localOrRemote("export_performers", undefined, "/api/performers");
+  },
+
+  async setPerformerImage(id: string, image: string | null): Promise<void> {
+    return localOrRemote("set_performer_image", { id, image }, `/api/performers/${id}/image`, {
+      method: "PUT",
+      body: JSON.stringify({ image }),
+    });
+  },
 };

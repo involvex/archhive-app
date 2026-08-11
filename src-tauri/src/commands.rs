@@ -460,3 +460,17 @@ pub fn clear_scene_thumb(
 pub fn get_library_stats(state: State<'_, Arc<AppState>>) -> CmdResult<LibraryStats> {
     map_err(state.get_library_stats())
 }
+
+#[tauri::command]
+pub fn export_performers(state: State<'_, Arc<AppState>>) -> CmdResult<Vec<Performer>> {
+    map_err(state.list_performers(None))
+}
+
+#[tauri::command]
+pub fn set_performer_image(
+    state: State<'_, Arc<AppState>>,
+    id: String,
+    image: Option<String>,
+) -> CmdResult<()> {
+    map_err(state.set_performer_image(&id, image.as_deref()))
+}

@@ -86,6 +86,7 @@ impl LibraryScanner {
                 updated += 1;
             } else {
                 let (performers, tags) = apply_filename_rules(&title, rules);
+                let file_size = std::fs::metadata(&path_str).ok().map(|m| m.len());
                 match db.insert_scene(
                     &title,
                     Some(&path_str),
@@ -97,6 +98,7 @@ impl LibraryScanner {
                     None,
                     None,
                     None,
+                    file_size,
                 ) {
                     Ok(_) => {
                         added += 1;

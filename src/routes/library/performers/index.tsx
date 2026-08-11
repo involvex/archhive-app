@@ -1,11 +1,11 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api/client";
 import type { Performer } from "@/lib/types";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Check, Filter, Users } from "lucide-react";
+import { Filter, Users, Download, Camera } from "lucide-react";
 
 export const Route = createFileRoute("/library/performers/")({
   component: PerformersPage,
@@ -16,6 +16,8 @@ function PerformersPage() {
   const [performers, setPerformers] = useState<Performer[]>([]);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadTargetId, setUploadTargetId] = useState<string | null>(null);
 
   useEffect(() => {
     void api
@@ -44,16 +46,67 @@ function PerformersPage() {
     });
   }
 
+  async function exportPerformers() {
+    try {
+      const data = await api.exportPerformers();
+      const json = JSON.stringify(data, null, 2);
+      const blob = new Blob([json], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "performers.json";
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error("Export failed", e);
+    }
+  }
+
+  const handleImageUpload = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file || !uploadTargetId) return;
+      try {
+        const reader = new FileReader();
+        reader.onload = async () => {
+          const dataUrl = reader.result as string;
+          await api.setPerformerImage(uploadTargetId, dataUrl);
+          setPerformers((prev) =>
+            prev.map((p) => (p.id === uploadTargetId ? { ...p, image: dataUrl } : p)),
+          );
+        };
+        reader.readAsDataURL(file);
+      } catch (err) {
+        console.error("Image upload failed", err);
+      }
+      e.target.value = "";
+    },
+    [uploadTargetId],
+  );
+
   return (
     <div className="space-y-4">
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handleImageUpload}
+      />
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold">Performers</h2>
-        {selected.size > 0 && (
-          <Button size="sm" onClick={applyFilter}>
-            <Filter className="mr-1 h-3.5 w-3.5" />
-            Filter scenes ({selected.size})
+        <div className="flex gap-2">
+          <Button size="sm" variant="outline" onClick={exportPerformers}>
+            <Download className="mr-1 h-3.5 w-3.5" />
+            Export
           </Button>
-        )}
+          {selected.size > 0 && (
+            <Button size="sm" onClick={applyFilter}>
+              <Filter className="mr-1 h-3.5 w-3.5" />
+              Filter scenes ({selected.size})
+            </Button>
+          )}
+        </div>
       </div>
       <Input
         placeholder="Search performers..."
@@ -75,13 +128,25 @@ function PerformersPage() {
               onClick={() => toggle(p.name)}
             >
               <CardContent className="flex items-center gap-3 p-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--color-muted)]">
-                  {checked ? (
-                    <Check className="h-5 w-5 text-[var(--color-primary)]" />
+                <button
+                  type="button"
+                  className="group relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--color-muted)] overflow-hidden cursor-pointer"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setUploadTargetId(p.id);
+                    fileInputRef.current?.click();
+                  }}
+                  title="Set profile image"
+                >
+                  {p.image ? (
+                    <img src={p.image} alt={p.name} className="h-full w-full object-cover" />
                   ) : (
                     <Users className="h-5 w-5" />
                   )}
-                </div>
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Camera className="h-4 w-4 text-white" />
+                  </div>
+                </button>
                 <div>
                   <p className="font-medium">{p.name}</p>
                   <p className="text-xs text-[var(--color-muted-foreground)]">

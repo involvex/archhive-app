@@ -22,6 +22,25 @@
   --radius-lg: 0.75rem;
 }
 
+.light {
+  --color-background: oklch(0.97 0.01 260);
+  --color-foreground: oklch(0.15 0.02 260);
+  --color-card: oklch(1 0 0);
+  --color-card-foreground: oklch(0.15 0.02 260);
+  --color-primary: oklch(0.55 0.2 280);
+  --color-primary-foreground: oklch(0.98 0.01 260);
+  --color-secondary: oklch(0.93 0.01 260);
+  --color-secondary-foreground: oklch(0.25 0.02 260);
+  --color-muted: oklch(0.93 0.01 260);
+  --color-muted-foreground: oklch(0.5 0.02 260);
+  --color-accent: oklch(0.93 0.03 280);
+  --color-accent-foreground: oklch(0.15 0.02 260);
+  --color-destructive: oklch(0.55 0.2 25);
+  --color-border: oklch(0.85 0.01 260);
+  --color-input: oklch(0.85 0.01 260);
+  --color-ring: oklch(0.55 0.2 280);
+}
+
 * {
   border-color: var(--color-border);
 }
@@ -31,9 +50,15 @@ body,
 #root {
   overflow-x: hidden;
   max-width: 100vw;
-  /* Hex fallbacks: older Android WebViews may ignore oklch and paint white. */
   background-color: #1a1c24;
   color: #f2f2f5;
+}
+
+.light html,
+.light body,
+.light #root {
+  background-color: #f8f8fa;
+  color: #262626;
 }
 
 body {

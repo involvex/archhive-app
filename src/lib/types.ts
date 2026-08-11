@@ -125,9 +125,11 @@ export interface Studio {
 
 export type EngineMode = "local" | "remote_lan" | "standalone";
 
-export type SceneSort = "newest" | "name";
+export type SceneSort = "newest" | "name" | "downloaded";
 
 export type DownloadQuality = "best" | "1080" | "720" | "480";
+
+export type AppTheme = "dark" | "light" | "system";
 
 export interface AppSettings {
   engine_mode: EngineMode;
@@ -146,6 +148,7 @@ export interface AppSettings {
   prefer_mp4?: boolean;
   lan_auth_enabled?: boolean;
   auto_tag_rules?: string[];
+  theme?: AppTheme;
 }
 
 export interface MergeDuplicatesResult {
@@ -196,6 +199,7 @@ export interface LanHost {
 export interface SceneFilter {
   missing_thumb?: boolean;
   missing_duration?: boolean;
+  min_duration?: number;
   max_duration?: number;
   hash_named?: boolean;
   performer_names?: string[];

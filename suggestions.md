@@ -249,19 +249,19 @@
 
 ## Quick Wins (< 1 day each)
 
-| # | Feature | Description |
-|---|---------|-------------|
-| Q1 | **Scene count badge** | Show total scene count on the Library nav item. |
-| Q2 | **Last downloaded sort** | Add "Recently Downloaded" sort option to scenes. |
-| Q3 | **File size display** | Show file size on SceneCard in grid/list view. |
-| Q4 | **Performer image upload** | Allow setting performer profile images manually. |
-| Q5 | **Dark/light theme toggle** | Simple toggle button in the header bar. |
-| Q6 | **Keyboard shortcut hints** | Show shortcut keys in tooltips and menus. |
-| Q7 | **Export performer list** | Simple CSV/JSON export of all performers. |
-| Q8 | **Scene duration filter** | Add min/max duration inputs to the scenes filter bar. |
-| Q9 | **Empty state illustrations** | Add friendly illustrations to empty states. |
-| Q10 | **Changelog in-app** | Show recent changes on first launch after update. |
+| #   | Feature                       | Description                                           |
+| --- | ----------------------------- | ----------------------------------------------------- |
+| Q1  | **Scene count badge**         | Show total scene count on the Library nav item.       |
+| Q2  | **Last downloaded sort**      | Add "Recently Downloaded" sort option to scenes.      |
+| Q3  | **File size display**         | Show file size on SceneCard in grid/list view.        |
+| Q4  | **Performer image upload**    | Allow setting performer profile images manually.      |
+| Q5  | **Dark/light theme toggle**   | Simple toggle button in the header bar.               |
+| Q6  | **Keyboard shortcut hints**   | Show shortcut keys in tooltips and menus.             |
+| Q7  | **Export performer list**     | Simple CSV/JSON export of all performers.             |
+| Q8  | **Scene duration filter**     | Add min/max duration inputs to the scenes filter bar. |
+| Q9  | **Empty state illustrations** | Add friendly illustrations to empty states.           |
+| Q10 | **Changelog in-app**          | Show recent changes on first launch after update.     |
 
 ---
 
-*Last updated: 2026-08-11*
+_Last updated: 2026-08-11_

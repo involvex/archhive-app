@@ -1,6 +1,17 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Home, Compass, Library, Download, Settings, Puzzle, Radio } from "lucide-react";
+import {
+  Home,
+  Compass,
+  Library,
+  Download,
+  Settings,
+  Puzzle,
+  Radio,
+  Sun,
+  Moon,
+  Monitor,
+} from "lucide-react";
 import { resolveAppVersion } from "@/lib/appVersion";
 import { getPluginNavItems } from "@/lib/plugins/loader";
 import { cn } from "@/lib/utils";
@@ -9,6 +20,9 @@ import { registerDefaultShortcuts } from "@/lib/shortcuts/defaults";
 import { ShortcutBadge } from "@/components/ui/shortcut-badge";
 import { CommandPalette } from "@/components/CommandPalette";
 import { ShortcutHelp } from "@/components/ShortcutHelp";
+import { api } from "@/lib/api/client";
+import { useTheme } from "@/lib/hooks/useTheme";
+import type { AppTheme } from "@/lib/types";
 
 const desktopNavItems = [
   { to: "/", label: "Home", icon: Home, shortcut: "Ctrl+1" },
@@ -39,9 +53,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const desktopNav = [...desktopNavItems, ...pluginNavItems];
   const mobileNav = [...mobileNavItems, ...pluginNavItems];
   const [appVersion, setAppVersion] = useState("");
+  const [sceneCount, setSceneCount] = useState<number | null>(null);
+  const { theme, setTheme } = useTheme();
+
+  const themeOptions: { value: AppTheme; icon: typeof Sun; label: string }[] = [
+    { value: "dark", icon: Moon, label: "Dark" },
+    { value: "light", icon: Sun, label: "Light" },
+    { value: "system", icon: Monitor, label: "System" },
+  ];
 
   useEffect(() => {
     void resolveAppVersion().then(setAppVersion);
+  }, []);
+
+  useEffect(() => {
+    void api
+      .getLibraryStats()
+      .then((s) => setSceneCount(s.scene_count))
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -60,26 +89,53 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </p>
         </div>
         <nav className="flex flex-col gap-1">
-          {desktopNav.map(({ to, label, icon: Icon, ...rest }) => (
-            <Link
-              key={to}
-              to={to}
+          {desktopNav.map(({ to, label, icon: Icon, ...rest }) => {
+            const count =
+              to === "/library" && sceneCount != null && sceneCount > 0 ? sceneCount : null;
+            return (
+              <Link
+                key={to}
+                to={to}
+                className={cn(
+                  "flex items-center justify-between rounded-md px-3 py-2 text-sm transition-colors",
+                  "hover:bg-[var(--color-accent)]",
+                  "[&.active]:bg-[var(--color-primary)] [&.active]:text-[var(--color-primary-foreground)]",
+                )}
+              >
+                <span className="flex items-center gap-2">
+                  <Icon className="h-4 w-4" />
+                  {label}
+                  {count != null && (
+                    <span className="rounded-full bg-[var(--color-muted)] px-1.5 py-0.5 text-[10px] font-medium leading-none">
+                      {count}
+                    </span>
+                  )}
+                </span>
+                {"shortcut" in rest && rest.shortcut && (
+                  <ShortcutBadge keys={rest.shortcut as string} className="opacity-50" />
+                )}
+              </Link>
+            );
+          })}
+        </nav>
+        <div className="mt-4 flex items-center gap-1 px-2">
+          {themeOptions.map(({ value, icon: Icon, label }) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setTheme(value)}
+              title={label}
               className={cn(
-                "flex items-center justify-between rounded-md px-3 py-2 text-sm transition-colors",
-                "hover:bg-[var(--color-accent)]",
-                "[&.active]:bg-[var(--color-primary)] [&.active]:text-[var(--color-primary-foreground)]",
+                "rounded-md p-1.5 transition-colors",
+                theme === value
+                  ? "bg-[var(--color-primary)] text-[var(--color-primary-foreground)]"
+                  : "text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)]",
               )}
             >
-              <span className="flex items-center gap-2">
-                <Icon className="h-4 w-4" />
-                {label}
-              </span>
-              {"shortcut" in rest && rest.shortcut && (
-                <ShortcutBadge keys={rest.shortcut as string} className="opacity-50" />
-              )}
-            </Link>
+              <Icon className="h-3.5 w-3.5" />
+            </button>
           ))}
-        </nav>
+        </div>
         {appVersion && (
           <p className="mt-auto px-2 pt-4 text-[10px] text-[var(--color-muted-foreground)]">
             v{appVersion}

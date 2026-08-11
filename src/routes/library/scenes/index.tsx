@@ -101,6 +101,7 @@ function ScenesPage() {
     filter.missing_thumb ||
     filter.missing_duration ||
     filter.hash_named ||
+    filter.min_duration != null ||
     filter.max_duration != null ||
     (filter.performer_names?.length ?? 0) > 0 ||
     (filter.tag_names?.length ?? 0) > 0;
@@ -337,6 +338,7 @@ function ScenesPage() {
           aria-label="Sort scenes"
         >
           <option value="newest">Latest</option>
+          <option value="downloaded">Recently Downloaded</option>
           <option value="name">Name</option>
         </select>
       </div>
@@ -377,6 +379,31 @@ function ScenesPage() {
             </button>
           );
         })}
+        <div className="flex items-center gap-1 ml-2">
+          <Input
+            type="number"
+            placeholder="Min s"
+            value={filter.min_duration ?? ""}
+            onChange={(e) => {
+              const v = e.target.value ? Number(e.target.value) : undefined;
+              setFilter((f) => ({ ...f, min_duration: v }));
+            }}
+            className="h-7 w-16 text-xs"
+            aria-label="Minimum duration in seconds"
+          />
+          <span className="text-xs text-[var(--color-muted-foreground)]">–</span>
+          <Input
+            type="number"
+            placeholder="Max s"
+            value={filter.max_duration ?? ""}
+            onChange={(e) => {
+              const v = e.target.value ? Number(e.target.value) : undefined;
+              setFilter((f) => ({ ...f, max_duration: v }));
+            }}
+            className="h-7 w-16 text-xs"
+            aria-label="Maximum duration in seconds"
+          />
+        </div>
       </div>
 
       {hasFilter && (
@@ -404,6 +431,12 @@ function ScenesPage() {
             <FilterPill
               label={`≤ ${filter.max_duration}s`}
               onRemove={() => setFilter((f) => ({ ...f, max_duration: undefined }))}
+            />
+          )}
+          {filter.min_duration != null && (
+            <FilterPill
+              label={`≥ ${filter.min_duration}s`}
+              onRemove={() => setFilter((f) => ({ ...f, min_duration: undefined }))}
             />
           )}
           {(filter.performer_names?.length ?? 0) > 0 ? (

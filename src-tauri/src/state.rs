@@ -268,6 +268,10 @@ impl AppState {
         self.db.list_performers(query)
     }
 
+    pub fn set_performer_image(&self, id: &str, image: Option<&str>) -> AppResult<()> {
+        self.db.update_performer_image(id, image)
+    }
+
     pub fn list_tags(&self) -> AppResult<Vec<Tag>> {
         self.db.list_tags()
     }

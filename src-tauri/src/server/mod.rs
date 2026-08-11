@@ -6,7 +6,7 @@ use axum::{
     http::{header, HeaderValue, Request, StatusCode},
     middleware::{self, Next},
     response::{IntoResponse, Response},
-    routing::{delete, get, post},
+    routing::{delete, get, post, put},
     Json, Router,
 };
 use mdns_sd::{ServiceDaemon, ServiceInfo};
@@ -123,6 +123,7 @@ impl LanServer {
             .route("/api/files/stream", get(stream_file))
             .route("/api/sites/pornhub/categories", get(pornhub_categories))
             .route("/api/performers", get(list_performers))
+            .route("/api/performers/{id}/image", put(set_performer_image))
             .route("/api/tags", get(list_tags))
             .route("/api/duplicates", get(list_duplicates))
             .route("/api/duplicates/merge", post(merge_duplicates))
@@ -746,6 +747,23 @@ async fn ensure_performer(
         .ensure_performer(&body.name)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(serde_json::json!(performer)))
+}
+
+#[derive(Deserialize)]
+struct SetPerformerImageBody {
+    image: Option<String>,
+}
+
+async fn set_performer_image(
+    Path(id): Path<String>,
+    State(state): State<ApiState>,
+    Json(body): Json<SetPerformerImageBody>,
+) -> Result<StatusCode, StatusCode> {
+    state
+        .app
+        .set_performer_image(&id, body.image.as_deref())
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn probe_scene_metadata(

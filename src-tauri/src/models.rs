@@ -196,6 +196,7 @@ pub enum SceneSort {
     #[default]
     Newest,
     Name,
+    Downloaded,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -237,6 +238,8 @@ pub struct AppSettings {
     pub lan_auth_enabled: bool,
     #[serde(default = "default_auto_tag_rules")]
     pub auto_tag_rules: Vec<String>,
+    #[serde(default = "default_theme")]
+    pub theme: AppTheme,
 }
 
 fn default_phash_threshold() -> u8 {
@@ -265,6 +268,18 @@ fn default_lan_auth_enabled() -> bool {
 
 fn default_auto_tag_rules() -> Vec<String> {
     vec![r"(?<performer>[a-zA-Z0-9_]+)-\d+".to_string()]
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum AppTheme {
+    Dark,
+    Light,
+    System,
+}
+
+fn default_theme() -> AppTheme {
+    AppTheme::Dark
 }
 
 impl Default for AppSettings {
@@ -305,6 +320,7 @@ impl Default for AppSettings {
             prefer_mp4: default_prefer_mp4(),
             lan_auth_enabled: default_lan_auth_enabled(),
             auto_tag_rules: default_auto_tag_rules(),
+            theme: default_theme(),
         }
     }
 }
@@ -387,6 +403,8 @@ pub struct SceneFilter {
     pub missing_thumb: bool,
     #[serde(default)]
     pub missing_duration: bool,
+    #[serde(default)]
+    pub min_duration: Option<u32>,
     #[serde(default)]
     pub max_duration: Option<u32>,
     #[serde(default)]

@@ -23,6 +23,7 @@ import type {
   LanHost,
   SiteInfo,
   AppSettings,
+  AppTheme,
 } from "@/lib/types";
 import { DuplicateGroupCard } from "@/components/DuplicateGroupCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,6 +31,8 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import * as Tabs from "@radix-ui/react-tabs";
 import * as Switch from "@radix-ui/react-switch";
+import { useTheme } from "@/lib/hooks/useTheme";
+import { Sun, Moon, Monitor } from "lucide-react";
 
 export const Route = createFileRoute("/settings/")({
   component: SettingsPage,
@@ -44,6 +47,34 @@ const ENGINE_LABELS: Record<EngineMode, string> = {
   remote_lan: "Remote LAN",
   standalone: "Standalone (direct URLs only)",
 };
+
+const THEME_OPTIONS: { value: AppTheme; icon: typeof Sun; label: string }[] = [
+  { value: "dark", icon: Moon, label: "Dark" },
+  { value: "light", icon: Sun, label: "Light" },
+  { value: "system", icon: Monitor, label: "System" },
+];
+
+function AppearanceSection() {
+  const { theme, setTheme } = useTheme();
+  return (
+    <div className="space-y-2">
+      <p className="text-sm font-medium">Theme</p>
+      <div className="flex gap-2">
+        {THEME_OPTIONS.map(({ value, icon: Icon, label }) => (
+          <Button
+            key={value}
+            size="sm"
+            variant={theme === value ? "default" : "outline"}
+            onClick={() => setTheme(value)}
+          >
+            <Icon className="mr-1 h-3.5 w-3.5" />
+            {label}
+          </Button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function SettingsPage() {
   const {
@@ -937,6 +968,14 @@ function SettingsPage() {
         </Tabs.Content>
 
         <Tabs.Content value="desktop" className="mt-4 space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Appearance</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <AppearanceSection />
+            </CardContent>
+          </Card>
           <Card>
             <CardHeader>
               <CardTitle className="text-base">System Tray</CardTitle>
