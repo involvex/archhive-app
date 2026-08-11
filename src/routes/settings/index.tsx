@@ -572,6 +572,29 @@ function SettingsPage() {
                   onChange={(e) => patchHostSettings({ phash_threshold: Number(e.target.value) })}
                 />
               </div>
+              <div>
+                <label className="text-xs text-[var(--color-muted-foreground)]">
+                  Auto-tag rules (one regex per line)
+                </label>
+                <textarea
+                  value={(hostSettings?.auto_tag_rules ?? []).join("\n")}
+                  readOnly={!caps.libraryPathEditable}
+                  onChange={(e) =>
+                    patchHostSettings({
+                      auto_tag_rules: e.target.value
+                        .split("\n")
+                        .map((l) => l.trim())
+                        .filter(Boolean),
+                    })
+                  }
+                  rows={3}
+                  className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm font-mono outline-none focus:border-[var(--color-primary)]"
+                />
+                <p className="mt-1 text-[10px] text-[var(--color-muted-foreground)]">
+                  Named captures: {"(?<performer>...)"} and {"(?<tag>...)"}. Used during library
+                  scan and download import.
+                </p>
+              </div>
               {caps.libraryPathEditable && (
                 <Button onClick={() => void saveHostSettings()} disabled={!hostSettings}>
                   Save

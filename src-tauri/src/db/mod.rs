@@ -388,6 +388,44 @@ impl Database {
         Ok(id)
     }
 
+    pub fn replace_scene_performers(&self, scene_id: &str, performers: &[String]) -> AppResult<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        conn.execute(
+            "DELETE FROM scene_performers WHERE scene_id = ?1",
+            params![scene_id],
+        )?;
+        for p in performers {
+            let pid = self.upsert_performer(p)?;
+            conn.execute(
+                "INSERT OR IGNORE INTO scene_performers (scene_id, performer_id) VALUES (?1, ?2)",
+                params![scene_id, pid],
+            )?;
+        }
+        Ok(())
+    }
+
+    pub fn replace_scene_tags(&self, scene_id: &str, tags: &[String]) -> AppResult<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        conn.execute(
+            "DELETE FROM scene_tags WHERE scene_id = ?1",
+            params![scene_id],
+        )?;
+        for t in tags {
+            let tid = self.upsert_tag(t)?;
+            conn.execute(
+                "INSERT OR IGNORE INTO scene_tags (scene_id, tag_id) VALUES (?1, ?2)",
+                params![scene_id, tid],
+            )?;
+        }
+        Ok(())
+    }
+
     pub fn update_scene_path(&self, id: &str, path: &str, thumb: Option<&str>) -> AppResult<()> {
         let conn = self
             .conn

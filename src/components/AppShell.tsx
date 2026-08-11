@@ -1,17 +1,22 @@
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Home, Compass, Library, Download, Settings, Puzzle, Radio } from "lucide-react";
 import { resolveAppVersion } from "@/lib/appVersion";
 import { getPluginNavItems } from "@/lib/plugins/loader";
 import { cn } from "@/lib/utils";
+import { useKeyboardShortcuts } from "@/lib/hooks/useKeyboardShortcuts";
+import { registerDefaultShortcuts } from "@/lib/shortcuts/defaults";
+import { ShortcutBadge } from "@/components/ui/shortcut-badge";
+import { CommandPalette } from "@/components/CommandPalette";
+import { ShortcutHelp } from "@/components/ShortcutHelp";
 
 const desktopNavItems = [
-  { to: "/", label: "Home", icon: Home },
-  { to: "/browse", label: "Browse", icon: Compass },
-  { to: "/library", label: "Library", icon: Library },
-  { to: "/live", label: "Live", icon: Radio },
-  { to: "/downloads", label: "Downloads", icon: Download },
-  { to: "/settings", label: "Settings", icon: Settings },
+  { to: "/", label: "Home", icon: Home, shortcut: "Ctrl+1" },
+  { to: "/browse", label: "Browse", icon: Compass, shortcut: "Ctrl+2" },
+  { to: "/library", label: "Library", icon: Library, shortcut: "Ctrl+3" },
+  { to: "/live", label: "Live", icon: Radio, shortcut: "Ctrl+4" },
+  { to: "/downloads", label: "Downloads", icon: Download, shortcut: "Ctrl+5" },
+  { to: "/settings", label: "Settings", icon: Settings, shortcut: "Ctrl+6" },
 ] as const;
 
 const mobileNavItems = [
@@ -30,6 +35,7 @@ const pluginNavItems = getPluginNavItems().map((item) => ({
 }));
 
 export function AppShell({ children }: { children: React.ReactNode }) {
+  const navigate = useNavigate();
   const desktopNav = [...desktopNavItems, ...pluginNavItems];
   const mobileNav = [...mobileNavItems, ...pluginNavItems];
   const [appVersion, setAppVersion] = useState("");
@@ -37,6 +43,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     void resolveAppVersion().then(setAppVersion);
   }, []);
+
+  useEffect(() => {
+    registerDefaultShortcuts((path: string) => navigate({ to: path }));
+  }, [navigate]);
+
+  useKeyboardShortcuts();
 
   return (
     <div className="flex min-h-screen max-w-[100vw] overflow-x-hidden">
@@ -48,18 +60,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </p>
         </div>
         <nav className="flex flex-col gap-1">
-          {desktopNav.map(({ to, label, icon: Icon }) => (
+          {desktopNav.map(({ to, label, icon: Icon, ...rest }) => (
             <Link
               key={to}
               to={to}
               className={cn(
-                "flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors",
+                "flex items-center justify-between rounded-md px-3 py-2 text-sm transition-colors",
                 "hover:bg-[var(--color-accent)]",
                 "[&.active]:bg-[var(--color-primary)] [&.active]:text-[var(--color-primary-foreground)]",
               )}
             >
-              <Icon className="h-4 w-4" />
-              {label}
+              <span className="flex items-center gap-2">
+                <Icon className="h-4 w-4" />
+                {label}
+              </span>
+              {"shortcut" in rest && rest.shortcut && (
+                <ShortcutBadge keys={rest.shortcut as string} className="opacity-50" />
+              )}
             </Link>
           ))}
         </nav>
@@ -87,6 +104,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </nav>
       </div>
+
+      <CommandPalette />
+      <ShortcutHelp />
     </div>
   );
 }

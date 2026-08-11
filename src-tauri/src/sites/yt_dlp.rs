@@ -617,6 +617,63 @@ fn thumbnail_from_entry(obj: &serde_json::Map<String, serde_json::Value>) -> Opt
         .map(|s| s.to_string())
 }
 
+pub fn enrich_metadata_from_ytdlp_json(
+    json: &serde_json::Value,
+) -> (Vec<String>, Vec<String>, Option<String>, Option<u32>, Option<String>) {
+    let performers = extract_string_array(json, &["performers", "artist", "artists"])
+        .or_else(|| extract_single_string(json, "uploader").map(|s| vec![s]))
+        .unwrap_or_default();
+
+    let tags = extract_string_array(json, &["tags"]).unwrap_or_default();
+
+    let channel = extract_single_string(json, "uploader")
+        .or_else(|| extract_single_string(json, "channel"))
+        .or_else(|| extract_single_string(json, "uploader_id"));
+
+    let duration = json
+        .get("duration")
+        .and_then(|v| v.as_u64())
+        .map(|d| d as u32);
+
+    let thumbnail_url = extract_single_string(json, "thumbnail").or_else(|| {
+        json.get("thumbnails")
+            .and_then(|v| v.as_array())
+            .and_then(|arr| arr.last())
+            .and_then(|v| v.get("url"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+    });
+
+    (performers, tags, channel, duration, thumbnail_url)
+}
+
+fn extract_single_string(json: &serde_json::Value, key: &str) -> Option<String> {
+    json.get(key)
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+}
+
+fn extract_string_array(json: &serde_json::Value, keys: &[&str]) -> Option<Vec<String>> {
+    for key in keys {
+        if let Some(arr) = json.get(*key).and_then(|v| v.as_array()) {
+            let items: Vec<String> = arr
+                .iter()
+                .filter_map(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string())
+                .collect();
+            if !items.is_empty() {
+                return Some(items);
+            }
+        }
+        if let Some(s) = json.get(*key).and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+            return Some(vec![s.to_string()]);
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

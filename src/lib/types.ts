@@ -145,6 +145,7 @@ export interface AppSettings {
   download_quality?: DownloadQuality;
   prefer_mp4?: boolean;
   lan_auth_enabled?: boolean;
+  auto_tag_rules?: string[];
 }
 
 export interface MergeDuplicatesResult {

@@ -235,6 +235,8 @@ pub struct AppSettings {
     pub prefer_mp4: bool,
     #[serde(default = "default_lan_auth_enabled")]
     pub lan_auth_enabled: bool,
+    #[serde(default = "default_auto_tag_rules")]
+    pub auto_tag_rules: Vec<String>,
 }
 
 fn default_phash_threshold() -> u8 {
@@ -259,6 +261,10 @@ fn default_prefer_mp4() -> bool {
 
 fn default_lan_auth_enabled() -> bool {
     true
+}
+
+fn default_auto_tag_rules() -> Vec<String> {
+    vec![r"(?<performer>[a-zA-Z0-9_]+)-\d+".to_string()]
 }
 
 impl Default for AppSettings {
@@ -298,6 +304,7 @@ impl Default for AppSettings {
             download_quality: DownloadQuality::default(),
             prefer_mp4: default_prefer_mp4(),
             lan_auth_enabled: default_lan_auth_enabled(),
+            auto_tag_rules: default_auto_tag_rules(),
         }
     }
 }

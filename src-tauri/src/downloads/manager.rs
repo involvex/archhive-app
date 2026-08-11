@@ -1,10 +1,11 @@
 use crate::db::Database;
 use crate::error::{AppError, AppResult};
+use crate::library::auto_tag::apply_filename_rules;
 use crate::library::import::import_download;
 use crate::library::thumbnail::download_remote_thumbnail;
 use crate::library::LibraryScanner;
 use crate::models::{DownloadJob, DownloadPlan, DownloadStatus, DownloadTool};
-use crate::sites::yt_dlp::SidecarRunner;
+use crate::sites::yt_dlp::{enrich_metadata_from_ytdlp_json, SidecarRunner};
 use crate::vault::CookieVault;
 use parking_lot::Mutex;
 use std::collections::HashMap;
@@ -441,13 +442,53 @@ async fn run_job_with_plan(
             db.update_download_job(&job)?;
             let _ = app.emit("download:progress", &job);
 
+            let mut enriched_performers = plan.performers.clone();
+            let mut enriched_tags = plan.tags.clone();
+            let mut enriched_channel = plan.channel.clone();
+            let mut enriched_duration = plan.duration;
+            let mut enriched_thumb_url = plan.thumbnail_url.clone();
+
+            if plan.tool == DownloadTool::YtDlp
+                && enriched_performers.is_empty()
+                && enriched_tags.is_empty()
+            {
+                let cookies = vault.cookie_file_for_site(&plan.adapter_id);
+                if let Ok(json) = runner.resolve_media_json(&plan.url, cookies.as_deref()).await {
+                    let (yt_performers, yt_tags, yt_channel, yt_dur, yt_thumb) =
+                        enrich_metadata_from_ytdlp_json(&json);
+                    if enriched_performers.is_empty() && !yt_performers.is_empty() {
+                        enriched_performers = yt_performers;
+                    }
+                    if enriched_tags.is_empty() && !yt_tags.is_empty() {
+                        enriched_tags = yt_tags;
+                    }
+                    if enriched_channel.is_none() {
+                        enriched_channel = yt_channel;
+                    }
+                    if enriched_duration.is_none() {
+                        enriched_duration = yt_dur;
+                    }
+                    if enriched_thumb_url.is_none() {
+                        enriched_thumb_url = yt_thumb;
+                    }
+                    db.store_download_job_metadata(
+                        &job.id,
+                        &enriched_performers,
+                        &enriched_tags,
+                        enriched_thumb_url.as_deref(),
+                        enriched_duration,
+                        enriched_channel.as_deref(),
+                    )?;
+                }
+            }
+
             let plan_title = plan.title.clone().unwrap_or_else(|| job.url.clone());
             for output_path in &existing {
                 let file_title = Path::new(output_path)
                     .file_stem()
                     .and_then(|s| s.to_str())
                     .unwrap_or(&plan_title);
-                let downloaded_thumb = if let Some(ref thumb_url) = plan.thumbnail_url {
+                let downloaded_thumb = if let Some(ref thumb_url) = enriched_thumb_url {
                     download_remote_thumbnail(thumb_url, Path::new(output_path)).await
                 } else {
                     None
@@ -456,18 +497,40 @@ async fn run_job_with_plan(
                     .as_ref()
                     .map(|p| p.to_string_lossy().to_string());
                 let thumb_str = thumb_path.as_deref();
+
+                let settings = db.get_settings().unwrap_or_default();
+                let rules = &settings.auto_tag_rules;
+                let stem = Path::new(output_path)
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("");
+                let (fn_performers, fn_tags) = apply_filename_rules(stem, rules);
+
+                let mut merged_performers = enriched_performers.clone();
+                for p in fn_performers {
+                    if !merged_performers.iter().any(|x| x.eq_ignore_ascii_case(&p)) {
+                        merged_performers.push(p);
+                    }
+                }
+                let mut merged_tags = enriched_tags.clone();
+                for t in fn_tags {
+                    if !merged_tags.iter().any(|x| x.eq_ignore_ascii_case(&t)) {
+                        merged_tags.push(t);
+                    }
+                }
+
                 let scene_id = import_download(
                     &db,
                     file_title,
                     Some(output_path),
                     Some(&job.url),
-                    &plan.performers,
-                    &plan.tags,
+                    &merged_performers,
+                    &merged_tags,
                     thumb_str,
                     None,
                     None,
-                    plan.duration,
-                    plan.channel.as_deref(),
+                    enriched_duration,
+                    enriched_channel.as_deref(),
                 )?;
                 let _ = LibraryScanner::post_process_file(
                     &db,

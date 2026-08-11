@@ -21,6 +21,12 @@ pub fn import_download(
             if let Some(dur) = duration {
                 db.update_scene_duration(&existing.id, dur)?;
             }
+            if !performers.is_empty() {
+                db.replace_scene_performers(&existing.id, performers)?;
+            }
+            if !tags.is_empty() {
+                db.replace_scene_tags(&existing.id, tags)?;
+            }
             return Ok(existing.id);
         }
     }

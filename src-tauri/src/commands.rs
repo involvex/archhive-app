@@ -176,7 +176,7 @@ pub async fn scan_library(
             let settings = app_state.db.get_settings().map_err(|e| e.to_string())?;
             let path = AppState::validate_library_path(&settings.library_path, &app_state.data_dir)
                 .map_err(|e| e.to_string())?;
-            let rules = vec![r"(?<performer>[a-zA-Z0-9_]+)-\d+".to_string()];
+            let rules = settings.auto_tag_rules.clone();
             let app_for_progress = app.clone();
             crate::library::LibraryScanner::scan(
                 &app_state.db,
