@@ -167,8 +167,11 @@ function BrowsePage() {
     if (needsRemoteSetup && caps.showBrowserBanner) return;
     setTrendingLoading(true);
     const sites = [
+      { id: "pornhub", label: "PornHub" },
       { id: "xvideos", label: "XVIDEOS" },
       { id: "xhamster", label: "xHamster" },
+      { id: "youporn", label: "YouPorn" },
+      { id: "xnxx", label: "XNXX" },
     ];
     void Promise.allSettled(
       sites.map((s) =>
