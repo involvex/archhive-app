@@ -1052,6 +1052,26 @@ function SettingsPage() {
               <p className="text-xs text-[var(--color-muted-foreground)]">
                 Choose which sites appear in the Trending rail on the Browse page.
               </p>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() =>
+                    patchHostSettings({
+                      trending_sites: sites.map((s) => s.id),
+                    })
+                  }
+                >
+                  Select all
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => patchHostSettings({ trending_sites: [] })}
+                >
+                  Select none
+                </Button>
+              </div>
               <div className="flex flex-wrap gap-2">
                 {sites.map((site) => {
                   const active = (hostSettings?.trending_sites ?? []).includes(site.id);
