@@ -226,35 +226,11 @@ pub async fn resolve_livestream(
         .resolve_stream_url(&url)
         .await
         .map_err(|e| e.to_string())?;
-    let embed_url = derive_embed_url(&url);
+    let embed_url = crate::sites::urls::derive_embed_url(&url);
     Ok(serde_json::json!({
         "stream_url": stream_url,
         "embed_url": embed_url,
     }))
-}
-
-fn derive_embed_url(url: &str) -> String {
-    if url.contains("chaturbate.com") {
-        let username = url
-            .trim_end_matches('/')
-            .split('/')
-            .next_back()
-            .unwrap_or("");
-        if !username.is_empty() && !username.contains('?') {
-            return format!("https://chaturbate.com/embed/{username}/");
-        }
-    }
-    if url.contains("stripchat.com") {
-        let username = url
-            .trim_end_matches('/')
-            .split('/')
-            .next_back()
-            .unwrap_or("");
-        if !username.is_empty() && !username.contains('?') {
-            return format!("https://stripchat.com/embed/{username}/");
-        }
-    }
-    url.to_string()
 }
 
 #[tauri::command]

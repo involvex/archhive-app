@@ -110,7 +110,7 @@ impl StripchatAdapter {
             )
             .await?;
             if !rooms.is_empty() {
-                let items: Vec<MediaItem> = rooms.into_iter().map(_map_room).collect();
+                let items: Vec<MediaItem> = rooms.iter().map(_map_room).collect();
                 let has_more = items.len() >= 30;
                 return Ok(BrowsePage {
                     items,
@@ -259,7 +259,7 @@ fn parse_api_json(body: &str) -> Option<Vec<HttpRoom>> {
         .or_else(|| v.get("results"))
         .or_else(|| v.get("data"))
         .or_else(|| v.get("models"))
-        .or_else(|| v.as_array().and_then(|_| Some(&v)));
+        .or_else(|| if v.is_array() { Some(&v) } else { None });
     let arr = rooms_val?.as_array()?;
     if arr.is_empty() {
         return None;
@@ -322,7 +322,7 @@ fn parse_listing_html(html: &str) -> Option<Vec<HttpRoom>> {
 
     // Multiple selector strategies for room cards.
     let link_selectors = [
-        "a[href^='/']:not([href*='tags']):not([href*='search']):not([href*='embed']):not([href*='api'])",
+        "a[href^='/']:not([href*='tags']):not([href*='search']):not([href*='embed']):not([href*='api']):not([href*='auth']):not([href*='login']):not([href*='register']):not([href*='about']):not([href*='terms']):not([href*='dmca']):not([href*='faq']):not([href*='pricing']):not([href*='blog']):not([href*='press'])",
         ".room-card a[href^='/']",
         "a.model-card[href^='/']",
         ".models-list a[href^='/']",
@@ -353,6 +353,13 @@ fn parse_listing_html(html: &str) -> Option<Vec<HttpRoom>> {
                 || username == "auth"
                 || username == "login"
                 || username == "register"
+                || username == "about"
+                || username == "terms"
+                || username == "dmca"
+                || username == "faq"
+                || username == "pricing"
+                || username == "blog"
+                || username == "press"
             {
                 continue;
             }
@@ -375,7 +382,7 @@ fn parse_listing_html(html: &str) -> Option<Vec<HttpRoom>> {
             }
 
             // Extract thumbnail from nearby img elements.
-            let thumbnail = find_thumbnail_near_element(&document, &username);
+            let thumbnail = find_thumbnail_near_element(&el);
             let viewers = extract_viewers_from_text(&title);
             let age = extract_age_from_text(&title);
 
@@ -405,15 +412,13 @@ fn parse_listing_html(html: &str) -> Option<Vec<HttpRoom>> {
 }
 
 fn find_thumbnail_near_element(
-    document: &scraper::Html,
-    _username: &str,
+    element: &scraper::ElementRef<'_>,
 ) -> Option<String> {
     use scraper::Selector;
 
     // Try multiple thumbnail CDN domains used by Stripchat
     let img_selectors = [
         "img[src*='static.stripchat.com']",
-        "img[src*='thumb prv']",
         "img[data-src*='static.stripchat.com']",
         "img[src*='thumbs-strip']",
     ];
@@ -422,42 +427,40 @@ fn find_thumbnail_near_element(
         let Ok(sel) = Selector::parse(sel_str) else {
             continue;
         };
-        if let Some(img) = document.select(&sel).next() {
+        if let Some(img) = element.select(&sel).next() {
             let src = img
                 .value()
                 .attr("src")
                 .or_else(|| img.value().attr("data-src"))
                 .filter(|s| !s.starts_with("data:"));
             if let Some(s) = src {
-                return Some(if s.starts_with("//") {
-                    format!("https:{s}")
-                } else if s.starts_with('/') {
-                    format!("https://static.stripchat.com{s}")
-                } else if !s.starts_with("http") {
-                    format!("https://{BASE}{s}")
-                } else {
-                    s.to_string()
-                });
+                return Some(normalize_thumb_url(s));
             }
         }
     }
 
-    // Fallback: find any img that looks like a thumbnail
+    // Fallback: find any img that looks like a thumbnail within this element
     let any_img = Selector::parse("img").ok()?;
-    document.select(&any_img).find_map(|img| {
+    element.select(&any_img).find_map(|img| {
         let src = img
             .value()
             .attr("src")
             .or_else(|| img.value().attr("data-src"))
             .filter(|s| !s.starts_with("data:") && s.len() > 10)?;
-        Some(if src.starts_with("//") {
-            format!("https:{src}")
-        } else if !src.starts_with("http") {
-            format!("https://{BASE}{src}")
-        } else {
-            src.to_string()
-        })
+        Some(normalize_thumb_url(src))
     })
+}
+
+fn normalize_thumb_url(s: &str) -> String {
+    if s.starts_with("//") {
+        format!("https:{s}")
+    } else if s.starts_with('/') {
+        format!("https://static.stripchat.com{s}")
+    } else if !s.starts_with("http") {
+        format!("https://{BASE}{s}")
+    } else {
+        s.to_string()
+    }
 }
 
 fn extract_viewers_from_text(text: &str) -> Option<u32> {
@@ -523,15 +526,15 @@ fn extract_username_from_url(url: &str) -> Option<String> {
     Some(first.to_string())
 }
 
-fn _map_room(room: crate::sites::adapters::stripchat_webview::_RawRoom) -> MediaItem {
-    let username = room.username;
+fn _map_room(room: &crate::sites::adapters::stripchat_webview::_RawRoom) -> MediaItem {
+    let username = &room.username;
     let room_url = format!("{BASE}/{username}/");
     let embed_url = format!("{BASE}/embed/{username}/");
     MediaItem {
         id: Uuid::new_v4().to_string(),
-        title: room.title,
+        title: room.title.clone(),
         url: room_url,
-        thumbnail: room.thumbnail,
+        thumbnail: room.thumbnail.clone(),
         duration: None,
         site_id: "stripchat".to_string(),
         performers: vec![username.clone()],
@@ -541,7 +544,7 @@ fn _map_room(room: crate::sites::adapters::stripchat_webview::_RawRoom) -> Media
         is_live: Some(true),
         viewers: room.viewers,
         age: room.age,
-        gender: room.gender,
+        gender: room.gender.clone(),
         stream_url: None,
         embed_url: Some(embed_url),
     }

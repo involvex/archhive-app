@@ -1,4 +1,4 @@
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import {
   Home,
@@ -50,6 +50,7 @@ const pluginNavItems = getPluginNavItems().map((item) => ({
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const desktopNav = [...desktopNavItems, ...pluginNavItems];
   const mobileNav = [...mobileNavItems, ...pluginNavItems];
   const [appVersion, setAppVersion] = useState("");
@@ -147,19 +148,32 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <main className="flex-1 overflow-x-hidden p-4 pb-24 md:p-6 md:pb-6">{children}</main>
         <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-[var(--color-border)] bg-[var(--color-card)] pb-[env(safe-area-inset-bottom)]">
           <div className="flex justify-around pt-2 pb-1">
-            {mobileNav.map(({ to, label, icon: Icon }) => (
-              <Link
-                key={to}
-                to={to}
-                className="flex min-w-0 flex-1 flex-col items-center gap-1 px-2 py-2 text-[11px] font-medium text-[var(--color-muted-foreground)] transition-colors [&.active]:text-[var(--color-primary)]"
-              >
-                <div className="relative">
-                  <Icon className="h-6 w-6 shrink-0" />
-                  <span className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 h-0.5 w-4 rounded-full bg-transparent transition-colors [&.active]:bg-[var(--color-primary)]" />
-                </div>
-                <span className="truncate">{label}</span>
-              </Link>
-            ))}
+            {mobileNav.map(({ to, label, icon: Icon }) => {
+              const isActive = location.pathname === to || location.pathname.startsWith(to + "/");
+              return (
+                <Link
+                  key={to}
+                  to={to}
+                  className={cn(
+                    "flex min-w-0 flex-1 flex-col items-center gap-1 px-2 py-2 text-[11px] font-medium transition-colors",
+                    isActive
+                      ? "text-[var(--color-primary)]"
+                      : "text-[var(--color-muted-foreground)]",
+                  )}
+                >
+                  <div className="relative">
+                    <Icon className="h-6 w-6 shrink-0" />
+                    <span
+                      className={cn(
+                        "absolute -bottom-1.5 left-1/2 -translate-x-1/2 h-0.5 w-4 rounded-full transition-colors",
+                        isActive ? "bg-[var(--color-primary)]" : "bg-transparent",
+                      )}
+                    />
+                  </div>
+                  <span className="truncate">{label}</span>
+                </Link>
+              );
+            })}
           </div>
         </nav>
       </div>

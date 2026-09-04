@@ -22,7 +22,7 @@ use uuid::Uuid;
 const _BRIDGE_SCHEME: &str = "strip-bridge";
 
 /// How long the bridge waits for the SPA to render before giving up.
-const _BRIDGE_TIMEOUT: Duration = Duration::from_secs(8);
+const _BRIDGE_TIMEOUT: Duration = Duration::from_secs(12);
 
 /// Raw room data extracted by the injected JS.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

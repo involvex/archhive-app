@@ -710,33 +710,7 @@ async fn resolve_livestream(
         .resolve_stream_url(&body.url)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let embed_url = if body.url.contains("chaturbate.com") {
-        let username = body
-            .url
-            .trim_end_matches('/')
-            .split('/')
-            .next_back()
-            .unwrap_or("");
-        if !username.is_empty() && !username.contains('?') {
-            format!("https://chaturbate.com/embed/{username}/")
-        } else {
-            body.url.clone()
-        }
-    } else if body.url.contains("stripchat.com") {
-        let username = body
-            .url
-            .trim_end_matches('/')
-            .split('/')
-            .next_back()
-            .unwrap_or("");
-        if !username.is_empty() && !username.contains('?') {
-            format!("https://stripchat.com/embed/{username}/")
-        } else {
-            body.url.clone()
-        }
-    } else {
-        body.url.clone()
-    };
+    let embed_url = crate::sites::urls::derive_embed_url(&body.url);
     Ok(Json(serde_json::json!({
         "stream_url": stream_url,
         "embed_url": embed_url,

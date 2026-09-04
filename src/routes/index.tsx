@@ -16,6 +16,7 @@ import { ErrorState } from "@/components/ErrorState";
 import { EmptyState } from "@/components/EmptyState";
 import { SceneCard } from "@/components/SceneCard";
 import { Compass, Link2, Radio, Film, Newspaper } from "lucide-react";
+import { PORNHUB_FEED_SLUG } from "@/lib/sites/catalog";
 
 export const Route = createFileRoute("/")({
   component: HomePage,
@@ -182,7 +183,7 @@ function HomePage() {
           <Button asChild size="sm" variant="outline">
             <Link
               to="/browse/$site/$kind/$slug"
-              params={{ site: "pornhub", kind: "search", slug: "webmasters" }}
+              params={{ site: "pornhub", kind: "search", slug: PORNHUB_FEED_SLUG }}
             >
               Browse Feed
             </Link>

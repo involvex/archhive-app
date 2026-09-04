@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api/client";
 import { getCapabilities } from "@/lib/runtime";
 import { getPluginBrowseSites } from "@/lib/plugins/loader";
-import { mergeSiteLists } from "@/lib/sites/catalog";
+import { mergeSiteLists, PORNHUB_FEED_SLUG } from "@/lib/sites/catalog";
 import { useSettingsStore } from "@/lib/stores/settings";
 import type { BrowseOrientation, PornhubCategoryEntry, SiteInfo } from "@/lib/types";
 import { Card, CardContent } from "@/components/ui/card";
@@ -257,7 +257,6 @@ function BrowsePage() {
             navigate({
               to: "/browse/$site/$kind/$slug",
               params: { site: "pornhub", kind: "category", slug: "lesbian" },
-              search: { orientation: "lesbian" },
             })
           }
         >
@@ -270,7 +269,7 @@ function BrowsePage() {
           onClick={() =>
             navigate({
               to: "/browse/$site/$kind/$slug",
-              params: { site: "pornhub", kind: "search", slug: "webmasters" },
+              params: { site: "pornhub", kind: "search", slug: PORNHUB_FEED_SLUG },
             })
           }
         >

@@ -1,5 +1,8 @@
 import type { BrowseKind, SiteInfo } from "../types";
 
+/** PornHub search slug for the News/Feed page. */
+export const PORNHUB_FEED_SLUG = "webmasters";
+
 /** Static fallback when LAN/API is unavailable — mirrors SiteRegistry in Rust. */
 export const SITE_CATALOG: SiteInfo[] = [
   {
