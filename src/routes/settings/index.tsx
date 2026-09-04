@@ -1042,6 +1042,59 @@ function SettingsPage() {
             </CardContent>
           </Card>
         </Tabs.Content>
+
+        <Tabs.Content value="browse" className="mt-4 space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Browse Trending Rail</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-xs text-[var(--color-muted-foreground)]">
+                Choose which sites appear in the Trending rail on the Browse page.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {sites.map((site) => {
+                  const active = (hostSettings?.trending_sites ?? []).includes(site.id);
+                  return (
+                    <label
+                      key={site.id}
+                      className={`flex items-center gap-2 rounded-md border px-3 py-2 text-xs cursor-pointer transition ${
+                        active
+                          ? "border-[var(--color-primary)] bg-[var(--color-primary)]/10"
+                          : "border-[var(--color-border)] hover:border-[var(--color-muted-foreground)]"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={active}
+                        onChange={(e) => {
+                          const current = hostSettings?.trending_sites ?? [];
+                          const next = e.target.checked
+                            ? [...current, site.id]
+                            : current.filter((id: string) => id !== site.id);
+                          patchHostSettings({ trending_sites: next });
+                        }}
+                        className="rounded"
+                      />
+                      {site.display_name}
+                    </label>
+                  );
+                })}
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() =>
+                  void persistTraySettings({
+                    trending_sites: hostSettings?.trending_sites ?? [],
+                  })
+                }
+              >
+                Save trending sites
+              </Button>
+            </CardContent>
+          </Card>
+        </Tabs.Content>
       </Tabs.Root>
 
       <p className="text-xs text-[var(--color-muted-foreground)]">

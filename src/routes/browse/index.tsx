@@ -166,18 +166,17 @@ function BrowsePage() {
   useEffect(() => {
     if (needsRemoteSetup && caps.showBrowserBanner) return;
     setTrendingLoading(true);
-    const sites = [
-      { id: "pornhub", label: "PornHub" },
-      { id: "xvideos", label: "XVIDEOS" },
-      { id: "xhamster", label: "xHamster" },
-      { id: "youporn", label: "YouPorn" },
-      { id: "xnxx", label: "XNXX" },
-    ];
+    const enabled = new Set(settings.trending_sites ?? []);
+    const available = sites.filter((s) => enabled.has(s.id));
+    if (available.length === 0) {
+      setTrending({});
+      setTrendingLoading(false);
+      return;
+    }
     void Promise.allSettled(
-      sites.map((s) =>
+      available.map((s) =>
         api.browse(s.id, "search", "trending", 1).then((page) => ({
           id: s.id,
-          label: s.label,
           items: page.items.slice(0, 10),
         })),
       ),
@@ -191,7 +190,7 @@ function BrowsePage() {
       setTrending(next);
       setTrendingLoading(false);
     });
-  }, [needsRemoteSetup, caps.showBrowserBanner]);
+  }, [needsRemoteSetup, caps.showBrowserBanner, settings.trending_sites, sites]);
 
   return (
     <div className="space-y-6">

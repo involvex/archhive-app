@@ -150,6 +150,7 @@ export interface AppSettings {
   prefer_mp4?: boolean;
   lan_auth_enabled?: boolean;
   auto_tag_rules?: string[];
+  trending_sites?: string[];
   theme?: AppTheme;
 }
 

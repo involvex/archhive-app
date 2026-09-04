@@ -240,6 +240,8 @@ pub struct AppSettings {
     pub lan_auth_enabled: bool,
     #[serde(default = "default_auto_tag_rules")]
     pub auto_tag_rules: Vec<String>,
+    #[serde(default = "default_trending_sites")]
+    pub trending_sites: Vec<String>,
     #[serde(default = "default_theme")]
     pub theme: AppTheme,
 }
@@ -270,6 +272,16 @@ fn default_lan_auth_enabled() -> bool {
 
 fn default_auto_tag_rules() -> Vec<String> {
     vec![r"(?<performer>[a-zA-Z0-9_]+)-\d+".to_string()]
+}
+
+fn default_trending_sites() -> Vec<String> {
+    vec![
+        "pornhub".to_string(),
+        "xvideos".to_string(),
+        "xhamster".to_string(),
+        "youporn".to_string(),
+        "xnxx".to_string(),
+    ]
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -322,6 +334,7 @@ impl Default for AppSettings {
             prefer_mp4: default_prefer_mp4(),
             lan_auth_enabled: default_lan_auth_enabled(),
             auto_tag_rules: default_auto_tag_rules(),
+            trending_sites: default_trending_sites(),
             theme: default_theme(),
         }
     }

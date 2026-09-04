@@ -8,6 +8,7 @@ export const SETTINGS_TABS = [
   "duplicates",
   "lan",
   "desktop",
+  "browse",
 ] as const;
 export type SettingsTab = (typeof SETTINGS_TABS)[number];
 
