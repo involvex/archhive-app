@@ -15,7 +15,7 @@ import { SkeletonGrid } from "@/components/SkeletonGrid";
 import { ErrorState } from "@/components/ErrorState";
 import { EmptyState } from "@/components/EmptyState";
 import { SceneCard } from "@/components/SceneCard";
-import { Compass, Link2, Radio, Film } from "lucide-react";
+import { Compass, Link2, Radio, Film, Newspaper } from "lucide-react";
 
 export const Route = createFileRoute("/")({
   component: HomePage,
@@ -165,6 +165,30 @@ function HomePage() {
           </Link>
         </Button>
       </div>
+
+      <Card>
+        <CardContent className="p-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="rounded-md bg-[var(--color-primary)]/10 p-2">
+              <Newspaper className="h-5 w-5 text-[var(--color-primary)]" />
+            </div>
+            <div>
+              <p className="text-sm font-medium">News / Feed</p>
+              <p className="text-xs text-[var(--color-muted-foreground)]">
+                Browse promoted and featured content from PornHub
+              </p>
+            </div>
+          </div>
+          <Button asChild size="sm" variant="outline">
+            <Link
+              to="/browse/$site/$kind/$slug"
+              params={{ site: "pornhub", kind: "search", slug: "webmasters" }}
+            >
+              Browse Feed
+            </Link>
+          </Button>
+        </CardContent>
+      </Card>
 
       {active.length > 0 && (
         <Card>

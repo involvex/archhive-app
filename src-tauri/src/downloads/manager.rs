@@ -4,6 +4,7 @@ use crate::library::auto_tag::apply_filename_rules;
 use crate::library::import::import_download;
 use crate::library::thumbnail::download_remote_thumbnail;
 use crate::library::LibraryScanner;
+use crate::media::FfmpegProcessor;
 use crate::models::{DownloadJob, DownloadPlan, DownloadStatus, DownloadTool};
 use crate::sites::yt_dlp::{enrich_metadata_from_ytdlp_json, SidecarRunner};
 use crate::vault::CookieVault;
@@ -502,9 +503,17 @@ async fn run_job_with_plan(
                 } else {
                     None
                 };
-                let thumb_path = downloaded_thumb
-                    .as_ref()
-                    .map(|p| p.to_string_lossy().to_string());
+                // Fallback: if remote thumbnail failed, try ffprobe extraction.
+                let thumb_path = match downloaded_thumb {
+                    Some(p) => Some(p.to_string_lossy().to_string()),
+                    None => {
+                        let ffmpeg = FfmpegProcessor::new(app.clone());
+                        match ffmpeg.extract_thumbnail(Path::new(output_path)).await {
+                            Ok(p) => Some(p.to_string_lossy().to_string()),
+                            Err(_) => None,
+                        }
+                    }
+                };
                 let thumb_str = thumb_path.as_deref();
 
                 let settings = db.get_settings().unwrap_or_default();

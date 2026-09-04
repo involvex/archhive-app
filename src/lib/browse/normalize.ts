@@ -65,6 +65,16 @@ export function normalizeBrowseInput(
       const search = parsed.searchParams.get("q");
       if (search) return { kind: "search", slug: search };
     }
+    if (site === "stripchat") {
+      const room = parsed.pathname.match(/^\/([^/]+)\/?$/)?.[1];
+      if (room && !["tags", "search", "models", "auth", "login"].includes(room)) {
+        return { kind: "livestream", slug: room };
+      }
+      const tag = parsed.pathname.match(/\/tags\/([^/]+)/)?.[1];
+      if (tag) return { kind: "tag", slug: decodeURIComponent(tag) };
+      const search = parsed.searchParams.get("q");
+      if (search) return { kind: "search", slug: search };
+    }
   } catch {
     /* keep defaults */
   }

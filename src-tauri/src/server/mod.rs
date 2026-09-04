@@ -722,6 +722,18 @@ async fn resolve_livestream(
         } else {
             body.url.clone()
         }
+    } else if body.url.contains("stripchat.com") {
+        let username = body
+            .url
+            .trim_end_matches('/')
+            .split('/')
+            .next_back()
+            .unwrap_or("");
+        if !username.is_empty() && !username.contains('?') {
+            format!("https://stripchat.com/embed/{username}/")
+        } else {
+            body.url.clone()
+        }
     } else {
         body.url.clone()
     };

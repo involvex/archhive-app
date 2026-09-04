@@ -146,14 +146,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div className="flex min-w-0 flex-1 flex-col">
         <main className="flex-1 overflow-x-hidden p-4 pb-24 md:p-6 md:pb-6">{children}</main>
         <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-[var(--color-border)] bg-[var(--color-card)] pb-[env(safe-area-inset-bottom)]">
-          <div className="flex justify-around py-2">
+          <div className="flex justify-around pt-2 pb-1">
             {mobileNav.map(({ to, label, icon: Icon }) => (
               <Link
                 key={to}
                 to={to}
-                className="flex min-w-0 flex-1 flex-col items-center gap-0.5 px-1 text-[10px] text-[var(--color-muted-foreground)] [&.active]:text-[var(--color-primary)]"
+                className="flex min-w-0 flex-1 flex-col items-center gap-1 px-2 py-2 text-[11px] font-medium text-[var(--color-muted-foreground)] transition-colors [&.active]:text-[var(--color-primary)]"
               >
-                <Icon className="h-5 w-5 shrink-0" />
+                <div className="relative">
+                  <Icon className="h-6 w-6 shrink-0" />
+                  <span className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 h-0.5 w-4 rounded-full bg-transparent transition-colors [&.active]:bg-[var(--color-primary)]" />
+                </div>
                 <span className="truncate">{label}</span>
               </Link>
             ))}

@@ -10,7 +10,17 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ConnectionStatusChip } from "@/components/ConnectionStatusChip";
-import { Globe, Link2, Search, Clock, Radio, ArrowRight, Tags } from "lucide-react";
+import {
+  Globe,
+  Link2,
+  Search,
+  Clock,
+  Radio,
+  ArrowRight,
+  Tags,
+  Heart,
+  Newspaper,
+} from "lucide-react";
 import { isMobileDevice } from "@/lib/tauri";
 
 const ORIENTATIONS: { value: BrowseOrientation; label: string }[] = [
@@ -218,13 +228,13 @@ function BrowsePage() {
             </Button>
           </div>
 
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1 snap-x snap-mandatory scrollbar-hide">
             {sites.map((site) => (
               <button
                 key={site.id}
                 type="button"
                 onClick={() => handleSiteChip(site.id)}
-                className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium transition ${
+                className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-medium transition shrink-0 snap-start ${
                   selectedSite === site.id
                     ? "bg-[var(--color-primary)] text-[var(--color-primary-foreground)]"
                     : "bg-[var(--color-secondary)] hover:bg-[var(--color-muted)]"
@@ -238,6 +248,36 @@ function BrowsePage() {
           </div>
         </CardContent>
       </Card>
+
+      <div className="flex flex-wrap gap-2">
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() =>
+            navigate({
+              to: "/browse/$site/$kind/$slug",
+              params: { site: "pornhub", kind: "category", slug: "lesbian" },
+              search: { orientation: "lesbian" },
+            })
+          }
+        >
+          <Heart className="h-4 w-4 mr-1.5" />
+          PornHub Lesbian
+        </Button>
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() =>
+            navigate({
+              to: "/browse/$site/$kind/$slug",
+              params: { site: "pornhub", kind: "search", slug: "webmasters" },
+            })
+          }
+        >
+          <Newspaper className="h-4 w-4 mr-1.5" />
+          News / Feed
+        </Button>
+      </div>
 
       {selectedSite === "pornhub" && (
         <Card>
@@ -376,7 +416,7 @@ function BrowsePage() {
       <Card>
         <CardContent className="p-4">
           <p className="text-sm text-[var(--color-muted-foreground)] mb-3">
-            Browse live Chaturbate streams.
+            Browse live streams from Chaturbate and Stripchat.
           </p>
           <Button asChild variant="outline">
             <a

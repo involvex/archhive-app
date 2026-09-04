@@ -10,6 +10,11 @@ export const Route = createFileRoute("/live/$site/$slug")({
   component: LivePlayerPage,
 });
 
+const SITE_LABELS: Record<string, string> = {
+  chaturbate: "Chaturbate",
+  stripchat: "Stripchat",
+};
+
 function LivePlayerPage() {
   const { site, slug } = Route.useParams();
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -25,6 +30,7 @@ function LivePlayerPage() {
     setLoading(true);
     setError("");
     try {
+      // Build room URL generically for supported live sites
       const roomUrl = `https://${site}.com/${slug}/`;
       const result = await api.resolveLivestream(roomUrl);
       setStreamUrl(result.stream_url);
@@ -98,7 +104,12 @@ function LivePlayerPage() {
           </Link>
         </Button>
         <Radio className="h-5 w-5 text-red-500" />
-        <h2 className="text-2xl font-bold">{slug}</h2>
+        <h2 className="text-2xl font-bold">
+          {slug}
+          <span className="ml-2 text-sm font-normal text-[var(--color-muted-foreground)]">
+            {SITE_LABELS[site] ?? site}
+          </span>
+        </h2>
       </div>
 
       {error && (

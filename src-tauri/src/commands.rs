@@ -244,6 +244,16 @@ fn derive_embed_url(url: &str) -> String {
             return format!("https://chaturbate.com/embed/{username}/");
         }
     }
+    if url.contains("stripchat.com") {
+        let username = url
+            .trim_end_matches('/')
+            .split('/')
+            .next_back()
+            .unwrap_or("");
+        if !username.is_empty() && !username.contains('?') {
+            return format!("https://stripchat.com/embed/{username}/");
+        }
+    }
     url.to_string()
 }
 

@@ -10,6 +10,13 @@ export const SITE_CATALOG: SiteInfo[] = [
     requires_cookies: true,
   },
   {
+    id: "stripchat",
+    display_name: "Stripchat",
+    base_url: "https://stripchat.com",
+    supported_kinds: ["livestream", "tag", "search", "model"] as BrowseKind[],
+    requires_cookies: true,
+  },
+  {
     id: "thothub",
     display_name: "ThotHub",
     base_url: "https://thethothub.com",

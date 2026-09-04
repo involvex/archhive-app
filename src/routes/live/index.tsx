@@ -10,10 +10,16 @@ import { EmptyState } from "@/components/EmptyState";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Radio, Search } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/live/")({
   component: LiveIndexPage,
 });
+
+const LIVE_SITES = [
+  { id: "chaturbate", label: "Chaturbate" },
+  { id: "stripchat", label: "Stripchat" },
+] as const;
 
 function LiveIndexPage() {
   const [items, setItems] = useState<MediaItem[]>([]);
@@ -21,12 +27,13 @@ function LiveIndexPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [infoItem, setInfoItem] = useState<MediaItem | null>(null);
+  const [selectedSite, setSelectedSite] = useState<string>("chaturbate");
 
-  const loadPopular = useCallback(async () => {
+  const loadPopular = useCallback(async (site: string) => {
     setLoading(true);
     setError("");
     try {
-      const result = await api.browse("chaturbate", "livestream", "", 1);
+      const result = await api.browse(site, "livestream", "", 1);
       setItems(result.items);
     } catch (e) {
       const raw = e instanceof Error ? e.message : "Failed to load streams";
@@ -37,25 +44,34 @@ function LiveIndexPage() {
     }
   }, []);
 
-  const loadSearch = useCallback(async () => {
-    if (!query.trim()) return;
-    setLoading(true);
-    setError("");
-    try {
-      const result = await api.browse("chaturbate", "search", query.trim(), 1);
-      setItems(result.items);
-    } catch (e) {
-      const raw = e instanceof Error ? e.message : "Search failed";
-      console.error("[live] loadSearch failed:", e);
-      setError(raw.replace(/^site error:\s*/i, ""));
-    } finally {
-      setLoading(false);
-    }
-  }, [query]);
+  const loadSearch = useCallback(
+    async (site: string) => {
+      if (!query.trim()) return;
+      setLoading(true);
+      setError("");
+      try {
+        const result = await api.browse(site, "search", query.trim(), 1);
+        setItems(result.items);
+      } catch (e) {
+        const raw = e instanceof Error ? e.message : "Search failed";
+        console.error("[live] loadSearch failed:", e);
+        setError(raw.replace(/^site error:\s*/i, ""));
+      } finally {
+        setLoading(false);
+      }
+    },
+    [query],
+  );
 
   useEffect(() => {
-    void loadPopular();
-  }, [loadPopular]);
+    void loadPopular(selectedSite);
+  }, [loadPopular, selectedSite]);
+
+  const handleSiteChange = useCallback((site: string) => {
+    setSelectedSite(site);
+    setQuery("");
+    setError("");
+  }, []);
 
   return (
     <div className="space-y-4">
@@ -64,26 +80,46 @@ function LiveIndexPage() {
         <h2 className="text-2xl font-bold">Live Streams</h2>
       </div>
 
+      {/* Site selector chips */}
+      <div className="flex gap-2">
+        {LIVE_SITES.map((site) => (
+          <button
+            key={site.id}
+            type="button"
+            onClick={() => handleSiteChange(site.id)}
+            className={cn(
+              "rounded-full px-4 py-1.5 text-sm font-medium transition-colors",
+              selectedSite === site.id
+                ? "bg-[var(--color-primary)] text-[var(--color-primary-foreground)]"
+                : "bg-[var(--color-muted)] text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)]",
+            )}
+          >
+            {site.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Search */}
       <div className="flex gap-2 max-w-md">
         <Input
-          placeholder="Search Chaturbate..."
+          placeholder={`Search ${LIVE_SITES.find((s) => s.id === selectedSite)?.label ?? "streams"}...`}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter") void loadSearch();
+            if (e.key === "Enter") void loadSearch(selectedSite);
           }}
         />
-        <Button onClick={loadSearch} disabled={loading}>
+        <Button onClick={() => loadSearch(selectedSite)} disabled={loading}>
           Search
         </Button>
       </div>
 
       {error && (
         <>
-          <ErrorState message={error} onRetry={loadPopular} />
+          <ErrorState message={error} onRetry={() => loadPopular(selectedSite)} />
           <p className="text-xs text-red-300/80">
-            Chaturbate lists are scraped server-side without yt-dlp. If you repeatedly see no rooms,
-            make sure cookies for <code className="font-mono">chaturbate</code> are configured in{" "}
+            Live site lists are scraped server-side. If you repeatedly see no rooms, make sure
+            cookies for <code className="font-mono">{selectedSite}</code> are configured in{" "}
             <Link to="/settings" className="underline">
               Settings &rarr; Cookies
             </Link>
@@ -97,7 +133,10 @@ function LiveIndexPage() {
           <Link
             key={item.id}
             to="/live/$site/$slug"
-            params={{ site: "chaturbate", slug: item.channel ?? item.performers[0] ?? "" }}
+            params={{
+              site: selectedSite,
+              slug: item.channel ?? item.performers[0] ?? "",
+            }}
           >
             <SceneCard item={item} onInfo={(i) => setInfoItem(i)} />
           </Link>
@@ -110,7 +149,7 @@ function LiveIndexPage() {
         <EmptyState
           icon={<Search className="h-8 w-8" />}
           title="No streams found"
-          description="Try a different search term."
+          description="Try a different search term or site."
         />
       )}
 
