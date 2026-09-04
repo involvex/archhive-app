@@ -5,7 +5,8 @@ import { getCapabilities } from "@/lib/runtime";
 import { getPluginBrowseSites } from "@/lib/plugins/loader";
 import { mergeSiteLists, PORNHUB_FEED_SLUG } from "@/lib/sites/catalog";
 import { useSettingsStore } from "@/lib/stores/settings";
-import type { BrowseOrientation, PornhubCategoryEntry, SiteInfo } from "@/lib/types";
+import type { BrowseOrientation, MediaItem, PornhubCategoryEntry, SiteInfo } from "@/lib/types";
+import { SceneCard } from "@/components/SceneCard";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -20,6 +21,7 @@ import {
   Tags,
   Heart,
   Newspaper,
+  Flame,
 } from "lucide-react";
 import { isMobileDevice } from "@/lib/tauri";
 
@@ -145,6 +147,9 @@ function BrowsePage() {
   const [catOrientation, setCatOrientation] = useState<BrowseOrientation>("straight");
   const [catLoading, setCatLoading] = useState(false);
 
+  const [trending, setTrending] = useState<Record<string, MediaItem[]>>({});
+  const [trendingLoading, setTrendingLoading] = useState(false);
+
   useEffect(() => {
     if (selectedSite !== "pornhub") {
       setCategories([]);
@@ -157,6 +162,33 @@ function BrowsePage() {
       .catch(() => setCategories([]))
       .finally(() => setCatLoading(false));
   }, [selectedSite, catOrientation]);
+
+  useEffect(() => {
+    if (needsRemoteSetup && caps.showBrowserBanner) return;
+    setTrendingLoading(true);
+    const sites = [
+      { id: "xvideos", label: "XVIDEOS" },
+      { id: "xhamster", label: "xHamster" },
+    ];
+    void Promise.allSettled(
+      sites.map((s) =>
+        api.browse(s.id, "search", "trending", 1).then((page) => ({
+          id: s.id,
+          label: s.label,
+          items: page.items.slice(0, 10),
+        })),
+      ),
+    ).then((results) => {
+      const next: Record<string, MediaItem[]> = {};
+      results.forEach((r) => {
+        if (r.status === "fulfilled") {
+          next[r.value.id] = r.value.items;
+        }
+      });
+      setTrending(next);
+      setTrendingLoading(false);
+    });
+  }, [needsRemoteSetup, caps.showBrowserBanner]);
 
   return (
     <div className="space-y-6">
@@ -277,6 +309,50 @@ function BrowsePage() {
           News / Feed
         </Button>
       </div>
+
+      <Card>
+        <CardContent className="p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <Flame className="h-4 w-4 text-orange-500" />
+              <span>Trending</span>
+            </div>
+          </div>
+          {trendingLoading ? (
+            <p className="text-xs text-[var(--color-muted-foreground)]">
+              Loading trending content…
+            </p>
+          ) : (
+            <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1 snap-x snap-mandatory scrollbar-hide">
+              {Object.values(trending).map((items) =>
+                items.map((item) => (
+                  <div key={item.id} className="shrink-0 w-44 snap-start">
+                    <SceneCard
+                      item={item}
+                      listView={false}
+                      onClick={() => {
+                        navigate({
+                          to: "/browse/$site/$kind/$slug",
+                          params: {
+                            site: item.site_id,
+                            kind: "search",
+                            slug: encodeURIComponent(item.title),
+                          },
+                        });
+                      }}
+                    />
+                  </div>
+                )),
+              )}
+              {Object.values(trending).every((items) => items.length === 0) && (
+                <p className="text-xs text-[var(--color-muted-foreground)]">
+                  No trending content available yet.
+                </p>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {selectedSite === "pornhub" && (
         <Card>
