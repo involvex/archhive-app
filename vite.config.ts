@@ -6,7 +6,7 @@ import path from "path";
 import { readFileSync } from "node:fs";
 
 const host = process.env.TAURI_DEV_HOST;
-const pkg = JSON.parse(readFileSync(path.resolve(__dirname, "package.json"), "utf8")) as {
+const pkg = JSON.parse(readFileSync(path.resolve(import.meta.dirname, "package.json"), "utf8")) as {
   version: string;
 };
 
