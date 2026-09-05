@@ -64,6 +64,7 @@ function ScenesPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setFilter((prev) => {
       const next = { ...prev };
       let changed = false;
@@ -126,6 +127,7 @@ function ScenesPage() {
   }, [query, sort, filter, hasFilter]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     refresh();
   }, [refresh]);
 

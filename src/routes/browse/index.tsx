@@ -164,6 +164,7 @@ function BrowsePage() {
 
   useEffect(() => {
     if (selectedSite !== "pornhub") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setCategories([]);
       return;
     }

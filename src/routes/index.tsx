@@ -36,6 +36,7 @@ function HomePage() {
 
   useEffect(() => {
     if (needsSetup) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     setLoadError("");
 
@@ -49,7 +50,9 @@ function HomePage() {
       .catch((e) => setLoadError(e instanceof Error ? e.message : "Failed to load downloads"));
 
     Promise.allSettled([scenesP, downloadsP]).finally(() => setLoading(false));
+  }, [needsSetup]);
 
+  useEffect(() => {
     let unsubDownload: (() => void) | undefined;
     void api
       .subscribeDownloadProgress((job) => {

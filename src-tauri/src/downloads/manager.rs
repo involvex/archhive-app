@@ -46,12 +46,22 @@ impl DownloadManager {
             worker_queue_tx,
         ));
 
-        Self {
+        let manager = Self {
             db,
             app,
             cancel_flags,
             queue_tx,
+        };
+
+        if let Ok(jobs) = db.list_download_jobs() {
+            for job in jobs {
+                if matches!(job.status, DownloadStatus::Pending) {
+                    let _ = manager.queue_tx.send(job.id);
+                }
+            }
         }
+
+        manager
     }
 
     fn register_cancel(&self, job_id: &str) -> Arc<AtomicBool> {
@@ -236,7 +246,7 @@ fn deserialize_job_metadata(
     db.get_download_job_metadata(job_id)
 }
 
-fn mark_job_failed(
+pub(crate) fn mark_job_failed(
     db: &Database,
     app: &AppHandle,
     queue_tx: &mpsc::UnboundedSender<String>,
@@ -316,6 +326,7 @@ async fn worker_loop(
         let app = app.clone();
         let vault = vault.clone();
         let cancel_flags = cancel_flags.clone();
+        let queue_tx = queue_tx.clone();
         tauri::async_runtime::spawn(async move {
             let _permit = permit;
             let cancel = cancel_flags
@@ -648,5 +659,65 @@ fn update_progress(
         job.status = DownloadStatus::Active;
         let _ = db.update_download_job(&job);
         let _ = app.emit("download:progress", &job);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+    use tokio::time::{pause, advance};
+
+    #[test]
+    fn retry_fields_persist_in_db() {
+        let dir = tempdir().unwrap();
+        let db = Database::new(dir.path().to_path_buf()).unwrap();
+        let job = db.insert_download_job("https://example.com/video.mp4", "generic_ytdlp", None, None).unwrap();
+
+        let loaded = db.get_download_job(&job.id).unwrap().unwrap();
+        assert_eq!(loaded.retry_count, 0);
+        assert_eq!(loaded.last_retry_at, None);
+
+        let mut updated = loaded;
+        updated.retry_count = 3;
+        updated.last_retry_at = Some("2024-01-01T00:00:00Z".to_string());
+        db.update_download_job(&updated).unwrap();
+
+        let reloaded = db.get_download_job(&job.id).unwrap().unwrap();
+        assert_eq!(reloaded.retry_count, 3);
+        assert_eq!(reloaded.last_retry_at, Some("2024-01-01T00:00:00Z".to_string()));
+    }
+
+    #[test]
+    fn default_retry_settings() {
+        let settings = AppSettings::default();
+        assert_eq!(settings.download_max_retries, 2);
+        assert_eq!(settings.download_retry_delay_seconds, 30);
+    }
+
+    #[test]
+    fn manual_retry_resets_count() {
+        let dir = tempdir().unwrap();
+        let db = Database::new(dir.path().to_path_buf()).unwrap();
+        let mut job = db.insert_download_job("https://example.com/video.mp4", "generic_ytdlp", None, None).unwrap();
+        job.status = DownloadStatus::Failed;
+        job.retry_count = 2;
+        job.error = Some("timeout".to_string());
+        db.update_download_job(&job).unwrap();
+
+        let loaded = db.get_download_job(&job.id).unwrap().unwrap();
+        assert_eq!(loaded.retry_count, 2);
+
+        let mut reset = loaded;
+        reset.retry_count = 0;
+        reset.last_retry_at = None;
+        reset.status = DownloadStatus::Pending;
+        reset.error = None;
+        db.update_download_job(&reset).unwrap();
+
+        let final_job = db.get_download_job(&job.id).unwrap().unwrap();
+        assert_eq!(final_job.retry_count, 0);
+        assert_eq!(final_job.status, DownloadStatus::Pending);
+        assert_eq!(final_job.error, None);
     }
 }

@@ -22,19 +22,29 @@ export function DuplicateMergeCard({
   const [deleteFiles, setDeleteFiles] = useState(false);
   const [merging, setMerging] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const removeIds = group.scenes.filter((s) => s.id !== keepId).map((s) => s.id);
   const canMerge = keepId && removeIds.length > 0;
 
-  const handleMerge = useCallback(async () => {
-    if (!canMerge) return;
+  const handleMergeConfirm = useCallback(async () => {
+    setConfirmDelete(false);
     setMerging(true);
     try {
       await onMerge(keepId, removeIds, deleteFiles);
     } finally {
       setMerging(false);
     }
-  }, [canMerge, keepId, removeIds, deleteFiles, onMerge]);
+  }, [keepId, removeIds, deleteFiles, onMerge]);
+
+  const handleMergeClick = useCallback(() => {
+    if (!canMerge) return;
+    if (deleteFiles) {
+      setConfirmDelete(true);
+    } else {
+      void handleMergeConfirm();
+    }
+  }, [canMerge, deleteFiles, handleMergeConfirm]);
 
   const handleDelete = useCallback(
     async (sceneId: string) => {
@@ -81,7 +91,7 @@ export function DuplicateMergeCard({
             <Button
               size="sm"
               variant="destructive"
-              onClick={handleMerge}
+              onClick={handleMergeClick}
               disabled={!canMerge || merging}
             >
               <GitMerge className="h-3.5 w-3.5 mr-1" />
@@ -110,6 +120,7 @@ export function DuplicateMergeCard({
                     fill="none"
                     stroke="currentColor"
                     strokeWidth="2"
+                    aria-hidden="true"
                   >
                     <path d="M2 6l3 3 5-5" />
                   </svg>
@@ -132,6 +143,40 @@ export function DuplicateMergeCard({
             </div>
           ))}
         </div>
+
+        {confirmDelete && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4">
+            <div
+              role="dialog"
+              aria-modal="true"
+              className="w-full max-w-sm rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] p-4 shadow-xl"
+            >
+              <p className="text-sm font-medium">Delete duplicate files?</p>
+              <p className="mt-1 text-xs text-[var(--color-muted-foreground)]">
+                This will permanently delete {removeIds.length} file(s) from disk. This action
+                cannot be undone.
+              </p>
+              <div className="mt-4 flex justify-end gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setConfirmDelete(false)}
+                  disabled={merging}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  onClick={handleMergeConfirm}
+                  disabled={merging}
+                >
+                  {merging ? "Merging…" : "Delete and merge"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   );

@@ -10,7 +10,7 @@ export function CommandPalette() {
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
-  const shortcuts = useMemo(() => getAllShortcuts(), [open]);
+  const shortcuts = useMemo(() => getAllShortcuts(), []);
 
   const filtered = useMemo(() => {
     if (!query.trim()) return shortcuts;
@@ -25,6 +25,7 @@ export function CommandPalette() {
 
   useEffect(() => {
     if (!open) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSelectedIdx(0);
     setQuery("");
     setTimeout(() => inputRef.current?.focus(), 50);
