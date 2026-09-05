@@ -82,35 +82,23 @@ impl SiteAdapter for StripchatAdapter {
 impl StripchatAdapter {
     async fn browse_listing(&self, ctx: &SiteContext, query: BrowseQuery) -> AppResult<BrowsePage> {
         let url = build_listing_url(&query);
-
-        // Primary: API endpoint with cookies.
         let api_url = build_api_url(&query);
-        if let Ok(body) = ctx.fetch_html(&api_url, self.id()).await {
+
+        // Run API and HTML fetches concurrently, then pick the first with rooms.
+        let (api_result, html_result) = tokio::join!(
+            ctx.fetch_html(&api_url, self.id()),
+            ctx.fetch_html(&url, self.id())
+        );
+
+        if let Ok(body) = api_result {
             if let Some(rooms) = parse_api_json(&body) {
-                let items: Vec<MediaItem> =
-                    rooms.into_iter().map(|r| room_to_item(&r)).collect();
-                let has_more = items.len() >= 30;
-                return Ok(BrowsePage {
-                    items,
-                    page: query.page,
-                    has_more,
-                    total: None,
-                });
+                return Ok(build_browse_page(rooms, query.page));
             }
         }
 
-        // Secondary: HTTP scraping with vault cookies.
-        if let Ok(html) = ctx.fetch_html(&url, self.id()).await {
+        if let Ok(html) = html_result {
             if let Some(rooms) = parse_listing_html(&html) {
-                let items: Vec<MediaItem> =
-                    rooms.into_iter().map(|r| room_to_item(&r)).collect();
-                let has_more = items.len() >= 30;
-                return Ok(BrowsePage {
-                    items,
-                    page: query.page,
-                    has_more,
-                    total: None,
-                });
+                return Ok(build_browse_page(rooms, query.page));
             }
         }
 
@@ -124,14 +112,7 @@ impl StripchatAdapter {
             )
             .await?;
             if !rooms.is_empty() {
-                let items: Vec<MediaItem> = rooms.iter().map(_map_room).collect();
-                let has_more = items.len() >= 30;
-                return Ok(BrowsePage {
-                    items,
-                    page: query.page,
-                    has_more,
-                    total: None,
-                });
+                return Ok(build_webview_browse_page(rooms, query.page));
             }
         }
 
@@ -223,6 +204,28 @@ fn room_to_item(room: &HttpRoom) -> MediaItem {
         gender: room.gender.clone(),
         stream_url: None,
         embed_url: Some(embed_url),
+    }
+}
+
+fn build_browse_page(rooms: Vec<HttpRoom>, page: u32) -> BrowsePage {
+    let items: Vec<MediaItem> = rooms.into_iter().map(|r| room_to_item(&r)).collect();
+    let has_more = items.len() >= 30;
+    BrowsePage {
+        items,
+        page,
+        has_more,
+        total: None,
+    }
+}
+
+fn build_webview_browse_page(rooms: Vec<crate::sites::adapters::stripchat_webview::_RawRoom>, page: u32) -> BrowsePage {
+    let items: Vec<MediaItem> = rooms.iter().map(_map_room).collect();
+    let has_more = items.len() >= 30;
+    BrowsePage {
+        items,
+        page,
+        has_more,
+        total: None,
     }
 }
 
