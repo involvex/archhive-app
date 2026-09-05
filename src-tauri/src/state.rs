@@ -292,7 +292,7 @@ impl AppState {
     pub fn scan_library(&self) -> AppResult<ScanResult> {
         let settings = self.db.get_settings()?;
         let path = Self::validate_library_path(&settings.library_path, &self.data_dir)?;
-        let rules = vec![r"(?<performer>[a-zA-Z0-9_]+)-\d+".to_string()];
+        let rules = settings.auto_tag_rules.clone();
         crate::library::LibraryScanner::scan(&self.db, &path, &rules, None)
     }
 
