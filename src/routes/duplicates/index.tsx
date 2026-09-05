@@ -4,7 +4,7 @@ import { api } from "@/lib/api/client";
 import type { DuplicateGroup } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { DuplicateGroupCard } from "@/components/DuplicateGroupCard";
+import { DuplicateMergeCard } from "@/components/DuplicateMergeCard";
 import { SkeletonGrid } from "@/components/SkeletonGrid";
 import { EmptyState } from "@/components/EmptyState";
 import { RefreshCw, Search, Trash2 } from "lucide-react";
@@ -139,7 +139,7 @@ function DuplicatesPage() {
       ) : (
         <div className="space-y-4">
           {filteredGroups.map((group) => (
-            <DuplicateGroupCard
+            <DuplicateMergeCard
               key={group.hash + group.match_type}
               group={group}
               onMerge={handleMerge}

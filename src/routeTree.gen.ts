@@ -14,6 +14,7 @@ import { Route as SettingsIndexRouteImport } from './routes/settings/index'
 import { Route as LiveIndexRouteImport } from './routes/live/index'
 import { Route as LibraryIndexRouteImport } from './routes/library/index'
 import { Route as FilesIndexRouteImport } from './routes/files/index'
+import { Route as DuplicatesIndexRouteImport } from './routes/duplicates/index'
 import { Route as DownloadsIndexRouteImport } from './routes/downloads/index'
 import { Route as BrowseIndexRouteImport } from './routes/browse/index'
 import { Route as BrowseByUrlRouteImport } from './routes/browse/by-url'
@@ -47,6 +48,11 @@ const LibraryIndexRoute = LibraryIndexRouteImport.update({
 const FilesIndexRoute = FilesIndexRouteImport.update({
   id: '/files/',
   path: '/files/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DuplicatesIndexRoute = DuplicatesIndexRouteImport.update({
+  id: '/duplicates/',
+  path: '/duplicates/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DownloadsIndexRoute = DownloadsIndexRouteImport.update({
@@ -100,6 +106,7 @@ export interface FileRoutesByFullPath {
   '/browse/by-url': typeof BrowseByUrlRoute
   '/browse/': typeof BrowseIndexRoute
   '/downloads/': typeof DownloadsIndexRoute
+  '/duplicates/': typeof DuplicatesIndexRoute
   '/files/': typeof FilesIndexRoute
   '/library/': typeof LibraryIndexRoute
   '/live/': typeof LiveIndexRoute
@@ -116,6 +123,7 @@ export interface FileRoutesByTo {
   '/browse/by-url': typeof BrowseByUrlRoute
   '/browse': typeof BrowseIndexRoute
   '/downloads': typeof DownloadsIndexRoute
+  '/duplicates': typeof DuplicatesIndexRoute
   '/files': typeof FilesIndexRoute
   '/library': typeof LibraryIndexRoute
   '/live': typeof LiveIndexRoute
@@ -133,6 +141,7 @@ export interface FileRoutesById {
   '/browse/by-url': typeof BrowseByUrlRoute
   '/browse/': typeof BrowseIndexRoute
   '/downloads/': typeof DownloadsIndexRoute
+  '/duplicates/': typeof DuplicatesIndexRoute
   '/files/': typeof FilesIndexRoute
   '/library/': typeof LibraryIndexRoute
   '/live/': typeof LiveIndexRoute
@@ -151,6 +160,7 @@ export interface FileRouteTypes {
     | '/browse/by-url'
     | '/browse/'
     | '/downloads/'
+    | '/duplicates/'
     | '/files/'
     | '/library/'
     | '/live/'
@@ -167,6 +177,7 @@ export interface FileRouteTypes {
     | '/browse/by-url'
     | '/browse'
     | '/downloads'
+    | '/duplicates'
     | '/files'
     | '/library'
     | '/live'
@@ -183,6 +194,7 @@ export interface FileRouteTypes {
     | '/browse/by-url'
     | '/browse/'
     | '/downloads/'
+    | '/duplicates/'
     | '/files/'
     | '/library/'
     | '/live/'
@@ -200,6 +212,7 @@ export interface RootRouteChildren {
   BrowseByUrlRoute: typeof BrowseByUrlRoute
   BrowseIndexRoute: typeof BrowseIndexRoute
   DownloadsIndexRoute: typeof DownloadsIndexRoute
+  DuplicatesIndexRoute: typeof DuplicatesIndexRoute
   FilesIndexRoute: typeof FilesIndexRoute
   LibraryIndexRoute: typeof LibraryIndexRoute
   LiveIndexRoute: typeof LiveIndexRoute
@@ -247,6 +260,13 @@ declare module '@tanstack/react-router' {
       path: '/files'
       fullPath: '/files/'
       preLoaderRoute: typeof FilesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/duplicates/': {
+      id: '/duplicates/'
+      path: '/duplicates'
+      fullPath: '/duplicates/'
+      preLoaderRoute: typeof DuplicatesIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/downloads/': {
@@ -320,6 +340,7 @@ const rootRouteChildren: RootRouteChildren = {
   BrowseByUrlRoute: BrowseByUrlRoute,
   BrowseIndexRoute: BrowseIndexRoute,
   DownloadsIndexRoute: DownloadsIndexRoute,
+  DuplicatesIndexRoute: DuplicatesIndexRoute,
   FilesIndexRoute: FilesIndexRoute,
   LibraryIndexRoute: LibraryIndexRoute,
   LiveIndexRoute: LiveIndexRoute,

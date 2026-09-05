@@ -910,10 +910,12 @@ function SettingsPage() {
                         selectedId={dupSelections[key]}
                         deleteFiles={deleteDupFiles}
                         merging={mergingKey === key}
-                        onSelect={(sceneId) =>
+                        onSelect={(sceneId: string) =>
                           setDupSelections((prev) => ({ ...prev, [key]: sceneId }))
                         }
-                        onMerge={() => void mergeGroup(group)}
+                        onMerge={async () => {
+                          await mergeGroup(group);
+                        }}
                       />
                     );
                   })}
