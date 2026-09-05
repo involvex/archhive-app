@@ -21,6 +21,13 @@ const statusColors: Record<DownloadJob["status"], string> = {
   cancelled: "text-[var(--color-muted-foreground)]",
 };
 
+function getDisplayStatus(job: DownloadJob): { label: string; color: string } {
+  if (job.status === "failed" && (job.retry_count ?? 0) > 0) {
+    return { label: "retrying", color: "text-orange-400" };
+  }
+  return { label: job.status, color: statusColors[job.status] };
+}
+
 function formatRetryInfo(job: DownloadJob): string | null {
   if (job.retry_count == null || job.retry_count === 0) return null;
   const count = job.retry_count;
@@ -42,13 +49,14 @@ export function DownloadProgressRow({
   const canRetry =
     job.status === "failed" || job.status === "cancelled" || job.status === "completed";
   const retryInfo = formatRetryInfo(job);
+  const display = getDisplayStatus(job);
 
   return (
     <div className="space-y-2 rounded-lg border border-[var(--color-border)] p-3">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium">{job.title || job.url}</p>
-          <p className={`text-xs capitalize ${statusColors[job.status]}`}>{job.status}</p>
+          <p className={`text-xs capitalize ${display.color}`}>{display.label}</p>
           {retryInfo && (
             <p className="text-[10px] text-[var(--color-muted-foreground)]">{retryInfo}</p>
           )}
