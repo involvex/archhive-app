@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api/client";
 import { getCapabilities } from "@/lib/runtime";
 import { getPluginBrowseSites } from "@/lib/plugins/loader";
@@ -69,6 +69,13 @@ function BrowsePage() {
   const isMobile = isMobileDevice();
   const { recent, addRecent } = useRecentSearches();
   const [sites, setSites] = useState<SiteInfo[]>(() => mergeSiteLists([], getPluginBrowseSites()));
+  const sitesLoadedRef = useRef(false);
+  const sitesRef = useRef(sites);
+
+  useEffect(() => {
+    sitesRef.current = sites;
+  }, [sites]);
+
   const [selectedSite, setSelectedSite] = useState("auto");
   const [searchInput, setSearchInput] = useState("");
   const [urlInput, setUrlInput] = useState("");
@@ -83,10 +90,14 @@ function BrowsePage() {
     if (needsRemoteSetup && caps.showBrowserBanner) return;
     void api
       .listSites()
-      .then((apiSites) => setSites(mergeSiteLists(apiSites, getPluginBrowseSites())))
+      .then((apiSites) => {
+        setSites(mergeSiteLists(apiSites, getPluginBrowseSites()));
+        sitesLoadedRef.current = true;
+      })
       .catch((e) => {
         setLoadError(e instanceof Error ? e.message : "Failed to load sites");
         setSites(mergeSiteLists([], getPluginBrowseSites()));
+        sitesLoadedRef.current = true;
       });
   }, [needsRemoteSetup, caps.showBrowserBanner]);
 
@@ -165,9 +176,10 @@ function BrowsePage() {
 
   useEffect(() => {
     if (needsRemoteSetup && caps.showBrowserBanner) return;
+    if (!sitesLoadedRef.current) return;
     setTrendingLoading(true);
     const enabled = new Set(settings.trending_sites ?? []);
-    const available = sites.filter((s) => enabled.has(s.id));
+    const available = sitesRef.current.filter((s) => enabled.has(s.id));
     if (available.length === 0) {
       setTrending({});
       setTrendingLoading(false);
@@ -190,7 +202,7 @@ function BrowsePage() {
       setTrending(next);
       setTrendingLoading(false);
     });
-  }, [needsRemoteSetup, caps.showBrowserBanner, settings.trending_sites, sites]);
+  }, [needsRemoteSetup, caps.showBrowserBanner, settings.trending_sites]);
 
   return (
     <div className="space-y-6">

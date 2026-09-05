@@ -6,6 +6,20 @@ use uuid::Uuid;
 
 const BASE: &str = "https://stripchat.com";
 
+const MAX_ROOMS: usize = 48;
+
+const RESERVED_USERNAMES: &[&str] = &[
+    "api", "tags", "search", "embed", "auth", "login", "register", "about", "terms", "dmca",
+    "faq", "pricing", "blog", "press",
+];
+
+fn is_valid_username(username: &str) -> bool {
+    if username.len() < 2 || username.contains('.') {
+        return false;
+    }
+    !RESERVED_USERNAMES.contains(&username)
+}
+
 pub struct StripchatAdapter;
 
 #[async_trait]
@@ -305,7 +319,7 @@ fn parse_api_json(body: &str) -> Option<Vec<HttpRoom>> {
                 gender,
             })
         })
-        .take(48)
+        .take(MAX_ROOMS)
         .collect();
     if rooms.is_empty() {
         None
@@ -344,23 +358,7 @@ fn parse_listing_html(html: &str) -> Option<Vec<HttpRoom>> {
                 .filter(|s| !s.is_empty() && !s.contains('?') && !s.contains('#'))?;
 
             // Filter out non-username paths.
-            if username.len() < 2
-                || username.contains('.')
-                || username == "api"
-                || username == "tags"
-                || username == "search"
-                || username == "embed"
-                || username == "auth"
-                || username == "login"
-                || username == "register"
-                || username == "about"
-                || username == "terms"
-                || username == "dmca"
-                || username == "faq"
-                || username == "pricing"
-                || username == "blog"
-                || username == "press"
-            {
+            if !is_valid_username(username) {
                 continue;
             }
 
@@ -395,7 +393,7 @@ fn parse_listing_html(html: &str) -> Option<Vec<HttpRoom>> {
                 gender: None,
             });
 
-            if rooms.len() >= 48 {
+            if rooms.len() >= MAX_ROOMS {
                 break;
             }
         }
@@ -515,12 +513,7 @@ fn extract_username_from_url(url: &str) -> Option<String> {
     let path = path.split('?').next().unwrap_or(path);
     let after_host = path.split_once('/').map(|(_, rest)| rest).unwrap_or("");
     let first = after_host.split('/').find(|s| !s.is_empty())?;
-    if first.is_empty()
-        || first == "tags"
-        || first == "search"
-        || first == "embed"
-        || first == "api"
-    {
+    if first.is_empty() || !is_valid_username(first) {
         return None;
     }
     Some(first.to_string())

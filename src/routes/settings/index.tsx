@@ -1078,6 +1078,7 @@ function SettingsPage() {
                   return (
                     <label
                       key={site.id}
+                      htmlFor={`trending-${site.id}`}
                       className={`flex items-center gap-2 rounded-md border px-3 py-2 text-xs cursor-pointer transition ${
                         active
                           ? "border-[var(--color-primary)] bg-[var(--color-primary)]/10"
@@ -1085,6 +1086,7 @@ function SettingsPage() {
                       }`}
                     >
                       <input
+                        id={`trending-${site.id}`}
                         type="checkbox"
                         checked={active}
                         onChange={(e) => {
