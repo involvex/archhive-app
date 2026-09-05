@@ -21,6 +21,15 @@ const statusColors: Record<DownloadJob["status"], string> = {
   cancelled: "text-[var(--color-muted-foreground)]",
 };
 
+function formatRetryInfo(job: DownloadJob): string | null {
+  if (job.retry_count == null || job.retry_count === 0) return null;
+  const count = job.retry_count;
+  const when = job.last_retry_at
+    ? new Date(job.last_retry_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    : null;
+  return when ? `Retry #${count} at ${when}` : `Retry #${count}`;
+}
+
 export function DownloadProgressRow({
   job,
   onPause,
@@ -32,6 +41,7 @@ export function DownloadProgressRow({
   const showProgress = job.status === "active" || job.status === "pending";
   const canRetry =
     job.status === "failed" || job.status === "cancelled" || job.status === "completed";
+  const retryInfo = formatRetryInfo(job);
 
   return (
     <div className="space-y-2 rounded-lg border border-[var(--color-border)] p-3">
@@ -39,6 +49,9 @@ export function DownloadProgressRow({
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium">{job.title || job.url}</p>
           <p className={`text-xs capitalize ${statusColors[job.status]}`}>{job.status}</p>
+          {retryInfo && (
+            <p className="text-[10px] text-[var(--color-muted-foreground)]">{retryInfo}</p>
+          )}
         </div>
         <div className="flex shrink-0 gap-1">
           {job.status === "paused" && onResume && (
