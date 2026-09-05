@@ -10,54 +10,24 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as SettingsIndexRouteImport } from './routes/settings/index'
-import { Route as LiveIndexRouteImport } from './routes/live/index'
-import { Route as LibraryIndexRouteImport } from './routes/library/index'
-import { Route as FilesIndexRouteImport } from './routes/files/index'
-import { Route as DuplicatesIndexRouteImport } from './routes/duplicates/index'
-import { Route as DownloadsIndexRouteImport } from './routes/downloads/index'
 import { Route as BrowseIndexRouteImport } from './routes/browse/index'
 import { Route as BrowseByUrlRouteImport } from './routes/browse/by-url'
-import { Route as LibraryTagsIndexRouteImport } from './routes/library/tags/index'
-import { Route as LibraryScenesIndexRouteImport } from './routes/library/scenes/index'
-import { Route as LibraryPerformersIndexRouteImport } from './routes/library/performers/index'
+import { Route as DownloadsIndexRouteImport } from './routes/downloads/index'
+import { Route as DuplicatesIndexRouteImport } from './routes/duplicates/index'
+import { Route as FilesIndexRouteImport } from './routes/files/index'
+import { Route as LibraryIndexRouteImport } from './routes/library/index'
+import { Route as LiveIndexRouteImport } from './routes/live/index'
+import { Route as SettingsIndexRouteImport } from './routes/settings/index'
 import { Route as BrowseSiteIndexRouteImport } from './routes/browse/$site/index'
+import { Route as LibraryPerformersIndexRouteImport } from './routes/library/performers/index'
+import { Route as LibraryScenesIndexRouteImport } from './routes/library/scenes/index'
+import { Route as LibraryTagsIndexRouteImport } from './routes/library/tags/index'
 import { Route as LiveSiteSlugRouteImport } from './routes/live/$site/$slug'
 import { Route as BrowseSiteKindSlugRouteImport } from './routes/browse/$site/$kind/$slug'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SettingsIndexRoute = SettingsIndexRouteImport.update({
-  id: '/settings/',
-  path: '/settings/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LiveIndexRoute = LiveIndexRouteImport.update({
-  id: '/live/',
-  path: '/live/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LibraryIndexRoute = LibraryIndexRouteImport.update({
-  id: '/library/',
-  path: '/library/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const FilesIndexRoute = FilesIndexRouteImport.update({
-  id: '/files/',
-  path: '/files/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DuplicatesIndexRoute = DuplicatesIndexRouteImport.update({
-  id: '/duplicates/',
-  path: '/duplicates/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DownloadsIndexRoute = DownloadsIndexRouteImport.update({
-  id: '/downloads/',
-  path: '/downloads/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const BrowseIndexRoute = BrowseIndexRouteImport.update({
@@ -70,14 +40,39 @@ const BrowseByUrlRoute = BrowseByUrlRouteImport.update({
   path: '/browse/by-url',
   getParentRoute: () => rootRouteImport,
 } as any)
-const LibraryTagsIndexRoute = LibraryTagsIndexRouteImport.update({
-  id: '/library/tags/',
-  path: '/library/tags/',
+const DownloadsIndexRoute = DownloadsIndexRouteImport.update({
+  id: '/downloads/',
+  path: '/downloads/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const LibraryScenesIndexRoute = LibraryScenesIndexRouteImport.update({
-  id: '/library/scenes/',
-  path: '/library/scenes/',
+const DuplicatesIndexRoute = DuplicatesIndexRouteImport.update({
+  id: '/duplicates/',
+  path: '/duplicates/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FilesIndexRoute = FilesIndexRouteImport.update({
+  id: '/files/',
+  path: '/files/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LibraryIndexRoute = LibraryIndexRouteImport.update({
+  id: '/library/',
+  path: '/library/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LiveIndexRoute = LiveIndexRouteImport.update({
+  id: '/live/',
+  path: '/live/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsIndexRoute = SettingsIndexRouteImport.update({
+  id: '/settings/',
+  path: '/settings/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BrowseSiteIndexRoute = BrowseSiteIndexRouteImport.update({
+  id: '/browse/$site/',
+  path: '/browse/$site/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LibraryPerformersIndexRoute = LibraryPerformersIndexRouteImport.update({
@@ -85,9 +80,14 @@ const LibraryPerformersIndexRoute = LibraryPerformersIndexRouteImport.update({
   path: '/library/performers/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const BrowseSiteIndexRoute = BrowseSiteIndexRouteImport.update({
-  id: '/browse/$site/',
-  path: '/browse/$site/',
+const LibraryScenesIndexRoute = LibraryScenesIndexRouteImport.update({
+  id: '/library/scenes/',
+  path: '/library/scenes/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LibraryTagsIndexRoute = LibraryTagsIndexRouteImport.update({
+  id: '/library/tags/',
+  path: '/library/tags/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LiveSiteSlugRoute = LiveSiteSlugRouteImport.update({
@@ -234,48 +234,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/settings/': {
-      id: '/settings/'
-      path: '/settings'
-      fullPath: '/settings/'
-      preLoaderRoute: typeof SettingsIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/live/': {
-      id: '/live/'
-      path: '/live'
-      fullPath: '/live/'
-      preLoaderRoute: typeof LiveIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/library/': {
-      id: '/library/'
-      path: '/library'
-      fullPath: '/library/'
-      preLoaderRoute: typeof LibraryIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/files/': {
-      id: '/files/'
-      path: '/files'
-      fullPath: '/files/'
-      preLoaderRoute: typeof FilesIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/duplicates/': {
-      id: '/duplicates/'
-      path: '/duplicates'
-      fullPath: '/duplicates/'
-      preLoaderRoute: typeof DuplicatesIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/downloads/': {
-      id: '/downloads/'
-      path: '/downloads'
-      fullPath: '/downloads/'
-      preLoaderRoute: typeof DownloadsIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/browse/': {
       id: '/browse/'
       path: '/browse'
@@ -290,18 +248,53 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BrowseByUrlRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/library/tags/': {
-      id: '/library/tags/'
-      path: '/library/tags'
-      fullPath: '/library/tags/'
-      preLoaderRoute: typeof LibraryTagsIndexRouteImport
+    '/downloads/': {
+      id: '/downloads/'
+      path: '/downloads'
+      fullPath: '/downloads/'
+      preLoaderRoute: typeof DownloadsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/library/scenes/': {
-      id: '/library/scenes/'
-      path: '/library/scenes'
-      fullPath: '/library/scenes/'
-      preLoaderRoute: typeof LibraryScenesIndexRouteImport
+    '/duplicates/': {
+      id: '/duplicates/'
+      path: '/duplicates'
+      fullPath: '/duplicates/'
+      preLoaderRoute: typeof DuplicatesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/files/': {
+      id: '/files/'
+      path: '/files'
+      fullPath: '/files/'
+      preLoaderRoute: typeof FilesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/library/': {
+      id: '/library/'
+      path: '/library'
+      fullPath: '/library/'
+      preLoaderRoute: typeof LibraryIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/live/': {
+      id: '/live/'
+      path: '/live'
+      fullPath: '/live/'
+      preLoaderRoute: typeof LiveIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings/': {
+      id: '/settings/'
+      path: '/settings'
+      fullPath: '/settings/'
+      preLoaderRoute: typeof SettingsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/browse/$site/': {
+      id: '/browse/$site/'
+      path: '/browse/$site'
+      fullPath: '/browse/$site/'
+      preLoaderRoute: typeof BrowseSiteIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/library/performers/': {
@@ -311,11 +304,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LibraryPerformersIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/browse/$site/': {
-      id: '/browse/$site/'
-      path: '/browse/$site'
-      fullPath: '/browse/$site/'
-      preLoaderRoute: typeof BrowseSiteIndexRouteImport
+    '/library/scenes/': {
+      id: '/library/scenes/'
+      path: '/library/scenes'
+      fullPath: '/library/scenes/'
+      preLoaderRoute: typeof LibraryScenesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/library/tags/': {
+      id: '/library/tags/'
+      path: '/library/tags'
+      fullPath: '/library/tags/'
+      preLoaderRoute: typeof LibraryTagsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/live/$site/$slug': {

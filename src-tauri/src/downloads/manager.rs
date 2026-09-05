@@ -47,7 +47,7 @@ impl DownloadManager {
         ));
 
         let manager = Self {
-            db,
+            db: db.clone(),
             app,
             cancel_flags,
             queue_tx,
@@ -247,7 +247,7 @@ fn deserialize_job_metadata(
 }
 
 pub(crate) fn mark_job_failed(
-    db: &Database,
+    db: Arc<Database>,
     app: &AppHandle,
     queue_tx: &mpsc::UnboundedSender<String>,
     job_id: &str,
@@ -347,7 +347,7 @@ async fn worker_loop(
             let plan = match plan_from_job(&db, &job) {
                 Ok(p) => p,
                 Err(e) => {
-                    mark_job_failed(&db, &app, &queue_tx, &job_id, &e.to_string());
+                    mark_job_failed(db.clone(), &app, &queue_tx, &job_id, &e.to_string());
                     return;
                 }
             };
@@ -367,7 +367,7 @@ async fn worker_loop(
             .await
             {
                 // run_job_with_plan marks Failed for tool errors; catch early ? failures too
-                mark_job_failed(&db, &app, &queue_tx, &job_id, &e.to_string());
+                mark_job_failed(db.clone(), &app, &queue_tx, &job_id, &e.to_string());
             }
         });
     }
