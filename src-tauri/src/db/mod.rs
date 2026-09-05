@@ -2,6 +2,7 @@ mod migrations;
 
 use crate::db::migrations::{
     MIGRATION_001, MIGRATION_002, MIGRATION_003, MIGRATION_004, MIGRATION_005, MIGRATION_006,
+    MIGRATION_007,
 };
 use crate::error::{AppError, AppResult};
 use crate::models::{
@@ -59,6 +60,9 @@ impl Database {
         }
         if !column_exists(&conn, "scenes", "notes") {
             conn.execute_batch(MIGRATION_006)?;
+        }
+        if !column_exists(&conn, "download_jobs", "retry_count") {
+            conn.execute_batch(MIGRATION_007)?;
         }
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
@@ -120,14 +124,16 @@ impl Database {
             error: None,
             title: title.map(|s| s.to_string()),
             created_at: Utc::now().to_rfc3339(),
+            retry_count: 0,
+            last_retry_at: None,
         };
         let conn = self
             .conn
             .lock()
             .map_err(|e| AppError::Other(e.to_string()))?;
         conn.execute(
-            "INSERT INTO download_jobs (id, url, adapter, status, progress, title, metadata, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            "INSERT INTO download_jobs (id, url, adapter, status, progress, title, metadata, created_at, retry_count, last_retry_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             params![
                 job.id,
                 job.url,
@@ -137,6 +143,8 @@ impl Database {
                 job.title,
                 metadata,
                 job.created_at,
+                job.retry_count,
+                job.last_retry_at,
             ],
         )?;
         Ok(job)
@@ -149,9 +157,18 @@ impl Database {
             .map_err(|e| AppError::Other(e.to_string()))?;
         let status = format!("{:?}", job.status).to_lowercase();
         conn.execute(
-            "UPDATE download_jobs SET status = ?2, progress = ?3, output_path = ?4, error = ?5, title = ?6
+            "UPDATE download_jobs SET status = ?2, progress = ?3, output_path = ?4, error = ?5, title = ?6, retry_count = ?7, last_retry_at = ?8
              WHERE id = ?1",
-            params![job.id, status, job.progress, job.output_path, job.error, job.title],
+            params![
+                job.id,
+                status,
+                job.progress,
+                job.output_path,
+                job.error,
+                job.title,
+                job.retry_count,
+                job.last_retry_at,
+            ],
         )?;
         Ok(())
     }
@@ -252,7 +269,7 @@ impl Database {
             .lock()
             .map_err(|e| AppError::Other(e.to_string()))?;
         let mut stmt = conn.prepare(
-            "SELECT id, url, adapter, status, progress, output_path, error, title, created_at
+            "SELECT id, url, adapter, status, progress, output_path, error, title, created_at, retry_count, last_retry_at
              FROM download_jobs ORDER BY created_at DESC LIMIT 100",
         )?;
         let rows = stmt.query_map([], |row| {
@@ -267,6 +284,8 @@ impl Database {
                 error: row.get(6)?,
                 title: row.get(7)?,
                 created_at: row.get(8)?,
+                retry_count: row.get(9)?,
+                last_retry_at: row.get(10)?,
             })
         })?;
         rows.collect::<Result<Vec<_>, _>>().map_err(AppError::from)
@@ -287,7 +306,7 @@ impl Database {
             .lock()
             .map_err(|e| AppError::Other(e.to_string()))?;
         conn.query_row(
-            "SELECT id, url, adapter, status, progress, output_path, error, title, created_at
+            "SELECT id, url, adapter, status, progress, output_path, error, title, created_at, retry_count, last_retry_at
              FROM download_jobs WHERE id = ?1",
             params![id],
             |row| {
@@ -302,6 +321,8 @@ impl Database {
                     error: row.get(6)?,
                     title: row.get(7)?,
                     created_at: row.get(8)?,
+                    retry_count: row.get(9)?,
+                    last_retry_at: row.get(10)?,
                 })
             },
         )

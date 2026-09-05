@@ -105,6 +105,10 @@ pub struct DownloadJob {
     pub error: Option<String>,
     pub title: Option<String>,
     pub created_at: String,
+    #[serde(default)]
+    pub retry_count: u32,
+    #[serde(default, skip_serializing_if = "Option::none")]
+    pub last_retry_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -242,6 +246,10 @@ pub struct AppSettings {
     pub auto_tag_rules: Vec<String>,
     #[serde(default = "default_trending_sites")]
     pub trending_sites: Vec<String>,
+    #[serde(default = "default_download_max_retries")]
+    pub download_max_retries: u32,
+    #[serde(default = "default_download_retry_delay_seconds")]
+    pub download_retry_delay_seconds: u32,
     #[serde(default = "default_theme")]
     pub theme: AppTheme,
 }
@@ -282,6 +290,14 @@ fn default_trending_sites() -> Vec<String> {
         "youporn".to_string(),
         "xnxx".to_string(),
     ]
+}
+
+fn default_download_max_retries() -> u32 {
+    2
+}
+
+fn default_download_retry_delay_seconds() -> u32 {
+    30
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -335,6 +351,8 @@ impl Default for AppSettings {
             lan_auth_enabled: default_lan_auth_enabled(),
             auto_tag_rules: default_auto_tag_rules(),
             trending_sites: default_trending_sites(),
+            download_max_retries: default_download_max_retries(),
+            download_retry_delay_seconds: default_download_retry_delay_seconds(),
             theme: default_theme(),
         }
     }

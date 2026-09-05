@@ -727,6 +727,53 @@ function SettingsPage() {
               </Button>
             </CardContent>
           </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Retry on failure</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-xs text-[var(--color-muted-foreground)]">
+                Automatically retry failed downloads with a fixed delay. Retries are counted per job
+                and reset on manual retry.
+              </p>
+              <div>
+                <label className="text-xs text-[var(--color-muted-foreground)]">Max retries</label>
+                <input
+                  type="number"
+                  min={0}
+                  max={10}
+                  className="mt-1 flex h-9 w-full max-w-xs rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-2 text-sm"
+                  value={hostSettings?.download_max_retries ?? 2}
+                  onChange={(e) =>
+                    patchHostSettings({
+                      download_max_retries: Number(e.target.value),
+                    })
+                  }
+                />
+              </div>
+              <div>
+                <label className="text-xs text-[var(--color-muted-foreground)]">
+                  Delay before retry (seconds)
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  max={3600}
+                  step={5}
+                  className="mt-1 flex h-9 w-full max-w-xs rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-2 text-sm"
+                  value={hostSettings?.download_retry_delay_seconds ?? 30}
+                  onChange={(e) =>
+                    patchHostSettings({
+                      download_retry_delay_seconds: Number(e.target.value),
+                    })
+                  }
+                />
+              </div>
+              <Button onClick={() => void saveHostSettings()} disabled={!hostSettings}>
+                Save
+              </Button>
+            </CardContent>
+          </Card>
         </Tabs.Content>
 
         <Tabs.Content value="cookies" className="mt-4 space-y-4">

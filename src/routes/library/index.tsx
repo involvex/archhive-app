@@ -4,7 +4,7 @@ import { api } from "@/lib/api/client";
 import type { LibraryStats } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Film, FolderOpen, RefreshCw, Tags, Users } from "lucide-react";
+import { Film, FolderOpen, RefreshCw, Tags, Users, GitMerge } from "lucide-react";
 
 export const Route = createFileRoute("/library/")({
   component: LibraryHubPage,
@@ -168,6 +168,20 @@ function LibraryHubPage() {
                 <p className="font-semibold">Files</p>
                 <p className="text-xs text-[var(--color-muted-foreground)]">
                   Browse and manage library files on disk
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        </Link>
+
+        <Link to="/duplicates" className="block">
+          <Card className="cursor-pointer hover:border-[var(--color-primary)] hover:bg-[var(--color-accent)]/5 transition-colors h-full">
+            <CardContent className="flex items-center gap-3 p-4 pt-4">
+              <GitMerge className="h-5 w-5 text-[var(--color-primary)] shrink-0" />
+              <div>
+                <p className="font-semibold">Duplicates</p>
+                <p className="text-xs text-[var(--color-muted-foreground)]">
+                  Find and merge duplicate scenes
                 </p>
               </div>
             </CardContent>

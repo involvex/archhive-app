@@ -35,6 +35,7 @@ impl DownloadManager {
         let worker_app = app.clone();
         let worker_vault = vault.clone();
         let worker_flags = cancel_flags.clone();
+        let worker_queue_tx = queue_tx.clone();
 
         tauri::async_runtime::spawn(worker_loop(
             queue_rx,
@@ -42,24 +43,15 @@ impl DownloadManager {
             worker_app,
             worker_vault,
             worker_flags,
+            worker_queue_tx,
         ));
 
-        let manager = Self {
-            db: db.clone(),
-            app: app.clone(),
+        Self {
+            db,
+            app,
             cancel_flags,
             queue_tx,
-        };
-
-        if let Ok(jobs) = db.list_download_jobs() {
-            for job in jobs {
-                if matches!(job.status, DownloadStatus::Pending) {
-                    let _ = manager.queue_tx.send(job.id);
-                }
-            }
         }
-
-        manager
     }
 
     fn register_cancel(&self, job_id: &str) -> Arc<AtomicBool> {
@@ -172,6 +164,8 @@ impl DownloadManager {
         job.progress = 0.0;
         job.error = None;
         job.output_path = None;
+        job.retry_count = 0;
+        job.last_retry_at = None;
         self.db.update_download_job(&job)?;
         let _ = self.app.emit("download:progress", &job);
         self.enqueue(id)?;
@@ -242,7 +236,13 @@ fn deserialize_job_metadata(
     db.get_download_job_metadata(job_id)
 }
 
-fn mark_job_failed(db: &Database, app: &AppHandle, job_id: &str, error: &str) {
+fn mark_job_failed(
+    db: &Database,
+    app: &AppHandle,
+    queue_tx: &mpsc::UnboundedSender<String>,
+    job_id: &str,
+    error: &str,
+) {
     let Ok(Some(mut job)) = db.get_download_job(job_id) else {
         return;
     };
@@ -259,6 +259,43 @@ fn mark_job_failed(db: &Database, app: &AppHandle, job_id: &str, error: &str) {
     job.error = Some(error.to_string());
     let _ = db.update_download_job(&job);
     let _ = app.emit("download:progress", &job);
+
+    let settings = db.get_settings().ok();
+    let max_retries = settings
+        .as_ref()
+        .map(|s| s.download_max_retries)
+        .unwrap_or(2);
+    let delay_secs = settings
+        .as_ref()
+        .map(|s| s.download_retry_delay_seconds)
+        .unwrap_or(30);
+
+    if job.retry_count >= max_retries {
+        return;
+    }
+
+    let db = db.clone();
+    let app = app.clone();
+    let queue_tx = queue_tx.clone();
+    let job_id = job_id.to_string();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_secs(delay_secs as u64)).await;
+        let Ok(Some(mut job)) = db.get_download_job(&job_id) else {
+            return;
+        };
+        if job.status != DownloadStatus::Failed {
+            return;
+        }
+        job.retry_count += 1;
+        job.last_retry_at = Some(chrono::Utc::now().to_rfc3339());
+        job.status = DownloadStatus::Pending;
+        job.progress = 0.0;
+        job.error = None;
+        job.output_path = None;
+        let _ = db.update_download_job(&job);
+        let _ = app.emit("download:progress", &job);
+        let _ = queue_tx.send(job_id);
+    });
 }
 
 async fn worker_loop(
@@ -267,6 +304,7 @@ async fn worker_loop(
     app: AppHandle,
     vault: Arc<CookieVault>,
     cancel_flags: Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>,
+    queue_tx: mpsc::UnboundedSender<String>,
 ) {
     let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_DOWNLOADS));
     while let Some(job_id) = queue_rx.recv().await {
@@ -298,7 +336,7 @@ async fn worker_loop(
             let plan = match plan_from_job(&db, &job) {
                 Ok(p) => p,
                 Err(e) => {
-                    mark_job_failed(&db, &app, &job_id, &e.to_string());
+                    mark_job_failed(&db, &app, &queue_tx, &job_id, &e.to_string());
                     return;
                 }
             };
@@ -318,7 +356,7 @@ async fn worker_loop(
             .await
             {
                 // run_job_with_plan marks Failed for tool errors; catch early ? failures too
-                mark_job_failed(&db, &app, &job_id, &e.to_string());
+                mark_job_failed(&db, &app, &queue_tx, &job_id, &e.to_string());
             }
         });
     }

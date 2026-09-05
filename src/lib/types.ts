@@ -55,6 +55,8 @@ export interface DownloadJob {
   error?: string;
   title?: string;
   created_at: string;
+  retry_count?: number;
+  last_retry_at?: string;
 }
 
 export interface Scene {
@@ -151,6 +153,8 @@ export interface AppSettings {
   lan_auth_enabled?: boolean;
   auto_tag_rules?: string[];
   trending_sites?: string[];
+  download_max_retries?: number;
+  download_retry_delay_seconds?: number;
   theme?: AppTheme;
 }
 

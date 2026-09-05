@@ -100,3 +100,8 @@ ALTER TABLE scenes ADD COLUMN file_size INTEGER;
 pub const MIGRATION_006: &str = r#"
 ALTER TABLE scenes ADD COLUMN notes TEXT;
 "#;
+
+pub const MIGRATION_007: &str = r#"
+ALTER TABLE download_jobs ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE download_jobs ADD COLUMN last_retry_at TEXT;
+"#;
