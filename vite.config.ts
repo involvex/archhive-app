@@ -21,8 +21,8 @@ export default defineConfig(async () => ({
   ],
   resolve: {
     alias: {
-      "@": path.resolve(__dirname, "./src"),
-      "@plugins": path.resolve(__dirname, "./plugins"),
+      "@": path.resolve(import.meta.dirname, "./src"),
+      "@plugins": path.resolve(import.meta.dirname, "./plugins"),
     },
   },
   define: {
@@ -34,7 +34,7 @@ export default defineConfig(async () => ({
     strictPort: true,
     host: host || true,
     fs: {
-      allow: ["..", path.resolve(__dirname, "./plugins")],
+      allow: ["..", path.resolve(import.meta.dirname, "./plugins")],
     },
     hmr: host
       ? {

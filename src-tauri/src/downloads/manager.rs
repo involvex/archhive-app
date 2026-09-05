@@ -665,14 +665,16 @@ fn update_progress(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::AppSettings;
     use tempfile::tempdir;
-    use tokio::time::{pause, advance};
 
     #[test]
     fn retry_fields_persist_in_db() {
         let dir = tempdir().unwrap();
         let db = Database::new(dir.path().to_path_buf()).unwrap();
-        let job = db.insert_download_job("https://example.com/video.mp4", "generic_ytdlp", None, None).unwrap();
+        let job = db
+            .insert_download_job("https://example.com/video.mp4", "generic_ytdlp", None, None)
+            .unwrap();
 
         let loaded = db.get_download_job(&job.id).unwrap().unwrap();
         assert_eq!(loaded.retry_count, 0);
@@ -685,7 +687,10 @@ mod tests {
 
         let reloaded = db.get_download_job(&job.id).unwrap().unwrap();
         assert_eq!(reloaded.retry_count, 3);
-        assert_eq!(reloaded.last_retry_at, Some("2024-01-01T00:00:00Z".to_string()));
+        assert_eq!(
+            reloaded.last_retry_at,
+            Some("2024-01-01T00:00:00Z".to_string())
+        );
     }
 
     #[test]
@@ -699,7 +704,9 @@ mod tests {
     fn manual_retry_resets_count() {
         let dir = tempdir().unwrap();
         let db = Database::new(dir.path().to_path_buf()).unwrap();
-        let mut job = db.insert_download_job("https://example.com/video.mp4", "generic_ytdlp", None, None).unwrap();
+        let mut job = db
+            .insert_download_job("https://example.com/video.mp4", "generic_ytdlp", None, None)
+            .unwrap();
         job.status = DownloadStatus::Failed;
         job.retry_count = 2;
         job.error = Some("timeout".to_string());

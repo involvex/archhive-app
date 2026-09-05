@@ -9,8 +9,8 @@ const BASE: &str = "https://stripchat.com";
 const MAX_ROOMS: usize = 48;
 
 const RESERVED_USERNAMES: &[&str] = &[
-    "api", "tags", "search", "embed", "auth", "login", "register", "about", "terms", "dmca",
-    "faq", "pricing", "blog", "press",
+    "api", "tags", "search", "embed", "auth", "login", "register", "about", "terms", "dmca", "faq",
+    "pricing", "blog", "press",
 ];
 
 fn is_valid_username(username: &str) -> bool {
@@ -218,7 +218,10 @@ fn build_browse_page(rooms: Vec<HttpRoom>, page: u32) -> BrowsePage {
     }
 }
 
-fn build_webview_browse_page(rooms: Vec<crate::sites::adapters::stripchat_webview::_RawRoom>, page: u32) -> BrowsePage {
+fn build_webview_browse_page(
+    rooms: Vec<crate::sites::adapters::stripchat_webview::_RawRoom>,
+    page: u32,
+) -> BrowsePage {
     let items: Vec<MediaItem> = rooms.iter().map(map_room).collect();
     let has_more = items.len() >= 30;
     BrowsePage {
@@ -412,9 +415,7 @@ fn parse_listing_html(html: &str) -> Option<Vec<HttpRoom>> {
     }
 }
 
-fn find_thumbnail_near_element(
-    element: &scraper::ElementRef<'_>,
-) -> Option<String> {
+fn find_thumbnail_near_element(element: &scraper::ElementRef<'_>) -> Option<String> {
     use scraper::Selector;
 
     // Try multiple thumbnail CDN domains used by Stripchat
