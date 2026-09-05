@@ -7,6 +7,7 @@ import { mergeSiteLists, PORNHUB_FEED_SLUG } from "@/lib/sites/catalog";
 import { useSettingsStore } from "@/lib/stores/settings";
 import type { BrowseOrientation, MediaItem, PornhubCategoryEntry, SiteInfo } from "@/lib/types";
 import { SceneCard } from "@/components/SceneCard";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -333,9 +334,15 @@ function BrowsePage() {
             </div>
           </div>
           {trendingLoading ? (
-            <p className="text-xs text-[var(--color-muted-foreground)]">
-              Loading trending content…
-            </p>
+            <div className="flex gap-3 overflow-hidden">
+              {["a", "b", "c", "d", "e", "f", "g", "h"].map((k) => (
+                <div key={k} className="shrink-0 w-44">
+                  <Skeleton className="aspect-video w-full rounded-lg" />
+                  <Skeleton className="mt-2 h-4 w-3/4" />
+                  <Skeleton className="mt-1.5 h-3 w-1/2" />
+                </div>
+              ))}
+            </div>
           ) : (
             <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1 snap-x snap-mandatory scrollbar-hide">
               {Object.values(trending).map((items) =>

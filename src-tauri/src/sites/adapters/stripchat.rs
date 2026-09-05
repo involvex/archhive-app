@@ -219,7 +219,7 @@ fn build_browse_page(rooms: Vec<HttpRoom>, page: u32) -> BrowsePage {
 }
 
 fn build_webview_browse_page(rooms: Vec<crate::sites::adapters::stripchat_webview::_RawRoom>, page: u32) -> BrowsePage {
-    let items: Vec<MediaItem> = rooms.iter().map(_map_room).collect();
+    let items: Vec<MediaItem> = rooms.iter().map(map_room).collect();
     let has_more = items.len() >= 30;
     BrowsePage {
         items,
@@ -522,7 +522,7 @@ fn extract_username_from_url(url: &str) -> Option<String> {
     Some(first.to_string())
 }
 
-fn _map_room(room: &crate::sites::adapters::stripchat_webview::_RawRoom) -> MediaItem {
+fn map_room(room: &crate::sites::adapters::stripchat_webview::_RawRoom) -> MediaItem {
     let username = &room.username;
     let room_url = format!("{BASE}/{username}/");
     let embed_url = format!("{BASE}/embed/{username}/");
