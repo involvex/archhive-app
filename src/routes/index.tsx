@@ -5,7 +5,8 @@ import { ConnectionStatusChip } from "@/components/ConnectionStatusChip";
 import { getCapabilities } from "@/lib/runtime";
 import { useSettingsStore } from "@/lib/stores/settings";
 import { isMobileDevice } from "@/lib/tauri";
-import type { DownloadJob, Scene } from "@/lib/types";
+import type { DownloadJob, Scene, WatchProgress } from "@/lib/types";
+import type { CardWatchState } from "@/components/SceneCard";
 import { sceneThumbUrl, isVideoScene } from "@/lib/mediaUrl";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DownloadProgressRow } from "@/components/DownloadProgress";
@@ -31,6 +32,8 @@ function HomePage() {
   const [loading, setLoading] = useState(true);
   const [playerScene, setPlayerScene] = useState<Scene | null>(null);
   const [playerIndex, setPlayerIndex] = useState(0);
+  // #26 watch-history map for card overlays.
+  const [watchMap, setWatchMap] = useState<Map<string, WatchProgress>>(new Map());
   const caps = getCapabilities();
   const isMobile = isMobileDevice();
   const needsSetup = (isMobile || caps.showBrowserBanner) && !settings.remote_host;
@@ -45,6 +48,10 @@ function HomePage() {
       .listScenes()
       .then(setScenes)
       .catch((e) => setLoadError(e instanceof Error ? e.message : "Failed to load scenes"));
+    void api
+      .listWatchProgress()
+      .then((all) => setWatchMap(new Map(all.map((w) => [w.scene_id, w]))))
+      .catch(() => {});
     const downloadsP = api
       .listDownloads()
       .then(setDownloads)
@@ -76,6 +83,19 @@ function HomePage() {
   const active = downloads.filter((d) => d.status === "active" || d.status === "pending");
   const recent = useRecentlyViewedStore((s) => s.recent);
   const clearRecent = useRecentlyViewedStore((s) => s.clear);
+
+  function watchFor(id: string): CardWatchState | null {
+    const w = watchMap.get(id);
+    if (!w) return null;
+    return { position: w.position_secs, duration: w.duration_secs, watched: w.watched };
+  }
+
+  function refreshWatch() {
+    void api
+      .listWatchProgress()
+      .then((all) => setWatchMap(new Map(all.map((w) => [w.scene_id, w]))))
+      .catch(() => {});
+  }
 
   const videoScenes = scenes.filter(isVideoScene);
   // Rail shows stored snapshots; fall back to the live scene object when available.
@@ -249,6 +269,7 @@ function HomePage() {
                 key={snapshot.id}
                 item={snapshot}
                 thumbSrc={sceneThumbUrl(snapshot)}
+                watch={watchFor(snapshot.id)}
                 onClick={(item) => handlePlayRecent(item as Scene)}
               />
             ))}
@@ -295,6 +316,7 @@ function HomePage() {
                 key={scene.id}
                 item={scene}
                 thumbSrc={sceneThumbUrl(scene)}
+                watch={watchFor(scene.id)}
                 onClick={(item) => handlePlay(item as Scene)}
               />
             ))}
@@ -307,7 +329,10 @@ function HomePage() {
         scenes={videoScenes}
         currentIndex={playerIndex}
         open={playerScene !== null}
-        onClose={() => setPlayerScene(null)}
+        onClose={() => {
+          setPlayerScene(null);
+          refreshWatch();
+        }}
         onNavigate={(scene, idx) => {
           setPlayerScene(scene);
           setPlayerIndex(idx);

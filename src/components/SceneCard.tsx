@@ -2,7 +2,13 @@ import { useCallback, useRef, useState } from "react";
 import type { MediaItem, Scene } from "@/lib/types";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Clock, Download, Info, Play, Pencil, MoreVertical } from "lucide-react";
+import { Check, Clock, Download, Info, Play, Pencil, MoreVertical } from "lucide-react";
+
+export interface CardWatchState {
+  position: number;
+  duration: number;
+  watched: boolean;
+}
 
 type CardItem = MediaItem | Scene;
 
@@ -18,6 +24,8 @@ interface SceneCardProps {
   thumbSrc?: string;
   onClick?: (item: CardItem) => void;
   listView?: boolean;
+  /** #26 watch state — progress bar overlay + watched chip (scenes only). */
+  watch?: CardWatchState | null;
 }
 
 function isMediaItem(item: CardItem): item is MediaItem {
@@ -82,6 +90,7 @@ export function SceneCard({
   thumbSrc,
   onClick,
   listView = false,
+  watch,
 }: SceneCardProps) {
   const title = getItemTitle(item);
   const performers = getItemPerformers(item);
@@ -90,6 +99,12 @@ export function SceneCard({
   const duration = getItemDuration(item);
   const fileSize = getItemFileSize(item);
   const resolution = getItemResolution(item);
+  // #26: fraction watched (0..1) for the overlay bar; hidden when no data.
+  const watchFraction =
+    watch && !isMediaItem(item) && watch.duration > 0
+      ? Math.min(1, Math.max(0, watch.position / watch.duration))
+      : null;
+  const showWatched = Boolean(watch?.watched) && !isMediaItem(item);
   const thumb = getItemThumb(item, thumbSrc);
   const description = getItemDescription(item);
 
@@ -186,6 +201,20 @@ export function SceneCard({
             <span className="absolute bottom-1 left-1 rounded bg-black/70 px-1.5 py-0.5 text-[10px] tabular-nums">
               {resolution}
             </span>
+          )}
+          {showWatched && (
+            <span className="absolute top-1 left-1 flex items-center gap-1 rounded bg-green-600/90 px-1.5 py-0.5 text-[10px] font-medium text-white">
+              <Check className="h-3 w-3" />
+              Watched
+            </span>
+          )}
+          {watchFraction != null && watchFraction > 0 && (
+            <div className="absolute inset-x-0 bottom-0 h-1 bg-black/60">
+              <div
+                className="h-full bg-red-500"
+                style={{ width: `${Math.round(watchFraction * 100)}%` }}
+              />
+            </div>
           )}
         </div>
 
@@ -361,6 +390,20 @@ export function SceneCard({
           <span className="absolute bottom-2 left-2 rounded bg-black/70 px-1.5 py-0.5 text-[10px] tabular-nums">
             {resolution}
           </span>
+        )}
+        {showWatched && !selectionMode && (
+          <span className="absolute top-2 left-2 flex items-center gap-1 rounded bg-green-600/90 px-1.5 py-0.5 text-[10px] font-medium text-white">
+            <Check className="h-3 w-3" />
+            Watched
+          </span>
+        )}
+        {watchFraction != null && watchFraction > 0 && (
+          <div className="absolute inset-x-0 bottom-0 h-1 bg-black/60">
+            <div
+              className="h-full bg-red-500"
+              style={{ width: `${Math.round(watchFraction * 100)}%` }}
+            />
+          </div>
         )}
 
         {onWatch && showOverlay && (

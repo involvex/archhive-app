@@ -158,6 +158,7 @@ export interface AppSettings {
   download_max_retries?: number;
   download_retry_delay_seconds?: number;
   theme?: AppTheme;
+  watched_threshold?: number;
 }
 
 export interface MergeDuplicatesResult {
@@ -229,6 +230,18 @@ export interface BinaryVersions {
 
 export interface ClearThumbsResult {
   cleared: number;
+}
+
+export interface WatchProgress {
+  scene_id: string;
+  position_secs: number;
+  duration_secs: number;
+  watched: boolean;
+  updated_at: string;
+}
+
+export interface MarkWatchedResult {
+  updated: number;
 }
 
 export interface ThumbGenResult {

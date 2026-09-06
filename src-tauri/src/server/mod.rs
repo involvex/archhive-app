@@ -145,6 +145,12 @@ impl LanServer {
             .route("/api/scenes/{id}/probe", post(probe_scene_metadata))
             .route("/api/scenes/{id}/thumb", delete(clear_scene_thumb))
             .route(
+                "/api/scenes/{id}/watch",
+                post(record_watch_progress).get(get_watch_progress),
+            )
+            .route("/api/scenes/watch", post(mark_watched))
+            .route("/api/watch-progress", get(list_watch_progress))
+            .route(
                 "/api/library/probe-durations",
                 post(probe_library_durations),
             )
@@ -837,6 +843,56 @@ async fn clear_all_thumbs(
     let result = state
         .app
         .clear_all_thumbs()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(serde_json::json!(result)))
+}
+
+#[derive(Deserialize)]
+struct RecordWatchBody {
+    position_secs: f64,
+    duration_secs: f64,
+}
+
+async fn record_watch_progress(
+    Path(id): Path<String>,
+    State(state): State<ApiState>,
+    Json(body): Json<RecordWatchBody>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let progress = state
+        .app
+        .record_watch_progress(&id, body.position_secs, body.duration_secs)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(serde_json::json!(progress)))
+}
+
+async fn get_watch_progress(
+    Path(id): Path<String>,
+    State(state): State<ApiState>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let progress = state
+        .app
+        .get_watch_progress(&id)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(serde_json::json!(progress)))
+}
+
+async fn list_watch_progress(
+    State(state): State<ApiState>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let all = state
+        .app
+        .list_watch_progress()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(serde_json::json!(all)))
+}
+
+async fn mark_watched(
+    State(state): State<ApiState>,
+    Json(body): Json<crate::models::MarkWatchedRequest>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let result = state
+        .app
+        .mark_watched(&body.scene_ids, body.watched)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(serde_json::json!(result)))
 }

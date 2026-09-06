@@ -110,3 +110,13 @@ pub const MIGRATION_008: &str = r#"
 ALTER TABLE scenes ADD COLUMN width INTEGER;
 ALTER TABLE scenes ADD COLUMN height INTEGER;
 "#;
+
+pub const MIGRATION_009: &str = r#"
+CREATE TABLE IF NOT EXISTS watch_history (
+    scene_id TEXT PRIMARY KEY,
+    position_secs REAL NOT NULL DEFAULT 0,
+    duration_secs REAL NOT NULL DEFAULT 0,
+    watched INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL
+);
+"#;

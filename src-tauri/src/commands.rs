@@ -1,9 +1,10 @@
 use crate::error::AppResult;
 use crate::models::{
     AppSettings, BatchUpdateScenesRequest, BatchUpdateScenesResult, BrowseKind, BrowseOrientation,
-    DownloadJob, DuplicateGroup, FfmpegStatus, HealthResponse, LanHost, LibraryStats, MediaItem,
-    MergeDuplicatesResult, OrphanSidecar, Performer, PornhubCategoryEntry, ScanResult, Scene,
-    SceneFilter, SceneSort, SiteInfo, Tag, UpdateSceneRequest,
+    DownloadJob, DuplicateGroup, FfmpegStatus, HealthResponse, LanHost, LibraryStats,
+    MarkWatchedRequest, MarkWatchedResult, MediaItem, MergeDuplicatesResult, OrphanSidecar,
+    Performer, PornhubCategoryEntry, ScanResult, Scene, SceneFilter, SceneSort, SiteInfo, Tag,
+    UpdateSceneRequest, WatchProgress,
 };
 use crate::state::AppState;
 use crate::vault::CookieSiteInfo;
@@ -454,6 +455,37 @@ pub async fn get_library_stats(state: State<'_, Arc<AppState>>) -> CmdResult<Lib
         .await
         .map_err(|e| e.to_string())?;
     map_err(result)
+}
+
+#[tauri::command]
+pub fn record_watch_progress(
+    state: State<'_, Arc<AppState>>,
+    scene_id: String,
+    position_secs: f64,
+    duration_secs: f64,
+) -> CmdResult<WatchProgress> {
+    map_err(state.record_watch_progress(&scene_id, position_secs, duration_secs))
+}
+
+#[tauri::command]
+pub fn get_watch_progress(
+    state: State<'_, Arc<AppState>>,
+    scene_id: String,
+) -> CmdResult<Option<WatchProgress>> {
+    map_err(state.get_watch_progress(&scene_id))
+}
+
+#[tauri::command]
+pub fn list_watch_progress(state: State<'_, Arc<AppState>>) -> CmdResult<Vec<WatchProgress>> {
+    map_err(state.list_watch_progress())
+}
+
+#[tauri::command]
+pub fn mark_watched(
+    state: State<'_, Arc<AppState>>,
+    body: MarkWatchedRequest,
+) -> CmdResult<MarkWatchedResult> {
+    map_err(state.mark_watched(&body.scene_ids, body.watched))
 }
 
 #[tauri::command]

@@ -289,16 +289,12 @@
 
 ## New Suggestions (2026-09 Research)
 
-### 26. Playback Resume + Watch History [needs-backend]
+### 26. Playback Resume + Watch History
 
-**Status:** ⚪ Not started  
+**Status:** ✅ Done  
 **Area:** Library / Player  
-**Currently:** No position persistence; `ScenePlayerDialog` + `UrlPlayerDialog` are stateless.  
-**Suggestion:**
-
-- New `watch_history(scene_id, position_secs, duration_secs, watched, updated_at)` table or `scenes` columns; `timeupdate` → throttled `record_watch_progress` command (every 5s + on pause/close).
-- Resume banner in player ("Resume from 12:34?"), progress bar overlay on `SceneCard`, "Continue watching" rail on Home.
-- "Mark watched / unwatched" bulk action; watched-after-90% rule configurable.
+**Currently:** `watch_history` table (`MIGRATION_009`) with `record_watch_progress` (5s-throttled `timeupdate` + pause/close flush), `get/list_watch_progress`, `mark_watched` commands and LAN routes; `ScenePlayerDialog` shows a resume banner; `SceneCard` shows a progress bar + Watched chip (grid + list, Home rail + library); context-menu and bulk-bar mark watched/unwatched; watched latch at configurable `AppSettings.watched_threshold` (default 0.9).  
+**Suggestion (remaining):** Surface the threshold in Settings UI; hide-watched filter in the scenes filter bar.
 
 ### 27. Smart Collections (Saved Filters as Auto-Playlists)
 

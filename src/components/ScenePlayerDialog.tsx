@@ -1,11 +1,12 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { sceneMediaUrl, isWebPlayableScene, isHttpMediaSrc, isVideoScene } from "@/lib/mediaUrl";
 import { getCapabilities } from "@/lib/runtime";
 import { useRecentlyViewedStore } from "@/lib/stores/recentlyViewed";
 import { api } from "@/lib/api/client";
-import type { Scene } from "@/lib/types";
+import type { Scene, WatchProgress } from "@/lib/types";
 import { Button } from "@/components/ui/button";
-import { ChevronLeft, ChevronRight, Pencil, X } from "lucide-react";
+import { formatDuration } from "@/components/SceneCard";
+import { ChevronLeft, ChevronRight, Pencil, Play, RotateCcw, X } from "lucide-react";
 
 interface ScenePlayerDialogProps {
   scene: Scene | null;
@@ -41,6 +42,12 @@ function ScenePlayerBody({
 }) {
   const [detail, setDetail] = useState<Scene | null>(null);
   const caps = getCapabilities();
+  // #26 watch-history tracking.
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const posRef = useRef(0);
+  const durRef = useRef(0);
+  const lastSavedRef = useRef(0);
+  const [resume, setResume] = useState<WatchProgress | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -50,6 +57,17 @@ function ScenePlayerBody({
         if (!cancelled) setDetail(data);
       })
       .catch(console.error);
+    // Offer resume when a meaningful position was stored.
+    void api
+      .getWatchProgress(scene.id)
+      .then((p) => {
+        if (cancelled || !p) return;
+        const resumable =
+          p.position_secs > 10 &&
+          (p.duration_secs <= 0 || p.position_secs < p.duration_secs * 0.95);
+        if (resumable) setResume(p);
+      })
+      .catch(() => {});
     return () => {
       cancelled = true;
     };
@@ -61,6 +79,57 @@ function ScenePlayerBody({
   // Avoid crossOrigin on Android WebView when possible — it can blank playback on CORS hiccups.
   const useCors = isHttpMediaSrc(mediaSrc) && caps.localIpc;
   const fileSize = formatBytes(data.file_size);
+
+  const persist = useCallback(
+    (position: number, duration: number) => {
+      posRef.current = position;
+      durRef.current = duration;
+      lastSavedRef.current = Date.now();
+      void api.recordWatchProgress(scene.id, position, duration).catch(() => {});
+    },
+    [scene.id],
+  );
+
+  function handleTimeUpdate() {
+    const el = videoRef.current;
+    if (!el || !Number.isFinite(el.currentTime)) return;
+    const now = Date.now();
+    if (now - lastSavedRef.current > 5000 && Math.abs(el.currentTime - posRef.current) > 1) {
+      persist(el.currentTime, Number.isFinite(el.duration) ? el.duration : 0);
+    } else {
+      posRef.current = el.currentTime;
+      if (Number.isFinite(el.duration)) durRef.current = el.duration;
+    }
+  }
+
+  function handlePause() {
+    const el = videoRef.current;
+    if (!el) return;
+    persist(el.currentTime, Number.isFinite(el.duration) ? el.duration : durRef.current);
+  }
+
+  // Flush final position when the dialog closes / scene changes.
+  useEffect(() => {
+    return () => {
+      if (posRef.current > 0) {
+        void api.recordWatchProgress(scene.id, posRef.current, durRef.current).catch(() => {});
+      }
+    };
+  }, [scene.id]);
+
+  function resumePlayback() {
+    const el = videoRef.current;
+    if (el && resume) {
+      try {
+        el.currentTime = resume.position_secs;
+      } catch {
+        /* seek before metadata — timeupdate will catch up */
+      }
+      void el.play().catch(() => {});
+    }
+    posRef.current = resume?.position_secs ?? 0;
+    setResume(null);
+  }
 
   return (
     <>
@@ -88,15 +157,33 @@ function ScenePlayerBody({
         </div>
       </div>
 
+      {resume && (
+        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-md border border-[var(--color-primary)]/40 bg-[var(--color-primary)]/10 px-3 py-2">
+          <p className="text-sm">Resume from {formatDuration(Math.floor(resume.position_secs))}?</p>
+          <div className="flex-1" />
+          <Button size="sm" onClick={resumePlayback}>
+            <Play className="h-3.5 w-3.5" />
+            Resume
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => setResume(null)}>
+            <RotateCcw className="h-3.5 w-3.5" />
+            Start over
+          </Button>
+        </div>
+      )}
+
       {webPlayable ? (
         <video
           key={mediaSrc}
+          ref={videoRef}
           src={mediaSrc}
           controls
           playsInline
           preload="metadata"
           {...(useCors ? { crossOrigin: "anonymous" as const } : {})}
           className="aspect-video w-full rounded-md bg-black"
+          onTimeUpdate={handleTimeUpdate}
+          onPause={handlePause}
           onError={() => console.error("Video playback failed", mediaSrc)}
         />
       ) : (

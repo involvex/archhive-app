@@ -256,6 +256,9 @@ pub struct AppSettings {
     pub download_retry_delay_seconds: u32,
     #[serde(default = "default_theme")]
     pub theme: AppTheme,
+    /// Fraction of duration after which a scene counts as watched (0.5–1.0).
+    #[serde(default = "default_watched_threshold")]
+    pub watched_threshold: f32,
 }
 
 fn default_phash_threshold() -> u8 {
@@ -316,6 +319,10 @@ fn default_theme() -> AppTheme {
     AppTheme::Dark
 }
 
+fn default_watched_threshold() -> f32 {
+    0.9
+}
+
 impl Default for AppSettings {
     fn default() -> Self {
         #[cfg(mobile)]
@@ -358,6 +365,7 @@ impl Default for AppSettings {
             download_max_retries: default_download_max_retries(),
             download_retry_delay_seconds: default_download_retry_delay_seconds(),
             theme: default_theme(),
+            watched_threshold: default_watched_threshold(),
         }
     }
 }
@@ -475,6 +483,26 @@ pub struct BinaryVersions {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClearThumbsResult {
     pub cleared: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WatchProgress {
+    pub scene_id: String,
+    pub position_secs: f64,
+    pub duration_secs: f64,
+    pub watched: bool,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MarkWatchedRequest {
+    pub scene_ids: Vec<String>,
+    pub watched: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MarkWatchedResult {
+    pub updated: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -2,7 +2,8 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api/client";
 import { sceneThumbUrl, isVideoScene } from "@/lib/mediaUrl";
-import type { Scene, SceneFilter, SceneSort } from "@/lib/types";
+import type { Scene, SceneFilter, SceneSort, WatchProgress } from "@/lib/types";
+import type { CardWatchState } from "@/components/SceneCard";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { SceneEditDialog } from "@/components/SceneEditDialog";
@@ -110,6 +111,15 @@ function ScenesPage() {
   const missingThumbCount = scenes.filter((s) => !s.thumb).length;
   const [genThumbsLoading, setGenThumbsLoading] = useState(false);
   const [genThumbsResult, setGenThumbsResult] = useState("");
+  // #26 watch-history map (scene id → progress).
+  const [watchMap, setWatchMap] = useState<Map<string, WatchProgress>>(new Map());
+
+  const refreshWatch = useCallback(() => {
+    void api
+      .listWatchProgress()
+      .then((all) => setWatchMap(new Map(all.map((w) => [w.scene_id, w]))))
+      .catch(() => {});
+  }, []);
 
   const refresh = useCallback(() => {
     setLoading(true);
@@ -124,7 +134,23 @@ function ScenesPage() {
         setError(e instanceof Error ? e.message : "Failed to load scenes");
       })
       .finally(() => setLoading(false));
-  }, [query, sort, filter, hasFilter]);
+    refreshWatch();
+  }, [query, sort, filter, hasFilter, refreshWatch]);
+
+  function watchFor(id: string): CardWatchState | null {
+    const w = watchMap.get(id);
+    if (!w) return null;
+    return { position: w.position_secs, duration: w.duration_secs, watched: w.watched };
+  }
+
+  async function handleMarkWatched(scene: Scene, watched: boolean) {
+    try {
+      await api.markWatched([scene.id], watched);
+      refreshWatch();
+    } catch (e) {
+      console.error(e);
+    }
+  }
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -597,6 +623,7 @@ function ScenesPage() {
                   thumbSrc={thumbSrc}
                   selected={isSelected}
                   selectionMode={selectionMode}
+                  watch={watchFor(scene.id)}
                   onEdit={setEditScene}
                   onContextMenu={(item, x, y) => openMenuAt(item as Scene, x, y)}
                   onClick={(item) => {
@@ -645,6 +672,7 @@ function ScenesPage() {
                   selected={isSelected}
                   selectionMode={selectionMode}
                   listView
+                  watch={watchFor(scene.id)}
                   onEdit={setEditScene}
                   onContextMenu={(item, x, y) => openMenuAt(item as Scene, x, y)}
                   onClick={(item) => {
@@ -688,7 +716,10 @@ function ScenesPage() {
         scenes={scenes.filter(isVideoScene)}
         currentIndex={playerIndex}
         open={playerScene !== null}
-        onClose={() => setPlayerScene(null)}
+        onClose={() => {
+          setPlayerScene(null);
+          refreshWatch();
+        }}
         onEdit={(s) => {
           setPlayerScene(null);
           setEditScene(s);
@@ -704,6 +735,8 @@ function ScenesPage() {
         onClose={() => setContextMenu(null)}
         onEdit={(s) => setEditScene(s)}
         onDetails={(s) => setDetailsScene(s)}
+        watched={contextMenu ? (watchMap.get(contextMenu.scene.id)?.watched ?? false) : false}
+        onMarkWatched={(s, watched) => void handleMarkWatched(s, watched)}
         onPlay={(s) => {
           const videoScenes = scenes.filter(isVideoScene);
           const idx = videoScenes.findIndex((v) => v.id === s.id);

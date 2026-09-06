@@ -17,6 +17,21 @@ export function SceneBulkEditBar({ selectedIds, onClear, onApplied }: SceneBulkE
 
   if (selectedIds.length === 0) return null;
 
+  // #26: bulk watched toggle.
+  async function handleMarkWatched(watched: boolean) {
+    setSaving(true);
+    setError(null);
+    try {
+      await api.markWatched(selectedIds, watched);
+      onApplied();
+      onClear();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Bulk update failed");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function handleApply() {
     const performersAdd = performers
       .split(",")
@@ -70,7 +85,13 @@ export function SceneBulkEditBar({ selectedIds, onClear, onApplied }: SceneBulkE
         />
       </div>
       {error && <p className="mt-2 text-sm text-red-500">{error}</p>}
-      <div className="mt-2 flex justify-end">
+      <div className="mt-2 flex flex-wrap justify-end gap-2">
+        <Button variant="outline" onClick={() => void handleMarkWatched(true)} disabled={saving}>
+          Mark watched
+        </Button>
+        <Button variant="outline" onClick={() => void handleMarkWatched(false)} disabled={saving}>
+          Clear watched
+        </Button>
         <Button onClick={() => void handleApply()} disabled={saving}>
           {saving ? "Applying…" : "Apply to selected"}
         </Button>

@@ -19,6 +19,7 @@ import type {
   MergeDuplicatesResult,
   OrphanSidecar,
   LibraryStats,
+  MarkWatchedResult,
   Performer,
   Scene,
   SceneFilter,
@@ -31,6 +32,7 @@ import type {
   PornhubCategoryEntry,
   SceneSort,
   ThumbGenResult,
+  WatchProgress,
 } from "../types";
 import { getAppRuntime, shouldUseRemoteApi } from "../runtime";
 import { useSettingsStore } from "../stores/settings";
@@ -306,6 +308,51 @@ export const api = {
       });
     }
     return localInvoke<ClearThumbsResult>("clear_all_thumbs");
+  },
+
+  async recordWatchProgress(
+    sceneId: string,
+    positionSecs: number,
+    durationSecs: number,
+  ): Promise<WatchProgress> {
+    const body = { position_secs: positionSecs, duration_secs: durationSecs };
+    if (shouldUseRemoteApi()) {
+      return remoteFetch<WatchProgress>(`/api/scenes/${sceneId}/watch`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+    }
+    return localInvoke<WatchProgress>("record_watch_progress", {
+      sceneId,
+      positionSecs,
+      durationSecs,
+    });
+  },
+
+  async getWatchProgress(sceneId: string): Promise<WatchProgress | null> {
+    if (shouldUseRemoteApi()) {
+      return remoteFetch<WatchProgress | null>(`/api/scenes/${sceneId}/watch`);
+    }
+    return localInvoke<WatchProgress | null>("get_watch_progress", { sceneId });
+  },
+
+  async listWatchProgress(): Promise<WatchProgress[]> {
+    if (shouldUseRemoteApi()) {
+      return remoteFetch<WatchProgress[]>("/api/watch-progress");
+    }
+    if (getAppRuntime() === "browser") return [];
+    return localInvoke<WatchProgress[]>("list_watch_progress");
+  },
+
+  async markWatched(sceneIds: string[], watched: boolean): Promise<MarkWatchedResult> {
+    const body = { scene_ids: sceneIds, watched };
+    if (shouldUseRemoteApi()) {
+      return remoteFetch<MarkWatchedResult>("/api/scenes/watch", {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+    }
+    return localInvoke<MarkWatchedResult>("mark_watched", { body });
   },
 
   async listScenesWithFilter(filter: SceneFilter): Promise<Scene[]> {

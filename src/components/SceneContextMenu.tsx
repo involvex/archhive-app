@@ -20,6 +20,9 @@ interface SceneContextMenuProps {
   onRenameFile?: (scene: Scene) => void;
   onRegenThumb?: (scene: Scene) => void;
   onDelete?: (scene: Scene) => void;
+  /** #26: toggle watched state; `watched` is the scene's current state. */
+  onMarkWatched?: (scene: Scene, watched: boolean) => void;
+  watched?: boolean;
 }
 
 export function SceneContextMenu({
@@ -33,6 +36,8 @@ export function SceneContextMenu({
   onRenameFile,
   onRegenThumb,
   onDelete,
+  onMarkWatched,
+  watched,
 }: SceneContextMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
   const caps = getCapabilities();
@@ -89,6 +94,14 @@ export function SceneContextMenu({
         onDetails(menu.scene);
         onClose();
       },
+    },
+    {
+      label: watched ? "Mark as unwatched" : "Mark as watched",
+      action: () => {
+        onMarkWatched?.(menu.scene, !watched);
+        onClose();
+      },
+      show: Boolean(onMarkWatched),
     },
     {
       label: "Regenerate thumbnail",

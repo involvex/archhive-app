@@ -675,6 +675,69 @@ impl AppState {
         Ok(crate::models::ClearThumbsResult { cleared })
     }
 
+    fn watched_threshold(&self) -> f64 {
+        self.get_settings()
+            .map(|s| s.watched_threshold as f64)
+            .unwrap_or(0.9)
+            .clamp(0.5, 1.0)
+    }
+
+    /// Record playback position. `watched` latches: once watched, a scene
+    /// stays watched until explicitly unmarked via `mark_watched`.
+    pub fn record_watch_progress(
+        &self,
+        scene_id: &str,
+        position_secs: f64,
+        duration_secs: f64,
+    ) -> AppResult<crate::models::WatchProgress> {
+        // Scene must exist (also validates the id).
+        self.db.get_scene(scene_id)?;
+        let position = position_secs.max(0.0);
+        let duration = duration_secs.max(0.0);
+        let threshold = self.watched_threshold();
+        let auto_watched = duration > 0.0 && position >= threshold * duration;
+        let existing = self.db.get_watch_progress(scene_id)?;
+        let watched = existing.map(|e| e.watched).unwrap_or(false) || auto_watched;
+        let updated_at = chrono::Utc::now().to_rfc3339();
+        self.db
+            .record_watch_progress(scene_id, position, duration, watched, &updated_at)?;
+        Ok(crate::models::WatchProgress {
+            scene_id: scene_id.to_string(),
+            position_secs: position,
+            duration_secs: duration,
+            watched,
+            updated_at,
+        })
+    }
+
+    pub fn get_watch_progress(
+        &self,
+        scene_id: &str,
+    ) -> AppResult<Option<crate::models::WatchProgress>> {
+        self.db.get_watch_progress(scene_id)
+    }
+
+    pub fn list_watch_progress(&self) -> AppResult<Vec<crate::models::WatchProgress>> {
+        self.db.list_watch_progress()
+    }
+
+    pub fn mark_watched(
+        &self,
+        ids: &[String],
+        watched: bool,
+    ) -> AppResult<crate::models::MarkWatchedResult> {
+        // Validate ids against the library so typos don't create orphan rows.
+        let mut valid = Vec::new();
+        for id in ids {
+            if self.db.get_scene(id).is_ok() {
+                valid.push(id.clone());
+            }
+        }
+        let updated_at = chrono::Utc::now().to_rfc3339();
+        let updated = self.db.mark_watched(&valid, watched, &updated_at)?;
+        Ok(crate::models::MarkWatchedResult { updated })
+    }
+
     pub async fn binary_versions(&self) -> AppResult<crate::models::BinaryVersions> {
         use crate::sites::yt_dlp::SidecarRunner;
         let runner = SidecarRunner::new(self.site_ctx.app().clone());

@@ -2,7 +2,7 @@ mod migrations;
 
 use crate::db::migrations::{
     MIGRATION_001, MIGRATION_002, MIGRATION_003, MIGRATION_004, MIGRATION_005, MIGRATION_006,
-    MIGRATION_007, MIGRATION_008,
+    MIGRATION_007, MIGRATION_008, MIGRATION_009,
 };
 use crate::error::{AppError, AppResult};
 use crate::models::{
@@ -69,6 +69,7 @@ impl Database {
         if !column_exists(&conn, "scenes", "width") {
             conn.execute_batch(MIGRATION_008)?;
         }
+        conn.execute_batch(MIGRATION_009)?;
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
         })
@@ -613,6 +614,112 @@ impl Database {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })?;
         rows.collect::<Result<Vec<_>, _>>().map_err(AppError::from)
+    }
+
+    /// Upsert a watch-progress row. `watched` is computed by the caller.
+    pub fn record_watch_progress(
+        &self,
+        scene_id: &str,
+        position_secs: f64,
+        duration_secs: f64,
+        watched: bool,
+        updated_at: &str,
+    ) -> AppResult<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        conn.execute(
+            "INSERT INTO watch_history (scene_id, position_secs, duration_secs, watched, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(scene_id) DO UPDATE SET
+               position_secs = excluded.position_secs,
+               duration_secs = excluded.duration_secs,
+               watched = excluded.watched,
+               updated_at = excluded.updated_at",
+            params![scene_id, position_secs, duration_secs, watched as i32, updated_at],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_watch_progress(
+        &self,
+        scene_id: &str,
+    ) -> AppResult<Option<crate::models::WatchProgress>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let row: Option<(f64, f64, i32, String)> = conn
+            .query_row(
+                "SELECT position_secs, duration_secs, watched, updated_at FROM watch_history WHERE scene_id = ?1",
+                params![scene_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .optional()?;
+        Ok(
+            row.map(|(position_secs, duration_secs, watched, updated_at)| {
+                crate::models::WatchProgress {
+                    scene_id: scene_id.to_string(),
+                    position_secs,
+                    duration_secs,
+                    watched: watched != 0,
+                    updated_at,
+                }
+            }),
+        )
+    }
+
+    pub fn list_watch_progress(&self) -> AppResult<Vec<crate::models::WatchProgress>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let mut stmt = conn.prepare(
+            "SELECT scene_id, position_secs, duration_secs, watched, updated_at FROM watch_history",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(crate::models::WatchProgress {
+                scene_id: row.get(0)?,
+                position_secs: row.get(1)?,
+                duration_secs: row.get(2)?,
+                watched: row.get::<_, i32>(3)? != 0,
+                updated_at: row.get(4)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(AppError::from)
+    }
+
+    /// Bulk mark scenes watched/unwatched. Marking watched keeps the stored
+    /// position; unmarking resets position to 0.
+    pub fn mark_watched(&self, ids: &[String], watched: bool, updated_at: &str) -> AppResult<u32> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let mut updated = 0u32;
+        for id in ids {
+            let existing: Option<(f64, f64)> = conn
+                .query_row(
+                    "SELECT position_secs, duration_secs FROM watch_history WHERE scene_id = ?1",
+                    params![id],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .optional()?;
+            let (position, duration) = existing.unwrap_or((0.0, 0.0));
+            let position = if watched { position } else { 0.0 };
+            conn.execute(
+                "INSERT INTO watch_history (scene_id, position_secs, duration_secs, watched, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)
+                 ON CONFLICT(scene_id) DO UPDATE SET
+                   position_secs = excluded.position_secs,
+                   watched = excluded.watched,
+                   updated_at = excluded.updated_at",
+                params![id, position, duration, watched as i32, updated_at],
+            )?;
+            updated += 1;
+        }
+        Ok(updated)
     }
 
     /// Clear every scene's thumbnail reference (sidecar files on disk are kept;
@@ -1439,6 +1546,7 @@ impl Database {
                 params![id],
             )?;
             conn.execute("DELETE FROM scene_tags WHERE scene_id = ?1", params![id])?;
+            conn.execute("DELETE FROM watch_history WHERE scene_id = ?1", params![id])?;
             conn.execute("DELETE FROM scenes WHERE id = ?1", params![id])?;
             row
         };

@@ -184,6 +184,10 @@ pub fn run() {
             commands::get_library_stats,
             commands::export_performers,
             commands::set_performer_image,
+            commands::record_watch_progress,
+            commands::get_watch_progress,
+            commands::list_watch_progress,
+            commands::mark_watched,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
