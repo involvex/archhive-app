@@ -457,6 +457,8 @@ pub struct SceneFilter {
     #[serde(default)]
     pub hash_named: bool,
     #[serde(default)]
+    pub hide_watched: bool,
+    #[serde(default)]
     pub performer_names: Vec<String>,
     #[serde(default)]
     pub tag_names: Vec<String>,

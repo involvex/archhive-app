@@ -103,6 +103,7 @@ function ScenesPage() {
     filter.missing_thumb ||
     filter.missing_duration ||
     filter.hash_named ||
+    filter.hide_watched ||
     filter.min_duration != null ||
     filter.max_duration != null ||
     (filter.performer_names?.length ?? 0) > 0 ||
@@ -377,6 +378,7 @@ function ScenesPage() {
           { key: "missing_duration", label: "Missing duration" },
           { key: "short", label: "\u2264 15s" },
           { key: "hash_named", label: "Hash-named" },
+          { key: "hide_watched", label: "Hide watched" },
         ].map(({ key, label }) => {
           const active =
             key === "all"

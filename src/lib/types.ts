@@ -212,6 +212,7 @@ export interface SceneFilter {
   min_duration?: number;
   max_duration?: number;
   hash_named?: boolean;
+  hide_watched?: boolean;
   performer_names?: string[];
   tag_names?: string[];
 }

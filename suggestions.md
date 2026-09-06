@@ -293,8 +293,7 @@
 
 **Status:** ✅ Done  
 **Area:** Library / Player  
-**Currently:** `watch_history` table (`MIGRATION_009`) with `record_watch_progress` (5s-throttled `timeupdate` + pause/close flush), `get/list_watch_progress`, `mark_watched` commands and LAN routes; `ScenePlayerDialog` shows a resume banner; `SceneCard` shows a progress bar + Watched chip (grid + list, Home rail + library); context-menu and bulk-bar mark watched/unwatched; watched latch at configurable `AppSettings.watched_threshold` (default 0.9).  
-**Suggestion (remaining):** Surface the threshold in Settings UI; hide-watched filter in the scenes filter bar.
+**Currently:** `watch_history` table (`MIGRATION_009`) with `record_watch_progress` (5s-throttled `timeupdate` + pause/close flush), `get/list_watch_progress`, `mark_watched` commands and LAN routes; `ScenePlayerDialog` shows a resume banner; `SceneCard` shows a progress bar + Watched chip (grid + list, Home rail + library); context-menu and bulk-bar mark watched/unwatched; watched latch at `AppSettings.watched_threshold` (default 0.9) with a slider in Settings → Library; "Hide watched" chip in the scenes filter bar (`SceneFilter.hide_watched`, SQL `NOT EXISTS`).
 
 ### 27. Smart Collections (Saved Filters as Auto-Playlists)
 

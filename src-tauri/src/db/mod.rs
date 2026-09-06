@@ -777,6 +777,12 @@ impl Database {
         if filter.missing_duration {
             conditions.push("(scenes.duration IS NULL OR scenes.duration = 0)".to_string());
         }
+        if filter.hide_watched {
+            conditions.push(
+                "NOT EXISTS (SELECT 1 FROM watch_history w WHERE w.scene_id = scenes.id AND w.watched = 1)"
+                    .to_string(),
+            );
+        }
         if let Some(min_dur) = filter.min_duration {
             conditions.push(format!("scenes.duration >= {min_dur}"));
         }

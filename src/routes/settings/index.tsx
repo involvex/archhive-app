@@ -701,6 +701,28 @@ function SettingsPage() {
                 />
               </div>
               <div>
+                <label
+                  className="text-xs text-[var(--color-muted-foreground)]"
+                  htmlFor="watched-threshold"
+                >
+                  Watched threshold ({Math.round((hostSettings?.watched_threshold ?? 0.9) * 100)}%
+                  of duration counts as watched)
+                </label>
+                <input
+                  id="watched-threshold"
+                  type="range"
+                  min={50}
+                  max={100}
+                  step={5}
+                  value={Math.round((hostSettings?.watched_threshold ?? 0.9) * 100)}
+                  disabled={!caps.libraryPathEditable}
+                  onChange={(e) =>
+                    patchHostSettings({ watched_threshold: Number(e.target.value) / 100 })
+                  }
+                  className="w-full max-w-xs accent-[var(--color-primary)]"
+                />
+              </div>
+              <div>
                 <label className="text-xs text-[var(--color-muted-foreground)]">
                   Auto-tag rules (one regex per line)
                 </label>
