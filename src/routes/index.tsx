@@ -5,8 +5,8 @@ import { ConnectionStatusChip } from "@/components/ConnectionStatusChip";
 import { getCapabilities } from "@/lib/runtime";
 import { useSettingsStore } from "@/lib/stores/settings";
 import { isMobileDevice } from "@/lib/tauri";
-import type { DownloadJob, Scene, WatchProgress } from "@/lib/types";
-import type { CardWatchState } from "@/components/SceneCard";
+import type { DownloadJob, Scene } from "@/lib/types";
+import { toWatchMap, watchFor, type WatchMap } from "@/lib/watch";
 import { sceneThumbUrl, isVideoScene } from "@/lib/mediaUrl";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DownloadProgressRow } from "@/components/DownloadProgress";
@@ -33,7 +33,7 @@ function HomePage() {
   const [playerScene, setPlayerScene] = useState<Scene | null>(null);
   const [playerIndex, setPlayerIndex] = useState(0);
   // #26 watch-history map for card overlays.
-  const [watchMap, setWatchMap] = useState<Map<string, WatchProgress>>(new Map());
+  const [watchMap, setWatchMap] = useState<WatchMap>(new Map());
   const caps = getCapabilities();
   const isMobile = isMobileDevice();
   const needsSetup = (isMobile || caps.showBrowserBanner) && !settings.remote_host;
@@ -83,17 +83,16 @@ function HomePage() {
   const active = downloads.filter((d) => d.status === "active" || d.status === "pending");
   const recent = useRecentlyViewedStore((s) => s.recent);
   const clearRecent = useRecentlyViewedStore((s) => s.clear);
+  const removeRecent = useRecentlyViewedStore((s) => s.remove);
 
-  function watchFor(id: string): CardWatchState | null {
-    const w = watchMap.get(id);
-    if (!w) return null;
-    return { position: w.position_secs, duration: w.duration_secs, watched: w.watched };
+  function watchState(id: string) {
+    return watchFor(watchMap, id);
   }
 
   function refreshWatch() {
     void api
       .listWatchProgress()
-      .then((all) => setWatchMap(new Map(all.map((w) => [w.scene_id, w]))))
+      .then((all) => setWatchMap(toWatchMap(all)))
       .catch(() => {});
   }
 
@@ -101,7 +100,13 @@ function HomePage() {
   // Rail shows stored snapshots; fall back to the live scene object when available.
   const recentVisible = recent.slice(0, 12);
   function handlePlayRecent(snapshot: Scene) {
-    const live = videoScenes.find((s) => s.id === snapshot.id) ?? snapshot;
+    // Review: prune rail entries whose scene left the library instead of
+    // opening a player that 404s on getScene.
+    const live = videoScenes.find((s) => s.id === snapshot.id);
+    if (!live) {
+      if (scenes.length > 0) removeRecent(snapshot.id);
+      return;
+    }
     if (!isVideoScene(live)) {
       setPlayerScene(live);
       setPlayerIndex(0);
@@ -269,7 +274,7 @@ function HomePage() {
                 key={snapshot.id}
                 item={snapshot}
                 thumbSrc={sceneThumbUrl(snapshot)}
-                watch={watchFor(snapshot.id)}
+                watch={watchState(snapshot.id)}
                 onClick={(item) => handlePlayRecent(item as Scene)}
               />
             ))}
@@ -316,7 +321,7 @@ function HomePage() {
                 key={scene.id}
                 item={scene}
                 thumbSrc={sceneThumbUrl(scene)}
-                watch={watchFor(scene.id)}
+                watch={watchState(scene.id)}
                 onClick={(item) => handlePlay(item as Scene)}
               />
             ))}

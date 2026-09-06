@@ -972,10 +972,14 @@ async fn update_saved_search(
     State(state): State<ApiState>,
     Json(body): Json<crate::models::UpdateSavedSearchRequest>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
+    // Review: only unknown ids are 404; DB failures are 500.
     let updated = state
         .app
         .set_saved_search_auto_queue(&id, body.auto_queue)
-        .map_err(|_| StatusCode::NOT_FOUND)?;
+        .map_err(|e| match e {
+            AppError::NotFound(_) => StatusCode::NOT_FOUND,
+            _ => StatusCode::INTERNAL_SERVER_ERROR,
+        })?;
     Ok(Json(serde_json::json!(updated)))
 }
 
@@ -1007,7 +1011,10 @@ async fn dismiss_saved_search_news(
     let dismissed = state
         .app
         .dismiss_saved_search_news(&id)
-        .map_err(|_| StatusCode::NOT_FOUND)?;
+        .map_err(|e| match e {
+            AppError::NotFound(_) => StatusCode::NOT_FOUND,
+            _ => StatusCode::INTERNAL_SERVER_ERROR,
+        })?;
     Ok(Json(serde_json::json!(dismissed)))
 }
 

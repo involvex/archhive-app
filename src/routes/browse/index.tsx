@@ -176,7 +176,10 @@ function BrowsePage() {
   const [trendingLoading, setTrendingLoading] = useState(false);
 
   // #28 saved searches (watchlist).
+  // Review: cap rendered/queued new matches so a huge listing can't flood the UI or queue.
+  const MAX_NEW_MATCHES = 50;
   const [saved, setSaved] = useState<SavedSearch[]>([]);
+  const savedRef = useRef<SavedSearch[]>([]);
   const [checkingId, setCheckingId] = useState<string | null>(null);
   const [pollStatus, setPollStatus] = useState<WatchlistStatus | null>(null);
   // New-matches dialog: items returned by the last manual check.
@@ -184,7 +187,12 @@ function BrowsePage() {
     searchId: string;
     name: string;
     items: MediaItem[];
+    total: number;
   } | null>(null);
+
+  useEffect(() => {
+    savedRef.current = saved;
+  }, [saved]);
 
   const refreshSaved = useCallback(() => {
     void api
@@ -207,11 +215,12 @@ function BrowsePage() {
       const result = await api.checkSavedSearch(id);
       await refreshSaved();
       if (result.new_count > 0) {
-        const search = saved.find((s) => s.id === id);
+        const search = savedRef.current.find((s) => s.id === id);
         setNewMatches({
           searchId: id,
           name: search?.name ?? "Saved search",
-          items: result.new_items,
+          items: result.new_items.slice(0, MAX_NEW_MATCHES),
+          total: result.new_items.length,
         });
       }
     } catch (e) {
@@ -704,6 +713,11 @@ function BrowsePage() {
                           ? "Auto-queue on: new matches download automatically"
                           : "Auto-queue off: queue new matches automatically"
                       }
+                      aria-label={
+                        s.auto_queue
+                          ? `Disable auto-queue for ${s.name}`
+                          : `Enable auto-queue for ${s.name}`
+                      }
                       className={s.auto_queue ? "text-[var(--color-primary)]" : ""}
                     >
                       {s.auto_queue ? (
@@ -718,6 +732,7 @@ function BrowsePage() {
                       onClick={() => void handleCheck(s.id)}
                       disabled={checkingId === s.id}
                       title="Check for new matches now"
+                      aria-label={`Check ${s.name} for new matches now`}
                     >
                       <RefreshCw
                         className={`h-3.5 w-3.5 ${checkingId === s.id ? "animate-spin" : ""}`}
@@ -728,6 +743,7 @@ function BrowsePage() {
                       variant="ghost"
                       onClick={() => void handleDeleteSaved(s.id)}
                       title="Delete saved search"
+                      aria-label={`Delete saved search ${s.name}`}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
@@ -744,8 +760,14 @@ function BrowsePage() {
           <CardContent className="p-4 space-y-3">
             <div className="flex items-center justify-between gap-2">
               <p className="text-sm font-medium">
-                {newMatches.items.length} new {newMatches.items.length === 1 ? "match" : "matches"}{" "}
-                in {newMatches.name}
+                {newMatches.total} new {newMatches.total === 1 ? "match" : "matches"} in{" "}
+                {newMatches.name}
+                {newMatches.total > newMatches.items.length && (
+                  <span className="text-[var(--color-muted-foreground)]">
+                    {" "}
+                    (showing first {newMatches.items.length})
+                  </span>
+                )}
               </p>
               <div className="flex gap-2">
                 <Button size="sm" variant="outline" onClick={() => void queueAllNewMatches()}>

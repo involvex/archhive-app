@@ -682,6 +682,28 @@ impl AppState {
             .clamp(0.5, 1.0)
     }
 
+    /// Watchlist poller tuning (review: named constants, single due-check).
+    const POLL_TICK_SECS: u64 = 60;
+    /// Cap per search per pass so a runaway listing can't flood the queue.
+    const MAX_QUEUE_PER_SEARCH: usize = 25;
+    /// Cap stored snapshot keys so the row stays small.
+    const SNAPSHOT_KEY_CAP: usize = 300;
+
+    /// A saved search is due when never checked or older than the interval.
+    /// Unparseable timestamps are treated as due (fail-open toward checking).
+    fn is_search_due(
+        last_checked_at: &Option<String>,
+        interval: chrono::Duration,
+        now: &chrono::DateTime<chrono::Utc>,
+    ) -> bool {
+        match last_checked_at {
+            None => true,
+            Some(ts) => chrono::DateTime::parse_from_rfc3339(ts)
+                .map(|t| now.signed_duration_since(t.with_timezone(&chrono::Utc)) >= interval)
+                .unwrap_or(true),
+        }
+    }
+
     /// Record playback position. `watched` latches: once watched, a scene
     /// stays watched until explicitly unmarked via `mark_watched`.
     pub fn record_watch_progress(
@@ -690,8 +712,12 @@ impl AppState {
         position_secs: f64,
         duration_secs: f64,
     ) -> AppResult<crate::models::WatchProgress> {
-        // Scene must exist (also validates the id).
-        self.db.get_scene(scene_id)?;
+        // Scene must exist (cheap EXISTS check, not a full row hydration).
+        if !self.db.scene_exists(scene_id)? {
+            return Err(crate::error::AppError::NotFound(format!(
+                "scene {scene_id}"
+            )));
+        }
         let position = position_secs.max(0.0);
         let duration = duration_secs.max(0.0);
         let threshold = self.watched_threshold();
@@ -770,7 +796,6 @@ impl AppState {
     /// saved search and queue new matches as downloads (capped per search).
     /// A search is due when never checked or older than the poll interval.
     pub async fn poll_watchlist_once(&self) -> AppResult<crate::models::WatchlistPollResult> {
-        const MAX_QUEUE_PER_SEARCH: usize = 25;
         let interval = self.watch_poll_interval();
         let now = chrono::Utc::now();
         let mut checked = 0u32;
@@ -778,13 +803,7 @@ impl AppState {
         let mut errors = 0u32;
         let searches = self.db.list_saved_searches()?;
         for search in searches.iter().filter(|s| s.auto_queue) {
-            let due = match &search.last_checked_at {
-                None => true,
-                Some(ts) => chrono::DateTime::parse_from_rfc3339(ts)
-                    .map(|t| now.signed_duration_since(t.with_timezone(&chrono::Utc)) >= interval)
-                    .unwrap_or(true),
-            };
-            if !due {
+            if !Self::is_search_due(&search.last_checked_at, interval, &now) {
                 continue;
             }
             match self.check_saved_search(&search.id).await {
@@ -793,7 +812,7 @@ impl AppState {
                     let urls: Vec<String> = result
                         .new_items
                         .iter()
-                        .take(MAX_QUEUE_PER_SEARCH)
+                        .take(Self::MAX_QUEUE_PER_SEARCH)
                         .map(|i| i.url.clone())
                         .filter(|u| !u.trim().is_empty())
                         .collect();
@@ -832,13 +851,7 @@ impl AppState {
         let mut due_count = 0u32;
         for search in searches.iter().filter(|s| s.auto_queue) {
             auto_queue_count += 1;
-            let due = match &search.last_checked_at {
-                None => true,
-                Some(ts) => chrono::DateTime::parse_from_rfc3339(ts)
-                    .map(|t| now.signed_duration_since(t.with_timezone(&chrono::Utc)) >= interval)
-                    .unwrap_or(true),
-            };
-            if due {
+            if Self::is_search_due(&search.last_checked_at, interval, &now) {
                 due_count += 1;
             }
         }
@@ -863,7 +876,8 @@ impl AppState {
     pub fn spawn_watchlist_poller(self: &std::sync::Arc<Self>) {
         let state = self.clone();
         tauri::async_runtime::spawn(async move {
-            let mut tick = tokio::time::interval(tokio::time::Duration::from_secs(60));
+            let mut tick =
+                tokio::time::interval(tokio::time::Duration::from_secs(Self::POLL_TICK_SECS));
             tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             loop {
                 tick.tick().await;
@@ -916,8 +930,7 @@ impl AppState {
                 fresh.push(item.clone());
             }
         }
-        // Cap the snapshot so the row stays small.
-        keys.truncate(300);
+        keys.truncate(Self::SNAPSHOT_KEY_CAP);
         let keys_json = serde_json::to_string(&keys)
             .map_err(|e| crate::error::AppError::Other(format!("snapshot serialize: {e}")))?;
         let checked_at = chrono::Utc::now().to_rfc3339();
@@ -939,12 +952,7 @@ impl AppState {
         watched: bool,
     ) -> AppResult<crate::models::MarkWatchedResult> {
         // Validate ids against the library so typos don't create orphan rows.
-        let mut valid = Vec::new();
-        for id in ids {
-            if self.db.get_scene(id).is_ok() {
-                valid.push(id.clone());
-            }
-        }
+        let valid = self.db.existing_scene_ids(ids)?;
         let updated_at = chrono::Utc::now().to_rfc3339();
         let updated = self.db.mark_watched(&valid, watched, &updated_at)?;
         Ok(crate::models::MarkWatchedResult { updated })
@@ -1002,5 +1010,30 @@ impl AppState {
 
     pub fn static_ui_path(&self) -> Option<PathBuf> {
         self.static_ui_dir.lock().clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::AppState;
+
+    #[test]
+    fn search_due_logic() {
+        let interval = chrono::Duration::minutes(60);
+        let now = chrono::Utc::now();
+        // Never checked → due.
+        assert!(AppState::is_search_due(&None, interval, &now));
+        // Recent check → not due.
+        let recent = Some(now.to_rfc3339());
+        assert!(!AppState::is_search_due(&recent, interval, &now));
+        // Old check → due.
+        let old = Some((now - chrono::Duration::minutes(61)).to_rfc3339());
+        assert!(AppState::is_search_due(&old, interval, &now));
+        // Corrupt timestamp → due (fail-open).
+        assert!(AppState::is_search_due(
+            &Some("not-a-date".to_string()),
+            interval,
+            &now
+        ));
     }
 }

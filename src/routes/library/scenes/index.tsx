@@ -2,8 +2,8 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api/client";
 import { sceneThumbUrl, isVideoScene } from "@/lib/mediaUrl";
-import type { Scene, SceneFilter, SceneSort, WatchProgress } from "@/lib/types";
-import type { CardWatchState } from "@/components/SceneCard";
+import type { Scene, SceneFilter, SceneSort } from "@/lib/types";
+import { toWatchMap, watchFor, type WatchMap } from "@/lib/watch";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { SceneEditDialog } from "@/components/SceneEditDialog";
@@ -113,12 +113,12 @@ function ScenesPage() {
   const [genThumbsLoading, setGenThumbsLoading] = useState(false);
   const [genThumbsResult, setGenThumbsResult] = useState("");
   // #26 watch-history map (scene id → progress).
-  const [watchMap, setWatchMap] = useState<Map<string, WatchProgress>>(new Map());
+  const [watchMap, setWatchMap] = useState<WatchMap>(new Map());
 
   const refreshWatch = useCallback(() => {
     void api
       .listWatchProgress()
-      .then((all) => setWatchMap(new Map(all.map((w) => [w.scene_id, w]))))
+      .then((all) => setWatchMap(toWatchMap(all)))
       .catch(() => {});
   }, []);
 
@@ -138,10 +138,8 @@ function ScenesPage() {
     refreshWatch();
   }, [query, sort, filter, hasFilter, refreshWatch]);
 
-  function watchFor(id: string): CardWatchState | null {
-    const w = watchMap.get(id);
-    if (!w) return null;
-    return { position: w.position_secs, duration: w.duration_secs, watched: w.watched };
+  function watchState(id: string) {
+    return watchFor(watchMap, id);
   }
 
   async function handleMarkWatched(scene: Scene, watched: boolean) {
@@ -625,7 +623,7 @@ function ScenesPage() {
                   thumbSrc={thumbSrc}
                   selected={isSelected}
                   selectionMode={selectionMode}
-                  watch={watchFor(scene.id)}
+                  watch={watchState(scene.id)}
                   onEdit={setEditScene}
                   onContextMenu={(item, x, y) => openMenuAt(item as Scene, x, y)}
                   onClick={(item) => {
@@ -674,7 +672,7 @@ function ScenesPage() {
                   selected={isSelected}
                   selectionMode={selectionMode}
                   listView
-                  watch={watchFor(scene.id)}
+                  watch={watchState(scene.id)}
                   onEdit={setEditScene}
                   onContextMenu={(item, x, y) => openMenuAt(item as Scene, x, y)}
                   onClick={(item) => {

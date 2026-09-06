@@ -289,7 +289,7 @@
 
 **Status:** ✅ Done  
 **Area:** Library / Player  
-**Currently:** `watch_history` table (`MIGRATION_009`) with `record_watch_progress` (5s-throttled `timeupdate` + pause/close flush), `get/list_watch_progress`, `mark_watched` commands and LAN routes; `ScenePlayerDialog` shows a resume banner; `SceneCard` shows a progress bar + Watched chip (grid + list, Home rail + library); context-menu and bulk-bar mark watched/unwatched; watched latch at `AppSettings.watched_threshold` (default 0.9) with a slider in Settings → Library; "Hide watched" chip in the scenes filter bar (`SceneFilter.hide_watched`, SQL `NOT EXISTS`).
+**Currently:** `watch_history` table (`MIGRATION_009`) with `record_watch_progress` (5s-throttled `timeupdate` + pause/close flush), `get/list_watch_progress`, `mark_watched` commands and LAN routes; `ScenePlayerDialog` shows a resume banner; `SceneCard` shows a progress bar + Watched chip (grid + list, Home rail + library); context-menu and bulk-bar mark watched/unwatched; watched latch at `AppSettings.watched_threshold` (default 0.9) with a slider in Settings → Library; "Hide watched" chip in the scenes filter bar (`SceneFilter.hide_watched`, SQL `NOT EXISTS`); shared `watchFor` utility in `src/lib/watch.ts`; lazy duplicate badge in `AppShell` (deferred via `requestIdleCallback`); watchlist rail prune for missing scenes in Home.
 
 ### 27. Smart Collections (Saved Filters as Auto-Playlists)
 
@@ -306,7 +306,7 @@
 
 **Status:** 🔵 Partial  
 **Area:** Browse / Library  
-**Currently:** `saved_searches` table (`MIGRATION_010`) with save/list/delete + `check_saved_search` (re-runs page 1, diffs against a capped 300-key snapshot, first check seeds the baseline); Save toggle on every browse detail page; "Saved searches" manager on Browse with per-search Check now, new-count badges, and aggregate total; manual checks open a New Matches panel (queue-all, dismiss clears the badge via `dismiss_saved_search_news`); "Hide watched" toggle on browse results hides items whose URL matches a watched library scene (`list_watched_source_urls`); poller last-run indicator (`watchlist_status`: last run time, checked/queued/errors, due count).  
+**Currently:** `saved_searches` table (`MIGRATION_010`) with save/list/delete + `check_saved_search` (re-runs page 1, diffs against a capped 300-key snapshot, first check seeds the baseline); Save toggle on every browse detail page; "Saved searches" manager on Browse with per-search Check now, new-count badges, and aggregate total; manual checks open a New Matches panel (queue-all capped at 50 with overflow note, dismiss clears the badge via `dismiss_saved_search_news`); "Hide watched" toggle on browse results hides items whose URL matches a watched library scene (`list_watched_source_urls`); poller last-run indicator (`watchlist_status`: last run time, checked/queued/errors, due count); backend named constants in `state.rs`, `is_search_due` helper, `scene_exists`/`existing_scene_ids` cheap validation, corrupt snapshot error logging, proper 404/500 mapping in `server/mod.rs`; icon-only buttons in Browse saved card have `aria-label`s.  
 **Suggestion (remaining):**
 
 - Optional tray toast (#11) when the background poller finds items.
@@ -461,4 +461,4 @@
 
 ---
 
-_Last updated: 2026-09-06 (Q11–Q20 implemented)_
+_Last updated: 2026-09-06 (Q11–Q20 + #26/#28 follow-ups implemented)_

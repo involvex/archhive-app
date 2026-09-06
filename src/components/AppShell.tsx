@@ -76,11 +76,38 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       .getLibraryStats()
       .then((s) => setSceneCount(s.scene_count))
       .catch(() => {});
-    // Best-effort badge; failures (e.g. remote not configured) stay hidden.
-    void api
-      .findDuplicates()
-      .then((groups) => setDuplicateCount(groups.length))
-      .catch(() => {});
+    // Review: duplicate clustering is O(n²) over pHashes — defer past first
+    // paint so large libraries don't pay for it on startup. Best-effort;
+    // failures (e.g. remote not configured) stay hidden.
+    let cancelled = false;
+    const fetchDupes = () => {
+      void api
+        .findDuplicates()
+        .then((groups) => {
+          if (!cancelled) setDuplicateCount(groups.length);
+        })
+        .catch(() => {});
+    };
+    const ric =
+      typeof window !== "undefined" &&
+      typeof (window as { requestIdleCallback?: unknown }).requestIdleCallback === "function"
+        ? (window as unknown as {
+            requestIdleCallback: (cb: () => void, opts?: { timeout: number }) => number;
+            cancelIdleCallback: (id: number) => void;
+          })
+        : null;
+    let idleId = 0;
+    let timer = 0;
+    if (ric) {
+      idleId = ric.requestIdleCallback(fetchDupes, { timeout: 8000 });
+    } else {
+      timer = window.setTimeout(fetchDupes, 2500);
+    }
+    return () => {
+      cancelled = true;
+      if (ric) ric.cancelIdleCallback(idleId);
+      else window.clearTimeout(timer);
+    };
   }, []);
 
   useEffect(() => {

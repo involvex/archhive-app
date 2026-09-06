@@ -621,6 +621,39 @@ impl Database {
         rows.collect::<Result<Vec<_>, _>>().map_err(AppError::from)
     }
 
+    /// Cheap existence check (review: avoids hydrating full Scene rows for validation).
+    pub fn scene_exists(&self, id: &str) -> AppResult<bool> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let exists: Option<String> = conn
+            .query_row("SELECT id FROM scenes WHERE id = ?1", params![id], |row| {
+                row.get(0)
+            })
+            .optional()?;
+        Ok(exists.is_some())
+    }
+
+    /// Filter ids down to scenes that exist, in a single query (review:
+    /// avoids N+1 `get_scene` validation in bulk mark-watched).
+    pub fn existing_scene_ids(&self, ids: &[String]) -> AppResult<Vec<String>> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let sql = format!("SELECT id FROM scenes WHERE id IN ({placeholders})");
+        let mut stmt = conn.prepare(&sql)?;
+        let params: Vec<&dyn rusqlite::ToSql> =
+            ids.iter().map(|id| id as &dyn rusqlite::ToSql).collect();
+        let rows = stmt.query_map(params.as_slice(), |row| row.get::<_, String>(0))?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(AppError::from)
+    }
+
     /// Upsert a watch-progress row. `watched` is computed by the caller.
     pub fn record_watch_progress(
         &self,
@@ -698,12 +731,16 @@ impl Database {
     /// Bulk mark scenes watched/unwatched. Marking watched keeps the stored
     /// position; unmarking resets position to 0.
     pub fn mark_watched(&self, ids: &[String], watched: bool, updated_at: &str) -> AppResult<u32> {
+        let valid = self.existing_scene_ids(ids)?;
+        if valid.is_empty() {
+            return Ok(0);
+        }
         let conn = self
             .conn
             .lock()
             .map_err(|e| AppError::Other(e.to_string()))?;
         let mut updated = 0u32;
-        for id in ids {
+        for id in &valid {
             let existing: Option<(f64, f64)> = conn
                 .query_row(
                     "SELECT position_secs, duration_secs FROM watch_history WHERE scene_id = ?1",
@@ -984,9 +1021,17 @@ impl Database {
             )
             .optional()?
             .flatten();
-        Ok(raw
-            .and_then(|s| serde_json::from_str::<Vec<String>>(&s).ok())
-            .unwrap_or_default())
+        let parsed = raw.as_deref().map(serde_json::from_str::<Vec<String>>);
+        Ok(match parsed {
+            None => Vec::new(),
+            Some(Ok(keys)) => keys,
+            Some(Err(e)) => {
+                // Review: previously swallowed silently, which caused a full
+                // re-baseline badge spike. Log and treat as empty.
+                eprintln!("[watchlist] corrupt snapshot for {id}: {e}");
+                Vec::new()
+            }
+        })
     }
 
     /// Clear every scene's thumbnail reference (sidecar files on disk are kept;
@@ -1955,5 +2000,178 @@ fn parse_status(s: &str) -> DownloadStatus {
         "failed" => DownloadStatus::Failed,
         "cancelled" => DownloadStatus::Cancelled,
         _ => DownloadStatus::Pending,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    fn test_scene(db: &Database, title: &str, source_url: Option<&str>) -> String {
+        db.insert_scene(
+            title,
+            None,
+            source_url,
+            &[],
+            &[],
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn watch_progress_round_trip() {
+        let dir = tempdir().unwrap();
+        let db = Database::new(dir.path().to_path_buf()).unwrap();
+        let id = test_scene(&db, "s1", None);
+
+        assert!(db.get_watch_progress(&id).unwrap().is_none());
+        db.record_watch_progress(&id, 42.5, 100.0, false, "2026-09-06T00:00:00Z")
+            .unwrap();
+        let got = db.get_watch_progress(&id).unwrap().unwrap();
+        assert_eq!(got.scene_id, id);
+        assert!((got.position_secs - 42.5).abs() < f64::EPSILON);
+        assert!(!got.watched);
+
+        // Upsert overwrites.
+        db.record_watch_progress(&id, 95.0, 100.0, true, "2026-09-06T00:01:00Z")
+            .unwrap();
+        let got = db.get_watch_progress(&id).unwrap().unwrap();
+        assert!((got.position_secs - 95.0).abs() < f64::EPSILON);
+        assert!(got.watched);
+
+        let all = db.list_watch_progress().unwrap();
+        assert_eq!(all.len(), 1);
+    }
+
+    #[test]
+    fn mark_watched_resets_position_on_unwatch() {
+        let dir = tempdir().unwrap();
+        let db = Database::new(dir.path().to_path_buf()).unwrap();
+        let id = test_scene(&db, "s1", None);
+        let now = "2026-09-06T00:00:00Z";
+
+        db.record_watch_progress(&id, 50.0, 100.0, false, now)
+            .unwrap();
+        assert_eq!(db.mark_watched(&[id.clone()], true, now).unwrap(), 1);
+        let got = db.get_watch_progress(&id).unwrap().unwrap();
+        assert!(got.watched);
+        // Marking watched keeps the stored position.
+        assert!((got.position_secs - 50.0).abs() < f64::EPSILON);
+
+        assert_eq!(db.mark_watched(&[id.clone()], false, now).unwrap(), 1);
+        let got = db.get_watch_progress(&id).unwrap().unwrap();
+        assert!(!got.watched);
+        assert!((got.position_secs - 0.0).abs() < f64::EPSILON);
+
+        // Unknown ids are simply not counted.
+        assert_eq!(
+            db.mark_watched(&["nope".to_string()], true, now).unwrap(),
+            0
+        );
+    }
+
+    #[test]
+    fn scene_exists_and_bulk_filter() {
+        let dir = tempdir().unwrap();
+        let db = Database::new(dir.path().to_path_buf()).unwrap();
+        let id = test_scene(&db, "s1", None);
+
+        assert!(db.scene_exists(&id).unwrap());
+        assert!(!db.scene_exists("missing").unwrap());
+        assert!(db.existing_scene_ids(&[]).unwrap().is_empty());
+        let found = db
+            .existing_scene_ids(&[id.clone(), "missing".to_string()])
+            .unwrap();
+        assert_eq!(found, vec![id]);
+    }
+
+    #[test]
+    fn saved_search_crud_and_snapshot() {
+        let dir = tempdir().unwrap();
+        let db = Database::new(dir.path().to_path_buf()).unwrap();
+        let saved = db
+            .create_saved_search(&crate::models::SaveSearchRequest {
+                name: "  test  ".to_string(),
+                site_id: "pornhub".to_string(),
+                kind: crate::models::BrowseKind::Tag,
+                slug: "abc".to_string(),
+                orientation: None,
+            })
+            .unwrap();
+        assert_eq!(saved.name, "test");
+        assert!(!saved.auto_queue);
+        assert_eq!(saved.new_count, 0);
+
+        // Blank names are rejected.
+        assert!(db
+            .create_saved_search(&crate::models::SaveSearchRequest {
+                name: "   ".to_string(),
+                site_id: "pornhub".to_string(),
+                kind: crate::models::BrowseKind::Tag,
+                slug: "abc".to_string(),
+                orientation: None,
+            })
+            .is_err());
+
+        assert_eq!(db.list_saved_searches().unwrap().len(), 1);
+        assert!(db.saved_search_keys(&saved.id).unwrap().is_empty());
+
+        db.update_saved_search_check(&saved.id, r#"["u1","u2"]"#, 2, "2026-09-06T00:00:00Z")
+            .unwrap();
+        assert_eq!(
+            db.saved_search_keys(&saved.id).unwrap(),
+            vec!["u1".to_string(), "u2".to_string()]
+        );
+
+        // Corrupt snapshots degrade to empty (logged, not fatal).
+        db.update_saved_search_check(&saved.id, "not-json", 0, "2026-09-06T00:00:00Z")
+            .unwrap();
+        assert!(db.saved_search_keys(&saved.id).unwrap().is_empty());
+
+        assert!(db.set_saved_search_auto_queue(&saved.id, true).unwrap());
+        assert!(db.get_saved_search(&saved.id).unwrap().unwrap().auto_queue);
+
+        assert!(db.dismiss_saved_search_news(&saved.id).unwrap());
+        assert_eq!(
+            db.get_saved_search(&saved.id).unwrap().unwrap().new_count,
+            0
+        );
+
+        assert!(db.delete_saved_search(&saved.id).unwrap());
+        assert!(!db.delete_saved_search(&saved.id).unwrap());
+        assert!(db.list_saved_searches().unwrap().is_empty());
+    }
+
+    #[test]
+    fn poll_run_record_and_watched_urls() {
+        let dir = tempdir().unwrap();
+        let db = Database::new(dir.path().to_path_buf()).unwrap();
+        assert!(db.last_poll_run().unwrap().is_none());
+
+        db.record_poll_run("2026-09-06T00:00:00Z", 2, 5, 1).unwrap();
+        let run = db.last_poll_run().unwrap().unwrap();
+        assert_eq!(run.checked, 2);
+        assert_eq!(run.queued, 5);
+        assert_eq!(run.errors, 1);
+
+        // Only watched scenes with a source URL are listed.
+        let watched = test_scene(&db, "w", Some("https://example.com/v/1"));
+        let unwatched = test_scene(&db, "u", Some("https://example.com/v/2"));
+        let now = "2026-09-06T00:00:00Z";
+        db.record_watch_progress(&watched, 95.0, 100.0, true, now)
+            .unwrap();
+        db.record_watch_progress(&unwatched, 10.0, 100.0, false, now)
+            .unwrap();
+        assert_eq!(
+            db.list_watched_source_urls().unwrap(),
+            vec!["https://example.com/v/1".to_string()]
+        );
     }
 }
