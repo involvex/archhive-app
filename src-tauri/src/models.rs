@@ -564,6 +564,22 @@ pub struct WatchlistPollResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WatchPollRun {
+    pub finished_at: String,
+    pub checked: u32,
+    pub queued: u32,
+    pub errors: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WatchlistStatus {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_run: Option<WatchPollRun>,
+    pub auto_queue_count: u32,
+    pub due_count: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ThumbGenResult {
     pub generated: u32,
     pub errors: u32,

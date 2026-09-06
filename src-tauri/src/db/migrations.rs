@@ -139,3 +139,13 @@ CREATE TABLE IF NOT EXISTS saved_searches (
 pub const MIGRATION_011: &str = r#"
 ALTER TABLE saved_searches ADD COLUMN auto_queue INTEGER NOT NULL DEFAULT 0;
 "#;
+
+pub const MIGRATION_012: &str = r#"
+CREATE TABLE IF NOT EXISTS watchlist_poll_state (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    finished_at TEXT NOT NULL,
+    checked INTEGER NOT NULL DEFAULT 0,
+    queued INTEGER NOT NULL DEFAULT 0,
+    errors INTEGER NOT NULL DEFAULT 0
+);
+"#;

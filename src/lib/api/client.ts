@@ -23,6 +23,7 @@ import type {
   SavedSearch,
   CheckSavedSearchResult,
   WatchlistPollResult,
+  WatchlistStatus,
   Performer,
   Scene,
   SceneFilter,
@@ -422,6 +423,23 @@ export const api = {
       return remoteFetch<WatchlistPollResult>("/api/watchlist/poll", { method: "POST" });
     }
     return localInvoke<WatchlistPollResult>("poll_watchlist");
+  },
+
+  async watchlistStatus(): Promise<WatchlistStatus> {
+    if (shouldUseRemoteApi()) {
+      return remoteFetch<WatchlistStatus>("/api/watchlist/status");
+    }
+    if (getAppRuntime() === "browser") {
+      return { auto_queue_count: 0, due_count: 0 };
+    }
+    return localInvoke<WatchlistStatus>("watchlist_status");
+  },
+
+  async dismissSavedSearchNews(id: string): Promise<boolean> {
+    if (shouldUseRemoteApi()) {
+      return remoteFetch<boolean>(`/api/saved-searches/${id}/dismiss`, { method: "POST" });
+    }
+    return localInvoke<boolean>("dismiss_saved_search_news", { id });
   },
 
   async listScenesWithFilter(filter: SceneFilter): Promise<Scene[]> {

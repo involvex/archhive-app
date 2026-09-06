@@ -265,6 +265,19 @@ export interface WatchlistPollResult {
   errors: number;
 }
 
+export interface WatchPollRun {
+  finished_at: string;
+  checked: number;
+  queued: number;
+  errors: number;
+}
+
+export interface WatchlistStatus {
+  last_run?: WatchPollRun;
+  auto_queue_count: number;
+  due_count: number;
+}
+
 export interface CheckSavedSearchResult {
   search_id: string;
   new_items: MediaItem[];

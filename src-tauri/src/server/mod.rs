@@ -160,7 +160,12 @@ impl LanServer {
                 delete(delete_saved_search).patch(update_saved_search),
             )
             .route("/api/saved-searches/{id}/check", post(check_saved_search))
+            .route(
+                "/api/saved-searches/{id}/dismiss",
+                post(dismiss_saved_search_news),
+            )
             .route("/api/watchlist/poll", post(poll_watchlist))
+            .route("/api/watchlist/status", get(watchlist_status))
             .route(
                 "/api/library/probe-durations",
                 post(probe_library_durations),
@@ -983,6 +988,27 @@ async fn poll_watchlist(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(serde_json::json!(result)))
+}
+
+async fn watchlist_status(
+    State(state): State<ApiState>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let status = state
+        .app
+        .watchlist_status()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(serde_json::json!(status)))
+}
+
+async fn dismiss_saved_search_news(
+    Path(id): Path<String>,
+    State(state): State<ApiState>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let dismissed = state
+        .app
+        .dismiss_saved_search_news(&id)
+        .map_err(|_| StatusCode::NOT_FOUND)?;
+    Ok(Json(serde_json::json!(dismissed)))
 }
 
 fn parse_kind(s: &str) -> AppResult<crate::models::BrowseKind> {

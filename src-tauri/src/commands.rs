@@ -5,7 +5,7 @@ use crate::models::{
     LibraryStats, MarkWatchedRequest, MarkWatchedResult, MediaItem, MergeDuplicatesResult,
     OrphanSidecar, Performer, PornhubCategoryEntry, SaveSearchRequest, SavedSearch, ScanResult,
     Scene, SceneFilter, SceneSort, SiteInfo, Tag, UpdateSavedSearchRequest, UpdateSceneRequest,
-    WatchProgress, WatchlistPollResult,
+    WatchProgress, WatchlistPollResult, WatchlistStatus,
 };
 use crate::state::AppState;
 use crate::vault::CookieSiteInfo;
@@ -532,6 +532,16 @@ pub fn update_saved_search(
 #[tauri::command]
 pub async fn poll_watchlist(state: State<'_, Arc<AppState>>) -> CmdResult<WatchlistPollResult> {
     map_err(state.poll_watchlist_once().await)
+}
+
+#[tauri::command]
+pub fn watchlist_status(state: State<'_, Arc<AppState>>) -> CmdResult<WatchlistStatus> {
+    map_err(state.watchlist_status())
+}
+
+#[tauri::command]
+pub fn dismiss_saved_search_news(state: State<'_, Arc<AppState>>, id: String) -> CmdResult<bool> {
+    map_err(state.dismiss_saved_search_news(&id))
 }
 
 #[tauri::command]

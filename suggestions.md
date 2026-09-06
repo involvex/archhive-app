@@ -306,10 +306,10 @@
 
 **Status:** 🔵 Partial  
 **Area:** Browse / Library  
-**Currently:** `saved_searches` table (`MIGRATION_010`) with save/list/delete + `check_saved_search` (re-runs page 1, diffs against a capped 300-key snapshot, first check seeds the baseline); Save toggle on every browse detail page; "Saved searches" manager on Browse with per-search Check now, new-count badges, and aggregate total; "Hide watched" toggle on browse results hides items whose URL matches a watched library scene (`list_watched_source_urls`).  
+**Currently:** `saved_searches` table (`MIGRATION_010`) with save/list/delete + `check_saved_search` (re-runs page 1, diffs against a capped 300-key snapshot, first check seeds the baseline); Save toggle on every browse detail page; "Saved searches" manager on Browse with per-search Check now, new-count badges, and aggregate total; manual checks open a New Matches panel (queue-all, dismiss clears the badge via `dismiss_saved_search_news`); "Hide watched" toggle on browse results hides items whose URL matches a watched library scene (`list_watched_source_urls`); poller last-run indicator (`watchlist_status`: last run time, checked/queued/errors, due count).  
 **Suggestion (remaining):**
 
-- "New Matches" badge + optional tray toast (#11) when the background poller finds items.
+- Optional tray toast (#11) when the background poller finds items.
 - Pairs with #19 scheduled downloads — ✅ auto-queue pairing shipped (per-search toggle + interval poller).
 
 ### 29. Performer Detail Pages + Tag Hierarchy Manager

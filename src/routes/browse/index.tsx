@@ -11,6 +11,7 @@ import type {
   PornhubCategoryEntry,
   SavedSearch,
   SiteInfo,
+  WatchlistStatus,
 } from "@/lib/types";
 import { SceneCard } from "@/components/SceneCard";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -34,6 +35,7 @@ import {
   Trash2,
   Zap,
   ZapOff,
+  Download,
 } from "lucide-react";
 import { isMobileDevice } from "@/lib/tauri";
 
@@ -176,12 +178,23 @@ function BrowsePage() {
   // #28 saved searches (watchlist).
   const [saved, setSaved] = useState<SavedSearch[]>([]);
   const [checkingId, setCheckingId] = useState<string | null>(null);
+  const [pollStatus, setPollStatus] = useState<WatchlistStatus | null>(null);
+  // New-matches dialog: items returned by the last manual check.
+  const [newMatches, setNewMatches] = useState<{
+    searchId: string;
+    name: string;
+    items: MediaItem[];
+  } | null>(null);
 
   const refreshSaved = useCallback(() => {
     void api
       .listSavedSearches()
       .then(setSaved)
       .catch(() => setSaved([]));
+    void api
+      .watchlistStatus()
+      .then(setPollStatus)
+      .catch(() => setPollStatus(null));
   }, []);
 
   useEffect(() => {
@@ -191,12 +204,41 @@ function BrowsePage() {
   async function handleCheck(id: string) {
     setCheckingId(id);
     try {
-      await api.checkSavedSearch(id);
+      const result = await api.checkSavedSearch(id);
       await refreshSaved();
+      if (result.new_count > 0) {
+        const search = saved.find((s) => s.id === id);
+        setNewMatches({
+          searchId: id,
+          name: search?.name ?? "Saved search",
+          items: result.new_items,
+        });
+      }
     } catch (e) {
       console.error(e);
     } finally {
       setCheckingId(null);
+    }
+  }
+
+  async function closeNewMatches() {
+    if (newMatches) {
+      try {
+        await api.dismissSavedSearchNews(newMatches.searchId);
+      } catch (e) {
+        console.error(e);
+      }
+      setNewMatches(null);
+      refreshSaved();
+    }
+  }
+
+  async function queueAllNewMatches() {
+    if (!newMatches) return;
+    try {
+      await api.queueDownloads(newMatches.items.map((i) => i.url));
+    } catch (e) {
+      console.error(e);
     }
   }
 
@@ -606,6 +648,16 @@ function BrowsePage() {
               )}
             </div>
           </div>
+          {pollStatus && pollStatus.auto_queue_count > 0 && (
+            <p className="text-xs text-[var(--color-muted-foreground)]">
+              {pollStatus.last_run
+                ? `Last poll ${new Date(pollStatus.last_run.finished_at).toLocaleString()} · ` +
+                  `${pollStatus.last_run.checked} checked, ${pollStatus.last_run.queued} queued` +
+                  (pollStatus.last_run.errors > 0 ? `, ${pollStatus.last_run.errors} errors` : "") +
+                  (pollStatus.due_count > 0 ? ` · ${pollStatus.due_count} due` : "")
+                : "Auto-queue on — poller hasn't run yet (first pass within a minute)."}
+            </p>
+          )}
           {saved.length === 0 ? (
             <p className="text-xs text-[var(--color-muted-foreground)]">
               No saved searches yet. Open any tag, model, channel, or search page and press Save to
@@ -686,6 +738,37 @@ function BrowsePage() {
           )}
         </CardContent>
       </Card>
+
+      {newMatches && (
+        <Card className="border-[var(--color-primary)]">
+          <CardContent className="p-4 space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-sm font-medium">
+                {newMatches.items.length} new {newMatches.items.length === 1 ? "match" : "matches"}{" "}
+                in {newMatches.name}
+              </p>
+              <div className="flex gap-2">
+                <Button size="sm" variant="outline" onClick={() => void queueAllNewMatches()}>
+                  <Download className="h-3.5 w-3.5 mr-1.5" />
+                  Queue all
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => void closeNewMatches()}>
+                  Dismiss
+                </Button>
+              </div>
+            </div>
+            <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-3">
+              {newMatches.items.map((item) => (
+                <SceneCard
+                  key={item.id}
+                  item={item}
+                  onDownload={(i) => void api.queueDownload(i.url, item.site_id)}
+                />
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="flex items-center gap-2 text-sm font-medium">
         <Radio className="h-4 w-4 text-red-500" />

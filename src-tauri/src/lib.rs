@@ -199,6 +199,8 @@ pub fn run() {
             commands::check_saved_search,
             commands::update_saved_search,
             commands::poll_watchlist,
+            commands::watchlist_status,
+            commands::dismiss_saved_search_news,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

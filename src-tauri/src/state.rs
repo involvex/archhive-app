@@ -813,11 +813,49 @@ impl AppState {
                 }
             }
         }
+        let finished_at = chrono::Utc::now().to_rfc3339();
+        let _ = self
+            .db
+            .record_poll_run(&finished_at, checked, queued, errors);
         Ok(crate::models::WatchlistPollResult {
             checked,
             queued,
             errors,
         })
+    }
+
+    pub fn watchlist_status(&self) -> AppResult<crate::models::WatchlistStatus> {
+        let interval = self.watch_poll_interval();
+        let now = chrono::Utc::now();
+        let searches = self.db.list_saved_searches()?;
+        let mut auto_queue_count = 0u32;
+        let mut due_count = 0u32;
+        for search in searches.iter().filter(|s| s.auto_queue) {
+            auto_queue_count += 1;
+            let due = match &search.last_checked_at {
+                None => true,
+                Some(ts) => chrono::DateTime::parse_from_rfc3339(ts)
+                    .map(|t| now.signed_duration_since(t.with_timezone(&chrono::Utc)) >= interval)
+                    .unwrap_or(true),
+            };
+            if due {
+                due_count += 1;
+            }
+        }
+        Ok(crate::models::WatchlistStatus {
+            last_run: self.db.last_poll_run()?,
+            auto_queue_count,
+            due_count,
+        })
+    }
+
+    pub fn dismiss_saved_search_news(&self, id: &str) -> AppResult<bool> {
+        if self.db.get_saved_search(id)?.is_none() {
+            return Err(crate::error::AppError::NotFound(format!(
+                "saved search {id}"
+            )));
+        }
+        self.db.dismiss_saved_search_news(id)
     }
 
     /// Background loop for the watchlist poller. Ticks every minute; each

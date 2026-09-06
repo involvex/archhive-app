@@ -2,7 +2,7 @@ mod migrations;
 
 use crate::db::migrations::{
     MIGRATION_001, MIGRATION_002, MIGRATION_003, MIGRATION_004, MIGRATION_005, MIGRATION_006,
-    MIGRATION_007, MIGRATION_008, MIGRATION_009, MIGRATION_010, MIGRATION_011,
+    MIGRATION_007, MIGRATION_008, MIGRATION_009, MIGRATION_010, MIGRATION_011, MIGRATION_012,
 };
 use crate::error::{AppError, AppResult};
 use crate::models::{
@@ -74,6 +74,7 @@ impl Database {
         if !column_exists(&conn, "saved_searches", "auto_queue") {
             conn.execute_batch(MIGRATION_011)?;
         }
+        conn.execute_batch(MIGRATION_012)?;
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
         })
@@ -875,6 +876,66 @@ impl Database {
         let changed = conn.execute(
             "UPDATE saved_searches SET auto_queue = ?2 WHERE id = ?1",
             rusqlite::params![id, auto_queue as i32],
+        )?;
+        Ok(changed > 0)
+    }
+
+    /// Record a finished poller pass (single-row table, id = 1).
+    pub fn record_poll_run(
+        &self,
+        finished_at: &str,
+        checked: u32,
+        queued: u32,
+        errors: u32,
+    ) -> AppResult<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        conn.execute(
+            "INSERT INTO watchlist_poll_state (id, finished_at, checked, queued, errors)
+             VALUES (1, ?1, ?2, ?3, ?4)
+             ON CONFLICT(id) DO UPDATE SET
+               finished_at = excluded.finished_at,
+               checked = excluded.checked,
+               queued = excluded.queued,
+               errors = excluded.errors",
+            rusqlite::params![finished_at, checked as i64, queued as i64, errors as i64],
+        )?;
+        Ok(())
+    }
+
+    pub fn last_poll_run(&self) -> AppResult<Option<crate::models::WatchPollRun>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let row: Option<(String, i64, i64, i64)> = conn
+            .query_row(
+                "SELECT finished_at, checked, queued, errors FROM watchlist_poll_state WHERE id = 1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .optional()?;
+        Ok(row.map(
+            |(finished_at, checked, queued, errors)| crate::models::WatchPollRun {
+                finished_at,
+                checked: checked.max(0) as u32,
+                queued: queued.max(0) as u32,
+                errors: errors.max(0) as u32,
+            },
+        ))
+    }
+
+    /// Reset a search's new-match badge after the user has seen the items.
+    pub fn dismiss_saved_search_news(&self, id: &str) -> AppResult<bool> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let changed = conn.execute(
+            "UPDATE saved_searches SET new_count = 0 WHERE id = ?1",
+            rusqlite::params![id],
         )?;
         Ok(changed > 0)
     }
