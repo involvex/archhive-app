@@ -155,8 +155,12 @@ impl LanServer {
                 "/api/saved-searches",
                 get(list_saved_searches).post(save_search),
             )
-            .route("/api/saved-searches/{id}", delete(delete_saved_search))
+            .route(
+                "/api/saved-searches/{id}",
+                delete(delete_saved_search).patch(update_saved_search),
+            )
             .route("/api/saved-searches/{id}/check", post(check_saved_search))
+            .route("/api/watchlist/poll", post(poll_watchlist))
             .route(
                 "/api/library/probe-durations",
                 post(probe_library_durations),
@@ -953,6 +957,29 @@ async fn check_saved_search(
     let result = state
         .app
         .check_saved_search(&id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(serde_json::json!(result)))
+}
+
+async fn update_saved_search(
+    Path(id): Path<String>,
+    State(state): State<ApiState>,
+    Json(body): Json<crate::models::UpdateSavedSearchRequest>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let updated = state
+        .app
+        .set_saved_search_auto_queue(&id, body.auto_queue)
+        .map_err(|_| StatusCode::NOT_FOUND)?;
+    Ok(Json(serde_json::json!(updated)))
+}
+
+async fn poll_watchlist(
+    State(state): State<ApiState>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let result = state
+        .app
+        .poll_watchlist_once()
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(serde_json::json!(result)))

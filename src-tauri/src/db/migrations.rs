@@ -135,3 +135,7 @@ CREATE TABLE IF NOT EXISTS saved_searches (
     created_at TEXT NOT NULL
 );
 "#;
+
+pub const MIGRATION_011: &str = r#"
+ALTER TABLE saved_searches ADD COLUMN auto_queue INTEGER NOT NULL DEFAULT 0;
+"#;

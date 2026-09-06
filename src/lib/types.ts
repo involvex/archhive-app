@@ -159,6 +159,7 @@ export interface AppSettings {
   download_retry_delay_seconds?: number;
   theme?: AppTheme;
   watched_threshold?: number;
+  watch_poll_interval_mins?: number;
 }
 
 export interface MergeDuplicatesResult {
@@ -254,7 +255,14 @@ export interface SavedSearch {
   orientation?: BrowseOrientation;
   last_checked_at?: string;
   new_count: number;
+  auto_queue: boolean;
   created_at: string;
+}
+
+export interface WatchlistPollResult {
+  checked: number;
+  queued: number;
+  errors: number;
 }
 
 export interface CheckSavedSearchResult {

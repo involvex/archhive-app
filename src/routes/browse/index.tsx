@@ -32,6 +32,8 @@ import {
   Bookmark,
   RefreshCw,
   Trash2,
+  Zap,
+  ZapOff,
 } from "lucide-react";
 import { isMobileDevice } from "@/lib/tauri";
 
@@ -195,6 +197,30 @@ function BrowsePage() {
       console.error(e);
     } finally {
       setCheckingId(null);
+    }
+  }
+
+  // #19: run one poller pass now (checks due auto-queue searches + queues).
+  async function handlePollAll() {
+    setCheckingId("all");
+    try {
+      await api.pollWatchlist();
+      await refreshSaved();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setCheckingId(null);
+    }
+  }
+
+  async function handleToggleAutoQueue(s: SavedSearch) {
+    try {
+      await api.setSavedSearchAutoQueue(s.id, !s.auto_queue);
+      setSaved((prev) =>
+        prev.map((p) => (p.id === s.id ? { ...p, auto_queue: !p.auto_queue } : p)),
+      );
+    } catch (e) {
+      console.error(e);
     }
   }
 
@@ -553,16 +579,32 @@ function BrowsePage() {
 
       <Card>
         <CardContent className="p-4 space-y-3">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 text-sm font-medium">
               <Bookmark className="h-4 w-4" />
               Saved searches
             </div>
-            {saved.length > 0 && (
-              <span className="text-xs text-[var(--color-muted-foreground)]">
-                {saved.reduce((sum, s) => sum + s.new_count, 0)} new matches
-              </span>
-            )}
+            <div className="flex items-center gap-2">
+              {saved.length > 0 && (
+                <span className="text-xs text-[var(--color-muted-foreground)]">
+                  {saved.reduce((sum, s) => sum + s.new_count, 0)} new matches
+                </span>
+              )}
+              {saved.some((s) => s.auto_queue) && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void handlePollAll()}
+                  disabled={checkingId === "all"}
+                  title="Check due watchlists now and auto-queue new matches"
+                >
+                  <RefreshCw
+                    className={`h-3.5 w-3.5 ${checkingId === "all" ? "animate-spin" : ""}`}
+                  />
+                  Check all
+                </Button>
+              )}
+            </div>
           </div>
           {saved.length === 0 ? (
             <p className="text-xs text-[var(--color-muted-foreground)]">
@@ -601,6 +643,23 @@ function BrowsePage() {
                     )}
                   </button>
                   <div className="flex shrink-0 items-center gap-1">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => void handleToggleAutoQueue(s)}
+                      title={
+                        s.auto_queue
+                          ? "Auto-queue on: new matches download automatically"
+                          : "Auto-queue off: queue new matches automatically"
+                      }
+                      className={s.auto_queue ? "text-[var(--color-primary)]" : ""}
+                    >
+                      {s.auto_queue ? (
+                        <Zap className="h-3.5 w-3.5" />
+                      ) : (
+                        <ZapOff className="h-3.5 w-3.5" />
+                      )}
+                    </Button>
                     <Button
                       size="sm"
                       variant="ghost"

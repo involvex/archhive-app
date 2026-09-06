@@ -747,6 +747,102 @@ impl AppState {
         self.db.delete_saved_search(id)
     }
 
+    pub fn set_saved_search_auto_queue(&self, id: &str, auto_queue: bool) -> AppResult<bool> {
+        // Validate the id so typos don't silently no-op.
+        if self.db.get_saved_search(id)?.is_none() {
+            return Err(crate::error::AppError::NotFound(format!(
+                "saved search {id}"
+            )));
+        }
+        self.db.set_saved_search_auto_queue(id, auto_queue)
+    }
+
+    fn watch_poll_interval(&self) -> chrono::Duration {
+        let mins = self
+            .get_settings()
+            .map(|s| s.watch_poll_interval_mins)
+            .unwrap_or(60)
+            .clamp(5, 1440);
+        chrono::Duration::minutes(mins as i64)
+    }
+
+    /// One poller pass (#19 auto-queue pairing): check every due auto-queue
+    /// saved search and queue new matches as downloads (capped per search).
+    /// A search is due when never checked or older than the poll interval.
+    pub async fn poll_watchlist_once(&self) -> AppResult<crate::models::WatchlistPollResult> {
+        const MAX_QUEUE_PER_SEARCH: usize = 25;
+        let interval = self.watch_poll_interval();
+        let now = chrono::Utc::now();
+        let mut checked = 0u32;
+        let mut queued = 0u32;
+        let mut errors = 0u32;
+        let searches = self.db.list_saved_searches()?;
+        for search in searches.iter().filter(|s| s.auto_queue) {
+            let due = match &search.last_checked_at {
+                None => true,
+                Some(ts) => chrono::DateTime::parse_from_rfc3339(ts)
+                    .map(|t| now.signed_duration_since(t.with_timezone(&chrono::Utc)) >= interval)
+                    .unwrap_or(true),
+            };
+            if !due {
+                continue;
+            }
+            match self.check_saved_search(&search.id).await {
+                Ok(result) => {
+                    checked += 1;
+                    let urls: Vec<String> = result
+                        .new_items
+                        .iter()
+                        .take(MAX_QUEUE_PER_SEARCH)
+                        .map(|i| i.url.clone())
+                        .filter(|u| !u.trim().is_empty())
+                        .collect();
+                    if !urls.is_empty() {
+                        match self.queue_downloads(&urls).await {
+                            Ok(jobs) => queued += jobs.len() as u32,
+                            Err(e) => {
+                                eprintln!("[watchlist] queue failed for {}: {e}", search.name);
+                                errors += 1;
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("[watchlist] check failed for {}: {e}", search.name);
+                    errors += 1;
+                }
+            }
+        }
+        Ok(crate::models::WatchlistPollResult {
+            checked,
+            queued,
+            errors,
+        })
+    }
+
+    /// Background loop for the watchlist poller. Ticks every minute; each
+    /// pass only touches searches past their poll interval.
+    pub fn spawn_watchlist_poller(self: &std::sync::Arc<Self>) {
+        let state = self.clone();
+        tauri::async_runtime::spawn(async move {
+            let mut tick = tokio::time::interval(tokio::time::Duration::from_secs(60));
+            tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            loop {
+                tick.tick().await;
+                match state.poll_watchlist_once().await {
+                    Ok(r) if r.checked > 0 => {
+                        eprintln!(
+                            "[watchlist] poll: checked {}, queued {}, errors {}",
+                            r.checked, r.queued, r.errors
+                        );
+                    }
+                    Err(e) => eprintln!("[watchlist] poll failed: {e}"),
+                    _ => {}
+                }
+            }
+        });
+    }
+
     /// Re-run a saved search (page 1) and diff against the stored snapshot.
     /// First check after saving seeds the baseline and reports 0 new items.
     pub async fn check_saved_search(

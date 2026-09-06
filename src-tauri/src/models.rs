@@ -259,6 +259,9 @@ pub struct AppSettings {
     /// Fraction of duration after which a scene counts as watched (0.5–1.0).
     #[serde(default = "default_watched_threshold")]
     pub watched_threshold: f32,
+    /// Watchlist poller interval in minutes (#19 auto-queue pairing).
+    #[serde(default = "default_watch_poll_interval_mins")]
+    pub watch_poll_interval_mins: u32,
 }
 
 fn default_phash_threshold() -> u8 {
@@ -323,6 +326,10 @@ fn default_watched_threshold() -> f32 {
     0.9
 }
 
+fn default_watch_poll_interval_mins() -> u32 {
+    60
+}
+
 impl Default for AppSettings {
     fn default() -> Self {
         #[cfg(mobile)]
@@ -366,6 +373,7 @@ impl Default for AppSettings {
             download_retry_delay_seconds: default_download_retry_delay_seconds(),
             theme: default_theme(),
             watched_threshold: default_watched_threshold(),
+            watch_poll_interval_mins: default_watch_poll_interval_mins(),
         }
     }
 }
@@ -519,6 +527,8 @@ pub struct SavedSearch {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_checked_at: Option<String>,
     pub new_count: u32,
+    #[serde(default)]
+    pub auto_queue: bool,
     pub created_at: String,
 }
 
@@ -539,6 +549,18 @@ pub struct CheckSavedSearchResult {
     pub new_count: u32,
     pub total: usize,
     pub checked_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateSavedSearchRequest {
+    pub auto_queue: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WatchlistPollResult {
+    pub checked: u32,
+    pub queued: u32,
+    pub errors: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

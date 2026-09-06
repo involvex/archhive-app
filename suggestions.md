@@ -209,14 +209,10 @@
 
 ### 19. Scheduled Downloads
 
-**Status:** ⚪ Not started  
+**Status:** 🔵 Partial  
 **Area:** Downloads  
-**Currently:** No scheduler; queue starts immediately or paused. No quiet-hours concept.  
-**Suggestion:** Queue downloads to start at a specific time or on a schedule. Useful for:
-
-- Off-peak bandwidth usage.
-- Recurring downloads (e.g., daily channel check — pairs with #28 watchlists).
-- Pause during certain hours (e.g., no downloads during work hours).
+**Currently:** Watchlist auto-queue pairing shipped: per-search `auto_queue` toggle (Browse lightning button), background poller (60s tick, checks searches past `AppSettings.watch_poll_interval_mins`, default 60, clamped 5–1440, set in Settings → Downloads), `poll_watchlist` command + `POST /api/watchlist/poll` for manual runs, max 25 queued per search per pass. Poller runs desktop-only.  
+**Suggestion (remaining):** Queue downloads to start at a specific time; pause during certain hours (quiet-hours window) for off-peak bandwidth usage.
 
 ### 20. Mobile: Offline Queue Sync
 
@@ -313,8 +309,8 @@
 **Currently:** `saved_searches` table (`MIGRATION_010`) with save/list/delete + `check_saved_search` (re-runs page 1, diffs against a capped 300-key snapshot, first check seeds the baseline); Save toggle on every browse detail page; "Saved searches" manager on Browse with per-search Check now, new-count badges, and aggregate total; "Hide watched" toggle on browse results hides items whose URL matches a watched library scene (`list_watched_source_urls`).  
 **Suggestion (remaining):**
 
-- Background poller that checks on interval; "New Matches" badge + optional tray toast (#11).
-- Pairs with #19 scheduled downloads (auto-queue new matches).
+- "New Matches" badge + optional tray toast (#11) when the background poller finds items.
+- Pairs with #19 scheduled downloads — ✅ auto-queue pairing shipped (per-search toggle + interval poller).
 
 ### 29. Performer Detail Pages + Tag Hierarchy Manager
 

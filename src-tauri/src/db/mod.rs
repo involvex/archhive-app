@@ -2,7 +2,7 @@ mod migrations;
 
 use crate::db::migrations::{
     MIGRATION_001, MIGRATION_002, MIGRATION_003, MIGRATION_004, MIGRATION_005, MIGRATION_006,
-    MIGRATION_007, MIGRATION_008, MIGRATION_009, MIGRATION_010,
+    MIGRATION_007, MIGRATION_008, MIGRATION_009, MIGRATION_010, MIGRATION_011,
 };
 use crate::error::{AppError, AppResult};
 use crate::models::{
@@ -71,6 +71,9 @@ impl Database {
         }
         conn.execute_batch(MIGRATION_009)?;
         conn.execute_batch(MIGRATION_010)?;
+        if !column_exists(&conn, "saved_searches", "auto_queue") {
+            conn.execute_batch(MIGRATION_011)?;
+        }
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
         })
@@ -795,6 +798,7 @@ impl Database {
             orientation: req.orientation,
             last_checked_at: None,
             new_count: 0,
+            auto_queue: false,
             created_at,
         })
     }
@@ -829,6 +833,7 @@ impl Database {
             orientation,
             last_checked_at: row.get(6)?,
             new_count: row.get::<_, i64>(8).unwrap_or(0).max(0) as u32,
+            auto_queue: row.get::<_, i64>(10).unwrap_or(0) != 0,
             created_at: row.get(9)?,
         })
     }
@@ -839,7 +844,7 @@ impl Database {
             .lock()
             .map_err(|e| AppError::Other(e.to_string()))?;
         let mut stmt = conn.prepare(
-            "SELECT id, name, site_id, kind, slug, orientation, last_checked_at, last_item_keys, new_count, created_at
+            "SELECT id, name, site_id, kind, slug, orientation, last_checked_at, last_item_keys, new_count, created_at, auto_queue
              FROM saved_searches ORDER BY created_at DESC",
         )?;
         let rows = stmt.query_map([], Self::map_saved_search_row)?;
@@ -853,13 +858,25 @@ impl Database {
             .map_err(|e| AppError::Other(e.to_string()))?;
         let row = conn
             .query_row(
-                "SELECT id, name, site_id, kind, slug, orientation, last_checked_at, last_item_keys, new_count, created_at
+                "SELECT id, name, site_id, kind, slug, orientation, last_checked_at, last_item_keys, new_count, created_at, auto_queue
                  FROM saved_searches WHERE id = ?1",
                 rusqlite::params![id],
                 Self::map_saved_search_row,
             )
             .optional()?;
         Ok(row)
+    }
+
+    pub fn set_saved_search_auto_queue(&self, id: &str, auto_queue: bool) -> AppResult<bool> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let changed = conn.execute(
+            "UPDATE saved_searches SET auto_queue = ?2 WHERE id = ?1",
+            rusqlite::params![id, auto_queue as i32],
+        )?;
+        Ok(changed > 0)
     }
 
     pub fn delete_saved_search(&self, id: &str) -> AppResult<bool> {

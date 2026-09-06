@@ -92,6 +92,10 @@ pub fn run() {
         );
         app.manage(state.clone());
 
+        // #19 watchlist auto-queue poller (desktop only; mobile uses Remote LAN).
+        #[cfg(not(mobile))]
+        state.spawn_watchlist_poller();
+
         #[cfg(not(mobile))]
         {
             app.manage(Arc::new(desktop::TrayHotkeyState::new()));
@@ -193,6 +197,8 @@ pub fn run() {
             commands::list_saved_searches,
             commands::delete_saved_search,
             commands::check_saved_search,
+            commands::update_saved_search,
+            commands::poll_watchlist,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1000,6 +1000,39 @@ function SettingsPage() {
               </Button>
             </CardContent>
           </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Watchlist auto-queue</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-xs text-[var(--color-muted-foreground)]">
+                A background poller re-checks saved searches past this interval and queues new
+                matches as downloads (max 25 per search per pass). Enable per search with the
+                lightning toggle on the Browse page. Desktop app only.
+              </p>
+              <div>
+                <label className="text-xs text-[var(--color-muted-foreground)]">
+                  Check interval (minutes, 5–1440)
+                </label>
+                <input
+                  type="number"
+                  min={5}
+                  max={1440}
+                  step={5}
+                  className="mt-1 flex h-9 w-full max-w-xs rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-2 text-sm"
+                  value={hostSettings?.watch_poll_interval_mins ?? 60}
+                  onChange={(e) =>
+                    patchHostSettings({
+                      watch_poll_interval_mins: Number(e.target.value),
+                    })
+                  }
+                />
+              </div>
+              <Button onClick={() => void saveHostSettings()} disabled={!hostSettings}>
+                Save
+              </Button>
+            </CardContent>
+          </Card>
         </Tabs.Content>
 
         <Tabs.Content value="cookies" className="mt-4 space-y-4">
