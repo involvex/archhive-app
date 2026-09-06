@@ -188,6 +188,11 @@ pub fn run() {
             commands::get_watch_progress,
             commands::list_watch_progress,
             commands::mark_watched,
+            commands::list_watched_source_urls,
+            commands::save_search,
+            commands::list_saved_searches,
+            commands::delete_saved_search,
+            commands::check_saved_search,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

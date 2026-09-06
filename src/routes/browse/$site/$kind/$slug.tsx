@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { LayoutGrid, List, Search } from "lucide-react";
+import { Bookmark, BookmarkCheck, EyeOff, LayoutGrid, List, Search } from "lucide-react";
 import { api } from "@/lib/api/client";
 import { normalizeBrowseInput } from "@/lib/browse/normalize";
 import type { BrowseKind, BrowseOrientation, MediaItem } from "@/lib/types";
@@ -61,6 +61,11 @@ function BrowseDetailPage() {
   const [infoItem, setInfoItem] = useState<MediaItem | null>(null);
   const [watchItem, setWatchItem] = useState<MediaItem | null>(null);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  // #28 saved search + hide-watched-matches.
+  const [savedId, setSavedId] = useState<string | null>(null);
+  const [savingSearch, setSavingSearch] = useState(false);
+  const [hideWatched, setHideWatched] = useState(false);
+  const [watchedUrls, setWatchedUrls] = useState<Set<string> | null>(null);
 
   useEffect(() => {
     setCache(cacheKey, { items, page, hasMore, querySlug });
@@ -117,9 +122,69 @@ function BrowseDetailPage() {
     await api.queueDownload(item.url, site);
   }
 
+  // #28: detect whether this exact search is already saved.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSavedId(null);
+    void api
+      .listSavedSearches()
+      .then((all) => {
+        const match = all.find(
+          (s) =>
+            s.site_id === site &&
+            s.kind === (kind as BrowseKind) &&
+            s.slug === cleanSlug &&
+            (s.orientation ?? undefined) === (isPornhubAnimal ? orientation : undefined),
+        );
+        setSavedId(match?.id ?? null);
+      })
+      .catch(() => {});
+  }, [site, kind, cleanSlug, orientation, isPornhubAnimal]);
+
+  async function toggleSavedSearch() {
+    if (savingSearch) return;
+    setSavingSearch(true);
+    try {
+      if (savedId) {
+        await api.deleteSavedSearch(savedId);
+        setSavedId(null);
+      } else {
+        const saved = await api.saveSearch({
+          name: `${site} ${kind}: ${cleanSlug}`,
+          site_id: site,
+          kind: kind as BrowseKind,
+          slug: cleanSlug,
+          orientation: isPornhubAnimal ? orientation : undefined,
+        });
+        setSavedId(saved.id);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSavingSearch(false);
+    }
+  }
+
+  // #28: hide results already watched in the library (matched by source URL).
+  async function toggleHideWatched() {
+    const next = !hideWatched;
+    setHideWatched(next);
+    if (next && watchedUrls === null) {
+      try {
+        setWatchedUrls(new Set(await api.listWatchedSourceUrls()));
+      } catch {
+        setWatchedUrls(new Set());
+      }
+    }
+  }
+
+  const visibleItems =
+    hideWatched && watchedUrls ? items.filter((i) => !watchedUrls.has(i.url)) : items;
+  const hiddenCount = items.length - visibleItems.length;
+
   const showInitialSkeleton = initial && loading && !error;
-  const showEmpty = !loading && !error && items.length === 0 && querySlug && !initial;
-  const showItems = items.length > 0;
+  const showEmpty = !loading && !error && visibleItems.length === 0 && querySlug && !initial;
+  const showItems = visibleItems.length > 0;
 
   return (
     <div ref={containerRef} className="space-y-4">
@@ -151,25 +216,51 @@ function BrowseDetailPage() {
           <h2 className="text-2xl font-bold capitalize">
             {site} / {kind}
           </h2>
-          {showItems && (
-            <div className="flex rounded-md border border-[var(--color-border)] overflow-hidden">
-              <button
-                type="button"
-                onClick={() => setViewMode("grid")}
-                className={`p-1.5 transition-colors ${viewMode === "grid" ? "bg-[var(--color-muted)] text-[var(--color-foreground)]" : "text-[var(--color-muted-foreground)] hover:text-[var(--color-foreground)]"}`}
-                aria-label="Grid view"
-              >
-                <LayoutGrid className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewMode("list")}
-                className={`p-1.5 transition-colors ${viewMode === "list" ? "bg-[var(--color-muted)] text-[var(--color-foreground)]" : "text-[var(--color-muted-foreground)] hover:text-[var(--color-foreground)]"}`}
-                aria-label="List view"
-              >
-                <List className="h-4 w-4" />
-              </button>
-            </div>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant={savedId ? "default" : "outline"}
+              onClick={() => void toggleSavedSearch()}
+              disabled={savingSearch || !cleanSlug}
+              title={savedId ? "Remove saved search" : "Save this search"}
+            >
+              {savedId ? <BookmarkCheck className="h-4 w-4" /> : <Bookmark className="h-4 w-4" />}
+              <span className="hidden sm:inline">{savedId ? "Saved" : "Save"}</span>
+            </Button>
+            <Button
+              size="sm"
+              variant={hideWatched ? "default" : "outline"}
+              onClick={() => void toggleHideWatched()}
+              title="Hide results already watched in your library"
+            >
+              <EyeOff className="h-4 w-4" />
+              <span className="hidden sm:inline">Hide watched</span>
+            </Button>
+            {showItems && (
+              <div className="flex rounded-md border border-[var(--color-border)] overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setViewMode("grid")}
+                  className={`p-1.5 transition-colors ${viewMode === "grid" ? "bg-[var(--color-muted)] text-[var(--color-foreground)]" : "text-[var(--color-muted-foreground)] hover:text-[var(--color-foreground)]"}`}
+                  aria-label="Grid view"
+                >
+                  <LayoutGrid className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode("list")}
+                  className={`p-1.5 transition-colors ${viewMode === "list" ? "bg-[var(--color-muted)] text-[var(--color-foreground)]" : "text-[var(--color-muted-foreground)] hover:text-[var(--color-foreground)]"}`}
+                  aria-label="List view"
+                >
+                  <List className="h-4 w-4" />
+                </button>
+              </div>
+            )}
+          </div>
+          {hiddenCount > 0 && (
+            <p className="mt-1 text-xs text-[var(--color-muted-foreground)]">
+              {hiddenCount} watched {hiddenCount === 1 ? "result" : "results"} hidden.
+            </p>
           )}
         </div>
         {isPornhubAnimal && (
@@ -236,7 +327,7 @@ function BrowseDetailPage() {
 
       {showItems && viewMode === "grid" && (
         <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
-          {items.map((item) => (
+          {visibleItems.map((item) => (
             <SceneCard
               key={item.id}
               item={item}
@@ -250,7 +341,7 @@ function BrowseDetailPage() {
 
       {showItems && viewMode === "list" && (
         <div className="flex flex-col gap-2">
-          {items.map((item) => (
+          {visibleItems.map((item) => (
             <SceneCard
               key={item.id}
               item={item}

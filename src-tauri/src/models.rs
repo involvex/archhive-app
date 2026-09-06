@@ -508,6 +508,40 @@ pub struct MarkWatchedResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SavedSearch {
+    pub id: String,
+    pub name: String,
+    pub site_id: String,
+    pub kind: BrowseKind,
+    pub slug: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub orientation: Option<BrowseOrientation>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_checked_at: Option<String>,
+    pub new_count: u32,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SaveSearchRequest {
+    pub name: String,
+    pub site_id: String,
+    pub kind: BrowseKind,
+    pub slug: String,
+    #[serde(default)]
+    pub orientation: Option<BrowseOrientation>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CheckSavedSearchResult {
+    pub search_id: String,
+    pub new_items: Vec<MediaItem>,
+    pub new_count: u32,
+    pub total: usize,
+    pub checked_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ThumbGenResult {
     pub generated: u32,
     pub errors: u32,

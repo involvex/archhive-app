@@ -1,10 +1,10 @@
 use crate::error::AppResult;
 use crate::models::{
     AppSettings, BatchUpdateScenesRequest, BatchUpdateScenesResult, BrowseKind, BrowseOrientation,
-    DownloadJob, DuplicateGroup, FfmpegStatus, HealthResponse, LanHost, LibraryStats,
-    MarkWatchedRequest, MarkWatchedResult, MediaItem, MergeDuplicatesResult, OrphanSidecar,
-    Performer, PornhubCategoryEntry, ScanResult, Scene, SceneFilter, SceneSort, SiteInfo, Tag,
-    UpdateSceneRequest, WatchProgress,
+    CheckSavedSearchResult, DownloadJob, DuplicateGroup, FfmpegStatus, HealthResponse, LanHost,
+    LibraryStats, MarkWatchedRequest, MarkWatchedResult, MediaItem, MergeDuplicatesResult,
+    OrphanSidecar, Performer, PornhubCategoryEntry, SaveSearchRequest, SavedSearch, ScanResult,
+    Scene, SceneFilter, SceneSort, SiteInfo, Tag, UpdateSceneRequest, WatchProgress,
 };
 use crate::state::AppState;
 use crate::vault::CookieSiteInfo;
@@ -486,6 +486,37 @@ pub fn mark_watched(
     body: MarkWatchedRequest,
 ) -> CmdResult<MarkWatchedResult> {
     map_err(state.mark_watched(&body.scene_ids, body.watched))
+}
+
+#[tauri::command]
+pub fn list_watched_source_urls(state: State<'_, Arc<AppState>>) -> CmdResult<Vec<String>> {
+    map_err(state.list_watched_source_urls())
+}
+
+#[tauri::command]
+pub fn save_search(
+    state: State<'_, Arc<AppState>>,
+    body: SaveSearchRequest,
+) -> CmdResult<SavedSearch> {
+    map_err(state.create_saved_search(&body))
+}
+
+#[tauri::command]
+pub fn list_saved_searches(state: State<'_, Arc<AppState>>) -> CmdResult<Vec<SavedSearch>> {
+    map_err(state.list_saved_searches())
+}
+
+#[tauri::command]
+pub fn delete_saved_search(state: State<'_, Arc<AppState>>, id: String) -> CmdResult<bool> {
+    map_err(state.delete_saved_search(&id))
+}
+
+#[tauri::command]
+pub async fn check_saved_search(
+    state: State<'_, Arc<AppState>>,
+    id: String,
+) -> CmdResult<CheckSavedSearchResult> {
+    map_err(state.check_saved_search(&id).await)
 }
 
 #[tauri::command]

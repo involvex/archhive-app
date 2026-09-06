@@ -721,6 +721,84 @@ impl AppState {
         self.db.list_watch_progress()
     }
 
+    pub fn list_watched_source_urls(&self) -> AppResult<Vec<String>> {
+        self.db.list_watched_source_urls()
+    }
+
+    pub fn create_saved_search(
+        &self,
+        req: &crate::models::SaveSearchRequest,
+    ) -> AppResult<crate::models::SavedSearch> {
+        // Validate the site exists before storing.
+        if self.sites.get(&req.site_id).is_none() {
+            return Err(crate::error::AppError::NotFound(format!(
+                "site {}",
+                req.site_id
+            )));
+        }
+        self.db.create_saved_search(req)
+    }
+
+    pub fn list_saved_searches(&self) -> AppResult<Vec<crate::models::SavedSearch>> {
+        self.db.list_saved_searches()
+    }
+
+    pub fn delete_saved_search(&self, id: &str) -> AppResult<bool> {
+        self.db.delete_saved_search(id)
+    }
+
+    /// Re-run a saved search (page 1) and diff against the stored snapshot.
+    /// First check after saving seeds the baseline and reports 0 new items.
+    pub async fn check_saved_search(
+        &self,
+        id: &str,
+    ) -> AppResult<crate::models::CheckSavedSearchResult> {
+        let search = self
+            .db
+            .get_saved_search(id)?
+            .ok_or_else(|| crate::error::AppError::NotFound(format!("saved search {id}")))?;
+        let page = self
+            .browse(
+                &search.site_id,
+                search.kind,
+                &search.slug,
+                1,
+                search.orientation,
+            )
+            .await?;
+        let previous = self.db.saved_search_keys(id)?;
+        let baseline = previous.is_empty() && search.last_checked_at.is_none();
+        let seen: std::collections::HashSet<&str> = previous.iter().map(|s| s.as_str()).collect();
+        let mut keys = Vec::with_capacity(page.items.len());
+        let mut fresh = Vec::new();
+        for item in &page.items {
+            let key = if item.url.trim().is_empty() {
+                item.id.clone()
+            } else {
+                item.url.clone()
+            };
+            keys.push(key.clone());
+            if !baseline && !seen.contains(key.as_str()) {
+                fresh.push(item.clone());
+            }
+        }
+        // Cap the snapshot so the row stays small.
+        keys.truncate(300);
+        let keys_json = serde_json::to_string(&keys)
+            .map_err(|e| crate::error::AppError::Other(format!("snapshot serialize: {e}")))?;
+        let checked_at = chrono::Utc::now().to_rfc3339();
+        let new_count = fresh.len() as u32;
+        self.db
+            .update_saved_search_check(id, &keys_json, new_count, &checked_at)?;
+        Ok(crate::models::CheckSavedSearchResult {
+            search_id: id.to_string(),
+            new_items: fresh,
+            new_count,
+            total: page.items.len(),
+            checked_at,
+        })
+    }
+
     pub fn mark_watched(
         &self,
         ids: &[String],

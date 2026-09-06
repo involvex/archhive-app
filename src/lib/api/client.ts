@@ -20,6 +20,8 @@ import type {
   OrphanSidecar,
   LibraryStats,
   MarkWatchedResult,
+  SavedSearch,
+  CheckSavedSearchResult,
   Performer,
   Scene,
   SceneFilter,
@@ -353,6 +355,54 @@ export const api = {
       });
     }
     return localInvoke<MarkWatchedResult>("mark_watched", { body });
+  },
+
+  async listWatchedSourceUrls(): Promise<string[]> {
+    if (shouldUseRemoteApi()) {
+      return remoteFetch<string[]>("/api/library/watched-urls");
+    }
+    if (getAppRuntime() === "browser") return [];
+    return localInvoke<string[]>("list_watched_source_urls");
+  },
+
+  async saveSearch(body: {
+    name: string;
+    site_id: string;
+    kind: BrowseKind;
+    slug: string;
+    orientation?: BrowseOrientation;
+  }): Promise<SavedSearch> {
+    if (shouldUseRemoteApi()) {
+      return remoteFetch<SavedSearch>("/api/saved-searches", {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+    }
+    return localInvoke<SavedSearch>("save_search", { body });
+  },
+
+  async listSavedSearches(): Promise<SavedSearch[]> {
+    if (shouldUseRemoteApi()) {
+      return remoteFetch<SavedSearch[]>("/api/saved-searches");
+    }
+    if (getAppRuntime() === "browser") return [];
+    return localInvoke<SavedSearch[]>("list_saved_searches");
+  },
+
+  async deleteSavedSearch(id: string): Promise<boolean> {
+    if (shouldUseRemoteApi()) {
+      return remoteFetch<boolean>(`/api/saved-searches/${id}`, { method: "DELETE" });
+    }
+    return localInvoke<boolean>("delete_saved_search", { id });
+  },
+
+  async checkSavedSearch(id: string): Promise<CheckSavedSearchResult> {
+    if (shouldUseRemoteApi()) {
+      return remoteFetch<CheckSavedSearchResult>(`/api/saved-searches/${id}/check`, {
+        method: "POST",
+      });
+    }
+    return localInvoke<CheckSavedSearchResult>("check_saved_search", { id });
   },
 
   async listScenesWithFilter(filter: SceneFilter): Promise<Scene[]> {

@@ -245,6 +245,26 @@ export interface MarkWatchedResult {
   updated: number;
 }
 
+export interface SavedSearch {
+  id: string;
+  name: string;
+  site_id: string;
+  kind: BrowseKind;
+  slug: string;
+  orientation?: BrowseOrientation;
+  last_checked_at?: string;
+  new_count: number;
+  created_at: string;
+}
+
+export interface CheckSavedSearchResult {
+  search_id: string;
+  new_items: MediaItem[];
+  new_count: number;
+  total: number;
+  checked_at: string;
+}
+
 export interface ThumbGenResult {
   generated: number;
   errors: number;

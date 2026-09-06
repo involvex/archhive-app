@@ -2,7 +2,7 @@ mod migrations;
 
 use crate::db::migrations::{
     MIGRATION_001, MIGRATION_002, MIGRATION_003, MIGRATION_004, MIGRATION_005, MIGRATION_006,
-    MIGRATION_007, MIGRATION_008, MIGRATION_009,
+    MIGRATION_007, MIGRATION_008, MIGRATION_009, MIGRATION_010,
 };
 use crate::error::{AppError, AppResult};
 use crate::models::{
@@ -70,6 +70,7 @@ impl Database {
             conn.execute_batch(MIGRATION_008)?;
         }
         conn.execute_batch(MIGRATION_009)?;
+        conn.execute_batch(MIGRATION_010)?;
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
         })
@@ -720,6 +721,194 @@ impl Database {
             updated += 1;
         }
         Ok(updated)
+    }
+
+    /// Source URLs of scenes marked watched — used to hide watched matches
+    /// in browse results (#28).
+    pub fn list_watched_source_urls(&self) -> AppResult<Vec<String>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let mut stmt = conn.prepare(
+            "SELECT s.source_url FROM scenes s
+             JOIN watch_history w ON w.scene_id = s.id
+             WHERE w.watched = 1 AND s.source_url IS NOT NULL AND s.source_url != ''",
+        )?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(AppError::from)
+    }
+
+    /// Insert a saved search (#28). Returns the created row.
+    pub fn create_saved_search(
+        &self,
+        req: &crate::models::SaveSearchRequest,
+    ) -> AppResult<crate::models::SavedSearch> {
+        use crate::models::{BrowseKind, BrowseOrientation};
+        let name = req.name.trim();
+        if name.is_empty() {
+            return Err(AppError::InvalidInput("name is required".into()));
+        }
+        if req.slug.trim().is_empty() {
+            return Err(AppError::InvalidInput("slug is required".into()));
+        }
+        let kind_str = match req.kind {
+            BrowseKind::Tag => "tag",
+            BrowseKind::Model => "model",
+            BrowseKind::Channel => "channel",
+            BrowseKind::Search => "search",
+            BrowseKind::Video => "video",
+            BrowseKind::Category => "category",
+            BrowseKind::Livestream => "livestream",
+        };
+        let orientation_str = req.orientation.map(|o| match o {
+            BrowseOrientation::Straight => "straight",
+            BrowseOrientation::Gay => "gay",
+            BrowseOrientation::Lesbian => "lesbian",
+            BrowseOrientation::Transgender => "transgender",
+        });
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let id = uuid::Uuid::new_v4().to_string();
+        let created_at = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT INTO saved_searches (id, name, site_id, kind, slug, orientation, last_checked_at, last_item_keys, new_count, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, '[]', 0, ?7)",
+            rusqlite::params![
+                id,
+                name,
+                req.site_id,
+                kind_str,
+                req.slug.trim(),
+                orientation_str,
+                created_at
+            ],
+        )?;
+        Ok(crate::models::SavedSearch {
+            id,
+            name: name.to_string(),
+            site_id: req.site_id.clone(),
+            kind: req.kind,
+            slug: req.slug.trim().to_string(),
+            orientation: req.orientation,
+            last_checked_at: None,
+            new_count: 0,
+            created_at,
+        })
+    }
+
+    fn map_saved_search_row(
+        row: &rusqlite::Row<'_>,
+    ) -> rusqlite::Result<crate::models::SavedSearch> {
+        use crate::models::{BrowseKind, BrowseOrientation};
+        let kind_str: String = row.get(3)?;
+        let kind = match kind_str.as_str() {
+            "tag" => BrowseKind::Tag,
+            "model" => BrowseKind::Model,
+            "channel" => BrowseKind::Channel,
+            "video" => BrowseKind::Video,
+            "category" => BrowseKind::Category,
+            "livestream" => BrowseKind::Livestream,
+            _ => BrowseKind::Search,
+        };
+        let orientation_str: Option<String> = row.get(5)?;
+        let orientation = orientation_str.and_then(|o| match o.as_str() {
+            "gay" => Some(BrowseOrientation::Gay),
+            "lesbian" => Some(BrowseOrientation::Lesbian),
+            "transgender" => Some(BrowseOrientation::Transgender),
+            _ => Some(BrowseOrientation::Straight),
+        });
+        Ok(crate::models::SavedSearch {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            site_id: row.get(2)?,
+            kind,
+            slug: row.get(4)?,
+            orientation,
+            last_checked_at: row.get(6)?,
+            new_count: row.get::<_, i64>(8).unwrap_or(0).max(0) as u32,
+            created_at: row.get(9)?,
+        })
+    }
+
+    pub fn list_saved_searches(&self) -> AppResult<Vec<crate::models::SavedSearch>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let mut stmt = conn.prepare(
+            "SELECT id, name, site_id, kind, slug, orientation, last_checked_at, last_item_keys, new_count, created_at
+             FROM saved_searches ORDER BY created_at DESC",
+        )?;
+        let rows = stmt.query_map([], Self::map_saved_search_row)?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(AppError::from)
+    }
+
+    pub fn get_saved_search(&self, id: &str) -> AppResult<Option<crate::models::SavedSearch>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let row = conn
+            .query_row(
+                "SELECT id, name, site_id, kind, slug, orientation, last_checked_at, last_item_keys, new_count, created_at
+                 FROM saved_searches WHERE id = ?1",
+                rusqlite::params![id],
+                Self::map_saved_search_row,
+            )
+            .optional()?;
+        Ok(row)
+    }
+
+    pub fn delete_saved_search(&self, id: &str) -> AppResult<bool> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let changed = conn.execute(
+            "DELETE FROM saved_searches WHERE id = ?1",
+            rusqlite::params![id],
+        )?;
+        Ok(changed > 0)
+    }
+
+    /// Persist a check snapshot. Returns the previous key set for diffing.
+    pub fn update_saved_search_check(
+        &self,
+        id: &str,
+        keys_json: &str,
+        new_count: u32,
+        checked_at: &str,
+    ) -> AppResult<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        conn.execute(
+            "UPDATE saved_searches SET last_item_keys = ?2, new_count = ?3, last_checked_at = ?4 WHERE id = ?1",
+            rusqlite::params![id, keys_json, new_count as i64, checked_at],
+        )?;
+        Ok(())
+    }
+
+    pub fn saved_search_keys(&self, id: &str) -> AppResult<Vec<String>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let raw: Option<String> = conn
+            .query_row(
+                "SELECT last_item_keys FROM saved_searches WHERE id = ?1",
+                rusqlite::params![id],
+                |row| row.get(0),
+            )
+            .optional()?
+            .flatten();
+        Ok(raw
+            .and_then(|s| serde_json::from_str::<Vec<String>>(&s).ok())
+            .unwrap_or_default())
     }
 
     /// Clear every scene's thumbnail reference (sidecar files on disk are kept;

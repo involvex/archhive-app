@@ -150,6 +150,13 @@ impl LanServer {
             )
             .route("/api/scenes/watch", post(mark_watched))
             .route("/api/watch-progress", get(list_watch_progress))
+            .route("/api/library/watched-urls", get(list_watched_urls))
+            .route(
+                "/api/saved-searches",
+                get(list_saved_searches).post(save_search),
+            )
+            .route("/api/saved-searches/{id}", delete(delete_saved_search))
+            .route("/api/saved-searches/{id}/check", post(check_saved_search))
             .route(
                 "/api/library/probe-durations",
                 post(probe_library_durations),
@@ -893,6 +900,60 @@ async fn mark_watched(
     let result = state
         .app
         .mark_watched(&body.scene_ids, body.watched)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(serde_json::json!(result)))
+}
+
+async fn list_watched_urls(
+    State(state): State<ApiState>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let urls = state
+        .app
+        .list_watched_source_urls()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(serde_json::json!(urls)))
+}
+
+async fn save_search(
+    State(state): State<ApiState>,
+    Json(body): Json<crate::models::SaveSearchRequest>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let saved = state
+        .app
+        .create_saved_search(&body)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(serde_json::json!(saved)))
+}
+
+async fn list_saved_searches(
+    State(state): State<ApiState>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let all = state
+        .app
+        .list_saved_searches()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(serde_json::json!(all)))
+}
+
+async fn delete_saved_search(
+    Path(id): Path<String>,
+    State(state): State<ApiState>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let deleted = state
+        .app
+        .delete_saved_search(&id)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(serde_json::json!(deleted)))
+}
+
+async fn check_saved_search(
+    Path(id): Path<String>,
+    State(state): State<ApiState>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let result = state
+        .app
+        .check_saved_search(&id)
+        .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(serde_json::json!(result)))
 }

@@ -308,13 +308,13 @@
 
 ### 28. Saved Searches + New-Match Notifications
 
-**Status:** ⚪ Not started  
+**Status:** 🔵 Partial  
 **Area:** Browse / Library  
-**Currently:** Browse pages (`/$site/$kind/$slug`, Pornhub categories, trending sites setting) are ephemeral; no persistence.  
-**Suggestion:**
+**Currently:** `saved_searches` table (`MIGRATION_010`) with save/list/delete + `check_saved_search` (re-runs page 1, diffs against a capped 300-key snapshot, first check seeds the baseline); Save toggle on every browse detail page; "Saved searches" manager on Browse with per-search Check now, new-count badges, and aggregate total; "Hide watched" toggle on browse results hides items whose URL matches a watched library scene (`list_watched_source_urls`).  
+**Suggestion (remaining):**
 
-- Save any browse/search (site + kind + slug + orientation) as a named watch; background poller checks on interval; "New Matches" badge + optional tray toast (#11).
-- Pairs with #19 scheduled downloads (auto-queue new matches) and #26 history (hide already-watched).
+- Background poller that checks on interval; "New Matches" badge + optional tray toast (#11).
+- Pairs with #19 scheduled downloads (auto-queue new matches).
 
 ### 29. Performer Detail Pages + Tag Hierarchy Manager
 

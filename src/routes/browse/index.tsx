@@ -5,7 +5,13 @@ import { getCapabilities } from "@/lib/runtime";
 import { getPluginBrowseSites } from "@/lib/plugins/loader";
 import { mergeSiteLists, PORNHUB_FEED_SLUG } from "@/lib/sites/catalog";
 import { useSettingsStore } from "@/lib/stores/settings";
-import type { BrowseOrientation, MediaItem, PornhubCategoryEntry, SiteInfo } from "@/lib/types";
+import type {
+  BrowseOrientation,
+  MediaItem,
+  PornhubCategoryEntry,
+  SavedSearch,
+  SiteInfo,
+} from "@/lib/types";
 import { SceneCard } from "@/components/SceneCard";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent } from "@/components/ui/card";
@@ -23,6 +29,9 @@ import {
   Heart,
   Newspaper,
   Flame,
+  Bookmark,
+  RefreshCw,
+  Trash2,
 } from "lucide-react";
 import { isMobileDevice } from "@/lib/tauri";
 
@@ -161,6 +170,42 @@ function BrowsePage() {
 
   const [trending, setTrending] = useState<Record<string, MediaItem[]>>({});
   const [trendingLoading, setTrendingLoading] = useState(false);
+
+  // #28 saved searches (watchlist).
+  const [saved, setSaved] = useState<SavedSearch[]>([]);
+  const [checkingId, setCheckingId] = useState<string | null>(null);
+
+  const refreshSaved = useCallback(() => {
+    void api
+      .listSavedSearches()
+      .then(setSaved)
+      .catch(() => setSaved([]));
+  }, []);
+
+  useEffect(() => {
+    refreshSaved();
+  }, [refreshSaved]);
+
+  async function handleCheck(id: string) {
+    setCheckingId(id);
+    try {
+      await api.checkSavedSearch(id);
+      await refreshSaved();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setCheckingId(null);
+    }
+  }
+
+  async function handleDeleteSaved(id: string) {
+    try {
+      await api.deleteSavedSearch(id);
+      setSaved((prev) => prev.filter((s) => s.id !== id));
+    } catch (e) {
+      console.error(e);
+    }
+  }
 
   useEffect(() => {
     if (selectedSite !== "pornhub") {
@@ -505,6 +550,83 @@ function BrowsePage() {
           </CardContent>
         </Card>
       )}
+
+      <Card>
+        <CardContent className="p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <Bookmark className="h-4 w-4" />
+              Saved searches
+            </div>
+            {saved.length > 0 && (
+              <span className="text-xs text-[var(--color-muted-foreground)]">
+                {saved.reduce((sum, s) => sum + s.new_count, 0)} new matches
+              </span>
+            )}
+          </div>
+          {saved.length === 0 ? (
+            <p className="text-xs text-[var(--color-muted-foreground)]">
+              No saved searches yet. Open any tag, model, channel, or search page and press Save to
+              watch it for new content.
+            </p>
+          ) : (
+            <div className="grid gap-1">
+              {saved.map((s) => (
+                <div
+                  key={s.id}
+                  className="flex items-center justify-between gap-2 rounded-md px-3 py-2 text-sm hover:bg-[var(--color-muted)] transition"
+                >
+                  <button
+                    type="button"
+                    className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                    onClick={() => {
+                      navigate({
+                        to: "/browse/$site/$kind/$slug",
+                        params: { site: s.site_id, kind: s.kind, slug: encodeURIComponent(s.slug) },
+                      });
+                    }}
+                  >
+                    <span className="min-w-0 flex-1 truncate">
+                      <span className="font-medium">{s.name}</span>{" "}
+                      <span className="text-xs text-[var(--color-muted-foreground)]">
+                        {s.last_checked_at
+                          ? `· checked ${new Date(s.last_checked_at).toLocaleString()}`
+                          : "· never checked"}
+                      </span>
+                    </span>
+                    {s.new_count > 0 && (
+                      <span className="shrink-0 rounded-full bg-[var(--color-primary)] px-2 py-0.5 text-[11px] font-semibold text-[var(--color-primary-foreground)] tabular-nums">
+                        {s.new_count} new
+                      </span>
+                    )}
+                  </button>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => void handleCheck(s.id)}
+                      disabled={checkingId === s.id}
+                      title="Check for new matches now"
+                    >
+                      <RefreshCw
+                        className={`h-3.5 w-3.5 ${checkingId === s.id ? "animate-spin" : ""}`}
+                      />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => void handleDeleteSaved(s.id)}
+                      title="Delete saved search"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <div className="flex items-center gap-2 text-sm font-medium">
         <Radio className="h-4 w-4 text-red-500" />

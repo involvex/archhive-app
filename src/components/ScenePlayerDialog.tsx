@@ -57,17 +57,22 @@ function ScenePlayerBody({
         if (!cancelled) setDetail(data);
       })
       .catch(console.error);
-    // Offer resume when a meaningful position was stored.
-    void api
-      .getWatchProgress(scene.id)
-      .then((p) => {
-        if (cancelled || !p) return;
-        const resumable =
-          p.position_secs > 10 &&
-          (p.duration_secs <= 0 || p.position_secs < p.duration_secs * 0.95);
-        if (resumable) setResume(p);
-      })
-      .catch(() => {});
+    // Offer resume when a meaningful position was stored. The cutoff follows
+    // the watched threshold so "resume" and "watched" stay consistent.
+    void Promise.all([
+      api.getWatchProgress(scene.id).catch(() => null),
+      api
+        .getSettings()
+        .then((s) => s.watched_threshold ?? 0.9)
+        .catch(() => 0.9),
+    ]).then(([p, threshold]) => {
+      if (cancelled || !p) return;
+      const cutoff = Math.min(0.99, Math.max(0.5, threshold));
+      const resumable =
+        p.position_secs > 10 &&
+        (p.duration_secs <= 0 || p.position_secs < p.duration_secs * cutoff);
+      if (resumable) setResume(p);
+    });
     return () => {
       cancelled = true;
     };
