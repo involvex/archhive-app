@@ -60,6 +60,16 @@ function getItemFileSize(item: CardItem): number | undefined {
   return (item as Scene).file_size;
 }
 
+// Q16: resolution badge (WxH) when the backend has probed it.
+function getItemResolution(item: CardItem): string | undefined {
+  if (isMediaItem(item)) return undefined;
+  const scene = item as Scene;
+  if (scene.width != null && scene.height != null && scene.width > 0 && scene.height > 0) {
+    return `${scene.width}×${scene.height}`;
+  }
+  return undefined;
+}
+
 export function SceneCard({
   item,
   onDownload,
@@ -79,6 +89,7 @@ export function SceneCard({
   const tags = getItemTags(item);
   const duration = getItemDuration(item);
   const fileSize = getItemFileSize(item);
+  const resolution = getItemResolution(item);
   const thumb = getItemThumb(item, thumbSrc);
   const description = getItemDescription(item);
 
@@ -169,6 +180,11 @@ export function SceneCard({
             <span className="absolute bottom-1 right-1 rounded bg-black/70 px-1.5 py-0.5 text-xs flex items-center gap-1">
               <Clock className="h-3 w-3" />
               {formatDuration(duration)}
+            </span>
+          )}
+          {resolution && (
+            <span className="absolute bottom-1 left-1 rounded bg-black/70 px-1.5 py-0.5 text-[10px] tabular-nums">
+              {resolution}
             </span>
           )}
         </div>
@@ -339,6 +355,11 @@ export function SceneCard({
                 · {formatFileSize(fileSize)}
               </span>
             )}
+          </span>
+        )}
+        {resolution && (
+          <span className="absolute bottom-2 left-2 rounded bg-black/70 px-1.5 py-0.5 text-[10px] tabular-nums">
+            {resolution}
           </span>
         )}
 

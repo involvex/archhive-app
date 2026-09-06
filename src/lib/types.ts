@@ -77,6 +77,8 @@ export interface Scene {
   oshash?: string;
   file_size?: number;
   notes?: string;
+  width?: number;
+  height?: number;
 }
 
 export interface UpdateSceneRequest {
@@ -216,6 +218,17 @@ export interface SceneFilter {
 export interface FfmpegStatus {
   ffmpeg_available: boolean;
   ffprobe_available: boolean;
+}
+
+export interface BinaryVersions {
+  ffmpeg_version?: string;
+  ffprobe_version?: string;
+  ytdlp_version?: string;
+  gallery_dl_version?: string;
+}
+
+export interface ClearThumbsResult {
+  cleared: number;
 }
 
 export interface ThumbGenResult {

@@ -2,10 +2,12 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type {
   AppSettings,
+  BinaryVersions,
   BrowseKind,
   BrowseOrientation,
   BrowsePage,
   BulkImportResult,
+  ClearThumbsResult,
   DownloadJob,
   DuplicateGroup,
   CookieSiteInfo,
@@ -288,6 +290,22 @@ export const api = {
       return remoteFetch<FfmpegStatus>("/api/library/ffmpeg-status");
     }
     return localInvoke<FfmpegStatus>("ffmpeg_status");
+  },
+
+  async binaryVersions(): Promise<BinaryVersions> {
+    if (shouldUseRemoteApi()) {
+      return remoteFetch<BinaryVersions>("/api/system/versions");
+    }
+    return localInvoke<BinaryVersions>("binary_versions");
+  },
+
+  async clearAllThumbs(): Promise<ClearThumbsResult> {
+    if (shouldUseRemoteApi()) {
+      return remoteFetch<ClearThumbsResult>("/api/library/thumbs", {
+        method: "DELETE",
+      });
+    }
+    return localInvoke<ClearThumbsResult>("clear_all_thumbs");
   },
 
   async listScenesWithFilter(filter: SceneFilter): Promise<Scene[]> {

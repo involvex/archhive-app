@@ -2,7 +2,7 @@ mod migrations;
 
 use crate::db::migrations::{
     MIGRATION_001, MIGRATION_002, MIGRATION_003, MIGRATION_004, MIGRATION_005, MIGRATION_006,
-    MIGRATION_007,
+    MIGRATION_007, MIGRATION_008,
 };
 use crate::error::{AppError, AppResult};
 use crate::models::{
@@ -36,6 +36,8 @@ type SceneRow = (
     Option<u32>,
     Option<String>,
     Option<i64>,
+    Option<u32>,
+    Option<u32>,
 );
 
 pub struct Database {
@@ -63,6 +65,9 @@ impl Database {
         }
         if !column_exists(&conn, "download_jobs", "retry_count") {
             conn.execute_batch(MIGRATION_007)?;
+        }
+        if !column_exists(&conn, "scenes", "width") {
+            conn.execute_batch(MIGRATION_008)?;
         }
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
@@ -520,6 +525,18 @@ impl Database {
         Ok(())
     }
 
+    pub fn update_scene_resolution(&self, id: &str, width: u32, height: u32) -> AppResult<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        conn.execute(
+            "UPDATE scenes SET width = ?2, height = ?3 WHERE id = ?1 AND (width IS NULL OR width = 0 OR height IS NULL OR height = 0)",
+            params![id, width, height],
+        )?;
+        Ok(())
+    }
+
     pub fn update_scene_file_size(&self, id: &str, file_size: u64) -> AppResult<()> {
         let conn = self
             .conn
@@ -579,6 +596,37 @@ impl Database {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })?;
         rows.collect::<Result<Vec<_>, _>>().map_err(AppError::from)
+    }
+
+    /// Scenes with a video path but no resolution stored.
+    pub fn list_scenes_missing_resolution(&self) -> AppResult<Vec<(String, String)>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let mut stmt = conn.prepare(
+            "SELECT id, path FROM scenes
+             WHERE path IS NOT NULL AND path != ''
+             AND (width IS NULL OR width = 0 OR height IS NULL OR height = 0)",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(AppError::from)
+    }
+
+    /// Clear every scene's thumbnail reference (sidecar files on disk are kept;
+    /// use the orphan-sidecar cleaner to remove leftovers). Returns rows cleared.
+    pub fn clear_all_thumbs(&self) -> AppResult<u64> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let changed = conn.execute(
+            "UPDATE scenes SET thumb = NULL WHERE thumb IS NOT NULL AND thumb != ''",
+            [],
+        )?;
+        Ok(changed as u64)
     }
 
     /// Scenes whose `thumb` path points to a file that no longer exists on disk.
@@ -682,7 +730,7 @@ impl Database {
         }
 
         let sql = format!(
-            "SELECT scenes.id, scenes.title, scenes.path, scenes.thumb, scenes.source_url, scenes.duration, scenes.channel, scenes.file_size
+            "SELECT scenes.id, scenes.title, scenes.path, scenes.thumb, scenes.source_url, scenes.duration, scenes.channel, scenes.file_size, scenes.width, scenes.height
              FROM scenes{joins_sql}
              {where_clause}{group_by}
              ORDER BY scenes.created_at DESC
@@ -700,12 +748,15 @@ impl Database {
                 row.get::<_, Option<u32>>(5)?,
                 row.get::<_, Option<String>>(6)?,
                 row.get::<_, Option<i64>>(7)?,
+                row.get::<_, Option<u32>>(8)?,
+                row.get::<_, Option<u32>>(9)?,
             ))
         })?;
 
         let mut result = Vec::new();
         for row in rows {
-            let (id, title, path, thumb, source_url, duration, channel, file_size) = row?;
+            let (id, title, path, thumb, source_url, duration, channel, file_size, width, height) =
+                row?;
 
             // Post-filter: missing_thumb (file-level check not possible in SQL)
             if filter.missing_thumb {
@@ -750,6 +801,8 @@ impl Database {
                 oshash: None,
                 file_size: file_size.map(|v| v as u64),
                 notes: None,
+                width,
+                height,
             });
         }
         Ok(result)
@@ -854,14 +907,14 @@ impl Database {
             };
             let sql = format!(
                 "SELECT * FROM (
-                     SELECT s.id, s.title, s.path, s.thumb, s.source_url, s.duration, s.channel, s.file_size, s.created_at
+                     SELECT s.id, s.title, s.path, s.thumb, s.source_url, s.duration, s.channel, s.file_size, s.width, s.height, s.created_at
                      FROM scenes s JOIN scenes_fts fts ON s.rowid = fts.rowid
                      WHERE scenes_fts MATCH ?1
                      ORDER BY s.created_at DESC LIMIT 100
                  )
                  UNION
                  SELECT * FROM (
-                     SELECT s.id, s.title, s.path, s.thumb, s.source_url, s.duration, s.channel, s.file_size, s.created_at
+                     SELECT s.id, s.title, s.path, s.thumb, s.source_url, s.duration, s.channel, s.file_size, s.width, s.height, s.created_at
                      FROM scenes s
                      JOIN scene_performers sp ON s.id = sp.scene_id
                      JOIN performers p ON sp.performer_id = p.id
@@ -870,7 +923,7 @@ impl Database {
                  )
                  UNION
                   SELECT * FROM (
-                     SELECT s.id, s.title, s.path, s.thumb, s.source_url, s.duration, s.channel, s.file_size, s.created_at
+                     SELECT s.id, s.title, s.path, s.thumb, s.source_url, s.duration, s.channel, s.file_size, s.width, s.height, s.created_at
                      FROM scenes s
                      JOIN scene_tags st ON s.id = st.scene_id
                      JOIN tags t ON st.tag_id = t.id
@@ -891,12 +944,14 @@ impl Database {
                     row.get(5)?, // duration
                     row.get(6)?, // channel
                     row.get(7)?, // file_size
+                    row.get(8)?, // width
+                    row.get(9)?, // height
                 ))
             })?;
             rows.collect::<Result<Vec<_>, _>>()?
         } else {
             let sql = format!(
-                "SELECT id, title, path, thumb, source_url, duration, channel, file_size FROM scenes ORDER BY {order_by_plain} LIMIT 100"
+                "SELECT id, title, path, thumb, source_url, duration, channel, file_size, width, height FROM scenes ORDER BY {order_by_plain} LIMIT 100"
             );
             let mut stmt = conn.prepare(&sql)?;
             let rows = stmt.query_map([], |row| {
@@ -909,13 +964,17 @@ impl Database {
                     row.get(5)?,
                     row.get(6)?,
                     row.get(7)?,
+                    row.get(8)?,
+                    row.get(9)?,
                 ))
             })?;
             rows.collect::<Result<Vec<_>, _>>()?
         };
 
         let mut result = Vec::new();
-        for (id, title, path, thumb, source_url, duration, channel, file_size) in scenes {
+        for (id, title, path, thumb, source_url, duration, channel, file_size, width, height) in
+            scenes
+        {
             let performers = self.scene_performers(&conn, &id)?;
             let tags = self.scene_tags(&conn, &id)?;
             result.push(Scene {
@@ -936,6 +995,8 @@ impl Database {
                 oshash: None,
                 file_size: file_size.map(|v| v as u64),
                 notes: None,
+                width,
+                height,
             });
         }
         Ok(result)
@@ -948,7 +1009,7 @@ impl Database {
             .map_err(|e| AppError::Other(e.to_string()))?;
         let row = conn
             .query_row(
-                "SELECT id, title, path, thumb, source_url, duration, channel, file_size FROM scenes WHERE path = ?1",
+                "SELECT id, title, path, thumb, source_url, duration, channel, file_size, width, height FROM scenes WHERE path = ?1",
                 params![path],
                 |row| {
                     Ok((
@@ -960,12 +1021,14 @@ impl Database {
                         row.get::<_, Option<u32>>(5)?,
                         row.get::<_, Option<String>>(6)?,
                         row.get::<_, Option<i64>>(7)?,
+                        row.get::<_, Option<u32>>(8)?,
+                        row.get::<_, Option<u32>>(9)?,
                     ))
                 },
             )
             .optional()?;
         Ok(row.map(
-            |(id, title, path, thumb, source_url, duration, channel, file_size)| {
+            |(id, title, path, thumb, source_url, duration, channel, file_size, width, height)| {
                 let performers = self.scene_performers(&conn, &id).unwrap_or_default();
                 let tags = self.scene_tags(&conn, &id).unwrap_or_default();
                 Scene {
@@ -986,6 +1049,8 @@ impl Database {
                     oshash: None,
                     file_size: file_size.map(|v| v as u64),
                     notes: None,
+                    width,
+                    height,
                 }
             },
         ))
@@ -1149,7 +1214,7 @@ impl Database {
             .map_err(|e| AppError::Other(e.to_string()))?;
         let row = conn
             .query_row(
-                "SELECT id, title, path, thumb, source_url, phash, oshash, duration, channel, notes FROM scenes WHERE id = ?1",
+                "SELECT id, title, path, thumb, source_url, phash, oshash, duration, channel, notes, width, height FROM scenes WHERE id = ?1",
                 params![scene_id],
                 |row| {
                     Ok((
@@ -1163,12 +1228,26 @@ impl Database {
                         row.get::<_, Option<u32>>(7)?,
                         row.get::<_, Option<String>>(8)?,
                         row.get::<_, Option<String>>(9)?,
+                        row.get::<_, Option<u32>>(10)?,
+                        row.get::<_, Option<u32>>(11)?,
                     ))
                 },
             )
             .optional()?;
-        let Some((id, title, path, thumb, source_url, phash, oshash, duration, channel, notes)) =
-            row
+        let Some((
+            id,
+            title,
+            path,
+            thumb,
+            source_url,
+            phash,
+            oshash,
+            duration,
+            channel,
+            notes,
+            width,
+            height,
+        )) = row
         else {
             return Err(AppError::NotFound(format!("scene {scene_id}")));
         };
@@ -1196,6 +1275,8 @@ impl Database {
             oshash,
             file_size,
             notes,
+            width,
+            height,
         })
     }
 
@@ -1415,7 +1496,7 @@ impl Database {
             }
             if let Some(row) = conn
                 .query_row(
-                    "SELECT id, title, path, thumb, source_url, channel, file_size FROM scenes WHERE id = ?1",
+                    "SELECT id, title, path, thumb, source_url, channel, file_size, width, height FROM scenes WHERE id = ?1",
                     params![id],
                     |row| {
                         Ok((
@@ -1426,12 +1507,14 @@ impl Database {
                             row.get::<_, Option<String>>(4)?,
                             row.get::<_, Option<String>>(5)?,
                             row.get::<_, Option<i64>>(6)?,
+                            row.get::<_, Option<u32>>(7)?,
+                            row.get::<_, Option<u32>>(8)?,
                         ))
                     },
                 )
                 .optional()?
             {
-                let (id, title, path, thumb, source_url, channel, file_size) = row;
+                let (id, title, path, thumb, source_url, channel, file_size, width, height) = row;
                 let performers = self.scene_performers(conn, &id)?;
                 let tags = self.scene_tags(conn, &id)?;
                 scenes.push(Scene {
@@ -1452,6 +1535,8 @@ impl Database {
                     oshash: None,
                     file_size: file_size.map(|v| v as u64),
                 notes: None,
+                    width,
+                    height,
                 });
             }
         }

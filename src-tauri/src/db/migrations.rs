@@ -105,3 +105,8 @@ pub const MIGRATION_007: &str = r#"
 ALTER TABLE download_jobs ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE download_jobs ADD COLUMN last_retry_at TEXT;
 "#;
+
+pub const MIGRATION_008: &str = r#"
+ALTER TABLE scenes ADD COLUMN width INTEGER;
+ALTER TABLE scenes ADD COLUMN height INTEGER;
+"#;

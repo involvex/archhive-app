@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { sceneMediaUrl, isWebPlayableScene, isHttpMediaSrc, isVideoScene } from "@/lib/mediaUrl";
 import { getCapabilities } from "@/lib/runtime";
+import { useRecentlyViewedStore } from "@/lib/stores/recentlyViewed";
 import { api } from "@/lib/api/client";
 import type { Scene } from "@/lib/types";
 import { Button } from "@/components/ui/button";
@@ -192,6 +193,14 @@ function ScenePlayerBody({
             <dd>{fileSize}</dd>
           </div>
         )}
+        {data.width != null && data.height != null && (
+          <div>
+            <dt className="text-xs text-[var(--color-muted-foreground)]">Resolution</dt>
+            <dd>
+              {data.width}×{data.height}
+            </dd>
+          </div>
+        )}
         {data.source_url && (
           <div>
             <dt className="text-xs text-[var(--color-muted-foreground)]">Source</dt>
@@ -245,6 +254,13 @@ export function ScenePlayerDialog({
   onEdit,
   onNavigate,
 }: ScenePlayerDialogProps) {
+  // Q11: record every opened scene for the "Continue watching" rail.
+  useEffect(() => {
+    if (open && scene) {
+      useRecentlyViewedStore.getState().record(scene);
+    }
+  }, [open, scene]);
+
   useEffect(() => {
     if (!open || !scenes || currentIndex == null) return;
     const idx = currentIndex;

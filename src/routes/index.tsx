@@ -15,7 +15,8 @@ import { SkeletonGrid } from "@/components/SkeletonGrid";
 import { ErrorState } from "@/components/ErrorState";
 import { EmptyState } from "@/components/EmptyState";
 import { SceneCard } from "@/components/SceneCard";
-import { Compass, Link2, Radio, Film, Newspaper } from "lucide-react";
+import { useRecentlyViewedStore } from "@/lib/stores/recentlyViewed";
+import { Compass, Link2, Radio, Film, History, Newspaper, X } from "lucide-react";
 import { PORNHUB_FEED_SLUG } from "@/lib/sites/catalog";
 
 export const Route = createFileRoute("/")({
@@ -73,8 +74,21 @@ function HomePage() {
   }, [needsSetup]);
 
   const active = downloads.filter((d) => d.status === "active" || d.status === "pending");
+  const recent = useRecentlyViewedStore((s) => s.recent);
+  const clearRecent = useRecentlyViewedStore((s) => s.clear);
 
   const videoScenes = scenes.filter(isVideoScene);
+  // Rail shows stored snapshots; fall back to the live scene object when available.
+  const recentVisible = recent.slice(0, 12);
+  function handlePlayRecent(snapshot: Scene) {
+    const live = videoScenes.find((s) => s.id === snapshot.id) ?? snapshot;
+    if (!isVideoScene(live)) {
+      setPlayerScene(live);
+      setPlayerIndex(0);
+      return;
+    }
+    handlePlay(live);
+  }
 
   function handlePlay(scene: Scene) {
     const idx = videoScenes.findIndex((s) => s.id === scene.id);
@@ -210,6 +224,36 @@ function HomePage() {
             ))}
           </CardContent>
         </Card>
+      )}
+
+      {recentVisible.length > 0 && (
+        <div>
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="flex items-center gap-2 text-lg font-semibold">
+              <History className="h-4 w-4 text-[var(--color-muted-foreground)]" />
+              Continue watching
+            </h3>
+            <button
+              type="button"
+              onClick={clearRecent}
+              className="flex items-center gap-1 text-xs text-[var(--color-muted-foreground)] hover:text-[var(--color-foreground)]"
+              title="Clear recently played"
+            >
+              <X className="h-3 w-3" />
+              Clear
+            </button>
+          </div>
+          <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+            {recentVisible.map((snapshot) => (
+              <SceneCard
+                key={snapshot.id}
+                item={snapshot}
+                thumbSrc={sceneThumbUrl(snapshot)}
+                onClick={(item) => handlePlayRecent(item as Scene)}
+              />
+            ))}
+          </div>
+        </div>
       )}
 
       <div>

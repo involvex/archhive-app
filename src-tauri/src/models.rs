@@ -160,6 +160,10 @@ pub struct Scene {
     pub file_size: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notes: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub width: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub height: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -454,6 +458,23 @@ pub struct SceneFilter {
 pub struct FfmpegStatus {
     pub ffmpeg_available: bool,
     pub ffprobe_available: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct BinaryVersions {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ffmpeg_version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ffprobe_version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ytdlp_version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gallery_dl_version: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClearThumbsResult {
+    pub cleared: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

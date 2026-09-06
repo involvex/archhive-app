@@ -51,17 +51,22 @@ function keyComboMatches(e: KeyboardEvent, combo: string[]): boolean {
   const alt = combo.includes("alt") || combo.includes("opt");
   const meta = combo.includes("meta") || combo.includes("cmd");
 
-  if (ctrl !== (e.ctrlKey || e.metaKey)) return false;
-  if (shift !== e.shiftKey) return false;
-  if (alt !== e.altKey) return false;
-  if (meta !== e.metaKey) return false;
-
   const keyPart = combo.find(
     (k) => !["ctrl", "shift", "alt", "meta", "mod", "opt", "cmd"].includes(k),
   );
   if (!keyPart) return false;
 
+  // Q18: printable symbol keys (e.g. "?") require Shift on most layouts, so a
+  // literal Shift mismatch must not block them. Compare the produced key first.
   const eventKey = e.key.toLowerCase();
+  const needsShiftForSymbol =
+    keyPart.length === 1 && !/[a-z0-9]/i.test(keyPart) && eventKey === keyPart;
+
+  if (ctrl !== (e.ctrlKey || e.metaKey)) return false;
+  if (!needsShiftForSymbol && shift !== e.shiftKey) return false;
+  if (alt !== e.altKey) return false;
+  if (meta !== e.metaKey) return false;
+
   if (keyPart === "space") return eventKey === " ";
   if (keyPart === "escape") return eventKey === "escape";
   if (keyPart === "enter") return eventKey === "enter";

@@ -370,6 +370,20 @@ impl SidecarRunner {
         self.spawn("ffprobe", args, |_| {}).await
     }
 
+    /// Report the first line of `<name> --version` (sidecar first, then PATH).
+    /// Returns `None` when the tool is not installed.
+    pub async fn tool_version(&self, name: &str) -> Option<String> {
+        let out = self
+            .run_capture(name, &["--version".to_string()])
+            .await
+            .ok()?;
+        let first = out.lines().next()?.trim();
+        if first.is_empty() {
+            return None;
+        }
+        Some(first.chars().take(64).collect())
+    }
+
     async fn spawn(
         &self,
         name: &str,

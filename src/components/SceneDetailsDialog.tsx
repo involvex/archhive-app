@@ -4,7 +4,7 @@ import { sceneThumbUrl, sceneMediaUrl, isWebPlayableScene, isHttpMediaSrc } from
 import { getAppRuntime } from "@/lib/runtime";
 import type { Scene } from "@/lib/types";
 import { Button } from "@/components/ui/button";
-import { X } from "lucide-react";
+import { Check, Copy, X } from "lucide-react";
 
 interface SceneDetailsDialogProps {
   scene: Scene | null;
@@ -25,6 +25,7 @@ function SceneDetailsBody({ scene, onClose }: { scene: Scene; onClose: () => voi
   const [error, setError] = useState<string | null>(null);
   const [probing, setProbing] = useState(false);
   const [probeResult, setProbeResult] = useState("");
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -64,6 +65,41 @@ function SceneDetailsBody({ scene, onClose }: { scene: Scene; onClose: () => voi
     } finally {
       setProbing(false);
     }
+  }
+
+  // Q12: copy a compact debug payload for bug reports.
+  async function copyDebugJson() {
+    const payload = {
+      id: data.id,
+      title: data.title,
+      path: data.path,
+      thumb: data.thumb,
+      source_url: data.source_url,
+      duration: data.duration,
+      width: data.width,
+      height: data.height,
+      file_size: data.file_size,
+      channel: data.channel,
+      studio_name: data.studio_name,
+      date: data.date,
+      rating: data.rating,
+      performers: data.performers,
+      tags: data.tags,
+      phash: data.phash,
+      oshash: data.oshash,
+    };
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = JSON.stringify(payload, null, 2);
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      ta.remove();
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
   }
 
   return (
@@ -128,6 +164,14 @@ function SceneDetailsBody({ scene, onClose }: { scene: Scene; onClose: () => voi
             <dd>{fileSize}</dd>
           </div>
         )}
+        {data.width != null && data.height != null && (
+          <div>
+            <dt className="text-[var(--color-muted-foreground)]">Resolution</dt>
+            <dd>
+              {data.width}×{data.height}
+            </dd>
+          </div>
+        )}
         {data.phash && (
           <div>
             <dt className="text-[var(--color-muted-foreground)]">pHash</dt>
@@ -180,6 +224,10 @@ function SceneDetailsBody({ scene, onClose }: { scene: Scene; onClose: () => voi
           <span className="text-xs text-[var(--color-muted-foreground)]">{probeResult}</span>
         )}
         <div className="flex-1" />
+        <Button variant="outline" size="sm" onClick={() => void copyDebugJson()}>
+          {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+          {copied ? "Copied" : "Copy debug JSON"}
+        </Button>
         <Button variant="outline" size="sm" onClick={() => void probeMetadata()} disabled={probing}>
           {probing ? "Probing…" : "Probe metadata"}
         </Button>

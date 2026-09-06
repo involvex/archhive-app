@@ -205,6 +205,11 @@ impl LibraryScanner {
                         let _ = db.update_scene_duration(&scene_id, dur as u32);
                     }
                 }
+
+                // Probe resolution if not already set.
+                if let Some((width, height)) = ffmpeg.probe_resolution(&video_path).await {
+                    let _ = db.update_scene_resolution(&scene_id, width, height);
+                }
             }));
         }
 
@@ -218,13 +223,20 @@ impl LibraryScanner {
     }
 
     /// Probe durations for all scenes that don't have one set.
-    /// Returns the count of durations successfully probed.
+    /// Also backfills missing resolutions. Returns the count of durations
+    /// successfully probed.
     pub async fn probe_library_durations(
         db: Arc<Database>,
         app: AppHandle,
         concurrency: usize,
     ) -> AppResult<crate::models::DurationProbeResult> {
-        let missing = db.list_scenes_missing_durations()?;
+        let mut missing = db.list_scenes_missing_durations()?;
+        // Union in scenes missing resolution so one probe pass backfills both.
+        for (id, path) in db.list_scenes_missing_resolution()? {
+            if !missing.iter().any(|(mid, _)| mid == &id) {
+                missing.push((id, path));
+            }
+        }
         if missing.is_empty() {
             return Ok(crate::models::DurationProbeResult {
                 probed: 0,
@@ -257,6 +269,9 @@ impl LibraryScanner {
                 }
 
                 let ffmpeg = FfmpegProcessor::new(app);
+                if let Some((width, height)) = ffmpeg.probe_resolution(&video_path).await {
+                    let _ = db.update_scene_resolution(&scene_id, width, height);
+                }
                 match ffmpeg.probe_duration(&video_path).await {
                     Some(dur) if dur > 0.0 => {
                         if db.update_scene_duration(&scene_id, dur as u32).is_ok() {

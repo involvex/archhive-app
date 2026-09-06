@@ -16,11 +16,13 @@ import { mergeDiscoveredHosts } from "@/lib/lan-discovery";
 import { getPluginSettingsPanels } from "@/lib/plugins/loader";
 import { visibleSettingsTabs } from "@/lib/settings/capabilities";
 import type {
+  BinaryVersions,
   CookieSiteInfo,
   DuplicateGroup,
   EngineMode,
   FfmpegStatus,
   LanHost,
+  OrphanSidecar,
   SiteInfo,
   AppSettings,
   AppTheme,
@@ -40,6 +42,13 @@ export const Route = createFileRoute("/settings/")({
 
 function groupKey(group: DuplicateGroup) {
   return `${group.match_type}:${group.hash}`;
+}
+
+function formatBytesShort(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
 const ENGINE_LABELS: Record<EngineMode, string> = {
@@ -110,6 +119,15 @@ function SettingsPage() {
   const [scanProgress, setScanProgress] = useState("");
   const [scanResult, setScanResult] = useState("");
   const [ffmpegAvail, setFfmpegAvail] = useState<FfmpegStatus | null>(null);
+  // Q13: binary versions card.
+  const [binaryVersions, setBinaryVersions] = useState<BinaryVersions | null>(null);
+  const [versionsLoading, setVersionsLoading] = useState(false);
+  // Q17: clear thumbnail cache.
+  const [clearingThumbs, setClearingThumbs] = useState(false);
+  // Q19: orphan sidecar cleanup.
+  const [orphans, setOrphans] = useState<OrphanSidecar[] | null>(null);
+  const [orphansLoading, setOrphansLoading] = useState(false);
+  const [orphanStatus, setOrphanStatus] = useState("");
   const [discoveredHosts, setDiscoveredHosts] = useState<LanHost[]>([]);
   const [discovering, setDiscovering] = useState(false);
   const [discoverStatus, setDiscoverStatus] = useState("");
@@ -309,6 +327,85 @@ function SettingsPage() {
       .then(setFfmpegAvail)
       .catch(() => setFfmpegAvail({ ffmpeg_available: false, ffprobe_available: false }));
   }, []);
+
+  // Q13: binary version card (yt-dlp / gallery-dl / ffmpeg / ffprobe).
+  const refreshVersions = useCallback(async () => {
+    setVersionsLoading(true);
+    try {
+      setBinaryVersions(await api.binaryVersions());
+    } catch {
+      setBinaryVersions(null);
+    } finally {
+      setVersionsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void refreshVersions();
+  }, [refreshVersions]);
+
+  // Q17: clear all thumbnail references (sidecar files stay on disk; the
+  // orphan cleaner below removes leftovers). Regenerate via "Generate missing
+  // thumbs" afterwards.
+  async function runClearThumbs() {
+    if (!window.confirm("Clear all scene thumbnails? You can regenerate them afterwards.")) {
+      return;
+    }
+    setClearingThumbs(true);
+    setScanResult("");
+    try {
+      const result = await api.clearAllThumbs();
+      setScanResult(
+        `Cleared ${result.cleared} thumbnail${result.cleared === 1 ? "" : "s"}. Run "Generate missing thumbs" to rebuild.`,
+      );
+    } catch (e) {
+      setScanResult(e instanceof Error ? e.message : "Clear failed");
+    } finally {
+      setClearingThumbs(false);
+    }
+  }
+
+  // Q19: orphan sidecar scan + cleanup with count/size totals.
+  async function loadOrphans() {
+    setOrphansLoading(true);
+    setOrphanStatus("");
+    try {
+      setOrphans(await api.listOrphanSidecars());
+    } catch (e) {
+      setOrphanStatus(e instanceof Error ? e.message : "Orphan scan failed");
+      setOrphans(null);
+    } finally {
+      setOrphansLoading(false);
+    }
+  }
+
+  async function deleteOneOrphan(path: string) {
+    try {
+      await api.deleteOrphanSidecar(path);
+      setOrphans((prev) => prev?.filter((o) => o.path !== path) ?? prev);
+    } catch (e) {
+      setOrphanStatus(e instanceof Error ? e.message : "Delete failed");
+    }
+  }
+
+  async function deleteAllOrphans() {
+    if (!orphans || orphans.length === 0) return;
+    if (!window.confirm(`Delete all ${orphans.length} orphan sidecars?`)) return;
+    setOrphansLoading(true);
+    try {
+      for (const o of orphans) {
+        await api.deleteOrphanSidecar(o.path);
+      }
+      setOrphans([]);
+      setOrphanStatus("All orphan sidecars deleted.");
+    } catch (e) {
+      setOrphanStatus(e instanceof Error ? e.message : "Bulk delete failed");
+      await loadOrphans();
+    } finally {
+      setOrphansLoading(false);
+    }
+  }
 
   async function saveCookies() {
     if (!selectedSite || !cookieText.trim()) return;
@@ -653,10 +750,17 @@ function SettingsPage() {
                   </Button>
                   <Button
                     variant="outline"
+                    onClick={() => void runClearThumbs()}
+                    disabled={clearingThumbs}
+                  >
+                    {clearingThumbs ? "Clearing…" : "Clear thumbnail cache"}
+                  </Button>
+                  <Button
+                    variant="outline"
                     onClick={() => void runProbeDurations()}
                     disabled={probingDurations}
                   >
-                    {probingDurations ? "Probing…" : "Probe durations"}
+                    {probingDurations ? "Probing…" : "Probe durations + resolutions"}
                   </Button>
                   {ffmpegAvail && (
                     <span className="inline-flex items-center gap-1 rounded-full border border-[var(--color-border)] px-2 py-0.5 text-[10px]">
@@ -681,6 +785,106 @@ function SettingsPage() {
                     <p className="text-xs text-[var(--color-muted-foreground)]">{scanResult}</p>
                   )}
                 </>
+              )}
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Media tools</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-xs text-[var(--color-muted-foreground)]">
+                Versions of the bundled sidecars (desktop) or PATH tools. Missing entries mean the
+                tool was not found.
+              </p>
+              <dl className="grid grid-cols-2 gap-2 text-sm">
+                {(
+                  [
+                    ["yt-dlp", binaryVersions?.ytdlp_version],
+                    ["gallery-dl", binaryVersions?.gallery_dl_version],
+                    ["ffmpeg", binaryVersions?.ffmpeg_version],
+                    ["ffprobe", binaryVersions?.ffprobe_version],
+                  ] as const
+                ).map(([name, version]) => (
+                  <div
+                    key={name}
+                    className="rounded-md border border-[var(--color-border)] px-3 py-2"
+                  >
+                    <dt className="text-xs text-[var(--color-muted-foreground)]">{name}</dt>
+                    <dd className="truncate font-mono text-xs">
+                      {versionsLoading ? "…" : (version ?? "not found")}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+              <Button variant="outline" size="sm" onClick={() => void refreshVersions()}>
+                Refresh versions
+              </Button>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Orphan sidecars</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-xs text-[var(--color-muted-foreground)]">
+                Thumbnail images in the library folder with no matching scene. Safe to delete.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" size="sm" onClick={() => void loadOrphans()}>
+                  {orphansLoading ? "Scanning…" : "Scan orphans"}
+                </Button>
+                {orphans != null && orphans.length > 0 && (
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => void deleteAllOrphans()}
+                    disabled={orphansLoading}
+                  >
+                    Delete all
+                  </Button>
+                )}
+              </div>
+              {orphanStatus && (
+                <p className="text-xs text-[var(--color-muted-foreground)]">{orphanStatus}</p>
+              )}
+              {orphans != null && (
+                <div className="space-y-2">
+                  <p className="text-sm">
+                    {orphans.length} orphan{orphans.length === 1 ? "" : "s"} ·{" "}
+                    {formatBytesShort(orphans.reduce((sum, o) => sum + o.size, 0))} reclaimable
+                  </p>
+                  {orphans.length > 0 && (
+                    <ul className="max-h-48 space-y-1 overflow-y-auto text-xs">
+                      {orphans.slice(0, 100).map((o) => (
+                        <li
+                          key={o.path}
+                          className="flex items-center justify-between gap-2 rounded border border-[var(--color-border)] px-2 py-1"
+                        >
+                          <span className="min-w-0 flex-1 truncate font-mono" title={o.path}>
+                            {o.path}
+                          </span>
+                          <span className="shrink-0 text-[var(--color-muted-foreground)]">
+                            {formatBytesShort(o.size)}
+                          </span>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 px-2"
+                            onClick={() => void deleteOneOrphan(o.path)}
+                          >
+                            Delete
+                          </Button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {orphans.length > 100 && (
+                    <p className="text-xs text-[var(--color-muted-foreground)]">
+                      Showing first 100 — use Delete all to clear the rest.
+                    </p>
+                  )}
+                </div>
               )}
             </CardContent>
           </Card>

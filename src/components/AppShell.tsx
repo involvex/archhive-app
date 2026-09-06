@@ -11,6 +11,7 @@ import {
   Sun,
   Moon,
   Monitor,
+  Copy,
 } from "lucide-react";
 import { resolveAppVersion } from "@/lib/appVersion";
 import { getPluginNavItems } from "@/lib/plugins/loader";
@@ -30,6 +31,7 @@ const desktopNavItems = [
   { to: "/library", label: "Library", icon: Library, shortcut: "Ctrl+3" },
   { to: "/live", label: "Live", icon: Radio, shortcut: "Ctrl+4" },
   { to: "/downloads", label: "Downloads", icon: Download, shortcut: "Ctrl+5" },
+  { to: "/duplicates", label: "Duplicates", icon: Copy, shortcut: "Ctrl+7" },
   { to: "/settings", label: "Settings", icon: Settings, shortcut: "Ctrl+6" },
 ] as const;
 
@@ -55,6 +57,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const mobileNav = [...mobileNavItems, ...pluginNavItems];
   const [appVersion, setAppVersion] = useState("");
   const [sceneCount, setSceneCount] = useState<number | null>(null);
+  // Q14: duplicate-group badge (null = unknown/failed, hidden).
+  const [duplicateCount, setDuplicateCount] = useState<number | null>(null);
   const { theme, setTheme } = useTheme();
 
   const themeOptions: { value: AppTheme; icon: typeof Sun; label: string }[] = [
@@ -71,6 +75,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     void api
       .getLibraryStats()
       .then((s) => setSceneCount(s.scene_count))
+      .catch(() => {});
+    // Best-effort badge; failures (e.g. remote not configured) stay hidden.
+    void api
+      .findDuplicates()
+      .then((groups) => setDuplicateCount(groups.length))
       .catch(() => {});
   }, []);
 
@@ -92,7 +101,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <nav className="flex flex-col gap-1">
           {desktopNav.map(({ to, label, icon: Icon, ...rest }) => {
             const count =
-              to === "/library" && sceneCount != null && sceneCount > 0 ? sceneCount : null;
+              to === "/library" && sceneCount != null && sceneCount > 0
+                ? sceneCount > 99
+                  ? "99+"
+                  : sceneCount
+                : to === "/duplicates" && duplicateCount != null && duplicateCount > 0
+                  ? duplicateCount > 99
+                    ? "99+"
+                    : duplicateCount
+                  : null;
             return (
               <Link
                 key={to}

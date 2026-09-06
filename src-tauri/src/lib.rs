@@ -179,6 +179,8 @@ pub fn run() {
             commands::list_orphan_sidecars,
             commands::delete_orphan_sidecar,
             commands::clear_scene_thumb,
+            commands::clear_all_thumbs,
+            commands::binary_versions,
             commands::get_library_stats,
             commands::export_performers,
             commands::set_performer_image,

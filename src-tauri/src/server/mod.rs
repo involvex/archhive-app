@@ -134,7 +134,11 @@ impl LanServer {
             )
             .route("/api/settings", get(get_settings).put(put_settings))
             .route("/api/library/scan", post(scan_library))
-            .route("/api/library/thumbs", post(generate_missing_thumbs))
+            .route(
+                "/api/library/thumbs",
+                post(generate_missing_thumbs).delete(clear_all_thumbs),
+            )
+            .route("/api/system/versions", get(binary_versions))
             .route("/api/library/orphans", get(list_orphan_sidecars))
             .route("/api/library/filter", post(list_scenes_with_filter))
             .route("/api/library/ffmpeg-status", get(ffmpeg_status))
@@ -814,6 +818,27 @@ async fn ffmpeg_status(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(serde_json::json!(status)))
+}
+
+async fn binary_versions(
+    State(state): State<ApiState>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let versions = state
+        .app
+        .binary_versions()
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(serde_json::json!(versions)))
+}
+
+async fn clear_all_thumbs(
+    State(state): State<ApiState>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let result = state
+        .app
+        .clear_all_thumbs()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(serde_json::json!(result)))
 }
 
 fn parse_kind(s: &str) -> AppResult<crate::models::BrowseKind> {

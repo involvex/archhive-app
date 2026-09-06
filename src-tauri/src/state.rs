@@ -588,6 +588,11 @@ impl AppState {
             }
         }
 
+        // Probe resolution and write to DB.
+        if let Some((width, height)) = ffmpeg.probe_resolution(path).await {
+            let _ = self.db.update_scene_resolution(scene_id, width, height);
+        }
+
         // Extract thumbnail if missing.
         if scene
             .thumb
@@ -663,6 +668,28 @@ impl AppState {
 
     pub fn clear_scene_thumb(&self, scene_id: &str) -> AppResult<()> {
         self.db.clear_scene_thumb(scene_id)
+    }
+
+    pub fn clear_all_thumbs(&self) -> AppResult<crate::models::ClearThumbsResult> {
+        let cleared = self.db.clear_all_thumbs()?;
+        Ok(crate::models::ClearThumbsResult { cleared })
+    }
+
+    pub async fn binary_versions(&self) -> AppResult<crate::models::BinaryVersions> {
+        use crate::sites::yt_dlp::SidecarRunner;
+        let runner = SidecarRunner::new(self.site_ctx.app().clone());
+        let (ffmpeg, ffprobe, ytdlp, gallery_dl) = tokio::join!(
+            runner.tool_version("ffmpeg"),
+            runner.tool_version("ffprobe"),
+            runner.tool_version("yt-dlp"),
+            runner.tool_version("gallery-dl"),
+        );
+        Ok(crate::models::BinaryVersions {
+            ffmpeg_version: ffmpeg,
+            ffprobe_version: ffprobe,
+            ytdlp_version: ytdlp,
+            gallery_dl_version: gallery_dl,
+        })
     }
 
     pub fn get_library_stats(&self) -> AppResult<crate::models::LibraryStats> {

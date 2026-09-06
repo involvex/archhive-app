@@ -434,6 +434,20 @@ pub fn clear_scene_thumb(state: State<'_, Arc<AppState>>, scene_id: String) -> C
 }
 
 #[tauri::command]
+pub fn clear_all_thumbs(
+    state: State<'_, Arc<AppState>>,
+) -> CmdResult<crate::models::ClearThumbsResult> {
+    map_err(state.clear_all_thumbs())
+}
+
+#[tauri::command]
+pub async fn binary_versions(
+    state: State<'_, Arc<AppState>>,
+) -> CmdResult<crate::models::BinaryVersions> {
+    map_err(state.binary_versions().await)
+}
+
+#[tauri::command]
 pub async fn get_library_stats(state: State<'_, Arc<AppState>>) -> CmdResult<LibraryStats> {
     let s = Arc::clone(&state);
     let result = tauri::async_runtime::spawn_blocking(move || s.get_library_stats())

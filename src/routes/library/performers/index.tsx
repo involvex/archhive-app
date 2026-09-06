@@ -11,10 +11,13 @@ export const Route = createFileRoute("/library/performers/")({
   component: PerformersPage,
 });
 
+type PerformerSort = "name" | "scenes";
+
 function PerformersPage() {
   const navigate = useNavigate();
   const [performers, setPerformers] = useState<Performer[]>([]);
   const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<PerformerSort>("name");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadTargetId, setUploadTargetId] = useState<string | null>(null);
@@ -108,55 +111,75 @@ function PerformersPage() {
           )}
         </div>
       </div>
-      <Input
-        placeholder="Search performers..."
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        className="max-w-md"
-      />
-      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-        {performers.map((p) => {
-          const checked = selected.has(p.name);
-          return (
-            <Card
-              key={p.id}
-              className={`cursor-pointer transition-colors ${
-                checked
-                  ? "border-[var(--color-primary)] bg-[var(--color-primary)]/5"
-                  : "hover:border-[var(--color-primary)]"
-              }`}
-              onClick={() => toggle(p.name)}
+      <div className="flex flex-wrap items-center gap-2">
+        <Input
+          placeholder="Search performers..."
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          className="max-w-md flex-1"
+        />
+        <div className="flex gap-1" title="Sort performers">
+          {(["name", "scenes"] as const).map((mode) => (
+            <Button
+              key={mode}
+              size="sm"
+              variant={sort === mode ? "default" : "outline"}
+              onClick={() => setSort(mode)}
             >
-              <CardContent className="flex items-center gap-3 p-3">
-                <button
-                  type="button"
-                  className="group relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--color-muted)] overflow-hidden cursor-pointer"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setUploadTargetId(p.id);
-                    fileInputRef.current?.click();
-                  }}
-                  title="Set profile image"
-                >
-                  {p.image ? (
-                    <img src={p.image} alt={p.name} className="h-full w-full object-cover" />
-                  ) : (
-                    <Users className="h-5 w-5" />
-                  )}
-                  <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Camera className="h-4 w-4 text-white" />
+              {mode === "name" ? "Name" : "Scenes"}
+            </Button>
+          ))}
+        </div>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        {[...performers]
+          .sort((a, b) =>
+            sort === "scenes"
+              ? b.scene_count - a.scene_count || a.name.localeCompare(b.name)
+              : a.name.localeCompare(b.name),
+          )
+          .map((p) => {
+            const checked = selected.has(p.name);
+            return (
+              <Card
+                key={p.id}
+                className={`cursor-pointer transition-colors ${
+                  checked
+                    ? "border-[var(--color-primary)] bg-[var(--color-primary)]/5"
+                    : "hover:border-[var(--color-primary)]"
+                }`}
+                onClick={() => toggle(p.name)}
+              >
+                <CardContent className="flex items-center gap-3 p-3">
+                  <button
+                    type="button"
+                    className="group relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--color-muted)] overflow-hidden cursor-pointer"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setUploadTargetId(p.id);
+                      fileInputRef.current?.click();
+                    }}
+                    title="Set profile image"
+                  >
+                    {p.image ? (
+                      <img src={p.image} alt={p.name} className="h-full w-full object-cover" />
+                    ) : (
+                      <Users className="h-5 w-5" />
+                    )}
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Camera className="h-4 w-4 text-white" />
+                    </div>
+                  </button>
+                  <div>
+                    <p className="font-medium">{p.name}</p>
+                    <p className="text-xs text-[var(--color-muted-foreground)]">
+                      {p.scene_count} scenes
+                    </p>
                   </div>
-                </button>
-                <div>
-                  <p className="font-medium">{p.name}</p>
-                  <p className="text-xs text-[var(--color-muted-foreground)]">
-                    {p.scene_count} scenes
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
+                </CardContent>
+              </Card>
+            );
+          })}
       </div>
       {performers.length === 0 && (
         <p className="text-sm text-[var(--color-muted-foreground)]">No performers yet.</p>

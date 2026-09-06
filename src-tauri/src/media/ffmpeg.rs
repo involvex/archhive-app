@@ -30,6 +30,30 @@ impl FfmpegProcessor {
         raw.trim().parse::<f64>().ok()
     }
 
+    /// Probe the video resolution (width, height) via ffprobe.
+    /// Returns `None` on any failure.
+    pub async fn probe_resolution(&self, video_path: &Path) -> Option<(u32, u32)> {
+        let args = vec![
+            "-v".to_string(),
+            "error".to_string(),
+            "-select_streams".to_string(),
+            "v:0".to_string(),
+            "-show_entries".to_string(),
+            "stream=width,height".to_string(),
+            "-of".to_string(),
+            "csv=p=0".to_string(),
+            video_path.to_string_lossy().to_string(),
+        ];
+        let raw = self.runner.spawn_ffprobe(&args).await.ok()?;
+        let mut parts = raw.trim().split(',');
+        let width: u32 = parts.next()?.trim().parse().ok()?;
+        let height: u32 = parts.next()?.trim().parse().ok()?;
+        if width == 0 || height == 0 {
+            return None;
+        }
+        Some((width, height))
+    }
+
     /// Extract a single JPEG thumbnail from the video.
     ///
     /// Strategy:

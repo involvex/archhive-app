@@ -49,6 +49,13 @@ export function registerDefaultShortcuts(navigate: (path: string) => void): void
     action: () => navigate("/settings"),
   });
   registerShortcut({
+    id: "nav-duplicates",
+    label: "Go to Duplicates",
+    keys: "Ctrl+7",
+    category: "navigation",
+    action: () => navigate("/duplicates"),
+  });
+  registerShortcut({
     id: "cmd-palette",
     label: "Command Palette",
     keys: "Ctrl+K",
