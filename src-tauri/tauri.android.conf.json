@@ -1,9 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "bundle": {
-    "externalBin": [
-      "binaries/ffmpeg-aarch64-linux-android",
-      "binaries/ffprobe-aarch64-linux-android"
-    ]
+    "externalBin": ["binaries/ffmpeg", "binaries/ffprobe"]
   }
 }
