@@ -177,10 +177,11 @@ function BrowsePage() {
 
   // #28 saved searches (watchlist).
   // Review: cap rendered/queued new matches so a huge listing can't flood the UI or queue.
-  const MAX_NEW_MATCHES = 50;
+  const MAX_NEW_MATCHES = 25;
   const [saved, setSaved] = useState<SavedSearch[]>([]);
   const savedRef = useRef<SavedSearch[]>([]);
   const [checkingId, setCheckingId] = useState<string | null>(null);
+  const [queueing, setQueueing] = useState(false);
   const [pollStatus, setPollStatus] = useState<WatchlistStatus | null>(null);
   // New-matches dialog: items returned by the last manual check.
   const [newMatches, setNewMatches] = useState<{
@@ -243,11 +244,15 @@ function BrowsePage() {
   }
 
   async function queueAllNewMatches() {
-    if (!newMatches) return;
+    if (!newMatches || queueing) return;
+    setQueueing(true);
     try {
       await api.queueDownloads(newMatches.items.map((i) => i.url));
+      closeNewMatches();
     } catch (e) {
       console.error(e);
+    } finally {
+      setQueueing(false);
     }
   }
 
@@ -770,9 +775,14 @@ function BrowsePage() {
                 )}
               </p>
               <div className="flex gap-2">
-                <Button size="sm" variant="outline" onClick={() => void queueAllNewMatches()}>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void queueAllNewMatches()}
+                  disabled={queueing}
+                >
                   <Download className="h-3.5 w-3.5 mr-1.5" />
-                  Queue all
+                  {queueing ? "Queueing…" : "Queue all"}
                 </Button>
                 <Button size="sm" variant="ghost" onClick={() => void closeNewMatches()}>
                   Dismiss
