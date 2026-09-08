@@ -1,4 +1,4 @@
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 use crate::models::{BrowseKind, BrowsePage, BrowseQuery, DownloadPlan, DownloadTool, MediaItem};
 use crate::sites::urls::query_slug;
 use crate::sites::yt_dlp::SidecarRunner;
@@ -235,6 +235,39 @@ impl SiteAdapter for GenericYtDlpAdapter {
             has_more: false,
             total: Some(1),
         })
+    }
+
+    async fn resolve_stream_url(&self, ctx: &SiteContext, url: &str) -> AppResult<String> {
+        let direct = match self.site_id {
+            "youtube" => crate::sites::extractors::youtube::extract_download_url(ctx, url).await?,
+            "tiktok" => crate::sites::extractors::tiktok::extract_download_url(ctx, url).await?,
+            "twitter" => crate::sites::extractors::twitter::extract_download_url(ctx, url).await?,
+            _ => None,
+        };
+        if let Some(stream_url) = direct {
+            return Ok(stream_url);
+        }
+
+        let runner = SidecarRunner::new(ctx.app().clone());
+        let cookies = ctx.cookie_file_for_site(self.site_id);
+        let mut args = vec![
+            url.to_string(),
+            "--get-url".to_string(),
+            "--no-warnings".to_string(),
+            "--no-playlist".to_string(),
+        ];
+        if let Some(cookies) = cookies.as_ref() {
+            args.push("--cookies".to_string());
+            args.push(cookies.to_string_lossy().to_string());
+        }
+        let raw = runner.run_capture_for_stream_url("yt-dlp", &args).await?;
+        let stream_url = raw
+            .lines()
+            .map(str::trim)
+            .find(|line| !line.is_empty())
+            .ok_or_else(|| AppError::Other("No stream URL resolved".to_string()))?
+            .to_string();
+        Ok(stream_url)
     }
 
     async fn resolve_download(

@@ -538,11 +538,18 @@ impl AppState {
     /// Resolve a direct streamable URL for a media item using `yt-dlp --get-url`.
     /// Used by the in-app Watch button to preview a remote video without downloading.
     pub async fn resolve_stream_url(&self, url: &str) -> AppResult<String> {
-        let runner = crate::sites::yt_dlp::SidecarRunner::new(self.site_ctx.app().clone());
         let site_id = self
             .sites
             .detect(url)
             .unwrap_or_else(|| "custom".to_string());
+
+        if let Some(adapter) = self.sites.get(&site_id) {
+            if let Ok(stream_url) = adapter.resolve_stream_url(&self.site_ctx, url).await {
+                return Ok(stream_url);
+            }
+        }
+
+        let runner = crate::sites::yt_dlp::SidecarRunner::new(self.site_ctx.app().clone());
         let cookies = self.site_ctx.cookie_file_for_site(&site_id);
         let mut args = vec![
             url.to_string(),

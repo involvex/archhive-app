@@ -71,4 +71,6 @@ pub trait SiteAdapter: Send + Sync {
         ctx: &SiteContext,
         item: &MediaItem,
     ) -> AppResult<DownloadPlan>;
+
+    async fn resolve_stream_url(&self, ctx: &SiteContext, url: &str) -> AppResult<String>;
 }

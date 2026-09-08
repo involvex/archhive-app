@@ -1,4 +1,4 @@
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 use crate::models::{BrowseKind, BrowsePage, BrowseQuery, DownloadPlan, DownloadTool, MediaItem};
 use crate::sites::browse_fallback::ytdlp_browse_fallback;
 use crate::sites::urls::{path_slug, query_slug};
@@ -42,6 +42,35 @@ impl SiteAdapter for RedditAdapter {
             has_more,
             total: None,
         })
+    }
+
+    async fn resolve_stream_url(&self, ctx: &SiteContext, url: &str) -> AppResult<String> {
+        if let Ok(Some(direct_url)) =
+            crate::sites::extractors::reddit::extract_download_url(ctx, url).await
+        {
+            return Ok(direct_url);
+        }
+
+        let runner = crate::sites::yt_dlp::SidecarRunner::new(ctx.app().clone());
+        let cookies = ctx.cookie_file_for_site(self.id());
+        let mut args = vec![
+            url.to_string(),
+            "--get-url".to_string(),
+            "--no-warnings".to_string(),
+            "--no-playlist".to_string(),
+        ];
+        if let Some(cookies) = cookies.as_ref() {
+            args.push("--cookies".to_string());
+            args.push(cookies.to_string_lossy().to_string());
+        }
+        let raw = runner.run_capture_for_stream_url("yt-dlp", &args).await?;
+        let stream_url = raw
+            .lines()
+            .map(str::trim)
+            .find(|line| !line.is_empty())
+            .ok_or_else(|| AppError::Other("No stream URL resolved".to_string()))?
+            .to_string();
+        Ok(stream_url)
     }
 
     async fn resolve_download(

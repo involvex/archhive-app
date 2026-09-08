@@ -34,7 +34,6 @@ function remoteMediaUrl(path: string, tokenQs: string): string | undefined {
 }
 
 export function sceneThumbUrl(scene: Scene): string | undefined {
-  // Only request thumbs when a real image path exists (never use video path).
   if (!scene.thumb) return undefined;
 
   const { settings } = useSettingsStore.getState();
@@ -47,6 +46,10 @@ export function sceneThumbUrl(scene: Scene): string | undefined {
     if (settings.lan_enabled) {
       return `http://127.0.0.1:${settings.lan_port}/api/scenes/${scene.id}/thumb${tokenQuery(lanAuthToken())}`;
     }
+    return convertFileSrc(scene.thumb);
+  }
+
+  if (getAppRuntime() === "mobile-tauri" && settings.engine_mode === "local") {
     return convertFileSrc(scene.thumb);
   }
 
@@ -67,6 +70,10 @@ export function sceneMediaUrl(scene: Scene): string | undefined {
     if (settings.lan_enabled) {
       return `http://127.0.0.1:${settings.lan_port}/api/scenes/${scene.id}/media${tokenQuery(lanAuthToken())}`;
     }
+    return convertFileSrc(scene.path);
+  }
+
+  if (getAppRuntime() === "mobile-tauri" && settings.engine_mode === "local") {
     return convertFileSrc(scene.path);
   }
 
@@ -97,6 +104,12 @@ export function fileStreamUrl(relativePath: string): string | undefined {
 
   if (getAppRuntime() === "desktop-tauri" && settings.lan_enabled) {
     return `http://127.0.0.1:${settings.lan_port}/api/files/stream?path=${pathParam}${tokenAmp(lanAuthToken())}`;
+  }
+
+  if (getAppRuntime() === "mobile-tauri" && settings.engine_mode === "local") {
+    const root = settings.library_path;
+    const abs = root ? root.replace(/\\/g, "/") + "/" + pathParam.replace(/\\/g, "/") : undefined;
+    if (abs) return convertFileSrc(abs);
   }
 
   return undefined;
