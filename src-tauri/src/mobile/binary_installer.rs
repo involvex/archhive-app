@@ -4,8 +4,25 @@ use reqwest::Client;
 use std::path::{Path, PathBuf};
 use tauri::AppHandle;
 
-const YT_DLP_DOWNLOAD_URL: &str =
-    "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp";
+fn yt_dlp_download_url() -> &'static str {
+    if cfg!(target_os = "windows") {
+        "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"
+    } else if cfg!(target_os = "macos") {
+        "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos"
+    } else {
+        "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp"
+    }
+}
+
+fn gallery_dl_download_url() -> &'static str {
+    if cfg!(target_os = "windows") {
+        "https://github.com/mikf/gallery-dl/releases/latest/download/gallery-dl.exe"
+    } else if cfg!(target_os = "macos") {
+        "https://github.com/mikf/gallery-dl/releases/latest/download/gallery-dl_macos"
+    } else {
+        "https://github.com/mikf/gallery-dl/releases/latest/download/gallery-dl"
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct BinaryInstaller {
@@ -38,10 +55,17 @@ impl BinaryInstaller {
     }
 
     pub async fn install_yt_dlp(&self) -> AppResult<PathBuf> {
+        #[cfg(any(target_os = "android", target_os = "ios"))]
+        {
+            return Err(AppError::Other(
+                "yt-dlp installation is not supported on mobile. Use a desktop client for full download support.".to_string(),
+            ));
+        }
+
         let dest = self.install_dir.join("yt-dlp");
         let tmp = self.install_dir.join("yt-dlp.tmp");
 
-        self.download_file(YT_DLP_DOWNLOAD_URL, &tmp).await?;
+        self.download_file(yt_dlp_download_url(), &tmp).await?;
         std::fs::rename(&tmp, &dest)
             .map_err(|e| AppError::Other(format!("Failed to move yt-dlp binary: {e}")))?;
 
@@ -57,10 +81,17 @@ impl BinaryInstaller {
     }
 
     pub async fn install_gallery_dl(&self) -> AppResult<PathBuf> {
+        #[cfg(any(target_os = "android", target_os = "ios"))]
+        {
+            return Err(AppError::Other(
+                "gallery-dl installation is not supported on mobile. Use a desktop client for full download support.".to_string(),
+            ));
+        }
+
         let dest = self.install_dir.join("gallery-dl");
         let tmp = self.install_dir.join("gallery-dl.tmp");
 
-        self.download_file(YT_DLP_DOWNLOAD_URL, &tmp).await?;
+        self.download_file(gallery_dl_download_url(), &tmp).await?;
         std::fs::rename(&tmp, &dest)
             .map_err(|e| AppError::Other(format!("Failed to move gallery-dl binary: {e}")))?;
 

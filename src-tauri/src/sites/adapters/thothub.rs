@@ -41,7 +41,10 @@ impl SiteAdapter for ThotHubAdapter {
             Err(_) => Vec::new(),
         };
         if items.is_empty() {
-            items = ytdlp_browse_fallback(ctx, self.id(), &url, query.page, 24).await?;
+            items = match ytdlp_browse_fallback(ctx, self.id(), &url, query.page, 24).await {
+                Ok(fallback) => fallback,
+                Err(_) => Vec::new(),
+            };
         }
         let has_more = items.len() >= 24;
         Ok(BrowsePage {

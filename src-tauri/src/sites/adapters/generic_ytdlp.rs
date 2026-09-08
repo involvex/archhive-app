@@ -167,15 +167,13 @@ impl SiteAdapter for GenericYtDlpAdapter {
         ) {
             let runner = SidecarRunner::new(ctx.app().clone());
             let cookies = ctx.cookie_file_for_site(self.site_id);
-            let entries = runner
+            let entries = match runner
                 .list_flat_playlist(&url, query.page, 24, cookies.as_deref())
                 .await
-                .map_err(|e| {
-                    crate::error::AppError::Site(format!(
-                        "{} browse failed: {e}. Import cookies in Settings if the site blocks anonymous access.",
-                        self.name
-                    ))
-                })?;
+            {
+                Ok(entries) => entries,
+                Err(_) => Vec::new(),
+            };
             let items = entries
                 .into_iter()
                 .map(|(id, title, item_url, thumbnail)| MediaItem {

@@ -320,7 +320,11 @@ impl SidecarRunner {
         name: &str,
         args: &[String],
     ) -> AppResult<String> {
-        self.run_capture(name, args).await
+        self.run_capture(name, args).await.map_err(|e| {
+            AppError::Other(format!(
+                "Failed to resolve stream: {e}. Install {name} in Settings → Library for playback support."
+            ))
+        })
     }
 
     async fn run_capture(&self, name: &str, args: &[String]) -> AppResult<String> {

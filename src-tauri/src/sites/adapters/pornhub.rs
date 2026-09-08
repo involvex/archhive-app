@@ -48,7 +48,10 @@ macro_rules! ytdlp_tube_adapter {
                 // Drop obvious nav junk so we fall through to yt-dlp.
                 items.retain(|i| !is_junk_nav_title(&i.title));
                 if items.is_empty() {
-                    items = ytdlp_browse_fallback(ctx, $id, &url, query.page, 24).await?;
+                    items = match ytdlp_browse_fallback(ctx, $id, &url, query.page, 24).await {
+                        Ok(fallback) => fallback,
+                        Err(_) => Vec::new(),
+                    };
                 }
                 if items.is_empty() {
                     return Err(crate::error::AppError::Site(format!(
@@ -175,7 +178,10 @@ impl SiteAdapter for PornhubAdapter {
         let html = ctx.fetch_html(&url, self.id()).await?;
         let mut items = parse_video_links(&html, PH_BASE, self.id())?;
         if items.is_empty() {
-            items = ytdlp_browse_fallback(ctx, self.id(), &url, query.page, 24).await?;
+            items = match ytdlp_browse_fallback(ctx, self.id(), &url, query.page, 24).await {
+                Ok(fallback) => fallback,
+                Err(_) => Vec::new(),
+            };
         }
         if items.is_empty() {
             return Err(crate::error::AppError::Site(

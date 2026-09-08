@@ -33,7 +33,10 @@ impl SiteAdapter for RedditAdapter {
         let html = ctx.fetch_html(&url, "reddit").await?;
         let mut items = parse_reddit(&html);
         if items.is_empty() {
-            items = ytdlp_browse_fallback(ctx, self.id(), &url, query.page, 30).await?;
+            items = match ytdlp_browse_fallback(ctx, self.id(), &url, query.page, 30).await {
+                Ok(fallback) => fallback,
+                Err(_) => Vec::new(),
+            };
         }
         let has_more = items.len() >= 25;
         Ok(BrowsePage {
