@@ -127,8 +127,8 @@ async function remoteFetch<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 async function localInvoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
-  if (getAppRuntime() !== "desktop-tauri") {
-    throw new Error("This action requires the desktop app.");
+  if (getAppRuntime() === "browser") {
+    throw new Error("This action requires the app runtime.");
   }
   return invoke<T>(command, args);
 }
@@ -226,10 +226,10 @@ export const api = {
   },
 
   async deleteDownload(id: string): Promise<void> {
-    if (isDesktopTauri() && !shouldUseRemoteApi()) {
-      return invoke("delete_download", { id });
+    if (shouldUseRemoteApi()) {
+      return remoteFetch<void>(`/api/downloads/${id}`, { method: "DELETE" });
     }
-    return remoteFetch<void>(`/api/downloads/${id}`, { method: "DELETE" });
+    return localInvoke("delete_download", { id });
   },
 
   async queueBulkImport(
@@ -237,16 +237,16 @@ export const api = {
     expandBrowse = true,
     importAll = false,
   ): Promise<BulkImportResult> {
-    if (isDesktopTauri() && !shouldUseRemoteApi()) {
-      return invoke<BulkImportResult>("queue_bulk_import", {
-        urls,
-        expandBrowse,
-        importAll,
+    if (shouldUseRemoteApi()) {
+      return remoteFetch<BulkImportResult>("/api/downloads/bulk", {
+        method: "POST",
+        body: JSON.stringify({ urls, expand_browse: expandBrowse, import_all: importAll }),
       });
     }
-    return remoteFetch<BulkImportResult>("/api/downloads/bulk", {
-      method: "POST",
-      body: JSON.stringify({ urls, expand_browse: expandBrowse, import_all: importAll }),
+    return localInvoke<BulkImportResult>("queue_bulk_import", {
+      urls,
+      expandBrowse,
+      importAll,
     });
   },
 
@@ -522,10 +522,13 @@ export const api = {
   },
 
   async getSettings(): Promise<AppSettings> {
-    if (getAppRuntime() === "desktop-tauri") {
-      return localInvoke<AppSettings>("get_settings");
+    if (shouldUseRemoteApi()) {
+      return remoteFetch<AppSettings>("/api/settings");
     }
-    return useSettingsStore.getState().settings;
+    if (getAppRuntime() === "browser") {
+      return useSettingsStore.getState().settings;
+    }
+    return localInvoke<AppSettings>("get_settings");
   },
 
   async getHostSettings(): Promise<AppSettings> {
@@ -536,11 +539,18 @@ export const api = {
   },
 
   async saveSettings(settings: AppSettings): Promise<void> {
-    if (getAppRuntime() === "desktop-tauri") {
-      await localInvoke("save_settings", { settings });
+    if (shouldUseRemoteApi()) {
+      await remoteFetch<void>("/api/settings", {
+        method: "PUT",
+        body: JSON.stringify(settings),
+      });
       return;
     }
-    useSettingsStore.getState().updateSettings(settings);
+    if (getAppRuntime() === "browser") {
+      useSettingsStore.getState().updateSettings(settings);
+      return;
+    }
+    await localInvoke("save_settings", { settings });
   },
 
   async saveHostSettings(settings: AppSettings): Promise<void> {
@@ -641,22 +651,10 @@ export const api = {
     if (shouldUseRemoteApi()) {
       return remoteFetch<FilesListResponse>(`/api/files${q}`);
     }
-    if (getAppRuntime() === "desktop-tauri") {
-      const { settings } = useSettingsStore.getState();
-      if (!settings.lan_enabled) {
-        throw new Error("Enable the LAN server in Settings → LAN to browse library files.");
-      }
-      const token = settings.lan_token?.trim();
-      const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {};
-      const res = await fetch(`http://127.0.0.1:${settings.lan_port}/api/files${q}`, {
-        headers,
-      });
-      if (!res.ok) {
-        throw new Error(await res.text());
-      }
-      return res.json() as Promise<FilesListResponse>;
+    if (getAppRuntime() === "browser") {
+      throw new Error("File browsing requires the app runtime.");
     }
-    throw new Error("Configure Remote LAN in Settings to browse files.");
+    return localInvoke<FilesListResponse>("list_files", { path });
   },
 
   async scanLibrary(): Promise<{ added: number; updated: number }> {
@@ -665,8 +663,8 @@ export const api = {
         method: "POST",
       });
     }
-    if (getAppRuntime() !== "desktop-tauri") {
-      throw new Error("Library scan runs on the desktop host.");
+    if (getAppRuntime() === "browser") {
+      throw new Error("Library scan requires the app runtime.");
     }
     return localInvoke("scan_library");
   },
@@ -717,7 +715,10 @@ export const api = {
   },
 
   async subscribeDownloadProgress(onProgress: (job: DownloadJob) => void): Promise<() => void> {
-    if (!isDesktopTauri() || shouldUseRemoteApi()) {
+    if (shouldUseRemoteApi()) {
+      return () => {};
+    }
+    if (getAppRuntime() === "browser") {
       return () => {};
     }
     const unlisten = await listen<DownloadJob>("download:progress", (event) => {
@@ -727,7 +728,10 @@ export const api = {
   },
 
   async subscribeScanProgress(onProgress: (progress: ScanProgress) => void): Promise<() => void> {
-    if (getAppRuntime() !== "desktop-tauri") {
+    if (shouldUseRemoteApi()) {
+      return () => {};
+    }
+    if (getAppRuntime() === "browser") {
       return () => {};
     }
     const unlisten = await listen<ScanProgress>("library:scan-progress", (event) => {
@@ -749,5 +753,33 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ image }),
     });
+  },
+
+  async installYtDlp(): Promise<{ installed: boolean; path?: string }> {
+    if (shouldUseRemoteApi()) {
+      throw new Error("Install binaries on the local device, not via Remote LAN.");
+    }
+    return localInvoke("install_yt_dlp");
+  },
+
+  async installGalleryDl(): Promise<{ installed: boolean; path?: string }> {
+    if (shouldUseRemoteApi()) {
+      throw new Error("Install binaries on the local device, not via Remote LAN.");
+    }
+    return localInvoke("install_gallery_dl");
+  },
+
+  async getInstalledBinaries(): Promise<BinaryVersions> {
+    if (shouldUseRemoteApi()) {
+      return remoteFetch<BinaryVersions>("/api/system/installed-binaries");
+    }
+    return localInvoke<BinaryVersions>("get_installed_binaries");
+  },
+
+  async uninstallBinary(name: string): Promise<boolean> {
+    if (shouldUseRemoteApi()) {
+      throw new Error("Uninstall binaries on the local device, not via Remote LAN.");
+    }
+    return localInvoke<boolean>("uninstall_binary", { name });
   },
 };

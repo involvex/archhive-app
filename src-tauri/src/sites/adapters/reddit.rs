@@ -1,5 +1,5 @@
 use crate::error::AppResult;
-use crate::models::{BrowseKind, BrowsePage, BrowseQuery, DownloadPlan, MediaItem};
+use crate::models::{BrowseKind, BrowsePage, BrowseQuery, DownloadPlan, DownloadTool, MediaItem};
 use crate::sites::browse_fallback::ytdlp_browse_fallback;
 use crate::sites::urls::{path_slug, query_slug};
 use crate::sites::{SiteAdapter, SiteContext};
@@ -46,9 +46,39 @@ impl SiteAdapter for RedditAdapter {
 
     async fn resolve_download(
         &self,
-        _ctx: &SiteContext,
+        ctx: &SiteContext,
         item: &MediaItem,
     ) -> AppResult<DownloadPlan> {
+        if let Ok(Some(direct_url)) =
+            crate::sites::extractors::reddit::extract_download_url(ctx, &item.url).await
+        {
+            let enriched = crate::sites::extractors::reddit::extract_info(ctx, &item.url).await;
+            let (performers, channel, thumbnail, duration) = enriched
+                .as_ref()
+                .ok()
+                .map(|m| {
+                    (
+                        m.performers.clone(),
+                        m.channel.clone(),
+                        m.thumbnail.clone(),
+                        m.duration,
+                    )
+                })
+                .unwrap_or_default();
+            return Ok(DownloadPlan {
+                url: direct_url,
+                output_template: "reddit/%(title)s.%(ext)s".to_string(),
+                tool: DownloadTool::DirectHttp,
+                title: Some(item.title.clone()),
+                performers,
+                tags: vec!["reddit".to_string()],
+                adapter_id: "reddit".to_string(),
+                thumbnail_url: thumbnail.or(item.thumbnail.clone()),
+                duration: duration.or(item.duration),
+                channel,
+            });
+        }
+
         let tool = crate::downloads::image::resolve_download_tool(&item.url, "reddit");
         Ok(DownloadPlan {
             url: item.url.clone(),

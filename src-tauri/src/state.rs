@@ -24,6 +24,7 @@ pub struct AppState {
     pub lan_server: Arc<Mutex<Option<LanServer>>>,
     pub static_ui_dir: Arc<Mutex<Option<PathBuf>>>,
     library_root_cache: Arc<Mutex<Option<PathBuf>>>,
+    app: tauri::AppHandle,
 }
 
 impl AppState {
@@ -36,7 +37,7 @@ impl AppState {
         let vault = Arc::new(CookieVault::new(data_dir.clone(), db.connection())?);
         let sites = Arc::new(SiteRegistry::new());
         let site_ctx = Arc::new(SiteContext::new(vault.clone(), app.clone())?);
-        let downloads = Arc::new(DownloadManager::new(db.clone(), app, vault.clone()));
+        let downloads = Arc::new(DownloadManager::new(db.clone(), app.clone(), vault.clone()));
         Ok(Self {
             db,
             data_dir,
@@ -47,7 +48,12 @@ impl AppState {
             lan_server: Arc::new(Mutex::new(None)),
             static_ui_dir: Arc::new(Mutex::new(static_ui_dir)),
             library_root_cache: Arc::new(Mutex::new(None)),
+            app,
         })
+    }
+
+    pub fn app_handle(&self) -> &tauri::AppHandle {
+        &self.app
     }
 
     pub fn cached_library_root(&self) -> AppResult<PathBuf> {
@@ -1010,6 +1016,87 @@ impl AppState {
 
     pub fn static_ui_path(&self) -> Option<PathBuf> {
         self.static_ui_dir.lock().clone()
+    }
+
+    pub fn list_files(&self, path: &str) -> AppResult<crate::models::FilesListResponse> {
+        let root = self.cached_library_root()?;
+        let rel = path.trim_start_matches('/');
+        let dir = if rel.is_empty() {
+            root.clone()
+        } else {
+            root.join(rel)
+        };
+        if !dir.is_dir() {
+            return Err(crate::error::AppError::NotFound(format!(
+                "Directory not found: {}",
+                dir.display()
+            )));
+        }
+        let mut entries = Vec::new();
+        for entry in std::fs::read_dir(&dir)? {
+            let entry = entry?;
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.starts_with('.') {
+                continue;
+            }
+            let meta = entry.metadata()?;
+            let abs = entry.path();
+            let rel_path = relative_path(&root, &abs);
+            let mime = if meta.is_dir() {
+                None
+            } else {
+                Some(mime_from_path(&abs).to_string())
+            };
+            entries.push(crate::models::FileEntry {
+                name,
+                path: rel_path,
+                is_dir: meta.is_dir(),
+                size: if meta.is_file() { Some(meta.len()) } else { None },
+                mime,
+            });
+        }
+        entries.sort_by(|a, b| match (a.is_dir, b.is_dir) {
+            (true, false) => std::cmp::Ordering::Less,
+            (false, true) => std::cmp::Ordering::Greater,
+            _ => a.name.cmp(&b.name),
+        });
+        Ok(crate::models::FilesListResponse {
+            path: rel.to_string(),
+            entries,
+        })
+    }
+}
+
+fn relative_path(root: &Path, abs: &Path) -> String {
+    abs.strip_prefix(root)
+        .unwrap_or(abs)
+        .to_string_lossy()
+        .to_string()
+        .replace('\\', "/")
+}
+
+fn mime_from_path(path: &Path) -> &'static str {
+    match path.extension().and_then(|e| e.to_str()).map(|s| s.to_lowercase()) {
+        Some(e) if e == "mp4" => "video/mp4",
+        Some(e) if e == "webm" => "video/webm",
+        Some(e) if e == "mkv" => "video/x-matroska",
+        Some(e) if e == "avi" => "video/x-msvideo",
+        Some(e) if e == "mov" => "video/quicktime",
+        Some(e) if e == "wmv" => "video/x-ms-wmv",
+        Some(e) if e == "flv" => "video/x-flv",
+        Some(e) if e == "m4v" => "video/x-m4v",
+        Some(e) if e == "jpg" || e == "jpeg" => "image/jpeg",
+        Some(e) if e == "png" => "image/png",
+        Some(e) if e == "gif" => "image/gif",
+        Some(e) if e == "webp" => "image/webp",
+        Some(e) if e == "mp3" => "audio/mpeg",
+        Some(e) if e == "m4a" => "audio/mp4",
+        Some(e) if e == "opus" => "audio/opus",
+        Some(e) if e == "wav" => "audio/wav",
+        Some(e) if e == "txt" => "text/plain",
+        Some(e) if e == "srt" => "text/plain",
+        Some(e) if e == "vtt" => "text/vtt",
+        _ => "application/octet-stream",
     }
 }
 

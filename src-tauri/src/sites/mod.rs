@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 pub mod adapters;
 pub mod browse_fallback;
+pub mod extractors;
 pub mod registry;
 pub mod urls;
 pub mod yt_dlp;

@@ -557,3 +557,76 @@ pub fn set_performer_image(
 ) -> CmdResult<()> {
     map_err(state.set_performer_image(&id, image.as_deref()))
 }
+
+#[tauri::command]
+pub async fn install_yt_dlp(state: State<'_, Arc<AppState>>) -> CmdResult<serde_json::Value> {
+    let installer = crate::mobile::binary_installer::BinaryInstaller::new(
+        state.app_handle().clone(),
+        state.data_dir.clone(),
+    )
+    .map_err(|e| e.to_string())?;
+
+    let path = installer
+        .install_yt_dlp()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(serde_json::json!({
+        "installed": true,
+        "path": path.to_string_lossy().to_string(),
+    }))
+}
+
+#[tauri::command]
+pub async fn install_gallery_dl(state: State<'_, Arc<AppState>>) -> CmdResult<serde_json::Value> {
+    let installer = crate::mobile::binary_installer::BinaryInstaller::new(
+        state.app_handle().clone(),
+        state.data_dir.clone(),
+    )
+    .map_err(|e| e.to_string())?;
+
+    let path = installer
+        .install_gallery_dl()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(serde_json::json!({
+        "installed": true,
+        "path": path.to_string_lossy().to_string(),
+    }))
+}
+
+#[tauri::command]
+pub async fn get_installed_binaries(
+    state: State<'_, Arc<AppState>>,
+) -> CmdResult<crate::models::BinaryVersions> {
+    let installer = crate::mobile::binary_installer::BinaryInstaller::new(
+        state.app_handle().clone(),
+        state.data_dir.clone(),
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(installer.get_installed_versions().await)
+}
+
+#[tauri::command]
+pub async fn uninstall_binary(state: State<'_, Arc<AppState>>, name: String) -> CmdResult<bool> {
+    let installer = crate::mobile::binary_installer::BinaryInstaller::new(
+        state.app_handle().clone(),
+        state.data_dir.clone(),
+    )
+    .map_err(|e| e.to_string())?;
+
+    let path = installer.install_dir().join(&name);
+    if path.exists() {
+        std::fs::remove_file(&path).map_err(|e| e.to_string())?;
+        Ok(true)
+    } else {
+        Ok(false)
+    }
+}
+
+#[tauri::command]
+pub fn list_files(state: State<'_, Arc<AppState>>, path: Option<String>) -> CmdResult<crate::models::FilesListResponse> {
+    map_err(state.list_files(path.as_deref().unwrap_or("")))
+}

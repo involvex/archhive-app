@@ -47,15 +47,7 @@ fn bootstrap_mobile_settings(db: &Database, data_dir: &std::path::Path) -> Resul
         settings.library_path = downloads.to_string_lossy().to_string();
         changed = true;
     }
-    if settings.engine_mode == crate::models::EngineMode::Local {
-        settings.engine_mode = crate::models::EngineMode::RemoteLan;
-        changed = true;
-    }
-    if settings
-        .remote_token
-        .as_ref()
-        .is_some_and(|t| t.trim().is_empty())
-    {
+    if settings.remote_token.as_ref().is_some_and(|t| t.trim().is_empty()) {
         settings.remote_token = None;
         changed = true;
     }
@@ -201,6 +193,11 @@ pub fn run() {
             commands::poll_watchlist,
             commands::watchlist_status,
             commands::dismiss_saved_search_news,
+            commands::install_yt_dlp,
+            commands::install_gallery_dl,
+            commands::get_installed_binaries,
+            commands::uninstall_binary,
+            commands::list_files,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

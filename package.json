@@ -22,6 +22,7 @@
     "android:dev": "powershell -ExecutionPolicy Bypass -File scripts/android-dev.ps1",
     "android:regen": "powershell -ExecutionPolicy Bypass -File scripts/android-regen.ps1",
     "setup:binaries": "powershell -ExecutionPolicy Bypass -File scripts/setup-binaries.ps1",
+    "setup:binaries:android": "powershell -ExecutionPolicy Bypass -File scripts/setup-binaries.ps1 -IncludeAndroid",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "typecheck": "tsc --noEmit",

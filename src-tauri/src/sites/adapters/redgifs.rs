@@ -56,9 +56,40 @@ impl SiteAdapter for RedgifsAdapter {
 
     async fn resolve_download(
         &self,
-        _ctx: &SiteContext,
+        ctx: &SiteContext,
         item: &MediaItem,
     ) -> AppResult<DownloadPlan> {
+        if let Ok(Some(direct_url)) =
+            crate::sites::extractors::redgifs::extract_download_url(ctx, &item.url).await
+        {
+            let enriched = crate::sites::extractors::redgifs::extract_info(ctx, &item.url).await;
+            let (performers, channel, tags, thumbnail, duration) = enriched
+                .as_ref()
+                .ok()
+                .map(|m| {
+                    (
+                        m.performers.clone(),
+                        m.channel.clone(),
+                        m.tags.clone(),
+                        m.thumbnail.clone(),
+                        m.duration,
+                    )
+                })
+                .unwrap_or_default();
+            return Ok(DownloadPlan {
+                url: direct_url,
+                output_template: "redgifs/%(title)s.%(ext)s".to_string(),
+                tool: DownloadTool::DirectHttp,
+                title: Some(item.title.clone()),
+                performers,
+                tags,
+                adapter_id: "redgifs".to_string(),
+                thumbnail_url: thumbnail.or(item.thumbnail.clone()),
+                duration: duration.or(item.duration),
+                channel,
+            });
+        }
+
         Ok(DownloadPlan {
             url: item.url.clone(),
             output_template: "redgifs/%(title)s.%(ext)s".to_string(),

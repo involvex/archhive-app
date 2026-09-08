@@ -1,9 +1,10 @@
 use crate::error::{AppError, AppResult};
 use regex::Regex;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tauri::AppHandle;
+use tauri::Manager;
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 
@@ -14,6 +15,30 @@ pub struct SidecarRunner {
 impl SidecarRunner {
     pub fn new(app: AppHandle) -> Self {
         Self { app }
+    }
+
+    fn resolve_binary_path(&self, name: &str) -> Option<PathBuf> {
+        let data_dir = self.app.path().app_data_dir().ok()?;
+        let installed = data_dir.join("bin").join(name);
+        if installed.exists() {
+            return Some(installed);
+        }
+        None
+    }
+
+    fn spawn_from_path(
+        &self,
+        path: &Path,
+        args: &[String],
+    ) -> AppResult<(tauri::async_runtime::Receiver<CommandEvent>, CommandChild)> {
+        let (rx, child) = self
+            .app
+            .shell()
+            .command(path.to_string_lossy().as_ref())
+            .args(args)
+            .spawn()
+            .map_err(|e| AppError::Download(format!("spawn {}: {e}", path.display())))?;
+        Ok((rx, child))
     }
 
     pub async fn run_yt_dlp(
@@ -201,29 +226,22 @@ impl SidecarRunner {
         on_line: impl Fn(&str),
         output_dir: Option<&str>,
     ) -> AppResult<String> {
-        let sidecar_result = self
+        if let Some(path) = self.resolve_binary_path(name) {
+            let (rx, child) = self.spawn_from_path(&path, args)?;
+            return self
+                .consume_cancellable(rx, child, name, cancel, on_line, output_dir)
+                .await;
+        }
+
+        let (rx, child) = self
             .app
             .shell()
-            .sidecar(format!("binaries/{name}"))
-            .map(|cmd| cmd.args(args).spawn());
-
-        match sidecar_result {
-            Ok(Ok((rx, child))) => {
-                self.consume_cancellable(rx, child, name, cancel, on_line, output_dir)
-                    .await
-            }
-            _ => {
-                let (rx, child) = self
-                    .app
-                    .shell()
-                    .command(name)
-                    .args(args)
-                    .spawn()
-                    .map_err(|e| AppError::Download(format!("spawn {name}: {e}")))?;
-                self.consume_cancellable(rx, child, name, cancel, on_line, output_dir)
-                    .await
-            }
-        }
+            .command(name)
+            .args(args)
+            .spawn()
+            .map_err(|e| AppError::Download(format!("spawn {name}: {e}")))?;
+        self.consume_cancellable(rx, child, name, cancel, on_line, output_dir)
+            .await
     }
 
     async fn consume_cancellable(
@@ -306,23 +324,28 @@ impl SidecarRunner {
     }
 
     async fn run_capture(&self, name: &str, args: &[String]) -> AppResult<String> {
-        let sidecar_result = self
-            .app
-            .shell()
-            .sidecar(format!("binaries/{name}"))
-            .map(|cmd| cmd.args(args).spawn());
+        let mut rx = if let Some(path) = self.resolve_binary_path(name) {
+            let (rx, _child) = self.spawn_from_path(&path, args)?;
+            rx
+        } else {
+            let sidecar_result = self
+                .app
+                .shell()
+                .sidecar(format!("binaries/{name}"))
+                .map(|cmd| cmd.args(args).spawn());
 
-        let mut rx = match sidecar_result {
-            Ok(Ok((rx, _child))) => rx,
-            _ => {
-                let (rx, _child) = self
-                    .app
-                    .shell()
-                    .command(name)
-                    .args(args)
-                    .spawn()
-                    .map_err(|e| AppError::Download(format!("spawn {name}: {e}")))?;
-                rx
+            match sidecar_result {
+                Ok(Ok((rx, _child))) => rx,
+                _ => {
+                    let (rx, _child) = self
+                        .app
+                        .shell()
+                        .command(name)
+                        .args(args)
+                        .spawn()
+                        .map_err(|e| AppError::Download(format!("spawn {name}: {e}")))?;
+                    rx
+                }
             }
         };
 
@@ -390,6 +413,11 @@ impl SidecarRunner {
         args: &[String],
         on_line: impl Fn(&str),
     ) -> AppResult<String> {
+        if let Some(path) = self.resolve_binary_path(name) {
+            let (rx, _child) = self.spawn_from_path(&path, args)?;
+            return self.consume(rx, name, on_line).await;
+        }
+
         let sidecar_result = self
             .app
             .shell()

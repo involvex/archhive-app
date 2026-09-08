@@ -605,3 +605,18 @@ pub struct LibraryStats {
     pub total_size_bytes: u64,
     pub free_space_bytes: u64,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FileEntry {
+    pub name: String,
+    pub path: String,
+    pub is_dir: bool,
+    pub size: Option<u64>,
+    pub mime: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FilesListResponse {
+    pub path: String,
+    pub entries: Vec<FileEntry>,
+}

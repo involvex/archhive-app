@@ -44,5 +44,23 @@ if [[ -f "$FFMPEG_OUT" ]]; then
   chmod +x "$FFMPEG_OUT"
 fi
 
+if [[ "${2:-}" == "--android" ]]; then
+  echo "Downloading Android ARM64 ffmpeg/ffprobe..."
+  ANDROID_TAR="$(mktemp).tar.xz"
+  curl -fsSL "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linuxarm64-gpl.tar.xz" -o "$ANDROID_TAR"
+  ANDROID_DIR="$(mktemp -d)"
+  tar -xf "$ANDROID_TAR" -C "$ANDROID_DIR"
+  ANDROID_BIN_DIR="$(find "$ANDROID_DIR" -type d -name bin | head -n 1)"
+  if [[ -n "$ANDROID_BIN_DIR" ]]; then
+    cp "$ANDROID_BIN_DIR/ffmpeg" "$BIN_DIR/ffmpeg-aarch64-linux-android"
+    cp "$ANDROID_BIN_DIR/ffprobe" "$BIN_DIR/ffprobe-aarch64-linux-android"
+    chmod +x "$BIN_DIR/ffmpeg-aarch64-linux-android" "$BIN_DIR/ffprobe-aarch64-linux-android"
+    echo "Android ffmpeg/ffprobe installed to $BIN_DIR"
+  else
+    echo "Warning: Android ffmpeg download failed"
+  fi
+  rm -rf "$ANDROID_DIR" "$ANDROID_TAR"
+fi
+
 echo "gallery-dl: install on PATH (pip install gallery-dl) or extend this script."
 echo "Done."
