@@ -62,22 +62,25 @@ impl BinaryInstaller {
             ));
         }
 
-        let dest = self.install_dir.join("yt-dlp");
-        let tmp = self.install_dir.join("yt-dlp.tmp");
-
-        self.download_file(yt_dlp_download_url(), &tmp).await?;
-        std::fs::rename(&tmp, &dest)
-            .map_err(|e| AppError::Other(format!("Failed to move yt-dlp binary: {e}")))?;
-
-        #[cfg(unix)]
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
         {
-            use std::os::unix::fs::PermissionsExt;
-            let mut perms = std::fs::metadata(&dest)?.permissions();
-            perms.set_mode(0o755);
-            std::fs::set_permissions(&dest, perms)?;
-        }
+            let dest = self.install_dir.join("yt-dlp");
+            let tmp = self.install_dir.join("yt-dlp.tmp");
 
-        Ok(dest)
+            self.download_file(yt_dlp_download_url(), &tmp).await?;
+            std::fs::rename(&tmp, &dest)
+                .map_err(|e| AppError::Other(format!("Failed to move yt-dlp binary: {e}")))?;
+
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let mut perms = std::fs::metadata(&dest)?.permissions();
+                perms.set_mode(0o755);
+                std::fs::set_permissions(&dest, perms)?;
+            }
+
+            Ok(dest)
+        }
     }
 
     pub async fn install_gallery_dl(&self) -> AppResult<PathBuf> {
@@ -88,22 +91,25 @@ impl BinaryInstaller {
             ));
         }
 
-        let dest = self.install_dir.join("gallery-dl");
-        let tmp = self.install_dir.join("gallery-dl.tmp");
-
-        self.download_file(gallery_dl_download_url(), &tmp).await?;
-        std::fs::rename(&tmp, &dest)
-            .map_err(|e| AppError::Other(format!("Failed to move gallery-dl binary: {e}")))?;
-
-        #[cfg(unix)]
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
         {
-            use std::os::unix::fs::PermissionsExt;
-            let mut perms = std::fs::metadata(&dest)?.permissions();
-            perms.set_mode(0o755);
-            std::fs::set_permissions(&dest, perms)?;
-        }
+            let dest = self.install_dir.join("gallery-dl");
+            let tmp = self.install_dir.join("gallery-dl.tmp");
 
-        Ok(dest)
+            self.download_file(gallery_dl_download_url(), &tmp).await?;
+            std::fs::rename(&tmp, &dest)
+                .map_err(|e| AppError::Other(format!("Failed to move gallery-dl binary: {e}")))?;
+
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let mut perms = std::fs::metadata(&dest)?.permissions();
+                perms.set_mode(0o755);
+                std::fs::set_permissions(&dest, perms)?;
+            }
+
+            Ok(dest)
+        }
     }
 
     pub async fn get_installed_versions(&self) -> BinaryVersions {

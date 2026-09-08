@@ -696,6 +696,7 @@ impl AppState {
     }
 
     /// Watchlist poller tuning (review: named constants, single due-check).
+    #[cfg(not(mobile))]
     const POLL_TICK_SECS: u64 = 60;
     /// Cap per search per pass so a runaway listing can't flood the queue.
     const MAX_QUEUE_PER_SEARCH: usize = 25;
@@ -886,6 +887,7 @@ impl AppState {
 
     /// Background loop for the watchlist poller. Ticks every minute; each
     /// pass only touches searches past their poll interval.
+    #[cfg(not(mobile))]
     pub fn spawn_watchlist_poller(self: &std::sync::Arc<Self>) {
         let state = self.clone();
         tauri::async_runtime::spawn(async move {

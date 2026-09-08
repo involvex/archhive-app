@@ -241,6 +241,7 @@ fn build_browse_page(rooms: Vec<HttpRoom>, page: u32) -> BrowsePage {
     }
 }
 
+#[cfg(desktop)]
 fn build_webview_browse_page(
     rooms: Vec<crate::sites::adapters::stripchat_webview::_RawRoom>,
     page: u32,
@@ -546,6 +547,7 @@ fn extract_username_from_url(url: &str) -> Option<String> {
     Some(first.to_string())
 }
 
+#[cfg(desktop)]
 fn map_room(room: &crate::sites::adapters::stripchat_webview::_RawRoom) -> MediaItem {
     let username = &room.username;
     let room_url = format!("{BASE}/{username}/");
