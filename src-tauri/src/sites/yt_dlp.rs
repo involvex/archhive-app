@@ -466,7 +466,11 @@ impl SidecarRunner {
         Ok(stdout)
     }
 
-    pub async fn spawn_ffmpeg(&self, args: &[String], on_line: impl Fn(&str)) -> AppResult<String> {
+    pub async fn spawn_ffmpeg(
+        &self,
+        args: &[String],
+        on_line: impl FnMut(&str),
+    ) -> AppResult<String> {
         self.spawn("ffmpeg", args, on_line).await
     }
 
@@ -492,7 +496,7 @@ impl SidecarRunner {
         &self,
         name: &str,
         args: &[String],
-        on_line: impl Fn(&str),
+        on_line: impl FnMut(&str),
     ) -> AppResult<String> {
         if let Some(path) = self.resolve_binary_path(name) {
             let (rx, _child) = self.spawn_from_path(&path, args)?;
@@ -524,7 +528,7 @@ impl SidecarRunner {
         &self,
         mut rx: tauri::async_runtime::Receiver<CommandEvent>,
         name: &str,
-        on_line: impl Fn(&str),
+        mut on_line: impl FnMut(&str),
     ) -> AppResult<String> {
         let mut destination = String::new();
         while let Some(event) = rx.recv().await {

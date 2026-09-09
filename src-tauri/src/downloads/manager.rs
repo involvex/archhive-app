@@ -476,6 +476,47 @@ async fn run_job_with_plan(
             }
             Ok(vec![path?])
         }
+        DownloadTool::FfmpegHls => {
+            if !cancel.load(Ordering::Relaxed) {
+                return handle_stopped(&db, &app, &job_id);
+            }
+            let cookie_header = vault.cookie_header(&plan.adapter_id).ok().flatten();
+            std::fs::create_dir_all(library_path)?;
+            let base = plan
+                .title
+                .clone()
+                .map(|t| crate::downloads::image::sanitize_filename(&t))
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| "video".to_string());
+            let filename = if base.contains('.') {
+                base
+            } else {
+                format!("{base}.mp4")
+            };
+            let out_path =
+                crate::downloads::image::unique_path(Path::new(library_path).join(&filename));
+            let processor = crate::media::FfmpegProcessor::new(app.clone());
+            let result = processor
+                .download_hls(
+                    &plan.url,
+                    &out_path,
+                    plan.referer.as_deref(),
+                    cookie_header.as_deref(),
+                    plan.duration,
+                    Some(|fraction: Option<f32>| {
+                        update_progress(&db_emit, &app_emit, &job_id_emit, "", fraction);
+                    }),
+                )
+                .await;
+            if result.is_err() {
+                let _ = std::fs::remove_file(&out_path);
+                if !cancel.load(Ordering::Relaxed) {
+                    return handle_stopped(&db, &app, &job_id);
+                }
+            }
+            result?;
+            Ok(vec![out_path.to_string_lossy().to_string()])
+        }
         DownloadTool::YtDlp => {
             let cancel_clone = cancel.clone();
             let settings = db.get_settings().unwrap_or_default();

@@ -235,6 +235,25 @@ impl SiteAdapter for PornhubAdapter {
                     output_template: "%(title)s.%(ext)s".to_string(),
                     tool: DownloadTool::DirectHttp,
                     title: Some(item.title.clone()),
+                    performers: performers.clone(),
+                    tags: tags.clone(),
+                    adapter_id: self.id().to_string(),
+                    thumbnail_url: item.thumbnail.clone(),
+                    duration: item.duration,
+                    channel: channel.clone(),
+                    referer: Some(item.url.clone()),
+                });
+            }
+            // HLS-only pages: download the playlist via ffmpeg stream-copy
+            // with Referer/Cookie headers (plain HTTP would fetch playlists).
+            if let Ok(Some(hls_url)) =
+                crate::sites::extractors::pornhub::extract_hls_url(ctx, &item.url).await
+            {
+                return Ok(DownloadPlan {
+                    url: hls_url,
+                    output_template: "%(title)s.%(ext)s".to_string(),
+                    tool: DownloadTool::FfmpegHls,
+                    title: Some(item.title.clone()),
                     performers,
                     tags,
                     adapter_id: self.id().to_string(),

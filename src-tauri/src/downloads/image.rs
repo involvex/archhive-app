@@ -33,6 +33,9 @@ pub fn resolve_download_tool(url: &str, adapter: &str) -> crate::models::Downloa
     if lower.contains("redd.it") && !lower.contains("/comments/") {
         return DownloadTool::DirectHttp;
     }
+    if lower.contains(".m3u8") {
+        return DownloadTool::FfmpegHls;
+    }
     DownloadTool::YtDlp
 }
 
@@ -181,7 +184,7 @@ fn extension_from_response(
     ".jpg".to_string()
 }
 
-fn sanitize_filename(name: &str) -> String {
+pub(crate) fn sanitize_filename(name: &str) -> String {
     let safe: String = name
         .chars()
         .map(|c| {
@@ -197,7 +200,7 @@ fn sanitize_filename(name: &str) -> String {
     safe.trim_matches('_').to_string()
 }
 
-fn unique_path(path: PathBuf) -> PathBuf {
+pub(crate) fn unique_path(path: PathBuf) -> PathBuf {
     if !path.exists() {
         return path;
     }

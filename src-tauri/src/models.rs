@@ -138,6 +138,10 @@ pub enum DownloadTool {
     YtDlp,
     GalleryDl,
     DirectHttp,
+    /// HLS playlist saved to MP4 via ffmpeg stream-copy. Used when only a
+    /// gated `.m3u8` exists (e.g. PornHub): ffmpeg sends Referer/Cookie
+    /// headers that plain HTTP and `<video>` cannot.
+    FfmpegHls,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
