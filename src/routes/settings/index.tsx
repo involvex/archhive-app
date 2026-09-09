@@ -849,12 +849,13 @@ function SettingsPage() {
             <CardContent className="space-y-3">
               <p className="text-xs text-[var(--color-muted-foreground)]">
                 {runtime === "mobile-tauri"
-                  ? "Bundled media processing tools. yt-dlp and gallery-dl are not available on Android."
+                  ? "Bundled media tools. yt-dlp runs via the embedded Android engine."
                   : "Versions of the bundled sidecars (desktop) or PATH tools. Missing entries mean the tool was not found."}
               </p>
               <dl className="grid grid-cols-2 gap-2 text-sm">
                 {(runtime === "mobile-tauri"
                   ? ([
+                      ["yt-dlp", binaryVersions?.ytdlp_version],
                       ["ffmpeg", binaryVersions?.ffmpeg_version],
                       ["ffprobe", binaryVersions?.ffprobe_version],
                     ] as const)
@@ -876,11 +877,9 @@ function SettingsPage() {
                   </div>
                 ))}
               </dl>
-              {runtime !== "mobile-tauri" && (
-                <Button variant="outline" size="sm" onClick={() => void refreshVersions()}>
-                  Refresh versions
-                </Button>
-              )}
+              <Button variant="outline" size="sm" onClick={() => void refreshVersions()}>
+                Refresh versions
+              </Button>
             </CardContent>
           </Card>
           <Card>
@@ -891,22 +890,12 @@ function SettingsPage() {
               {runtime === "mobile-tauri" ? (
                 <>
                   <p className="text-xs text-[var(--color-muted-foreground)]">
-                    Standalone mode supports direct playback and browsing for:
+                    Standalone mode includes an embedded yt-dlp engine for direct streaming and
+                    downloading on supported sites.
                   </p>
-                  <ul className="list-disc pl-5 text-xs text-[var(--color-muted-foreground)] space-y-1">
-                    <li>YouTube</li>
-                    <li>TikTok</li>
-                    <li>Twitter / X</li>
-                    <li>Reddit</li>
-                    <li>RedGifs</li>
-                  </ul>
                   <p className="text-xs text-[var(--color-muted-foreground)]">
-                    Tube sites (PornHub, xHamster, XVideos, YouPorn, XNXX, ThotHub, Chaturbate)
-                    require a desktop host via <strong>Remote LAN</strong> mode for streaming.
-                  </p>
-                  <p className="rounded-md border border-[var(--color-border)] bg-[var(--color-muted)] p-3 text-xs">
-                    💡 Connect to your desktop ArcHive in{" "}
-                    <strong>Settings → Engine → Remote LAN</strong> for full site support.
+                    For sites without native support (e.g. Chaturbate live streams), use{" "}
+                    <strong>Remote LAN</strong> mode to connect to your desktop host.
                   </p>
                 </>
               ) : (

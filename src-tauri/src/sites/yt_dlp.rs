@@ -233,6 +233,47 @@ impl SidecarRunner {
         on_line: impl Fn(&str),
         output_dir: Option<&str>,
     ) -> AppResult<String> {
+        // On Android, use the youtubedl-android Kotlin plugin for yt-dlp downloads.
+        #[cfg(target_os = "android")]
+        if name == "yt-dlp" {
+            use std::sync::Arc;
+            let handle = self
+                .app
+                .state::<Arc<crate::mobile::ytdlp_bridge::YtDlpHandle>>();
+            let output = handle.execute(args)?;
+            // Feed all output lines to the callback (progress won't stream in real-time).
+            for line in output.stdout.lines() {
+                on_line(line);
+            }
+            for line in output.stderr.lines() {
+                on_line(line);
+            }
+            if output.exit_code != 0 {
+                let detail = if output.stderr.trim().is_empty() {
+                    output.stdout.trim().to_string()
+                } else {
+                    output.stderr.trim().to_string()
+                };
+                return Err(AppError::Download(format!(
+                    "yt-dlp exited with code {}{}",
+                    output.exit_code,
+                    if detail.is_empty() {
+                        String::new()
+                    } else {
+                        format!(": {detail}")
+                    }
+                )));
+            }
+            // Parse the combined output for destination path.
+            let mut destination = String::new();
+            for line in output.stdout.lines() {
+                if let Some(path) = Self::parse_destination(line) {
+                    destination = path;
+                }
+            }
+            return Ok(destination);
+        }
+
         if let Some(path) = self.resolve_binary_path(name) {
             let (rx, child) = self.spawn_from_path(&path, args)?;
             return self
@@ -345,6 +386,33 @@ impl SidecarRunner {
     }
 
     async fn run_capture(&self, name: &str, args: &[String]) -> AppResult<String> {
+        // On Android, use the youtubedl-android Kotlin plugin for yt-dlp commands.
+        #[cfg(target_os = "android")]
+        if name == "yt-dlp" {
+            use std::sync::Arc;
+            let handle = self
+                .app
+                .state::<Arc<crate::mobile::ytdlp_bridge::YtDlpHandle>>();
+            let output = handle.execute(args)?;
+            if output.exit_code != 0 {
+                let detail = if output.stderr.trim().is_empty() {
+                    output.stdout.trim().to_string()
+                } else {
+                    output.stderr.trim().to_string()
+                };
+                return Err(AppError::Download(format!(
+                    "yt-dlp exited with code {}{}",
+                    output.exit_code,
+                    if detail.is_empty() {
+                        String::new()
+                    } else {
+                        format!(": {detail}")
+                    }
+                )));
+            }
+            return Ok(output.stdout);
+        }
+
         let mut rx = if let Some(path) = self.resolve_binary_path(name) {
             let (rx, _child) = self.spawn_from_path(&path, args)?;
             rx

@@ -113,6 +113,19 @@ pub fn run() {
         {
             bootstrap_mobile_settings(&db, &data_dir)?;
             ensure_sidecar_permissions(app.handle());
+
+            // Register the youtubedl-android Kotlin plugin and store its handle
+            #[cfg(target_os = "android")]
+            {
+                use tauri::Manager;
+                let handle = app
+                    .handle()
+                    .tc()
+                    .plugin_handle()
+                    .register_android_plugin("com.archhive.app", "YtDlpPlugin")
+                    .map_err(|e| format!("Failed to register YtDlpPlugin: {e}"))?;
+                app.manage(Arc::new(crate::mobile::ytdlp_bridge::YtDlpHandle::new(handle)));
+            }
         }
 
         let static_ui = resolve_lan_static_ui(app.handle());
