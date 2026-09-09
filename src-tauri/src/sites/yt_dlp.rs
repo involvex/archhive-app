@@ -251,21 +251,8 @@ impl SidecarRunner {
             for line in output.stderr.lines() {
                 on_line(line);
             }
-            if output.exit_code != 0 {
-                let detail = if output.stderr.trim().is_empty() {
-                    output.stdout.trim().to_string()
-                } else {
-                    output.stderr.trim().to_string()
-                };
-                return Err(AppError::Download(format!(
-                    "yt-dlp exited with code {}{}",
-                    output.exit_code,
-                    if detail.is_empty() {
-                        String::new()
-                    } else {
-                        format!(": {detail}")
-                    }
-                )));
+            if let Some(err) = android_bridge_error(&output) {
+                return Err(err);
             }
             // Parse the combined output for destination path.
             let mut destination = String::new();
@@ -393,21 +380,8 @@ impl SidecarRunner {
         #[cfg(target_os = "android")]
         if name == "yt-dlp" {
             let output = crate::mobile::ytdlp_bridge::execute(&self.app, args)?;
-            if output.exit_code != 0 {
-                let detail = if output.stderr.trim().is_empty() {
-                    output.stdout.trim().to_string()
-                } else {
-                    output.stderr.trim().to_string()
-                };
-                return Err(AppError::Download(format!(
-                    "yt-dlp exited with code {}{}",
-                    output.exit_code,
-                    if detail.is_empty() {
-                        String::new()
-                    } else {
-                        format!(": {detail}")
-                    }
-                )));
+            if let Some(err) = android_bridge_error(&output) {
+                return Err(err);
             }
             return Ok(output.stdout);
         }
@@ -669,6 +643,44 @@ fn looks_like_media_path(s: &str) -> bool {
     MEDIA_EXTS.iter().any(|ext| lower.ends_with(ext))
 }
 
+/// Append actionable guidance to site-block errors (403/Forbidden). Embedded
+/// clients are fingerprinted and blocked far more often than desktop
+/// browsers; cookies or Remote LAN mode usually fix it.
+fn with_block_hint(detail: &str) -> String {
+    if detail.contains("403") || detail.contains("Forbidden") || detail.contains("forbidden") {
+        format!(
+            "{detail} Site is blocking the embedded engine. Import cookies in Settings → Cookies, \
+             update the yt-dlp engine in Settings → Library, or use Remote LAN mode."
+        )
+    } else {
+        detail.to_string()
+    }
+}
+
+/// Map a youtubedl-android plugin result to an actionable download error.
+/// Returns `None` when the plugin reported success. Android-only in practice;
+/// kept compiled on all targets so unit tests cover the mapping.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+fn android_bridge_error(output: &crate::mobile::ytdlp_bridge::YtDlpOutput) -> Option<AppError> {
+    if output.exit_code == 0 {
+        return None;
+    }
+    let detail = if output.stderr.trim().is_empty() {
+        output.stdout.trim().to_string()
+    } else {
+        output.stderr.trim().to_string()
+    };
+    let suffix = if detail.is_empty() {
+        String::new()
+    } else {
+        format!(": {}", with_block_hint(&detail))
+    };
+    Some(AppError::Download(format!(
+        "yt-dlp exited with code {}{suffix}",
+        output.exit_code
+    )))
+}
+
 fn feed_lines(buf: &mut String, chunk: &str, mut on_line: impl FnMut(&str)) {
     buf.push_str(chunk);
     while let Some(idx) = buf.find('\n') {
@@ -907,5 +919,48 @@ mod tests {
         feed_lines(&mut buf, "tion: /a/b.mp4\n", |l| lines.push(l.to_string()));
         assert_eq!(lines.len(), 1);
         assert!(lines[0].contains("Destination:"));
+    }
+
+    #[test]
+    fn block_hint_appends_guidance_on_403() {
+        let msg = with_block_hint(
+            "ERROR: [PornHub] 6a971478b2f82: Unable to download webpage: HTTP Error 403: Forbidden",
+        );
+        assert!(msg.contains("HTTP Error 403"));
+        assert!(msg.contains("Settings → Cookies"));
+        assert!(msg.contains("Remote LAN"));
+    }
+
+    #[test]
+    fn block_hint_leaves_other_errors_alone() {
+        let detail = "ERROR: Video unavailable";
+        assert_eq!(with_block_hint(detail), detail);
+    }
+
+    #[test]
+    fn android_bridge_error_none_on_success() {
+        use crate::mobile::ytdlp_bridge::YtDlpOutput;
+        let out = YtDlpOutput {
+            stdout: "[download] Destination: /a/b.mp4".to_string(),
+            stderr: String::new(),
+            exit_code: 0,
+        };
+        assert!(android_bridge_error(&out).is_none());
+    }
+
+    #[test]
+    fn android_bridge_error_prefers_stderr_and_hints() {
+        use crate::mobile::ytdlp_bridge::YtDlpOutput;
+        let out = YtDlpOutput {
+            stdout: "WARNING: older than 90 days".to_string(),
+            stderr: "ERROR: HTTP Error 403: Forbidden".to_string(),
+            exit_code: -1,
+        };
+        let err = android_bridge_error(&out).expect("expected an error");
+        let msg = err.to_string();
+        assert!(msg.contains("code -1"));
+        assert!(msg.contains("HTTP Error 403"));
+        assert!(msg.contains("Settings → Cookies"));
+        assert!(!msg.contains("older than 90 days"));
     }
 }

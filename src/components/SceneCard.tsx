@@ -12,6 +12,8 @@ export interface CardWatchState {
 
 type CardItem = MediaItem | Scene;
 
+export type { CardItem };
+
 interface SceneCardProps {
   item: CardItem;
   onDownload?: (item: MediaItem) => void;

@@ -12,6 +12,8 @@ import {
   DEVTOOLS_COOKIE_CONSOLE_SNIPPET,
 } from "@/lib/cookies/import";
 import { useUnifiedSettings } from "@/hooks/useUnifiedSettings";
+import { hasLocalBackend } from "@/lib/runtime";
+import { open } from "@tauri-apps/plugin-dialog";
 import { mergeDiscoveredHosts } from "@/lib/lan-discovery";
 import { getPluginSettingsPanels } from "@/lib/plugins/loader";
 import { visibleSettingsTabs } from "@/lib/settings/capabilities";
@@ -49,6 +51,16 @@ function formatBytesShort(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}
+
+// yt-dlp versions are dates (YYYY.MM.DD). Flag builds older than 90 days —
+// yt-dlp itself warns and sites start blocking stale clients.
+function isStaleYtDlp(version?: string): boolean {
+  if (!version) return false;
+  const m = version.match(/(\d{4})\.(\d{2})\.(\d{2})/);
+  if (!m) return false;
+  const released = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return Date.now() - released > 90 * 24 * 60 * 60 * 1000;
 }
 
 const ENGINE_LABELS: Record<EngineMode, string> = {
@@ -134,6 +146,9 @@ function SettingsPage() {
   const [appVersion, setAppVersion] = useState("…");
   const [installingBinary, setInstallingBinary] = useState<string | null>(null);
   const [binaryInstallStatus, setBinaryInstallStatus] = useState<string>("");
+  const [updatingYtDlp, setUpdatingYtDlp] = useState(false);
+  const [pickingFolder, setPickingFolder] = useState(false);
+  const [libraryPickerStatus, setLibraryPickerStatus] = useState("");
 
   useEffect(() => {
     void resolveAppVersion().then(setAppVersion);
@@ -498,6 +513,79 @@ function SettingsPage() {
     }
   }
 
+  // Standalone/mobile: update the embedded yt-dlp engine in place.
+  // The download can take several minutes — nudge the status text if the
+  // backend hasn't answered after 60s (the backend itself times out at 10m).
+  async function updateYtDlpEngine() {
+    if (updatingYtDlp) return;
+    setUpdatingYtDlp(true);
+    setBinaryInstallStatus("Updating yt-dlp engine… (downloads ~30–60 MB)");
+    const nudge = setTimeout(() => {
+      setBinaryInstallStatus(
+        "Still updating… the engine download can take several minutes on slow networks.",
+      );
+    }, 60_000);
+    try {
+      const msg = await api.updateYtDlp();
+      setBinaryInstallStatus(msg || "yt-dlp engine updated. Refresh versions to verify.");
+    } catch (e) {
+      setBinaryInstallStatus(e instanceof Error ? e.message : "yt-dlp update failed");
+    } finally {
+      clearTimeout(nudge);
+      setUpdatingYtDlp(false);
+      void refreshVersions();
+    }
+  }
+
+  // Native folder picker for the download output path (on-device backends).
+  async function pickLibraryFolder() {
+    if (!hostSettings || pickingFolder) return;
+    setPickingFolder(true);
+    setLibraryPickerStatus("");
+    try {
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: "Choose download folder",
+        defaultPath: hostSettings.library_path || undefined,
+      });
+      if (typeof selected === "string" && selected.trim()) {
+        patchHostSettings({ library_path: selected });
+        setLibraryPickerStatus("Folder selected — press Save to apply.");
+      }
+    } catch (e) {
+      setLibraryPickerStatus(
+        e instanceof Error ? e.message : "Folder picker failed — type the path manually.",
+      );
+    } finally {
+      setPickingFolder(false);
+    }
+  }
+
+  async function resetLibraryFolder() {
+    setLibraryPickerStatus("");
+    try {
+      const dir = await api.defaultLibraryDir();
+      patchHostSettings({ library_path: dir });
+      setLibraryPickerStatus("Reset to app default — press Save to apply.");
+    } catch (e) {
+      setLibraryPickerStatus(e instanceof Error ? e.message : "Reset failed");
+    }
+  }
+
+  // Library-card save with visible feedback: backend validation (e.g. an
+  // unwritable picked folder) rejects here instead of failing silently.
+  async function saveLibrarySettings() {
+    if (!hostSettings) return;
+    setLibraryPickerStatus("Saving…");
+    try {
+      await saveHostSettings();
+      setLibraryPickerStatus("Saved.");
+    } catch (e) {
+      setLibraryPickerStatus(e instanceof Error ? e.message : "Save failed");
+    }
+  }
+
   async function scanDuplicates() {
     const groups = await api.findDuplicates();
     setDuplicates(groups);
@@ -692,7 +780,7 @@ function SettingsPage() {
               <CardTitle className="text-base">Library</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              {!caps.libraryPathEditable && (
+              {!hasLocalBackend(runtime) && (
                 <p className="text-xs text-[var(--color-muted-foreground)]">
                   Library path is managed on the desktop host. Scan runs on the host when connected.
                 </p>
@@ -701,9 +789,33 @@ function SettingsPage() {
                 <label className="text-xs text-[var(--color-muted-foreground)]">Library path</label>
                 <Input
                   value={hostSettings?.library_path || ""}
-                  readOnly={!caps.libraryPathEditable}
                   onChange={(e) => patchHostSettings({ library_path: e.target.value })}
                 />
+                {hasLocalBackend(runtime) && (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void pickLibraryFolder()}
+                      disabled={pickingFolder || !hostSettings}
+                    >
+                      {pickingFolder ? "Opening…" : "Browse…"}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void resetLibraryFolder()}
+                      disabled={!hostSettings}
+                    >
+                      Reset to default
+                    </Button>
+                  </div>
+                )}
+                {libraryPickerStatus && (
+                  <p className="mt-1 text-[10px] text-[var(--color-muted-foreground)]">
+                    {libraryPickerStatus}
+                  </p>
+                )}
               </div>
               <div>
                 <label className="text-xs text-[var(--color-muted-foreground)]">
@@ -711,7 +823,6 @@ function SettingsPage() {
                 </label>
                 <Input
                   value={hostSettings?.naming_template || ""}
-                  readOnly={!caps.libraryPathEditable}
                   onChange={(e) => patchHostSettings({ naming_template: e.target.value })}
                 />
                 <p className="mt-1 text-[10px] text-[var(--color-muted-foreground)]">
@@ -728,7 +839,6 @@ function SettingsPage() {
                   min={0}
                   max={32}
                   value={hostSettings?.phash_threshold ?? 10}
-                  readOnly={!caps.libraryPathEditable}
                   onChange={(e) => patchHostSettings({ phash_threshold: Number(e.target.value) })}
                 />
               </div>
@@ -747,7 +857,6 @@ function SettingsPage() {
                   max={100}
                   step={5}
                   value={Math.round((hostSettings?.watched_threshold ?? 0.9) * 100)}
-                  disabled={!caps.libraryPathEditable}
                   onChange={(e) =>
                     patchHostSettings({ watched_threshold: Number(e.target.value) / 100 })
                   }
@@ -760,7 +869,6 @@ function SettingsPage() {
                 </label>
                 <textarea
                   value={(hostSettings?.auto_tag_rules ?? []).join("\n")}
-                  readOnly={!caps.libraryPathEditable}
                   onChange={(e) =>
                     patchHostSettings({
                       auto_tag_rules: e.target.value
@@ -777,11 +885,9 @@ function SettingsPage() {
                   scan and download import.
                 </p>
               </div>
-              {caps.libraryPathEditable && (
-                <Button onClick={() => void saveHostSettings()} disabled={!hostSettings}>
-                  Save
-                </Button>
-              )}
+              <Button onClick={() => void saveLibrarySettings()} disabled={!hostSettings}>
+                Save
+              </Button>
               {canScan && (
                 <>
                   <Button
@@ -880,6 +986,15 @@ function SettingsPage() {
               <Button variant="outline" size="sm" onClick={() => void refreshVersions()}>
                 Refresh versions
               </Button>
+              {runtime === "mobile-tauri" &&
+                (!binaryVersions?.ffmpeg_version || !binaryVersions?.ffprobe_version) &&
+                !versionsLoading && (
+                  <p className="text-xs text-yellow-400">
+                    ffmpeg/ffprobe are not bundled in this APK — thumbnails, duration probes, and
+                    HLS downloads need them. Rebuild with{" "}
+                    <code>bun run setup:binaries:android</code>.
+                  </p>
+                )}
             </CardContent>
           </Card>
           <Card>
@@ -893,6 +1008,22 @@ function SettingsPage() {
                     Standalone mode includes an embedded yt-dlp engine for direct streaming and
                     downloading on supported sites.
                   </p>
+                  {isStaleYtDlp(binaryVersions?.ytdlp_version) && (
+                    <p className="text-xs text-yellow-400">
+                      yt-dlp {binaryVersions?.ytdlp_version} is older than 90 days — sites may block
+                      it. Tap Update below.
+                    </p>
+                  )}
+                  <div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void updateYtDlpEngine()}
+                      disabled={updatingYtDlp}
+                    >
+                      {updatingYtDlp ? "Updating…" : "Update yt-dlp engine"}
+                    </Button>
+                  </div>
                   <p className="text-xs text-[var(--color-muted-foreground)]">
                     For sites without native support (e.g. Chaturbate live streams), use{" "}
                     <strong>Remote LAN</strong> mode to connect to your desktop host.

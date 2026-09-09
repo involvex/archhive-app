@@ -17,6 +17,7 @@
   "permissions": [
     "core:default",
     "core:event:default",
+    "dialog:allow-open",
     "opener:default",
     "shell:default",
     {

@@ -22,6 +22,5 @@ export function visibleSettingsTabs(caps: RuntimeCapabilities): SettingsTab[] {
 
 export function isTabReadOnly(tab: SettingsTab, caps: RuntimeCapabilities): boolean {
   if (tab === "lan") return !caps.lanServer;
-  if (tab === "library" && !caps.libraryPathEditable) return true;
   return false;
 }

@@ -441,7 +441,7 @@ bun run format:check
 ## Learned Workspace Facts
 
 - Desktop LAN on port **8787** serves the bundled React SPA (`lan-ui` Tauri resource), REST API, scene media streaming (`/api/scenes/{id}/media`), and `/files` folder browser; Vite dev UI is port **1420** only (see `docs/lan-web.md`)
-- Android builds do not bundle yt-dlp/ffmpeg sidecars; `externalBin` is desktop-only (`tauri.windows.conf.json`, `.macos`, `.linux`) and `tauri.android.conf.json` keeps an empty list
+- Android standalone runs an embedded yt-dlp engine (youtubedl-android Kotlin plugin, updatable in Settings → Library → Download engine); `tauri.android.conf.json` bundles `ffmpeg`/`ffprobe` sidecars — rebuild with `bun run setup:binaries:android` or the Tools card reports them as not found
 - `reqwest` uses **rustls** (not OpenSSL) to avoid NDK OpenSSL setup for Android cross-compiles
 - Mobile defaults to `remote_lan` engine mode; browse/download/library APIs route over HTTP to the desktop LAN host
 - Mobile bottom navigation must include **Settings** (Home, Browse, Downloads, Library, Settings)

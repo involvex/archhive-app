@@ -12,7 +12,6 @@ export function getAppRuntime(): AppRuntime {
 export interface RuntimeCapabilities {
   localIpc: boolean;
   lanServer: boolean;
-  libraryPathEditable: boolean;
   libraryScanLocal: boolean;
   libraryScanRemote: boolean;
   showBrowserBanner: boolean;
@@ -32,10 +31,14 @@ export function getCapabilities(runtime: AppRuntime = getAppRuntime()): RuntimeC
       (runtime === "mobile-tauri" && settings.engine_mode === "local"),
     lanServer: runtime === "desktop-tauri",
     lanDiscovery: runtime === "mobile-tauri" || runtime === "desktop-tauri",
-    libraryPathEditable: runtime === "desktop-tauri",
+    // Library settings are editable on every runtime: desktop and on-device
+    // mobile backends persist via save_settings (which validates the path),
+    // remote hosts via the LAN API. The native folder picker additionally
+    // requires a local backend (see hasLocalBackend gating in Settings).
     libraryScanLocal:
       runtime === "desktop-tauri" ||
-      (runtime === "mobile-tauri" && settings.engine_mode === "local"),
+      (runtime === "mobile-tauri" &&
+        (settings.engine_mode === "local" || settings.engine_mode === "standalone")),
     libraryScanRemote: useRemote && remoteConfigured,
     showBrowserBanner: runtime === "browser",
     engineModes:

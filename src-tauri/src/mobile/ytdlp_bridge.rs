@@ -18,7 +18,7 @@ pub struct YtDlpOutput {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-#[allow(dead_code)] // version/update are reserved for a settings "engine update" UI
+#[allow(dead_code)] // fields are populated via JNI deserialization on Android only
 struct PluginResponse {
     stdout: Option<String>,
     stderr: Option<String>,
@@ -103,7 +103,6 @@ pub fn execute(app: &AppHandle, args: &[String]) -> AppResult<YtDlpOutput> {
 }
 
 /// Query the embedded yt-dlp version.
-#[allow(dead_code)] // reserved for a settings "engine update" UI
 pub fn version(app: &AppHandle) -> AppResult<String> {
     #[cfg(target_os = "android")]
     {
@@ -117,7 +116,6 @@ pub fn version(app: &AppHandle) -> AppResult<String> {
 }
 
 /// Trigger yt-dlp update via the Kotlin plugin.
-#[allow(dead_code)] // reserved for a settings "engine update" UI
 pub fn update(app: &AppHandle) -> AppResult<String> {
     #[cfg(target_os = "android")]
     {

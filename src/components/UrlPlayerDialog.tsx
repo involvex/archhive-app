@@ -14,6 +14,7 @@ export function UrlPlayerDialog({ item, open, onClose }: UrlPlayerDialogProps) {
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [queued, setQueued] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
@@ -23,6 +24,7 @@ export function UrlPlayerDialog({ item, open, onClose }: UrlPlayerDialogProps) {
     setLoading(true);
     setError(null);
     setStreamUrl(null);
+    setQueued(false);
     void api
       .resolveStreamUrl(item.url)
       .then((url) => {
@@ -99,6 +101,13 @@ export function UrlPlayerDialog({ item, open, onClose }: UrlPlayerDialogProps) {
               <p className="px-4 text-center text-sm text-[var(--color-muted-foreground)]">
                 {error}
               </p>
+              {/403|forbidden|blocked/i.test(error) && (
+                <p className="px-4 text-center text-xs text-[var(--color-muted-foreground)]">
+                  This site is blocking the embedded player. Try downloading instead (it sends
+                  Referer/cookie headers), import cookies in Settings → Cookies, or use Remote LAN
+                  mode.
+                </p>
+              )}
             </div>
           )}
 
@@ -161,7 +170,22 @@ export function UrlPlayerDialog({ item, open, onClose }: UrlPlayerDialogProps) {
             </div>
           </dl>
 
-          <div className="mt-4 flex justify-end">
+          <div className="mt-4 flex justify-end gap-2">
+            <Button
+              variant="default"
+              onClick={() => {
+                if (!item) return;
+                void api
+                  .queueDownload(item.url, item.site_id)
+                  .then(() => setQueued(true))
+                  .catch((e: unknown) =>
+                    setError(e instanceof Error ? e.message : "Failed to queue download"),
+                  );
+              }}
+              className="min-h-10 min-w-[5.5rem]"
+            >
+              {queued ? "Queued ✓" : "Download"}
+            </Button>
             <Button variant="outline" onClick={onClose} className="min-h-10 min-w-[5.5rem]">
               Close
             </Button>

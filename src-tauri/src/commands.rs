@@ -633,3 +633,42 @@ pub fn list_files(
 ) -> CmdResult<crate::models::FilesListResponse> {
     map_err(state.list_files(path.as_deref().unwrap_or("")))
 }
+
+/// Resolve the default on-device download folder (`<app-data>/downloads`,
+/// creating it if needed). Used by the Settings folder picker "Reset" action.
+#[tauri::command]
+pub fn default_library_dir(state: State<'_, Arc<AppState>>) -> CmdResult<String> {
+    let dir = state.data_dir.join("downloads");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    Ok(dir.to_string_lossy().to_string())
+}
+
+/// Update the embedded yt-dlp engine on Android (youtubedl-android downloads
+/// the latest build into app storage). Desktop bundles yt-dlp as a sidecar.
+#[tauri::command]
+pub async fn update_yt_dlp(state: State<'_, Arc<AppState>>) -> CmdResult<String> {
+    #[cfg(target_os = "android")]
+    {
+        let app = state.app_handle().clone();
+        // The Kotlin bridge downloads tens of MB synchronously over JNI —
+        // keep it off the async runtime so other commands keep flowing.
+        let task = tokio::task::spawn_blocking(move || crate::mobile::ytdlp_bridge::update(&app));
+        match tokio::time::timeout(std::time::Duration::from_secs(600), task).await {
+            Ok(Ok(Ok(msg))) => Ok(msg),
+            Ok(Ok(Err(e))) => Err(e.to_string()),
+            Ok(Err(join_err)) => Err(format!("yt-dlp update task failed: {join_err}")),
+            Err(_) => Err(
+                "yt-dlp update timed out after 10 minutes. Check connectivity and retry."
+                    .to_string(),
+            ),
+        }
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = state;
+        Err(
+            "yt-dlp is bundled with the desktop app — update the app to get a newer engine."
+                .to_string(),
+        )
+    }
+}

@@ -9,7 +9,13 @@
 
 HTTP client uses **rustls** (not OpenSSL), so no `OPENSSL_DIR` / NDK OpenSSL setup is required for Android builds.
 
-Sidecars (`yt-dlp`, `ffmpeg`) are desktop-only. Android builds use `tauri.android.conf.json` with an empty `externalBin` — downloads run on the desktop LAN host.
+Android standalone builds ship an embedded yt-dlp engine (youtubedl-android Kotlin plugin)
+plus `ffmpeg`/`ffprobe` sidecars via `tauri.android.conf.json` (`externalBin` +
+`resources` mapping). The sidecar binaries are **not** in git — run
+`bun run setup:binaries:android` (i.e. `scripts/setup-binaries.ps1 -IncludeAndroid`)
+before `bun run build:apk`, otherwise Settings → Library → Media tools reports
+ffmpeg/ffprobe as "not found" and thumbnails / duration probes / HLS downloads fail.
+Remote LAN mode offloads downloads to the desktop host and needs no on-device engines.
 
 ## One-time setup
 

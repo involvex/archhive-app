@@ -782,4 +782,21 @@ export const api = {
     }
     return localInvoke<boolean>("uninstall_binary", { name });
   },
+
+  async updateYtDlp(): Promise<string> {
+    if (shouldUseRemoteApi()) {
+      throw new Error("Update the yt-dlp engine on the local device, not via Remote LAN.");
+    }
+    return localInvoke<string>("update_yt_dlp");
+  },
+
+  async defaultLibraryDir(): Promise<string> {
+    if (shouldUseRemoteApi()) {
+      throw new Error("Pick the library folder on the host device, not via Remote LAN.");
+    }
+    if (getAppRuntime() === "browser") {
+      throw new Error("Folder picking requires the app runtime.");
+    }
+    return localInvoke<string>("default_library_dir");
+  },
 };

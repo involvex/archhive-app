@@ -998,10 +998,16 @@ impl AppState {
     pub async fn binary_versions(&self) -> AppResult<crate::models::BinaryVersions> {
         use crate::sites::yt_dlp::SidecarRunner;
         let runner = SidecarRunner::new(self.site_ctx.app().clone());
-        let (ffmpeg, ffprobe, ytdlp, gallery_dl) = tokio::join!(
+        // On Android yt-dlp runs inside the youtubedl-android Kotlin plugin,
+        // not as a spawnable binary — query its version directly so the
+        // Tools card never reports a stale/missing value.
+        #[cfg(target_os = "android")]
+        let ytdlp = crate::mobile::ytdlp_bridge::version(self.site_ctx.app()).ok();
+        #[cfg(not(target_os = "android"))]
+        let ytdlp = runner.tool_version("yt-dlp").await;
+        let (ffmpeg, ffprobe, gallery_dl) = tokio::join!(
             runner.tool_version("ffmpeg"),
             runner.tool_version("ffprobe"),
-            runner.tool_version("yt-dlp"),
             runner.tool_version("gallery-dl"),
         );
         Ok(crate::models::BinaryVersions {

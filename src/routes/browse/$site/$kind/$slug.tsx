@@ -4,7 +4,7 @@ import { Bookmark, BookmarkCheck, EyeOff, LayoutGrid, List, Search } from "lucid
 import { api } from "@/lib/api/client";
 import { normalizeBrowseInput } from "@/lib/browse/normalize";
 import type { BrowseKind, BrowseOrientation, MediaItem } from "@/lib/types";
-import { SceneCard } from "@/components/SceneCard";
+import { SceneCard, type CardItem } from "@/components/SceneCard";
 import { BrowseItemDetailsDialog } from "@/components/BrowseItemDetailsDialog";
 import { UrlPlayerDialog } from "@/components/UrlPlayerDialog";
 import { SkeletonGrid } from "@/components/SkeletonGrid";
@@ -66,6 +66,10 @@ function BrowseDetailPage() {
   const [savingSearch, setSavingSearch] = useState(false);
   const [hideWatched, setHideWatched] = useState(false);
   const [watchedUrls, setWatchedUrls] = useState<Set<string> | null>(null);
+  // Tap-to-play: tapping a thumbnail opens the video player dialog.
+  const handleCardClick = useCallback((item: CardItem) => {
+    if ("site_id" in item) setWatchItem(item);
+  }, []);
 
   useEffect(() => {
     setCache(cacheKey, { items, page, hasMore, querySlug });
@@ -334,6 +338,7 @@ function BrowseDetailPage() {
               onDownload={(i) => void handleDownload(i)}
               onInfo={setInfoItem}
               onWatch={setWatchItem}
+              onClick={handleCardClick}
             />
           ))}
         </div>
@@ -349,6 +354,7 @@ function BrowseDetailPage() {
               onDownload={(i) => void handleDownload(i)}
               onInfo={setInfoItem}
               onWatch={setWatchItem}
+              onClick={handleCardClick}
             />
           ))}
         </div>

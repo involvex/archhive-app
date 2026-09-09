@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api/client";
-import { getCapabilities, getAppRuntime } from "@/lib/runtime";
+import { getCapabilities, getAppRuntime, hasLocalBackend } from "@/lib/runtime";
 import { useSettingsStore } from "@/lib/stores/settings";
 import type { AppSettings } from "@/lib/types";
 
@@ -18,7 +18,9 @@ export function useUnifiedSettings() {
       setLoading(true);
       setError("");
       try {
-        if (caps.localIpc) {
+        // hasLocalBackend (not localIpc) so mobile standalone — which runs
+        // the backend in-app — also loads/saves real backend settings.
+        if (hasLocalBackend(runtime)) {
           const backend = await api.getSettings();
           if (!cancelled) {
             setHostSettings(backend);
@@ -66,7 +68,7 @@ export function useUnifiedSettings() {
 
   const saveHostSettings = useCallback(async () => {
     if (!hostSettings) return;
-    if (caps.localIpc) {
+    if (hasLocalBackend(runtime)) {
       await api.saveSettings(hostSettings);
       updateSettings({
         library_path: hostSettings.library_path,
@@ -77,7 +79,7 @@ export function useUnifiedSettings() {
     } else {
       updateSettings(hostSettings);
     }
-  }, [caps.localIpc, caps.libraryScanRemote, hostSettings, updateSettings]);
+  }, [caps.libraryScanRemote, hostSettings, runtime, updateSettings]);
 
   const patchHostSettings = useCallback((partial: Partial<AppSettings>) => {
     setHostSettings((prev) => (prev ? { ...prev, ...partial } : prev));
