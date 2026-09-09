@@ -126,6 +126,10 @@ pub struct DownloadPlan {
     pub duration: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub channel: Option<String>,
+    /// HTTP Referer to send for [`DownloadTool::DirectHttp`] downloads.
+    /// Needed by Referer-gated CDNs (e.g. PornHub's phncdn).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub referer: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

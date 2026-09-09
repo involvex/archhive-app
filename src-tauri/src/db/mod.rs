@@ -192,6 +192,8 @@ impl Database {
         thumbnail_url: Option<&str>,
         duration: Option<u32>,
         channel: Option<&str>,
+        referer: Option<&str>,
+        tool: &crate::models::DownloadTool,
     ) -> AppResult<()> {
         let metadata = serde_json::json!({
             "performers": performers,
@@ -199,6 +201,8 @@ impl Database {
             "thumbnail_url": thumbnail_url,
             "duration": duration,
             "channel": channel,
+            "referer": referer,
+            "tool": serde_json::to_value(tool).unwrap_or(serde_json::Value::Null),
         });
         let json = serde_json::to_string(&metadata)
             .map_err(|e| AppError::Other(format!("metadata serialize: {e}")))?;
@@ -222,6 +226,8 @@ impl Database {
         Option<String>,
         Option<u32>,
         Option<String>,
+        Option<String>,
+        Option<crate::models::DownloadTool>,
     )> {
         let conn = self
             .conn
@@ -268,9 +274,26 @@ impl Database {
                     .and_then(|c| c.as_str())
                     .filter(|s| !s.is_empty())
                     .map(String::from);
-                Ok((performers, tags, thumbnail_url, duration, channel))
+                // Absent in rows written before referer/tool persistence.
+                let referer = v
+                    .get("referer")
+                    .and_then(|r| r.as_str())
+                    .filter(|s| !s.is_empty())
+                    .map(String::from);
+                let tool = v.get("tool").and_then(|t| {
+                    serde_json::from_value::<crate::models::DownloadTool>(t.clone()).ok()
+                });
+                Ok((
+                    performers,
+                    tags,
+                    thumbnail_url,
+                    duration,
+                    channel,
+                    referer,
+                    tool,
+                ))
             }
-            None => Ok((vec![], vec![], None, None, None)),
+            None => Ok((vec![], vec![], None, None, None, None, None)),
         }
     }
 

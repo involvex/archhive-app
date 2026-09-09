@@ -319,6 +319,7 @@ impl SiteAdapter for GenericYtDlpAdapter {
                             thumbnail_url: thumbnail.or(item.thumbnail.clone()),
                             duration: duration.or(item.duration),
                             channel,
+                            referer: None,
                         });
                     }
                     _ => DownloadTool::YtDlp,
@@ -352,6 +353,7 @@ impl SiteAdapter for GenericYtDlpAdapter {
                             thumbnail_url: thumbnail.or(item.thumbnail.clone()),
                             duration: item.duration,
                             channel,
+                            referer: None,
                         });
                     }
                     _ => DownloadTool::YtDlp,
@@ -379,6 +381,7 @@ impl SiteAdapter for GenericYtDlpAdapter {
                             thumbnail_url: enriched.as_ref().ok().and_then(|m| m.thumbnail.clone()),
                             duration: item.duration,
                             channel,
+                            referer: None,
                         });
                     }
                     _ => DownloadTool::YtDlp,
@@ -398,6 +401,7 @@ impl SiteAdapter for GenericYtDlpAdapter {
             thumbnail_url: item.thumbnail.clone(),
             duration: item.duration,
             channel: None,
+            referer: None,
         })
     }
 }

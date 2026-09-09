@@ -108,6 +108,7 @@ impl SiteAdapter for RedditAdapter {
                 thumbnail_url: thumbnail.or(item.thumbnail.clone()),
                 duration: duration.or(item.duration),
                 channel,
+                referer: None,
             });
         }
 
@@ -123,6 +124,7 @@ impl SiteAdapter for RedditAdapter {
             thumbnail_url: item.thumbnail.clone(),
             duration: item.duration,
             channel: None,
+            referer: None,
         })
     }
 }

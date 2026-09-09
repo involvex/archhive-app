@@ -95,6 +95,7 @@ impl SiteAdapter for CustomUrlAdapter {
             thumbnail_url: item.thumbnail.clone(),
             duration: item.duration,
             channel: None,
+            referer: None,
         })
     }
 

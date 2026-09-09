@@ -71,6 +71,7 @@ impl SiteAdapter for ThotHubAdapter {
             thumbnail_url: item.thumbnail.clone(),
             duration: item.duration,
             channel: None,
+            referer: None,
         })
     }
     async fn resolve_stream_url(&self, ctx: &SiteContext, url: &str) -> AppResult<String> {

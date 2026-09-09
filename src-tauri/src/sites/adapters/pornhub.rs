@@ -89,6 +89,7 @@ macro_rules! ytdlp_tube_adapter {
                     thumbnail_url: item.thumbnail.clone(),
                     duration: item.duration,
                     channel,
+                    referer: None,
                 })
             }
 
@@ -221,6 +222,29 @@ impl SiteAdapter for PornhubAdapter {
             .await
             .map(|html| scrape_tube_video_page(&html, self.id()))
             .unwrap_or_default();
+        // On mobile, yt-dlp is 403-blocked by PornHub's edge, so fetch the
+        // direct MP4 via the Rust extractor and download it with a Referer
+        // header (phncdn requires one). Falls through to yt-dlp on failure.
+        #[cfg(mobile)]
+        {
+            if let Ok(Some(media_url)) =
+                crate::sites::extractors::pornhub::extract_download_url(ctx, &item.url).await
+            {
+                return Ok(DownloadPlan {
+                    url: media_url,
+                    output_template: "%(title)s.%(ext)s".to_string(),
+                    tool: DownloadTool::DirectHttp,
+                    title: Some(item.title.clone()),
+                    performers,
+                    tags,
+                    adapter_id: self.id().to_string(),
+                    thumbnail_url: item.thumbnail.clone(),
+                    duration: item.duration,
+                    channel,
+                    referer: Some(item.url.clone()),
+                });
+            }
+        }
         Ok(DownloadPlan {
             url: item.url.clone(),
             output_template: "%(uploader)s/%(title)s.%(ext)s".to_string(),
@@ -232,6 +256,7 @@ impl SiteAdapter for PornhubAdapter {
             thumbnail_url: item.thumbnail.clone(),
             duration: item.duration,
             channel,
+            referer: None,
         })
     }
     async fn resolve_stream_url(&self, ctx: &SiteContext, url: &str) -> AppResult<String> {

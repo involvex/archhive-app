@@ -98,6 +98,7 @@ impl SiteAdapter for StripchatAdapter {
             thumbnail_url: item.thumbnail.clone(),
             duration: item.duration,
             channel: None,
+            referer: None,
         })
     }
 }
