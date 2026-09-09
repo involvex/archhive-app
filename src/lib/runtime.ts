@@ -62,3 +62,16 @@ export function shouldUseRemoteApi(runtime: AppRuntime = getAppRuntime()): boole
 export function isDesktopTauriRuntime(): boolean {
   return getAppRuntime() === "desktop-tauri";
 }
+
+/**
+ * On-device backend available: desktop always; mobile in `local` or
+ * `standalone` engine mode (both run the backend in-app, no host needed).
+ * Unlike `localIpc` (which also gates desktop-only actions like Explorer),
+ * this is purely about "can we serve local files / invoke local commands".
+ */
+export function hasLocalBackend(runtime: AppRuntime = getAppRuntime()): boolean {
+  if (runtime === "desktop-tauri") return true;
+  if (runtime !== "mobile-tauri") return false;
+  const { settings } = useSettingsStore.getState();
+  return settings.engine_mode === "local" || settings.engine_mode === "standalone";
+}

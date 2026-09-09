@@ -342,7 +342,7 @@ export function SceneCard({
         )}
 
         {showOverlay && (
-          <div className="absolute top-1 right-1 z-10 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 md:opacity-0">
+          <div className="absolute top-1 right-1 z-10 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 md:opacity-0 [@media(hover:none)]:hidden">
             {onEdit && (
               <Button
                 size="sm"
@@ -407,7 +407,7 @@ export function SceneCard({
         )}
 
         {onWatch && showOverlay && (
-          <div className="absolute inset-0 flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100 bg-black/30">
+          <div className="absolute inset-0 flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100 bg-black/30 [@media(hover:none)]:hidden">
             <Button
               size="sm"
               className="rounded-full h-12 w-12 p-0 bg-[var(--color-primary)] hover:bg-[var(--color-primary)]/80"

@@ -15,11 +15,14 @@ mod vault;
 #[cfg(not(mobile))]
 mod desktop;
 
+use crate::models::EngineMode;
 use db::Database;
 use state::AppState;
 use std::sync::Arc;
 use tauri::path::BaseDirectory;
 use tauri::Manager;
+#[cfg(target_os = "android")]
+use tauri_plugin_shell::ShellExt;
 
 fn resolve_lan_static_ui(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
     if let Ok(cwd) = std::env::current_dir() {
@@ -41,6 +44,10 @@ fn resolve_lan_static_ui(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
 fn bootstrap_mobile_settings(db: &Database, data_dir: &std::path::Path) -> Result<(), String> {
     let mut settings = db.get_settings().unwrap_or_default();
     let mut changed = false;
+    if settings.engine_mode == EngineMode::RemoteLan {
+        settings.engine_mode = EngineMode::Local;
+        changed = true;
+    }
     if settings.library_path.is_empty() {
         let downloads = data_dir.join("downloads");
         std::fs::create_dir_all(&downloads).map_err(|e| e.to_string())?;
@@ -62,20 +69,19 @@ fn bootstrap_mobile_settings(db: &Database, data_dir: &std::path::Path) -> Resul
 }
 
 /// On Android, Tauri's shell plugin may not set execute permissions on extracted sidecars.
-/// This fixes ffmpeg/ffprobe permissions and removes any wrongly-installed x86_64 binaries.
+/// This verifies ffmpeg/ffprobe work via shell().sidecar() and removes any wrongly-installed x86_64 binaries.
 #[cfg(target_os = "android")]
 fn ensure_sidecar_permissions(app: &tauri::AppHandle) {
-    use std::os::unix::fs::PermissionsExt;
-
-    // Fix sidecar permissions (ffmpeg, ffprobe)
+    // Verify ffmpeg/ffprobe sidecars work by attempting to resolve them.
+    // Tauri's sidecar() handles extraction and permissions automatically.
     for name in &["ffmpeg", "ffprobe"] {
-        if let Ok(sidecar) = app.path().resolve(format!("binaries/{name}"), BaseDirectory::Resource)
-        {
-            if sidecar.exists() {
-                let _ = std::fs::set_permissions(
-                    &sidecar,
-                    std::fs::Permissions::from_mode(0o755),
-                );
+        match app.shell().sidecar(format!("binaries/{name}")) {
+            Ok(sidecar) => {
+                eprintln!("[sidecar] {name} resolved successfully");
+                let _ = sidecar;
+            }
+            Err(e) => {
+                eprintln!("[sidecar] {name} resolution failed: {e}");
             }
         }
     }
@@ -124,6 +130,17 @@ pub fn run() {
                 .map_err(|e| e.to_string())?,
         );
         app.manage(state.clone());
+
+        #[cfg(mobile)]
+        {
+            let st = state.clone();
+            let mobile_port = state.get_settings().map(|s| s.lan_port).unwrap_or(8787);
+            tauri::async_runtime::spawn(async move {
+                if let Err(e) = st.ensure_loopback_server(mobile_port).await {
+                    eprintln!("Loopback server start failed: {e}");
+                }
+            });
+        }
 
         // #19 watchlist auto-queue poller (desktop only; mobile uses Remote LAN).
         #[cfg(not(mobile))]

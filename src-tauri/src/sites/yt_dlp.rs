@@ -25,6 +25,13 @@ impl SidecarRunner {
             return None;
         }
 
+        // On Android, shell().sidecar() handles Resource-bundled binaries
+        // via externalBin; don't resolve them by absolute path here.
+        #[cfg(target_os = "android")]
+        if name == "ffmpeg" || name == "ffprobe" {
+            return None;
+        }
+
         let data_dir = self.app.path().app_data_dir().ok()?;
         let installed = data_dir.join("bin").join(name);
         if installed.exists() {
@@ -498,6 +505,26 @@ impl SidecarRunner {
         args: &[String],
         on_line: impl FnMut(&str),
     ) -> AppResult<String> {
+        // On Android, use shell().sidecar() for ffmpeg/ffprobe instead of
+        // shell().command(absolute_path), which may fail to extract Resource binaries.
+        #[cfg(target_os = "android")]
+        if name == "ffmpeg" || name == "ffprobe" {
+            let sidecar_result = self
+                .app
+                .shell()
+                .sidecar(format!("binaries/{name}"))
+                .map(|cmd| cmd.args(args).spawn());
+            match sidecar_result {
+                Ok(Ok((rx, _child))) => return self.consume(rx, name, on_line).await,
+                Ok(Err(e)) => {
+                    eprintln!("[android] sidecar {name} spawn failed: {e}");
+                }
+                Err(e) => {
+                    eprintln!("[android] sidecar {name} resolution failed: {e}");
+                }
+            }
+        }
+
         if let Some(path) = self.resolve_binary_path(name) {
             let (rx, _child) = self.spawn_from_path(&path, args)?;
             return self.consume(rx, name, on_line).await;

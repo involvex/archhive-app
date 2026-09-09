@@ -350,7 +350,7 @@ impl Default for AppSettings {
             .to_string();
 
         #[cfg(mobile)]
-        let engine_mode = EngineMode::RemoteLan;
+        let engine_mode = EngineMode::Local;
         #[cfg(not(mobile))]
         let engine_mode = EngineMode::Local;
 

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { sceneMediaUrl, isWebPlayableScene, isHttpMediaSrc, isVideoScene } from "@/lib/mediaUrl";
-import { getCapabilities } from "@/lib/runtime";
+import { getCapabilities, hasLocalBackend } from "@/lib/runtime";
 import { useRecentlyViewedStore } from "@/lib/stores/recentlyViewed";
 import { api } from "@/lib/api/client";
 import type { Scene, WatchProgress } from "@/lib/types";
@@ -200,7 +200,7 @@ function ScenePlayerBody({
                 : "This file format may not play in the browser."
               : "No media file path for this scene."}
           </p>
-          {caps.localIpc && data.path && (
+          {(caps.localIpc || hasLocalBackend()) && data.path && (
             <Button
               variant="default"
               onClick={() => void api.openSceneWithDefault(data.id).catch(console.error)}

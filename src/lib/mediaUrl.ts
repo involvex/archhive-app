@@ -1,5 +1,5 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { getAppRuntime, shouldUseRemoteApi } from "./runtime";
+import { getAppRuntime, hasLocalBackend, shouldUseRemoteApi } from "./runtime";
 import { useSettingsStore } from "./stores/settings";
 import type { Scene } from "./types";
 
@@ -49,8 +49,8 @@ export function sceneThumbUrl(scene: Scene): string | undefined {
     return convertFileSrc(scene.thumb);
   }
 
-  if (getAppRuntime() === "mobile-tauri" && settings.engine_mode === "local") {
-    return convertFileSrc(scene.thumb);
+  if (getAppRuntime() === "mobile-tauri" && hasLocalBackend() && settings.lan_enabled) {
+    return `http://127.0.0.1:${settings.lan_port}/api/scenes/${scene.id}/thumb`;
   }
 
   return scene.thumb;
@@ -73,8 +73,8 @@ export function sceneMediaUrl(scene: Scene): string | undefined {
     return convertFileSrc(scene.path);
   }
 
-  if (getAppRuntime() === "mobile-tauri" && settings.engine_mode === "local") {
-    return convertFileSrc(scene.path);
+  if (getAppRuntime() === "mobile-tauri" && hasLocalBackend() && settings.lan_enabled) {
+    return `http://127.0.0.1:${settings.lan_port}/api/scenes/${scene.id}/media`;
   }
 
   return undefined;
@@ -106,10 +106,9 @@ export function fileStreamUrl(relativePath: string): string | undefined {
     return `http://127.0.0.1:${settings.lan_port}/api/files/stream?path=${pathParam}${tokenAmp(lanAuthToken())}`;
   }
 
-  if (getAppRuntime() === "mobile-tauri" && settings.engine_mode === "local") {
+  if (getAppRuntime() === "mobile-tauri" && hasLocalBackend() && settings.lan_enabled) {
     const root = settings.library_path;
-    const abs = root ? root.replace(/\\/g, "/") + "/" + pathParam.replace(/\\/g, "/") : undefined;
-    if (abs) return convertFileSrc(abs);
+    if (root) return `http://127.0.0.1:${settings.lan_port}/api/files/stream?path=${pathParam}`;
   }
 
   return undefined;

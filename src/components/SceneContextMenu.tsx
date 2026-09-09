@@ -66,6 +66,14 @@ export function SceneContextMenu({
 
   const items: { label: string; action: () => void; show?: boolean; danger?: boolean }[] = [
     {
+      label: "Play",
+      action: () => {
+        onPlay?.(menu.scene);
+        onClose();
+      },
+      show: Boolean(menu.scene.path) && isVideoScene(menu.scene) && Boolean(onPlay),
+    },
+    {
       label: "Edit metadata",
       action: () => {
         onEdit(menu.scene);
@@ -79,14 +87,6 @@ export function SceneContextMenu({
         onClose();
       },
       show: Boolean(menu.scene.path) && Boolean(onRenameFile),
-    },
-    {
-      label: "Play",
-      action: () => {
-        onPlay?.(menu.scene);
-        onClose();
-      },
-      show: Boolean(menu.scene.path) && isVideoScene(menu.scene) && Boolean(onPlay),
     },
     {
       label: "Details",

@@ -288,10 +288,13 @@ impl AppState {
 
     pub fn save_settings(&self, settings: &AppSettings) -> AppResult<()> {
         let prev_path = self.get_settings().ok().map(|s| s.library_path);
-        self.db.save_settings(settings)?;
         if prev_path.as_deref() != Some(settings.library_path.as_str()) {
+            // Fail fast on empty/relative paths instead of persisting a
+            // library path that breaks downloads, scans, and playback.
+            Self::validate_library_path(&settings.library_path, &self.data_dir)?;
             self.invalidate_library_cache();
         }
+        self.db.save_settings(settings)?;
         Ok(())
     }
 
@@ -376,6 +379,25 @@ impl AppState {
             !token.is_empty()
         );
         Ok(token)
+    }
+
+    pub async fn ensure_loopback_server(self: &Arc<Self>, port: u16) -> AppResult<String> {
+        if self.lan_server.lock().is_some() {
+            let _ = self.stop_lan_server();
+        }
+
+        let settings = self.get_settings()?;
+        let static_dir = self.static_ui_path();
+        let server =
+            crate::server::LanServer::start_loopback(self.clone(), port, static_dir).await?;
+        *self.lan_server.lock() = Some(server);
+        let mut settings = self.get_settings()?;
+        settings.lan_enabled = true;
+        settings.lan_port = port;
+        settings.lan_token = None;
+        self.save_settings(&settings)?;
+        eprintln!("[loopback] server started on port {port}");
+        Ok(String::new())
     }
 
     pub async fn regenerate_lan_server(self: &Arc<Self>, port: u16) -> AppResult<String> {

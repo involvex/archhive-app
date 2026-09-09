@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::{mpsc, Semaphore};
 
 const MAX_CONCURRENT_DOWNLOADS: usize = 2;
@@ -360,10 +360,41 @@ async fn worker_loop(
                     return;
                 }
             };
-            let library_path = db
+            let settings_path = db
                 .get_settings()
                 .map(|s| s.library_path)
                 .unwrap_or_default();
+            // An empty library path (the Settings field is clearable) would
+            // resolve output templates against the process CWD (/ on Android
+            // -> EROFS). Fall back to the app-data downloads dir, mirroring
+            // the mobile bootstrap default.
+            let library_path = if settings_path.trim().is_empty() {
+                match app.path().app_data_dir() {
+                    Ok(dir) => {
+                        let fallback = dir.join("downloads");
+                        if std::fs::create_dir_all(&fallback).is_ok() {
+                            fallback.to_string_lossy().to_string()
+                        } else {
+                            settings_path
+                        }
+                    }
+                    Err(_) => settings_path,
+                }
+            } else {
+                settings_path
+            };
+            // Defensive: if library_path is still empty after fallback,
+            // fail fast with a clear error instead of producing /VixenPlus.
+            if library_path.trim().is_empty() {
+                mark_job_failed(
+                    db.clone(),
+                    &app,
+                    &queue_tx,
+                    &job_id,
+                    "Library path is not configured. Set it in Settings → Library.",
+                );
+                return;
+            }
             if let Err(e) = run_job_with_plan(
                 db.clone(),
                 app.clone(),

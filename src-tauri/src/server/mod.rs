@@ -88,6 +88,25 @@ impl LanServer {
         lan_auth_enabled: bool,
         static_dir: Option<PathBuf>,
     ) -> AppResult<Self> {
+        LanServer::start_inner(app, port, token, lan_auth_enabled, static_dir, false).await
+    }
+
+    pub async fn start_loopback(
+        app: Arc<AppState>,
+        port: u16,
+        static_dir: Option<PathBuf>,
+    ) -> AppResult<Self> {
+        LanServer::start_inner(app, port, String::new(), false, static_dir, true).await
+    }
+
+    async fn start_inner(
+        app: Arc<AppState>,
+        port: u16,
+        token: String,
+        lan_auth_enabled: bool,
+        static_dir: Option<PathBuf>,
+        loopback: bool,
+    ) -> AppResult<Self> {
         let api = ApiState {
             app,
             token: token.clone(),
@@ -184,7 +203,11 @@ impl LanServer {
 
         let router = router.layer(CorsLayer::permissive());
 
-        let addr = SocketAddr::from(([0, 0, 0, 0], port));
+        let addr = if loopback {
+            SocketAddr::from(([127, 0, 0, 1], port))
+        } else {
+            SocketAddr::from(([0, 0, 0, 0], port))
+        };
         let listener = tokio::net::TcpListener::bind(addr).await?;
         let (tx, rx) = oneshot::channel::<()>();
 
@@ -197,7 +220,11 @@ impl LanServer {
                 .ok();
         });
 
-        let mdns = advertise_mdns(port).ok();
+        let mdns = if loopback {
+            None
+        } else {
+            advertise_mdns(port).ok()
+        };
 
         Ok(Self {
             shutdown: Some(tx),
