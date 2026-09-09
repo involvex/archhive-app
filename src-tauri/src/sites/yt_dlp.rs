@@ -18,6 +18,13 @@ impl SidecarRunner {
     }
 
     fn resolve_binary_path(&self, name: &str) -> Option<PathBuf> {
+        // On mobile, yt-dlp/gallery-dl from the binary installer are x86_64 Linux
+        // and cannot run on ARM64 Android. Skip them and rely on sidecars or Rust extractors.
+        #[cfg(mobile)]
+        if name == "yt-dlp" || name == "gallery-dl" {
+            return None;
+        }
+
         let data_dir = self.app.path().app_data_dir().ok()?;
         let installed = data_dir.join("bin").join(name);
         if installed.exists() {
@@ -321,9 +328,19 @@ impl SidecarRunner {
         args: &[String],
     ) -> AppResult<String> {
         self.run_capture(name, args).await.map_err(|e| {
-            AppError::Other(format!(
-                "Failed to resolve stream: {e}. Install {name} in Settings → Library for playback support."
-            ))
+            #[cfg(mobile)]
+            {
+                AppError::Other(format!(
+                    "Failed to resolve stream: {e}. \
+                     Streaming requires Remote LAN mode — connect to a desktop host in Settings → Engine."
+                ))
+            }
+            #[cfg(not(mobile))]
+            {
+                AppError::Other(format!(
+                    "Failed to resolve stream: {e}. Install {name} in Settings → Library for playback support."
+                ))
+            }
         })
     }
 

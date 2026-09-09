@@ -30,7 +30,13 @@ export function UrlPlayerDialog({ item, open, onClose }: UrlPlayerDialogProps) {
       })
       .catch((e: unknown) => {
         if (cancelled) return;
-        setError(e instanceof Error ? e.message : "Failed to resolve stream URL");
+        if (typeof e === "string" && e.trim()) {
+          setError(e);
+        } else if (e instanceof Error && e.message) {
+          setError(e.message);
+        } else {
+          setError("Failed to resolve stream URL");
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);

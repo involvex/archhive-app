@@ -1060,7 +1060,11 @@ impl AppState {
                 name,
                 path: rel_path,
                 is_dir: meta.is_dir(),
-                size: if meta.is_file() { Some(meta.len()) } else { None },
+                size: if meta.is_file() {
+                    Some(meta.len())
+                } else {
+                    None
+                },
                 mime,
             });
         }
@@ -1085,7 +1089,11 @@ fn relative_path(root: &Path, abs: &Path) -> String {
 }
 
 fn mime_from_path(path: &Path) -> &'static str {
-    match path.extension().and_then(|e| e.to_str()).map(|s| s.to_lowercase()) {
+    match path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|s| s.to_lowercase())
+    {
         Some(e) if e == "mp4" => "video/mp4",
         Some(e) if e == "webm" => "video/webm",
         Some(e) if e == "mkv" => "video/x-matroska",

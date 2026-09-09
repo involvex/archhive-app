@@ -627,6 +627,9 @@ pub async fn uninstall_binary(state: State<'_, Arc<AppState>>, name: String) -> 
 }
 
 #[tauri::command]
-pub fn list_files(state: State<'_, Arc<AppState>>, path: Option<String>) -> CmdResult<crate::models::FilesListResponse> {
+pub fn list_files(
+    state: State<'_, Arc<AppState>>,
+    path: Option<String>,
+) -> CmdResult<crate::models::FilesListResponse> {
     map_err(state.list_files(path.as_deref().unwrap_or("")))
 }

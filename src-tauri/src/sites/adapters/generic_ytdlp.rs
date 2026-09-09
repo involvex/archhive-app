@@ -237,9 +237,24 @@ impl SiteAdapter for GenericYtDlpAdapter {
 
     async fn resolve_stream_url(&self, ctx: &SiteContext, url: &str) -> AppResult<String> {
         let direct = match self.site_id {
-            "youtube" => crate::sites::extractors::youtube::extract_download_url(ctx, url).await?,
-            "tiktok" => crate::sites::extractors::tiktok::extract_download_url(ctx, url).await?,
-            "twitter" => crate::sites::extractors::twitter::extract_download_url(ctx, url).await?,
+            "youtube" => {
+                match crate::sites::extractors::youtube::extract_download_url(ctx, url).await {
+                    Ok(v) => v,
+                    Err(_) => None,
+                }
+            }
+            "tiktok" => {
+                match crate::sites::extractors::tiktok::extract_download_url(ctx, url).await {
+                    Ok(v) => v,
+                    Err(_) => None,
+                }
+            }
+            "twitter" => {
+                match crate::sites::extractors::twitter::extract_download_url(ctx, url).await {
+                    Ok(v) => v,
+                    Err(_) => None,
+                }
+            }
             _ => None,
         };
         if let Some(stream_url) = direct {

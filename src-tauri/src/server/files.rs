@@ -59,7 +59,7 @@ pub async fn list_files(
         } else {
             Some(mime_from_path(&abs).to_string())
         };
-            entries.push(crate::models::FileEntry {
+        entries.push(crate::models::FileEntry {
             name,
             path: rel_path,
             is_dir,

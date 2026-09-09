@@ -848,17 +848,22 @@ function SettingsPage() {
             </CardHeader>
             <CardContent className="space-y-3">
               <p className="text-xs text-[var(--color-muted-foreground)]">
-                Versions of the bundled sidecars (desktop) or PATH tools. Missing entries mean the
-                tool was not found.
+                {runtime === "mobile-tauri"
+                  ? "Bundled media processing tools. yt-dlp and gallery-dl are not available on Android."
+                  : "Versions of the bundled sidecars (desktop) or PATH tools. Missing entries mean the tool was not found."}
               </p>
               <dl className="grid grid-cols-2 gap-2 text-sm">
-                {(
-                  [
-                    ["yt-dlp", binaryVersions?.ytdlp_version],
-                    ["gallery-dl", binaryVersions?.gallery_dl_version],
-                    ["ffmpeg", binaryVersions?.ffmpeg_version],
-                    ["ffprobe", binaryVersions?.ffprobe_version],
-                  ] as const
+                {(runtime === "mobile-tauri"
+                  ? ([
+                      ["ffmpeg", binaryVersions?.ffmpeg_version],
+                      ["ffprobe", binaryVersions?.ffprobe_version],
+                    ] as const)
+                  : ([
+                      ["yt-dlp", binaryVersions?.ytdlp_version],
+                      ["gallery-dl", binaryVersions?.gallery_dl_version],
+                      ["ffmpeg", binaryVersions?.ffmpeg_version],
+                      ["ffprobe", binaryVersions?.ffprobe_version],
+                    ] as const)
                 ).map(([name, version]) => (
                   <div
                     key={name}
@@ -871,9 +876,11 @@ function SettingsPage() {
                   </div>
                 ))}
               </dl>
-              <Button variant="outline" size="sm" onClick={() => void refreshVersions()}>
-                Refresh versions
-              </Button>
+              {runtime !== "mobile-tauri" && (
+                <Button variant="outline" size="sm" onClick={() => void refreshVersions()}>
+                  Refresh versions
+                </Button>
+              )}
             </CardContent>
           </Card>
           <Card>
@@ -881,73 +888,84 @@ function SettingsPage() {
               <CardTitle className="text-base">Download engine</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <p className="text-xs text-[var(--color-muted-foreground)]">
-                yt-dlp and gallery-dl enable full download support for all sites. On desktop they
-                are bundled. On mobile, binary installation is not supported yet — the app uses
-                best-effort direct HTTP extraction for YouTube, TikTok, Twitter, Reddit, and
-                RedGifs.
-              </p>
               {runtime === "mobile-tauri" ? (
-                <p className="text-xs text-yellow-600">
-                  Mobile standalone mode requires yt-dlp for tube sites (PornHub, xHamster, etc.).
-                  Use a desktop client as the LAN host, or switch to Remote LAN mode.
-                </p>
+                <>
+                  <p className="text-xs text-[var(--color-muted-foreground)]">
+                    Standalone mode supports direct playback and browsing for:
+                  </p>
+                  <ul className="list-disc pl-5 text-xs text-[var(--color-muted-foreground)] space-y-1">
+                    <li>YouTube</li>
+                    <li>TikTok</li>
+                    <li>Twitter / X</li>
+                    <li>Reddit</li>
+                    <li>RedGifs</li>
+                  </ul>
+                  <p className="text-xs text-[var(--color-muted-foreground)]">
+                    Tube sites (PornHub, xHamster, XVideos, YouPorn, XNXX, ThotHub, Chaturbate)
+                    require a desktop host via <strong>Remote LAN</strong> mode for streaming.
+                  </p>
+                  <p className="rounded-md border border-[var(--color-border)] bg-[var(--color-muted)] p-3 text-xs">
+                    💡 Connect to your desktop ArcHive in{" "}
+                    <strong>Settings → Engine → Remote LAN</strong> for full site support.
+                  </p>
+                </>
               ) : (
-                <div className="space-y-2">
-                  {(["yt-dlp", "gallery-dl"] as const).map((name) => {
-                    const installed =
-                      name === "yt-dlp"
-                        ? Boolean(binaryVersions?.ytdlp_version)
-                        : Boolean(binaryVersions?.gallery_dl_version);
-                    const busy = installingBinary === name;
-                    return (
-                      <div
-                        key={name}
-                        className="flex items-center justify-between gap-3 rounded-md border border-[var(--color-border)] px-3 py-2"
-                      >
-                        <div>
-                          <p className="text-sm font-medium">{name}</p>
-                          <p className="text-xs text-[var(--color-muted-foreground)]">
-                            {installed
-                              ? `Installed — ${name === "yt-dlp" ? binaryVersions?.ytdlp_version : binaryVersions?.gallery_dl_version}`
-                              : "Not installed"}
-                          </p>
+                <>
+                  <p className="text-xs text-[var(--color-muted-foreground)]">
+                    yt-dlp and gallery-dl enable full download support for all sites. On desktop
+                    they are bundled.
+                  </p>
+                  <div className="space-y-2">
+                    {(["yt-dlp", "gallery-dl"] as const).map((name) => {
+                      const installed =
+                        name === "yt-dlp"
+                          ? Boolean(binaryVersions?.ytdlp_version)
+                          : Boolean(binaryVersions?.gallery_dl_version);
+                      const busy = installingBinary === name;
+                      return (
+                        <div
+                          key={name}
+                          className="flex items-center justify-between gap-3 rounded-md border border-[var(--color-border)] px-3 py-2"
+                        >
+                          <div>
+                            <p className="text-sm font-medium">{name}</p>
+                            <p className="text-xs text-[var(--color-muted-foreground)]">
+                              {installed
+                                ? `Installed — ${name === "yt-dlp" ? binaryVersions?.ytdlp_version : binaryVersions?.gallery_dl_version}`
+                                : "Not installed"}
+                            </p>
+                          </div>
+                          <div className="flex gap-2">
+                            {installed ? (
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                onClick={() => void uninstallBinary(name)}
+                                disabled={busy}
+                              >
+                                {busy ? "Removing…" : "Remove"}
+                              </Button>
+                            ) : (
+                              <Button
+                                variant="default"
+                                size="sm"
+                                onClick={() => void installBinary(name)}
+                                disabled={busy}
+                              >
+                                {busy ? "Installing…" : "Install"}
+                              </Button>
+                            )}
+                          </div>
                         </div>
-                        <div className="flex gap-2">
-                          {installed ? (
-                            <Button
-                              variant="destructive"
-                              size="sm"
-                              onClick={() => void uninstallBinary(name)}
-                              disabled={busy}
-                            >
-                              {busy ? "Removing…" : "Remove"}
-                            </Button>
-                          ) : (
-                            <Button
-                              variant="default"
-                              size="sm"
-                              onClick={() => void installBinary(name)}
-                              disabled={busy}
-                            >
-                              {busy ? "Installing…" : "Install"}
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                      );
+                    })}
+                  </div>
+                </>
               )}
               {binaryInstallStatus && (
                 <p className="text-xs text-[var(--color-muted-foreground)]">
                   {binaryInstallStatus}
                 </p>
-              )}
-              {runtime !== "mobile-tauri" && (
-                <Button variant="outline" size="sm" onClick={() => void refreshVersions()}>
-                  Refresh versions
-                </Button>
               )}
             </CardContent>
           </Card>

@@ -10,6 +10,7 @@ fn yt_dlp_download_url() -> &'static str {
     } else if cfg!(target_os = "macos") {
         "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos"
     } else {
+        // Linux / Android — generic Linux binary
         "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp"
     }
 }
@@ -55,61 +56,41 @@ impl BinaryInstaller {
     }
 
     pub async fn install_yt_dlp(&self) -> AppResult<PathBuf> {
-        #[cfg(any(target_os = "android", target_os = "ios"))]
+        let dest = self.install_dir.join("yt-dlp");
+        let tmp = self.install_dir.join("yt-dlp.tmp");
+
+        self.download_file(yt_dlp_download_url(), &tmp).await?;
+        std::fs::rename(&tmp, &dest)
+            .map_err(|e| AppError::Other(format!("Failed to move yt-dlp binary: {e}")))?;
+
+        #[cfg(unix)]
         {
-            return Err(AppError::Other(
-                "yt-dlp installation is not supported on mobile. Use a desktop client for full download support.".to_string(),
-            ));
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = std::fs::metadata(&dest)?.permissions();
+            perms.set_mode(0o755);
+            std::fs::set_permissions(&dest, perms)?;
         }
 
-        #[cfg(not(any(target_os = "android", target_os = "ios")))]
-        {
-            let dest = self.install_dir.join("yt-dlp");
-            let tmp = self.install_dir.join("yt-dlp.tmp");
-
-            self.download_file(yt_dlp_download_url(), &tmp).await?;
-            std::fs::rename(&tmp, &dest)
-                .map_err(|e| AppError::Other(format!("Failed to move yt-dlp binary: {e}")))?;
-
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let mut perms = std::fs::metadata(&dest)?.permissions();
-                perms.set_mode(0o755);
-                std::fs::set_permissions(&dest, perms)?;
-            }
-
-            Ok(dest)
-        }
+        Ok(dest)
     }
 
     pub async fn install_gallery_dl(&self) -> AppResult<PathBuf> {
-        #[cfg(any(target_os = "android", target_os = "ios"))]
+        let dest = self.install_dir.join("gallery-dl");
+        let tmp = self.install_dir.join("gallery-dl.tmp");
+
+        self.download_file(gallery_dl_download_url(), &tmp).await?;
+        std::fs::rename(&tmp, &dest)
+            .map_err(|e| AppError::Other(format!("Failed to move gallery-dl binary: {e}")))?;
+
+        #[cfg(unix)]
         {
-            return Err(AppError::Other(
-                "gallery-dl installation is not supported on mobile. Use a desktop client for full download support.".to_string(),
-            ));
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = std::fs::metadata(&dest)?.permissions();
+            perms.set_mode(0o755);
+            std::fs::set_permissions(&dest, perms)?;
         }
 
-        #[cfg(not(any(target_os = "android", target_os = "ios")))]
-        {
-            let dest = self.install_dir.join("gallery-dl");
-            let tmp = self.install_dir.join("gallery-dl.tmp");
-
-            self.download_file(gallery_dl_download_url(), &tmp).await?;
-            std::fs::rename(&tmp, &dest)
-                .map_err(|e| AppError::Other(format!("Failed to move gallery-dl binary: {e}")))?;
-
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let mut perms = std::fs::metadata(&dest)?.permissions();
-                perms.set_mode(0o755);
-                std::fs::set_permissions(&dest, perms)?;
-            }
-
-            Ok(dest)
-        }
+        Ok(dest)
     }
 
     pub async fn get_installed_versions(&self) -> BinaryVersions {
