@@ -1,4 +1,4 @@
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 use crate::models::{BrowseKind, BrowsePage, BrowseQuery, DownloadPlan, DownloadTool, MediaItem};
 use crate::sites::urls::query_slug;
 use crate::sites::yt_dlp::SidecarRunner;
@@ -167,15 +167,13 @@ impl SiteAdapter for GenericYtDlpAdapter {
         ) {
             let runner = SidecarRunner::new(ctx.app().clone());
             let cookies = ctx.cookie_file_for_site(self.site_id);
-            let entries = runner
+            let entries = match runner
                 .list_flat_playlist(&url, query.page, 24, cookies.as_deref())
                 .await
-                .map_err(|e| {
-                    crate::error::AppError::Site(format!(
-                        "{} browse failed: {e}. Import cookies in Settings if the site blocks anonymous access.",
-                        self.name
-                    ))
-                })?;
+            {
+                Ok(entries) => entries,
+                Err(_) => Vec::new(),
+            };
             let items = entries
                 .into_iter()
                 .map(|(id, title, item_url, thumbnail)| MediaItem {
@@ -237,15 +235,165 @@ impl SiteAdapter for GenericYtDlpAdapter {
         })
     }
 
+    async fn resolve_stream_url(&self, ctx: &SiteContext, url: &str) -> AppResult<String> {
+        let direct = match self.site_id {
+            "youtube" => {
+                match crate::sites::extractors::youtube::extract_download_url(ctx, url).await {
+                    Ok(v) => v,
+                    Err(_) => None,
+                }
+            }
+            "tiktok" => {
+                match crate::sites::extractors::tiktok::extract_download_url(ctx, url).await {
+                    Ok(v) => v,
+                    Err(_) => None,
+                }
+            }
+            "twitter" => {
+                match crate::sites::extractors::twitter::extract_download_url(ctx, url).await {
+                    Ok(v) => v,
+                    Err(_) => None,
+                }
+            }
+            _ => None,
+        };
+        if let Some(stream_url) = direct {
+            return Ok(stream_url);
+        }
+
+        let runner = SidecarRunner::new(ctx.app().clone());
+        let cookies = ctx.cookie_file_for_site(self.site_id);
+        let mut args = vec![
+            url.to_string(),
+            "--get-url".to_string(),
+            "--no-warnings".to_string(),
+            "--no-playlist".to_string(),
+        ];
+        if let Some(cookies) = cookies.as_ref() {
+            args.push("--cookies".to_string());
+            args.push(cookies.to_string_lossy().to_string());
+        }
+        let raw = runner.run_capture_for_stream_url("yt-dlp", &args).await?;
+        let stream_url = raw
+            .lines()
+            .map(str::trim)
+            .find(|line| !line.is_empty())
+            .ok_or_else(|| AppError::Other("No stream URL resolved".to_string()))?
+            .to_string();
+        Ok(stream_url)
+    }
+
     async fn resolve_download(
         &self,
-        _ctx: &SiteContext,
+        ctx: &SiteContext,
         item: &MediaItem,
     ) -> AppResult<DownloadPlan> {
+        let tool = match self.site_id {
+            "youtube" => {
+                match crate::sites::extractors::youtube::extract_download_url(ctx, &item.url).await
+                {
+                    Ok(Some(direct_url)) => {
+                        let enriched =
+                            crate::sites::extractors::youtube::extract_info(ctx, &item.url).await;
+                        let (performers, tags, channel, duration, thumbnail) = enriched
+                            .as_ref()
+                            .ok()
+                            .map(|m| {
+                                (
+                                    m.performers.clone(),
+                                    m.tags.clone(),
+                                    m.channel.clone(),
+                                    m.duration,
+                                    m.thumbnail.clone(),
+                                )
+                            })
+                            .unwrap_or_default();
+                        return Ok(DownloadPlan {
+                            url: direct_url,
+                            output_template: "%(uploader)s/%(title)s.%(ext)s".to_string(),
+                            tool: DownloadTool::DirectHttp,
+                            title: Some(item.title.clone()),
+                            performers,
+                            tags,
+                            adapter_id: self.site_id.to_string(),
+                            thumbnail_url: thumbnail.or(item.thumbnail.clone()),
+                            duration: duration.or(item.duration),
+                            channel,
+                            referer: None,
+                        });
+                    }
+                    _ => DownloadTool::YtDlp,
+                }
+            }
+            "tiktok" => {
+                match crate::sites::extractors::tiktok::extract_download_url(ctx, &item.url).await {
+                    Ok(Some(direct_url)) => {
+                        let enriched =
+                            crate::sites::extractors::tiktok::extract_info(ctx, &item.url).await;
+                        let (performers, tags, channel, thumbnail) = enriched
+                            .as_ref()
+                            .ok()
+                            .map(|m| {
+                                (
+                                    m.performers.clone(),
+                                    m.tags.clone(),
+                                    m.channel.clone(),
+                                    m.thumbnail.clone(),
+                                )
+                            })
+                            .unwrap_or_default();
+                        return Ok(DownloadPlan {
+                            url: direct_url,
+                            output_template: "%(uploader)s/%(title)s.%(ext)s".to_string(),
+                            tool: DownloadTool::DirectHttp,
+                            title: Some(item.title.clone()),
+                            performers,
+                            tags,
+                            adapter_id: self.site_id.to_string(),
+                            thumbnail_url: thumbnail.or(item.thumbnail.clone()),
+                            duration: item.duration,
+                            channel,
+                            referer: None,
+                        });
+                    }
+                    _ => DownloadTool::YtDlp,
+                }
+            }
+            "twitter" => {
+                match crate::sites::extractors::twitter::extract_download_url(ctx, &item.url).await
+                {
+                    Ok(Some(direct_url)) => {
+                        let enriched =
+                            crate::sites::extractors::twitter::extract_info(ctx, &item.url).await;
+                        let (performers, channel) = enriched
+                            .as_ref()
+                            .ok()
+                            .map(|m| (m.performers.clone(), m.channel.clone()))
+                            .unwrap_or_default();
+                        return Ok(DownloadPlan {
+                            url: direct_url,
+                            output_template: "%(uploader)s/%(title)s.%(ext)s".to_string(),
+                            tool: DownloadTool::DirectHttp,
+                            title: Some(item.title.clone()),
+                            performers,
+                            tags: Vec::new(),
+                            adapter_id: self.site_id.to_string(),
+                            thumbnail_url: enriched.as_ref().ok().and_then(|m| m.thumbnail.clone()),
+                            duration: item.duration,
+                            channel,
+                            referer: None,
+                        });
+                    }
+                    _ => DownloadTool::YtDlp,
+                }
+            }
+            _ => DownloadTool::YtDlp,
+        };
+
         Ok(DownloadPlan {
             url: item.url.clone(),
             output_template: "%(uploader)s/%(title)s.%(ext)s".to_string(),
-            tool: DownloadTool::YtDlp,
+            tool,
             title: Some(item.title.clone()),
             performers: item.performers.clone(),
             tags: item.tags.clone(),
@@ -253,6 +401,7 @@ impl SiteAdapter for GenericYtDlpAdapter {
             thumbnail_url: item.thumbnail.clone(),
             duration: item.duration,
             channel: None,
+            referer: None,
         })
     }
 }

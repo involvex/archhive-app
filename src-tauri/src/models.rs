@@ -126,6 +126,10 @@ pub struct DownloadPlan {
     pub duration: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub channel: Option<String>,
+    /// HTTP Referer to send for [`DownloadTool::DirectHttp`] downloads.
+    /// Needed by Referer-gated CDNs (e.g. PornHub's phncdn).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub referer: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -134,6 +138,10 @@ pub enum DownloadTool {
     YtDlp,
     GalleryDl,
     DirectHttp,
+    /// HLS playlist saved to MP4 via ffmpeg stream-copy. Used when only a
+    /// gated `.m3u8` exists (e.g. PornHub): ffmpeg sends Referer/Cookie
+    /// headers that plain HTTP and `<video>` cannot.
+    FfmpegHls,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -604,4 +612,19 @@ pub struct LibraryStats {
     pub tag_count: u64,
     pub total_size_bytes: u64,
     pub free_space_bytes: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FileEntry {
+    pub name: String,
+    pub path: String,
+    pub is_dir: bool,
+    pub size: Option<u64>,
+    pub mime: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FilesListResponse {
+    pub path: String,
+    pub entries: Vec<FileEntry>,
 }

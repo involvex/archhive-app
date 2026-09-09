@@ -56,9 +56,12 @@ impl CookieVault {
     }
 
     pub fn save_cookies(&self, site_id: &str, netscape_cookies: &str) -> AppResult<()> {
-        let encrypted = self.encrypt(netscape_cookies.as_bytes())?;
+        // Normalize pasted exports (e.g. wrong TRUE/FALSE tailmatch flag) so
+        // strict parsers like Python's http.cookiejar accept the file.
+        let normalized = normalize_netscape(netscape_cookies);
+        let encrypted = self.encrypt(normalized.as_bytes())?;
         let path = self.cookie_file_path(site_id);
-        std::fs::write(&path, netscape_cookies)?;
+        std::fs::write(&path, &normalized)?;
         let now = Utc::now().to_rfc3339();
         let conn = self
             .conn
@@ -94,11 +97,17 @@ impl CookieVault {
 
     pub fn cookie_file_for_site(&self, site_id: &str) -> Option<PathBuf> {
         let path = self.cookie_file_path(site_id);
-        if path.exists() {
-            Some(path)
-        } else {
-            None
+        if !path.exists() {
+            return None;
         }
+        // Self-heal files saved before normalization existed.
+        if let Ok(raw) = std::fs::read_to_string(&path) {
+            let fixed = normalize_netscape(&raw);
+            if fixed != raw {
+                let _ = std::fs::write(&path, fixed);
+            }
+        }
+        Some(path)
     }
 
     pub fn cookie_header(&self, site_id: &str) -> AppResult<Option<String>> {
@@ -179,4 +188,79 @@ fn netscape_to_header(netscape: &str) -> String {
         })
         .collect::<Vec<_>>()
         .join("; ")
+}
+
+/// Normalize a Netscape cookie file so strict parsers accept it.
+///
+/// Python's http.cookiejar (used by yt-dlp `--cookies`) asserts
+/// `domain_specified == initial_dot` and rejects the *whole file* on a
+/// single mismatch. Browser extensions frequently export a leading-dot
+/// domain with a FALSE flag (or vice versa); fix the flag to match the
+/// domain instead of failing. Comments, blank lines, and cookie
+/// name/value bytes are preserved verbatim (modulo CRLF newlines).
+fn normalize_netscape(text: &str) -> String {
+    let mut out = String::with_capacity(text.len() + 64);
+    for raw_line in text.lines() {
+        let line = raw_line.strip_suffix('\r').unwrap_or(raw_line);
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            out.push_str(line);
+            out.push('\n');
+            continue;
+        }
+        let mut parts: Vec<&str> = line.split('\t').collect();
+        if parts.len() == 7 {
+            let domain = parts[0].trim();
+            parts[0] = domain;
+            parts[1] = if domain.starts_with('.') {
+                "TRUE"
+            } else {
+                "FALSE"
+            };
+            out.push_str(&parts.join("\t"));
+            out.push('\n');
+        } else {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_netscape;
+
+    #[test]
+    fn fixes_dot_domain_with_false_flag() {
+        let input = ".de.pornhub.com\tFALSE\t/\tFALSE\t0\trp\t3010639425:jfru6D4+gJg=\n";
+        let out = normalize_netscape(input);
+        assert_eq!(
+            out,
+            ".de.pornhub.com\tTRUE\t/\tFALSE\t0\trp\t3010639425:jfru6D4+gJg=\n"
+        );
+    }
+
+    #[test]
+    fn fixes_bare_domain_with_true_flag() {
+        let input = "pornhub.com\tTRUE\t/\tFALSE\t0\tname\tvalue\n";
+        let out = normalize_netscape(input);
+        assert_eq!(out, "pornhub.com\tFALSE\t/\tFALSE\t0\tname\tvalue\n");
+    }
+
+    #[test]
+    fn preserves_valid_lines_comments_and_values() {
+        let input =
+            "# HTTP Cookie File\n\n.example.com\tTRUE\t/\tTRUE\t1893456000\tsess\ta+b=c:d;\n";
+        assert_eq!(normalize_netscape(input), input);
+    }
+
+    #[test]
+    fn strips_crlf() {
+        let input = ".example.com\tFALSE\t/\tFALSE\t0\tn\tv\r\n";
+        assert_eq!(
+            normalize_netscape(input),
+            ".example.com\tTRUE\t/\tFALSE\t0\tn\tv\n"
+        );
+    }
 }

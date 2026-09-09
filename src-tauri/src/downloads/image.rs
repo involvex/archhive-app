@@ -33,37 +33,55 @@ pub fn resolve_download_tool(url: &str, adapter: &str) -> crate::models::Downloa
     if lower.contains("redd.it") && !lower.contains("/comments/") {
         return DownloadTool::DirectHttp;
     }
+    if lower.contains(".m3u8") {
+        return DownloadTool::FfmpegHls;
+    }
     DownloadTool::YtDlp
 }
 
+/// Direct HTTP download with optional Referer/cookies and progress.
+///
+/// Streams the body to disk in chunks (safe for multi-hundred-MB videos),
+/// unlike the one-shot buffered write. `on_progress(downloaded, total)`
+/// is invoked per chunk; callers should throttle UI updates themselves.
 pub async fn download_direct(
     url: &str,
     output_dir: &str,
     title: Option<&str>,
+    referer: Option<&str>,
+    cookie_header: Option<&str>,
+    mut on_progress: Option<impl FnMut(u64, Option<u64>)>,
 ) -> AppResult<String> {
+    use tokio::io::AsyncWriteExt;
+
     let client = reqwest::Client::builder()
         .user_agent("Mozilla/5.0 (compatible; ArcHive/1.0)")
         .build()
         .map_err(|e| AppError::Download(e.to_string()))?;
 
-    let resp = client
-        .get(url)
+    let mut req = client.get(url);
+    if let Some(referer) = referer {
+        req = req.header(reqwest::header::REFERER, referer);
+    }
+    if let Some(cookies) = cookie_header {
+        if !cookies.is_empty() {
+            req = req.header(reqwest::header::COOKIE, cookies);
+        }
+    }
+    let mut resp = req
         .send()
         .await
-        .map_err(|e| AppError::Download(format!("fetch image: {e}")))?;
+        .map_err(|e| AppError::Download(format!("fetch file: {e}")))?;
 
     if !resp.status().is_success() {
         return Err(AppError::Download(format!(
-            "HTTP {} for image URL",
+            "HTTP {} for file URL",
             resp.status()
         )));
     }
 
+    let total = resp.content_length();
     let ext = extension_from_response(url, resp.headers().get(reqwest::header::CONTENT_TYPE));
-    let bytes = resp
-        .bytes()
-        .await
-        .map_err(|e| AppError::Download(format!("read image body: {e}")))?;
 
     std::fs::create_dir_all(output_dir)?;
     let base = title
@@ -77,7 +95,7 @@ pub async fn download_direct(
                         .and_then(|s| s.last().map(|s| s.to_string()))
                 })
                 .map(|s| sanitize_filename(&s))
-                .unwrap_or_else(|| "image".to_string())
+                .unwrap_or_else(|| "download".to_string())
         });
     let filename = if base.contains('.') {
         base
@@ -86,9 +104,32 @@ pub async fn download_direct(
     };
     let path = Path::new(output_dir).join(&filename);
     let path = unique_path(path);
-    tokio::fs::write(&path, &bytes)
+    let mut file = tokio::fs::File::create(&path)
         .await
-        .map_err(|e| AppError::Download(format!("write image: {e}")))?;
+        .map_err(|e| AppError::Download(format!("create file: {e}")))?;
+
+    let mut downloaded: u64 = 0;
+    loop {
+        match resp
+            .chunk()
+            .await
+            .map_err(|e| AppError::Download(format!("read body: {e}")))?
+        {
+            Some(bytes) => {
+                file.write_all(&bytes)
+                    .await
+                    .map_err(|e| AppError::Download(format!("write file: {e}")))?;
+                downloaded += bytes.len() as u64;
+                if let Some(cb) = on_progress.as_mut() {
+                    cb(downloaded, total);
+                }
+            }
+            None => break,
+        }
+    }
+    file.flush()
+        .await
+        .map_err(|e| AppError::Download(format!("flush file: {e}")))?;
     Ok(path.to_string_lossy().to_string())
 }
 
@@ -97,6 +138,19 @@ fn extension_from_response(
     content_type: Option<&reqwest::header::HeaderValue>,
 ) -> String {
     if let Some(ct) = content_type.and_then(|v| v.to_str().ok()) {
+        let ct = ct.to_lowercase();
+        if ct.contains("mp4") {
+            return ".mp4".to_string();
+        }
+        if ct.contains("webm") {
+            return ".webm".to_string();
+        }
+        if ct.contains("quicktime") {
+            return ".mov".to_string();
+        }
+        if ct.contains("x-m4v") || (ct.contains("m4v")) {
+            return ".m4v".to_string();
+        }
         if ct.contains("png") {
             return ".png".to_string();
         }
@@ -110,16 +164,27 @@ fn extension_from_response(
             return ".jpg".to_string();
         }
     }
-    let lower = url.to_lowercase();
+    // Compare against the URL path without query/fragment so
+    // `.../video.mp4?token=...` still matches.
+    let path = url
+        .split(&['?', '#'][..])
+        .next()
+        .unwrap_or(url)
+        .to_lowercase();
     for ext in IMAGE_EXTS {
-        if lower.ends_with(ext) {
+        if path.ends_with(ext) {
+            return ext.to_string();
+        }
+    }
+    for ext in [".mp4", ".webm", ".m4v", ".mov"] {
+        if path.ends_with(ext) {
             return ext.to_string();
         }
     }
     ".jpg".to_string()
 }
 
-fn sanitize_filename(name: &str) -> String {
+pub(crate) fn sanitize_filename(name: &str) -> String {
     let safe: String = name
         .chars()
         .map(|c| {
@@ -135,7 +200,7 @@ fn sanitize_filename(name: &str) -> String {
     safe.trim_matches('_').to_string()
 }
 
-fn unique_path(path: PathBuf) -> PathBuf {
+pub(crate) fn unique_path(path: PathBuf) -> PathBuf {
     if !path.exists() {
         return path;
     }

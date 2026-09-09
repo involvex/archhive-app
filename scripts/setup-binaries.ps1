@@ -1,6 +1,7 @@
 # Downloads yt-dlp, ffmpeg, and gallery-dl into src-tauri/binaries for sidecar bundling.
 param(
-    [string]$Arch = "x86_64-pc-windows-msvc"
+    [string]$Arch = "x86_64-pc-windows-msvc",
+    [switch]$IncludeAndroid
 )
 
 $ErrorActionPreference = "Stop"
@@ -61,6 +62,25 @@ py -3 "%~dp0gallery-dl-bundle\gallery_dl\__main__.py" %*
         Write-Warning "gallery-dl install failed; add to PATH via: py -3 -m pip install gallery-dl"
     }
 }
+}
+
+if ($IncludeAndroid) {
+    Write-Host "Downloading Android ARM64 ffmpeg/ffprobe..."
+    $AndroidFfmpegUrl = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linuxarm64-gpl.tar.xz"
+    $AndroidZipPath = Join-Path $env:TEMP "ffmpeg-android.tar.xz"
+    Invoke-WebRequest -Uri $AndroidFfmpegUrl -OutFile $AndroidZipPath
+    Expand-Archive -Path $AndroidZipPath -DestinationPath $env:TEMP -Force
+    $AndroidFfmpegDir = Get-ChildItem -Path $env:TEMP -Directory -Filter "ffmpeg-master-latest-linuxarm64-gpl" | Select-Object -First 1
+    if ($AndroidFfmpegDir) {
+        $AndroidBinDir = Join-Path $AndroidFfmpegDir.FullName "bin"
+        $FfmpegAndroid = Join-Path $BinDir "ffmpeg-aarch64-linux-android"
+        $FfprobeAndroid = Join-Path $BinDir "ffprobe-aarch64-linux-android"
+        Copy-Item (Join-Path $AndroidBinDir "ffmpeg") $FfmpegAndroid -Force
+        Copy-Item (Join-Path $AndroidBinDir "ffprobe") $FfprobeAndroid -Force
+        Write-Host "Android ffmpeg/ffprobe installed to $BinDir"
+    } else {
+        Write-Warning "Android ffmpeg download failed"
+    }
 }
 
 Write-Host "Done. Binaries in $BinDir"

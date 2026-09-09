@@ -1,9 +1,10 @@
 use crate::error::{AppError, AppResult};
 use regex::Regex;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tauri::AppHandle;
+use tauri::Manager;
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 
@@ -14,6 +15,37 @@ pub struct SidecarRunner {
 impl SidecarRunner {
     pub fn new(app: AppHandle) -> Self {
         Self { app }
+    }
+
+    fn resolve_binary_path(&self, name: &str) -> Option<PathBuf> {
+        // On mobile, yt-dlp/gallery-dl from the binary installer are x86_64 Linux
+        // and cannot run on ARM64 Android. Skip them and rely on sidecars or Rust extractors.
+        #[cfg(mobile)]
+        if name == "yt-dlp" || name == "gallery-dl" {
+            return None;
+        }
+
+        let data_dir = self.app.path().app_data_dir().ok()?;
+        let installed = data_dir.join("bin").join(name);
+        if installed.exists() {
+            return Some(installed);
+        }
+        None
+    }
+
+    fn spawn_from_path(
+        &self,
+        path: &Path,
+        args: &[String],
+    ) -> AppResult<(tauri::async_runtime::Receiver<CommandEvent>, CommandChild)> {
+        let (rx, child) = self
+            .app
+            .shell()
+            .command(path.to_string_lossy().as_ref())
+            .args(args)
+            .spawn()
+            .map_err(|e| AppError::Download(format!("spawn {}: {e}", path.display())))?;
+        Ok((rx, child))
     }
 
     pub async fn run_yt_dlp(
@@ -201,29 +233,59 @@ impl SidecarRunner {
         on_line: impl Fn(&str),
         output_dir: Option<&str>,
     ) -> AppResult<String> {
-        let sidecar_result = self
+        // On Android, use the youtubedl-android Kotlin plugin for yt-dlp downloads.
+        #[cfg(target_os = "android")]
+        if name == "yt-dlp" {
+            let output = crate::mobile::ytdlp_bridge::execute(&self.app, args)?;
+            // Feed all output lines to the callback (progress won't stream in real-time).
+            for line in output.stdout.lines() {
+                on_line(line);
+            }
+            for line in output.stderr.lines() {
+                on_line(line);
+            }
+            if output.exit_code != 0 {
+                let detail = if output.stderr.trim().is_empty() {
+                    output.stdout.trim().to_string()
+                } else {
+                    output.stderr.trim().to_string()
+                };
+                return Err(AppError::Download(format!(
+                    "yt-dlp exited with code {}{}",
+                    output.exit_code,
+                    if detail.is_empty() {
+                        String::new()
+                    } else {
+                        format!(": {detail}")
+                    }
+                )));
+            }
+            // Parse the combined output for destination path.
+            let mut destination = String::new();
+            for line in output.stdout.lines() {
+                if let Some(path) = Self::parse_destination(line) {
+                    destination = path;
+                }
+            }
+            return Ok(destination);
+        }
+
+        if let Some(path) = self.resolve_binary_path(name) {
+            let (rx, child) = self.spawn_from_path(&path, args)?;
+            return self
+                .consume_cancellable(rx, child, name, cancel, on_line, output_dir)
+                .await;
+        }
+
+        let (rx, child) = self
             .app
             .shell()
-            .sidecar(format!("binaries/{name}"))
-            .map(|cmd| cmd.args(args).spawn());
-
-        match sidecar_result {
-            Ok(Ok((rx, child))) => {
-                self.consume_cancellable(rx, child, name, cancel, on_line, output_dir)
-                    .await
-            }
-            _ => {
-                let (rx, child) = self
-                    .app
-                    .shell()
-                    .command(name)
-                    .args(args)
-                    .spawn()
-                    .map_err(|e| AppError::Download(format!("spawn {name}: {e}")))?;
-                self.consume_cancellable(rx, child, name, cancel, on_line, output_dir)
-                    .await
-            }
-        }
+            .command(name)
+            .args(args)
+            .spawn()
+            .map_err(|e| AppError::Download(format!("spawn {name}: {e}")))?;
+        self.consume_cancellable(rx, child, name, cancel, on_line, output_dir)
+            .await
     }
 
     async fn consume_cancellable(
@@ -302,27 +364,69 @@ impl SidecarRunner {
         name: &str,
         args: &[String],
     ) -> AppResult<String> {
-        self.run_capture(name, args).await
+        self.run_capture(name, args).await.map_err(|e| {
+            #[cfg(mobile)]
+            {
+                AppError::Other(format!(
+                    "Failed to resolve stream: {e}. \
+                     Streaming requires Remote LAN mode — connect to a desktop host in Settings → Engine."
+                ))
+            }
+            #[cfg(not(mobile))]
+            {
+                AppError::Other(format!(
+                    "Failed to resolve stream: {e}. Install {name} in Settings → Library for playback support."
+                ))
+            }
+        })
     }
 
     async fn run_capture(&self, name: &str, args: &[String]) -> AppResult<String> {
-        let sidecar_result = self
-            .app
-            .shell()
-            .sidecar(format!("binaries/{name}"))
-            .map(|cmd| cmd.args(args).spawn());
+        // On Android, use the youtubedl-android Kotlin plugin for yt-dlp commands.
+        #[cfg(target_os = "android")]
+        if name == "yt-dlp" {
+            let output = crate::mobile::ytdlp_bridge::execute(&self.app, args)?;
+            if output.exit_code != 0 {
+                let detail = if output.stderr.trim().is_empty() {
+                    output.stdout.trim().to_string()
+                } else {
+                    output.stderr.trim().to_string()
+                };
+                return Err(AppError::Download(format!(
+                    "yt-dlp exited with code {}{}",
+                    output.exit_code,
+                    if detail.is_empty() {
+                        String::new()
+                    } else {
+                        format!(": {detail}")
+                    }
+                )));
+            }
+            return Ok(output.stdout);
+        }
 
-        let mut rx = match sidecar_result {
-            Ok(Ok((rx, _child))) => rx,
-            _ => {
-                let (rx, _child) = self
-                    .app
-                    .shell()
-                    .command(name)
-                    .args(args)
-                    .spawn()
-                    .map_err(|e| AppError::Download(format!("spawn {name}: {e}")))?;
-                rx
+        let mut rx = if let Some(path) = self.resolve_binary_path(name) {
+            let (rx, _child) = self.spawn_from_path(&path, args)?;
+            rx
+        } else {
+            let sidecar_result = self
+                .app
+                .shell()
+                .sidecar(format!("binaries/{name}"))
+                .map(|cmd| cmd.args(args).spawn());
+
+            match sidecar_result {
+                Ok(Ok((rx, _child))) => rx,
+                _ => {
+                    let (rx, _child) = self
+                        .app
+                        .shell()
+                        .command(name)
+                        .args(args)
+                        .spawn()
+                        .map_err(|e| AppError::Download(format!("spawn {name}: {e}")))?;
+                    rx
+                }
             }
         };
 
@@ -362,7 +466,11 @@ impl SidecarRunner {
         Ok(stdout)
     }
 
-    pub async fn spawn_ffmpeg(&self, args: &[String], on_line: impl Fn(&str)) -> AppResult<String> {
+    pub async fn spawn_ffmpeg(
+        &self,
+        args: &[String],
+        on_line: impl FnMut(&str),
+    ) -> AppResult<String> {
         self.spawn("ffmpeg", args, on_line).await
     }
 
@@ -388,8 +496,13 @@ impl SidecarRunner {
         &self,
         name: &str,
         args: &[String],
-        on_line: impl Fn(&str),
+        on_line: impl FnMut(&str),
     ) -> AppResult<String> {
+        if let Some(path) = self.resolve_binary_path(name) {
+            let (rx, _child) = self.spawn_from_path(&path, args)?;
+            return self.consume(rx, name, on_line).await;
+        }
+
         let sidecar_result = self
             .app
             .shell()
@@ -415,7 +528,7 @@ impl SidecarRunner {
         &self,
         mut rx: tauri::async_runtime::Receiver<CommandEvent>,
         name: &str,
-        on_line: impl Fn(&str),
+        mut on_line: impl FnMut(&str),
     ) -> AppResult<String> {
         let mut destination = String::new();
         while let Some(event) = rx.recv().await {

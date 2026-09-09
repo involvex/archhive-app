@@ -47,10 +47,6 @@ fn bootstrap_mobile_settings(db: &Database, data_dir: &std::path::Path) -> Resul
         settings.library_path = downloads.to_string_lossy().to_string();
         changed = true;
     }
-    if settings.engine_mode == crate::models::EngineMode::Local {
-        settings.engine_mode = crate::models::EngineMode::RemoteLan;
-        changed = true;
-    }
     if settings
         .remote_token
         .as_ref()
@@ -65,6 +61,37 @@ fn bootstrap_mobile_settings(db: &Database, data_dir: &std::path::Path) -> Resul
     Ok(())
 }
 
+/// On Android, Tauri's shell plugin may not set execute permissions on extracted sidecars.
+/// This fixes ffmpeg/ffprobe permissions and removes any wrongly-installed x86_64 binaries.
+#[cfg(target_os = "android")]
+fn ensure_sidecar_permissions(app: &tauri::AppHandle) {
+    use std::os::unix::fs::PermissionsExt;
+
+    // Fix sidecar permissions (ffmpeg, ffprobe)
+    for name in &["ffmpeg", "ffprobe"] {
+        if let Ok(sidecar) = app.path().resolve(format!("binaries/{name}"), BaseDirectory::Resource)
+        {
+            if sidecar.exists() {
+                let _ = std::fs::set_permissions(
+                    &sidecar,
+                    std::fs::Permissions::from_mode(0o755),
+                );
+            }
+        }
+    }
+
+    // Remove any wrongly-installed x86_64 binaries from the binary installer
+    if let Ok(data_dir) = app.path().app_data_dir() {
+        let bin_dir = data_dir.join("bin");
+        for name in &["yt-dlp", "gallery-dl"] {
+            let path = bin_dir.join(name);
+            if path.exists() {
+                let _ = std::fs::remove_file(&path);
+            }
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
@@ -73,6 +100,9 @@ pub fn run() {
 
     #[cfg(not(mobile))]
     let builder = builder.plugin(tauri_plugin_global_shortcut::Builder::new().build());
+
+    #[cfg(mobile)]
+    let builder = builder.plugin(mobile::ytdlp_bridge::init());
 
     let builder = builder.setup(|app| {
         let data_dir = app
@@ -83,7 +113,10 @@ pub fn run() {
         let db = Arc::new(Database::new(data_dir.clone()).map_err(|e| e.to_string())?);
 
         #[cfg(mobile)]
-        bootstrap_mobile_settings(&db, &data_dir)?;
+        {
+            bootstrap_mobile_settings(&db, &data_dir)?;
+            ensure_sidecar_permissions(app.handle());
+        }
 
         let static_ui = resolve_lan_static_ui(app.handle());
         let state = Arc::new(
@@ -201,6 +234,11 @@ pub fn run() {
             commands::poll_watchlist,
             commands::watchlist_status,
             commands::dismiss_saved_search_news,
+            commands::install_yt_dlp,
+            commands::install_gallery_dl,
+            commands::get_installed_binaries,
+            commands::uninstall_binary,
+            commands::list_files,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

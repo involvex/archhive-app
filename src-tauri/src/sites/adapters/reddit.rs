@@ -1,5 +1,5 @@
-use crate::error::AppResult;
-use crate::models::{BrowseKind, BrowsePage, BrowseQuery, DownloadPlan, MediaItem};
+use crate::error::{AppError, AppResult};
+use crate::models::{BrowseKind, BrowsePage, BrowseQuery, DownloadPlan, DownloadTool, MediaItem};
 use crate::sites::browse_fallback::ytdlp_browse_fallback;
 use crate::sites::urls::{path_slug, query_slug};
 use crate::sites::{SiteAdapter, SiteContext};
@@ -33,7 +33,10 @@ impl SiteAdapter for RedditAdapter {
         let html = ctx.fetch_html(&url, "reddit").await?;
         let mut items = parse_reddit(&html);
         if items.is_empty() {
-            items = ytdlp_browse_fallback(ctx, self.id(), &url, query.page, 30).await?;
+            items = match ytdlp_browse_fallback(ctx, self.id(), &url, query.page, 30).await {
+                Ok(fallback) => fallback,
+                Err(_) => Vec::new(),
+            };
         }
         let has_more = items.len() >= 25;
         Ok(BrowsePage {
@@ -44,11 +47,71 @@ impl SiteAdapter for RedditAdapter {
         })
     }
 
+    async fn resolve_stream_url(&self, ctx: &SiteContext, url: &str) -> AppResult<String> {
+        if let Ok(Some(direct_url)) =
+            crate::sites::extractors::reddit::extract_download_url(ctx, url).await
+        {
+            return Ok(direct_url);
+        }
+
+        let runner = crate::sites::yt_dlp::SidecarRunner::new(ctx.app().clone());
+        let cookies = ctx.cookie_file_for_site(self.id());
+        let mut args = vec![
+            url.to_string(),
+            "--get-url".to_string(),
+            "--no-warnings".to_string(),
+            "--no-playlist".to_string(),
+        ];
+        if let Some(cookies) = cookies.as_ref() {
+            args.push("--cookies".to_string());
+            args.push(cookies.to_string_lossy().to_string());
+        }
+        let raw = runner.run_capture_for_stream_url("yt-dlp", &args).await?;
+        let stream_url = raw
+            .lines()
+            .map(str::trim)
+            .find(|line| !line.is_empty())
+            .ok_or_else(|| AppError::Other("No stream URL resolved".to_string()))?
+            .to_string();
+        Ok(stream_url)
+    }
+
     async fn resolve_download(
         &self,
-        _ctx: &SiteContext,
+        ctx: &SiteContext,
         item: &MediaItem,
     ) -> AppResult<DownloadPlan> {
+        if let Ok(Some(direct_url)) =
+            crate::sites::extractors::reddit::extract_download_url(ctx, &item.url).await
+        {
+            let enriched = crate::sites::extractors::reddit::extract_info(ctx, &item.url).await;
+            let (performers, channel, thumbnail, duration) = enriched
+                .as_ref()
+                .ok()
+                .map(|m| {
+                    (
+                        m.performers.clone(),
+                        m.channel.clone(),
+                        m.thumbnail.clone(),
+                        m.duration,
+                    )
+                })
+                .unwrap_or_default();
+            return Ok(DownloadPlan {
+                url: direct_url,
+                output_template: "reddit/%(title)s.%(ext)s".to_string(),
+                tool: DownloadTool::DirectHttp,
+                title: Some(item.title.clone()),
+                performers,
+                tags: vec!["reddit".to_string()],
+                adapter_id: "reddit".to_string(),
+                thumbnail_url: thumbnail.or(item.thumbnail.clone()),
+                duration: duration.or(item.duration),
+                channel,
+                referer: None,
+            });
+        }
+
         let tool = crate::downloads::image::resolve_download_tool(&item.url, "reddit");
         Ok(DownloadPlan {
             url: item.url.clone(),
@@ -61,6 +124,7 @@ impl SiteAdapter for RedditAdapter {
             thumbnail_url: item.thumbnail.clone(),
             duration: item.duration,
             channel: None,
+            referer: None,
         })
     }
 }

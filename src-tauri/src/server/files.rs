@@ -2,30 +2,16 @@ use axum::extract::{Query, State};
 use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::Response;
 use axum::Json;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::path::Path;
 
 use super::streaming::{mime_from_path, resolve_under_library, serve_file_with_range};
 use super::ApiState;
+use crate::models::FilesListResponse;
 
 #[derive(Deserialize)]
 pub struct FilesPathQuery {
     pub path: Option<String>,
-}
-
-#[derive(Serialize)]
-pub struct FileEntry {
-    pub name: String,
-    pub path: String,
-    pub is_dir: bool,
-    pub size: Option<u64>,
-    pub mime: Option<String>,
-}
-
-#[derive(Serialize)]
-pub struct FilesListResponse {
-    pub path: String,
-    pub entries: Vec<FileEntry>,
 }
 
 fn library_root(state: &ApiState) -> Result<std::path::PathBuf, StatusCode> {
@@ -73,7 +59,7 @@ pub async fn list_files(
         } else {
             Some(mime_from_path(&abs).to_string())
         };
-        entries.push(FileEntry {
+        entries.push(crate::models::FileEntry {
             name,
             path: rel_path,
             is_dir,
@@ -88,7 +74,7 @@ pub async fn list_files(
     });
 
     let current = relative_path(&root, &dir);
-    Ok(Json(FilesListResponse {
+    Ok(Json(crate::models::FilesListResponse {
         path: current,
         entries,
     }))

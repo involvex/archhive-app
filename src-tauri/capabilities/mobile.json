@@ -14,5 +14,40 @@
       "http://tauri.localhost/*"
     ]
   },
-  "permissions": ["core:default", "core:event:default", "opener:default", "shell:default"]
+  "permissions": [
+    "core:default",
+    "core:event:default",
+    "opener:default",
+    "shell:default",
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        {
+          "name": "binaries/ffmpeg",
+          "sidecar": true,
+          "args": true
+        },
+        {
+          "name": "binaries/ffprobe",
+          "sidecar": true,
+          "args": true
+        }
+      ]
+    },
+    {
+      "identifier": "shell:allow-spawn",
+      "allow": [
+        {
+          "name": "binaries/ffmpeg",
+          "sidecar": true,
+          "args": true
+        },
+        {
+          "name": "binaries/ffprobe",
+          "sidecar": true,
+          "args": true
+        }
+      ]
+    }
+  ]
 }

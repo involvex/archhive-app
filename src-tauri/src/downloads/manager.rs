@@ -105,6 +105,7 @@ impl DownloadManager {
             thumbnail_url: None,
             duration: None,
             channel: None,
+            referer: None,
         };
         self.queue_plan(plan)
     }
@@ -123,6 +124,8 @@ impl DownloadManager {
             plan.thumbnail_url.as_deref(),
             plan.duration,
             plan.channel.as_deref(),
+            plan.referer.as_deref(),
+            &plan.tool,
         )?;
         self.register_cancel(&job.id);
         self.enqueue(&job.id)?;
@@ -214,9 +217,12 @@ impl DownloadManager {
 
 fn plan_from_job(db: &Database, job: &DownloadJob) -> AppResult<DownloadPlan> {
     let settings = db.get_settings()?;
-    let tool = crate::downloads::image::resolve_download_tool(&job.url, &job.adapter);
-    let (performers, tags, thumbnail_url, duration, channel) =
+    let (performers, tags, thumbnail_url, duration, channel, referer, persisted_tool) =
         deserialize_job_metadata(db, &job.id).unwrap_or_default();
+    // Prefer the tool stored at queue time; fall back to URL-based detection
+    // for jobs queued before tool persistence existed.
+    let tool = persisted_tool
+        .unwrap_or_else(|| crate::downloads::image::resolve_download_tool(&job.url, &job.adapter));
     Ok(DownloadPlan {
         url: job.url.clone(),
         output_template: crate::downloads::naming::to_ytdlp_output_template(
@@ -230,6 +236,7 @@ fn plan_from_job(db: &Database, job: &DownloadJob) -> AppResult<DownloadPlan> {
         thumbnail_url,
         duration,
         channel,
+        referer,
     })
 }
 
@@ -242,6 +249,8 @@ fn deserialize_job_metadata(
     Option<String>,
     Option<u32>,
     Option<String>,
+    Option<String>,
+    Option<crate::models::DownloadTool>,
 )> {
     db.get_download_job_metadata(job_id)
 }
@@ -437,13 +446,76 @@ async fn run_job_with_plan(
             if !cancel.load(Ordering::Relaxed) {
                 return handle_stopped(&db, &app, &job_id);
             }
+            let cookie_header = vault.cookie_header(&plan.adapter_id).ok().flatten();
+            let mut last_reported = 0u64;
             let path = crate::downloads::image::download_direct(
                 &plan.url,
                 library_path,
                 plan.title.as_deref(),
+                plan.referer.as_deref(),
+                cookie_header.as_deref(),
+                Some(|downloaded: u64, total: Option<u64>| {
+                    // Throttle progress events to ~1MB steps plus completion.
+                    let done = total.is_some_and(|t| downloaded >= t);
+                    if downloaded >= last_reported + 1024 * 1024 || done {
+                        last_reported = downloaded;
+                        let progress = total.and_then(|t| {
+                            if t > 0 {
+                                Some(downloaded as f32 / t as f32)
+                            } else {
+                                None
+                            }
+                        });
+                        update_progress(&db_emit, &app_emit, &job_id_emit, "", progress);
+                    }
+                }),
             )
-            .await?;
-            Ok(vec![path])
+            .await;
+            if path.is_err() && !cancel.load(Ordering::Relaxed) {
+                return handle_stopped(&db, &app, &job_id);
+            }
+            Ok(vec![path?])
+        }
+        DownloadTool::FfmpegHls => {
+            if !cancel.load(Ordering::Relaxed) {
+                return handle_stopped(&db, &app, &job_id);
+            }
+            let cookie_header = vault.cookie_header(&plan.adapter_id).ok().flatten();
+            std::fs::create_dir_all(library_path)?;
+            let base = plan
+                .title
+                .clone()
+                .map(|t| crate::downloads::image::sanitize_filename(&t))
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| "video".to_string());
+            let filename = if base.contains('.') {
+                base
+            } else {
+                format!("{base}.mp4")
+            };
+            let out_path =
+                crate::downloads::image::unique_path(Path::new(library_path).join(&filename));
+            let processor = crate::media::FfmpegProcessor::new(app.clone());
+            let result = processor
+                .download_hls(
+                    &plan.url,
+                    &out_path,
+                    plan.referer.as_deref(),
+                    cookie_header.as_deref(),
+                    plan.duration,
+                    Some(|fraction: Option<f32>| {
+                        update_progress(&db_emit, &app_emit, &job_id_emit, "", fraction);
+                    }),
+                )
+                .await;
+            if result.is_err() {
+                let _ = std::fs::remove_file(&out_path);
+                if !cancel.load(Ordering::Relaxed) {
+                    return handle_stopped(&db, &app, &job_id);
+                }
+            }
+            result?;
+            Ok(vec![out_path.to_string_lossy().to_string()])
         }
         DownloadTool::YtDlp => {
             let cancel_clone = cancel.clone();
@@ -537,6 +609,8 @@ async fn run_job_with_plan(
                         enriched_thumb_url.as_deref(),
                         enriched_duration,
                         enriched_channel.as_deref(),
+                        plan.referer.as_deref(),
+                        &plan.tool,
                     )?;
                 }
             }

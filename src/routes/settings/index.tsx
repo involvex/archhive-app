@@ -132,6 +132,8 @@ function SettingsPage() {
   const [discovering, setDiscovering] = useState(false);
   const [discoverStatus, setDiscoverStatus] = useState("");
   const [appVersion, setAppVersion] = useState("…");
+  const [installingBinary, setInstallingBinary] = useState<string | null>(null);
+  const [binaryInstallStatus, setBinaryInstallStatus] = useState<string>("");
 
   useEffect(() => {
     void resolveAppVersion().then(setAppVersion);
@@ -464,6 +466,36 @@ function SettingsPage() {
   async function removeCookies(siteId: string) {
     await api.deleteSiteCookies(siteId);
     await refreshCookies();
+  }
+
+  async function installBinary(name: "yt-dlp" | "gallery-dl") {
+    setInstallingBinary(name);
+    setBinaryInstallStatus(`Installing ${name}…`);
+    try {
+      const result = name === "yt-dlp" ? await api.installYtDlp() : await api.installGalleryDl();
+      setBinaryInstallStatus(
+        `${name} installed${result.path ? ` to ${result.path}` : ""}. Refresh versions to verify.`,
+      );
+    } catch (e) {
+      setBinaryInstallStatus(e instanceof Error ? e.message : `Failed to install ${name}`);
+    } finally {
+      setInstallingBinary(null);
+      void refreshVersions();
+    }
+  }
+
+  async function uninstallBinary(name: "yt-dlp" | "gallery-dl") {
+    setInstallingBinary(name);
+    setBinaryInstallStatus(`Uninstalling ${name}…`);
+    try {
+      await api.uninstallBinary(name);
+      setBinaryInstallStatus(`${name} removed. Refresh versions to verify.`);
+    } catch (e) {
+      setBinaryInstallStatus(e instanceof Error ? e.message : `Failed to uninstall ${name}`);
+    } finally {
+      setInstallingBinary(null);
+      void refreshVersions();
+    }
   }
 
   async function scanDuplicates() {
@@ -816,17 +848,23 @@ function SettingsPage() {
             </CardHeader>
             <CardContent className="space-y-3">
               <p className="text-xs text-[var(--color-muted-foreground)]">
-                Versions of the bundled sidecars (desktop) or PATH tools. Missing entries mean the
-                tool was not found.
+                {runtime === "mobile-tauri"
+                  ? "Bundled media tools. yt-dlp runs via the embedded Android engine."
+                  : "Versions of the bundled sidecars (desktop) or PATH tools. Missing entries mean the tool was not found."}
               </p>
               <dl className="grid grid-cols-2 gap-2 text-sm">
-                {(
-                  [
-                    ["yt-dlp", binaryVersions?.ytdlp_version],
-                    ["gallery-dl", binaryVersions?.gallery_dl_version],
-                    ["ffmpeg", binaryVersions?.ffmpeg_version],
-                    ["ffprobe", binaryVersions?.ffprobe_version],
-                  ] as const
+                {(runtime === "mobile-tauri"
+                  ? ([
+                      ["yt-dlp", binaryVersions?.ytdlp_version],
+                      ["ffmpeg", binaryVersions?.ffmpeg_version],
+                      ["ffprobe", binaryVersions?.ffprobe_version],
+                    ] as const)
+                  : ([
+                      ["yt-dlp", binaryVersions?.ytdlp_version],
+                      ["gallery-dl", binaryVersions?.gallery_dl_version],
+                      ["ffmpeg", binaryVersions?.ffmpeg_version],
+                      ["ffprobe", binaryVersions?.ffprobe_version],
+                    ] as const)
                 ).map(([name, version]) => (
                   <div
                     key={name}
@@ -842,6 +880,82 @@ function SettingsPage() {
               <Button variant="outline" size="sm" onClick={() => void refreshVersions()}>
                 Refresh versions
               </Button>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Download engine</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {runtime === "mobile-tauri" ? (
+                <>
+                  <p className="text-xs text-[var(--color-muted-foreground)]">
+                    Standalone mode includes an embedded yt-dlp engine for direct streaming and
+                    downloading on supported sites.
+                  </p>
+                  <p className="text-xs text-[var(--color-muted-foreground)]">
+                    For sites without native support (e.g. Chaturbate live streams), use{" "}
+                    <strong>Remote LAN</strong> mode to connect to your desktop host.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-xs text-[var(--color-muted-foreground)]">
+                    yt-dlp and gallery-dl enable full download support for all sites. On desktop
+                    they are bundled.
+                  </p>
+                  <div className="space-y-2">
+                    {(["yt-dlp", "gallery-dl"] as const).map((name) => {
+                      const installed =
+                        name === "yt-dlp"
+                          ? Boolean(binaryVersions?.ytdlp_version)
+                          : Boolean(binaryVersions?.gallery_dl_version);
+                      const busy = installingBinary === name;
+                      return (
+                        <div
+                          key={name}
+                          className="flex items-center justify-between gap-3 rounded-md border border-[var(--color-border)] px-3 py-2"
+                        >
+                          <div>
+                            <p className="text-sm font-medium">{name}</p>
+                            <p className="text-xs text-[var(--color-muted-foreground)]">
+                              {installed
+                                ? `Installed — ${name === "yt-dlp" ? binaryVersions?.ytdlp_version : binaryVersions?.gallery_dl_version}`
+                                : "Not installed"}
+                            </p>
+                          </div>
+                          <div className="flex gap-2">
+                            {installed ? (
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                onClick={() => void uninstallBinary(name)}
+                                disabled={busy}
+                              >
+                                {busy ? "Removing…" : "Remove"}
+                              </Button>
+                            ) : (
+                              <Button
+                                variant="default"
+                                size="sm"
+                                onClick={() => void installBinary(name)}
+                                disabled={busy}
+                              >
+                                {busy ? "Installing…" : "Install"}
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+              {binaryInstallStatus && (
+                <p className="text-xs text-[var(--color-muted-foreground)]">
+                  {binaryInstallStatus}
+                </p>
+              )}
             </CardContent>
           </Card>
           <Card>

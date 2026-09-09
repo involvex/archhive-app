@@ -49,10 +49,6 @@ export const useSettingsStore = create<SettingsState>()(
         if (host !== state.settings.remote_host) {
           state.updateSettings({ remote_host: host || undefined });
         }
-        if (!isMobileDevice()) return;
-        if (state.settings.engine_mode !== "remote_lan") {
-          state.updateSettings({ engine_mode: "remote_lan" });
-        }
       },
     },
   ),

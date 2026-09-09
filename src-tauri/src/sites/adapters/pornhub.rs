@@ -48,7 +48,10 @@ macro_rules! ytdlp_tube_adapter {
                 // Drop obvious nav junk so we fall through to yt-dlp.
                 items.retain(|i| !is_junk_nav_title(&i.title));
                 if items.is_empty() {
-                    items = ytdlp_browse_fallback(ctx, $id, &url, query.page, 24).await?;
+                    items = match ytdlp_browse_fallback(ctx, $id, &url, query.page, 24).await {
+                        Ok(fallback) => fallback,
+                        Err(_) => Vec::new(),
+                    };
                 }
                 if items.is_empty() {
                     return Err(crate::error::AppError::Site(format!(
@@ -86,7 +89,45 @@ macro_rules! ytdlp_tube_adapter {
                     thumbnail_url: item.thumbnail.clone(),
                     duration: item.duration,
                     channel,
+                    referer: None,
                 })
+            }
+
+            async fn resolve_stream_url(&self, ctx: &SiteContext, url: &str) -> AppResult<String> {
+                #[cfg(mobile)]
+                {
+                    let _ = (&ctx, &url);
+                    return Err(crate::error::AppError::Other(format!(
+                        "{} streaming is not available in standalone mode. \
+                         Use Remote LAN mode (connect to a desktop host), \
+                         or try YouTube, TikTok, Twitter, Reddit, or RedGifs which support standalone.",
+                        $name
+                    )));
+                }
+
+                #[cfg(not(mobile))]
+                {
+                    let runner = crate::sites::yt_dlp::SidecarRunner::new(ctx.app().clone());
+                    let cookies = ctx.cookie_file_for_site($id);
+                    let mut args = vec![
+                        url.to_string(),
+                        "--get-url".to_string(),
+                        "--no-warnings".to_string(),
+                        "--no-playlist".to_string(),
+                    ];
+                    if let Some(cookies) = cookies.as_ref() {
+                        args.push("--cookies".to_string());
+                        args.push(cookies.to_string_lossy().to_string());
+                    }
+                    let raw = runner.run_capture_for_stream_url("yt-dlp", &args).await?;
+                    let stream_url = raw
+                        .lines()
+                        .map(str::trim)
+                        .find(|line| !line.is_empty())
+                        .ok_or_else(|| crate::error::AppError::Other("No stream URL resolved".to_string()))?
+                        .to_string();
+                    Ok(stream_url)
+                }
             }
         }
     };
@@ -152,7 +193,10 @@ impl SiteAdapter for PornhubAdapter {
         let html = ctx.fetch_html(&url, self.id()).await?;
         let mut items = parse_video_links(&html, PH_BASE, self.id())?;
         if items.is_empty() {
-            items = ytdlp_browse_fallback(ctx, self.id(), &url, query.page, 24).await?;
+            items = match ytdlp_browse_fallback(ctx, self.id(), &url, query.page, 24).await {
+                Ok(fallback) => fallback,
+                Err(_) => Vec::new(),
+            };
         }
         if items.is_empty() {
             return Err(crate::error::AppError::Site(
@@ -178,6 +222,48 @@ impl SiteAdapter for PornhubAdapter {
             .await
             .map(|html| scrape_tube_video_page(&html, self.id()))
             .unwrap_or_default();
+        // On mobile, yt-dlp is 403-blocked by PornHub's edge, so fetch the
+        // direct MP4 via the Rust extractor and download it with a Referer
+        // header (phncdn requires one). Falls through to yt-dlp on failure.
+        #[cfg(mobile)]
+        {
+            if let Ok(Some(media_url)) =
+                crate::sites::extractors::pornhub::extract_download_url(ctx, &item.url).await
+            {
+                return Ok(DownloadPlan {
+                    url: media_url,
+                    output_template: "%(title)s.%(ext)s".to_string(),
+                    tool: DownloadTool::DirectHttp,
+                    title: Some(item.title.clone()),
+                    performers: performers.clone(),
+                    tags: tags.clone(),
+                    adapter_id: self.id().to_string(),
+                    thumbnail_url: item.thumbnail.clone(),
+                    duration: item.duration,
+                    channel: channel.clone(),
+                    referer: Some(item.url.clone()),
+                });
+            }
+            // HLS-only pages: download the playlist via ffmpeg stream-copy
+            // with Referer/Cookie headers (plain HTTP would fetch playlists).
+            if let Ok(Some(hls_url)) =
+                crate::sites::extractors::pornhub::extract_hls_url(ctx, &item.url).await
+            {
+                return Ok(DownloadPlan {
+                    url: hls_url,
+                    output_template: "%(title)s.%(ext)s".to_string(),
+                    tool: DownloadTool::FfmpegHls,
+                    title: Some(item.title.clone()),
+                    performers,
+                    tags,
+                    adapter_id: self.id().to_string(),
+                    thumbnail_url: item.thumbnail.clone(),
+                    duration: item.duration,
+                    channel,
+                    referer: Some(item.url.clone()),
+                });
+            }
+        }
         Ok(DownloadPlan {
             url: item.url.clone(),
             output_template: "%(uploader)s/%(title)s.%(ext)s".to_string(),
@@ -189,7 +275,46 @@ impl SiteAdapter for PornhubAdapter {
             thumbnail_url: item.thumbnail.clone(),
             duration: item.duration,
             channel,
+            referer: None,
         })
+    }
+    async fn resolve_stream_url(&self, ctx: &SiteContext, url: &str) -> AppResult<String> {
+        // PornHub's edge often 403s yt-dlp (Python TLS fingerprint). On mobile,
+        // try the Rust extractor first: reqwest/rustls presents a different
+        // fingerprint and sometimes passes where yt-dlp is blocked. Any failure
+        // falls through to yt-dlp below.
+        // Note: PornHub CDN URLs may require a Referer header that the HTML5
+        // <video> element cannot send; if preview playback fails, download
+        // the video instead (the download path sends proper headers).
+        #[cfg(mobile)]
+        {
+            if let Ok(Some(stream_url)) =
+                crate::sites::extractors::pornhub::extract_download_url(ctx, url).await
+            {
+                return Ok(stream_url);
+            }
+        }
+
+        let runner = crate::sites::yt_dlp::SidecarRunner::new(ctx.app().clone());
+        let cookies = ctx.cookie_file_for_site(self.id());
+        let mut args = vec![
+            url.to_string(),
+            "--get-url".to_string(),
+            "--no-warnings".to_string(),
+            "--no-playlist".to_string(),
+        ];
+        if let Some(cookies) = cookies.as_ref() {
+            args.push("--cookies".to_string());
+            args.push(cookies.to_string_lossy().to_string());
+        }
+        let raw = runner.run_capture_for_stream_url("yt-dlp", &args).await?;
+        let stream_url = raw
+            .lines()
+            .map(str::trim)
+            .find(|line| !line.is_empty())
+            .ok_or_else(|| crate::error::AppError::Other("No stream URL resolved".to_string()))?
+            .to_string();
+        Ok(stream_url)
     }
 }
 

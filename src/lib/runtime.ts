@@ -27,17 +27,21 @@ export function getCapabilities(runtime: AppRuntime = getAppRuntime()): RuntimeC
     runtime === "browser" || runtime === "mobile-tauri" || settings.engine_mode === "remote_lan";
 
   return {
-    localIpc: runtime === "desktop-tauri",
+    localIpc:
+      runtime === "desktop-tauri" ||
+      (runtime === "mobile-tauri" && settings.engine_mode === "local"),
     lanServer: runtime === "desktop-tauri",
     lanDiscovery: runtime === "mobile-tauri" || runtime === "desktop-tauri",
     libraryPathEditable: runtime === "desktop-tauri",
-    libraryScanLocal: runtime === "desktop-tauri",
+    libraryScanLocal:
+      runtime === "desktop-tauri" ||
+      (runtime === "mobile-tauri" && settings.engine_mode === "local"),
     libraryScanRemote: useRemote && remoteConfigured,
     showBrowserBanner: runtime === "browser",
     engineModes:
       runtime === "desktop-tauri"
         ? ["local", "remote_lan", "standalone"]
-        : ["remote_lan", "standalone"],
+        : ["local", "remote_lan", "standalone"],
   };
 }
 
@@ -45,7 +49,10 @@ export function shouldUseRemoteApi(runtime: AppRuntime = getAppRuntime()): boole
   const { settings } = useSettingsStore.getState();
   if (settings.engine_mode === "standalone") return false;
   if (runtime === "browser") return Boolean(settings.remote_host?.trim());
-  if (runtime === "mobile-tauri") return Boolean(settings.remote_host?.trim());
+  if (runtime === "mobile-tauri") {
+    if (settings.engine_mode === "local") return false;
+    return Boolean(settings.remote_host?.trim());
+  }
   if (runtime === "desktop-tauri") {
     return settings.engine_mode === "remote_lan" && Boolean(settings.remote_host?.trim());
   }

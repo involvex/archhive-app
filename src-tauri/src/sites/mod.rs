@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 pub mod adapters;
 pub mod browse_fallback;
+pub mod extractors;
 pub mod registry;
 pub mod urls;
 pub mod yt_dlp;
@@ -70,4 +71,6 @@ pub trait SiteAdapter: Send + Sync {
         ctx: &SiteContext,
         item: &MediaItem,
     ) -> AppResult<DownloadPlan>;
+
+    async fn resolve_stream_url(&self, ctx: &SiteContext, url: &str) -> AppResult<String>;
 }
