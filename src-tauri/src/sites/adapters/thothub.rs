@@ -76,6 +76,7 @@ impl SiteAdapter for ThotHubAdapter {
     async fn resolve_stream_url(&self, ctx: &SiteContext, url: &str) -> AppResult<String> {
         #[cfg(mobile)]
         {
+            let _ = (&ctx, &url);
             return Err(crate::error::AppError::Other(
                 "ThotHub streaming is not available in standalone mode. \
                  Use Remote LAN mode (connect to a desktop host)."

@@ -236,11 +236,7 @@ impl SidecarRunner {
         // On Android, use the youtubedl-android Kotlin plugin for yt-dlp downloads.
         #[cfg(target_os = "android")]
         if name == "yt-dlp" {
-            use std::sync::Arc;
-            let handle = self
-                .app
-                .state::<Arc<crate::mobile::ytdlp_bridge::YtDlpHandle>>();
-            let output = handle.execute(args)?;
+            let output = crate::mobile::ytdlp_bridge::execute(&self.app, args)?;
             // Feed all output lines to the callback (progress won't stream in real-time).
             for line in output.stdout.lines() {
                 on_line(line);
@@ -389,11 +385,7 @@ impl SidecarRunner {
         // On Android, use the youtubedl-android Kotlin plugin for yt-dlp commands.
         #[cfg(target_os = "android")]
         if name == "yt-dlp" {
-            use std::sync::Arc;
-            let handle = self
-                .app
-                .state::<Arc<crate::mobile::ytdlp_bridge::YtDlpHandle>>();
-            let output = handle.execute(args)?;
+            let output = crate::mobile::ytdlp_bridge::execute(&self.app, args)?;
             if output.exit_code != 0 {
                 let detail = if output.stderr.trim().is_empty() {
                     output.stdout.trim().to_string()

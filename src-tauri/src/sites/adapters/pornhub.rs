@@ -95,6 +95,7 @@ macro_rules! ytdlp_tube_adapter {
             async fn resolve_stream_url(&self, ctx: &SiteContext, url: &str) -> AppResult<String> {
                 #[cfg(mobile)]
                 {
+                    let _ = (&ctx, &url);
                     return Err(crate::error::AppError::Other(format!(
                         "{} streaming is not available in standalone mode. \
                          Use Remote LAN mode (connect to a desktop host), \
@@ -240,6 +241,7 @@ impl SiteAdapter for PornhubAdapter {
         // On mobile, PornHub streaming is not available in standalone mode.
         #[cfg(mobile)]
         {
+            let _ = (&ctx, &url);
             return Err(crate::error::AppError::Other(
                 "PornHub streaming is not available in standalone mode. \
                  Use Remote LAN mode (connect to a desktop host), \
