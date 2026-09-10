@@ -35,7 +35,7 @@ base: process.env.BASE_URL || "/",
 
 ## Deploy via GitHub Actions (recommended)
 
-Push to the `gh-pages` branch to trigger deployment.
+Push to the `pages` branch to trigger deployment. The workflow builds the frontend and deploys the static output to the `gh-pages` branch automatically.
 
 ### One-time setup
 
@@ -45,11 +45,11 @@ Push to the `gh-pages` branch to trigger deployment.
 ### Workflow trigger
 
 ```bash
-# From main, create or update the gh-pages branch
-git push origin main:gh-pages
-# Or just push to gh-pages branch directly
-git checkout -b gh-pages
-git push -u origin gh-pages
+# From main, create or update the pages branch
+git push origin main:pages
+# Or just push to pages branch directly
+git checkout -b pages
+git push -u origin pages
 ```
 
 The workflow (`.github/workflows/gh-pages.yml`) will:
@@ -65,7 +65,7 @@ The site will be live at `https://<username>.github.io/<repo-name>/` within a mi
 
 ### Manual workflow dispatch
 
-You can also trigger the build manually from the **Actions** tab → **gh-pages** workflow → **Run workflow**, choosing the branch to deploy from.
+You can also trigger the build manually from the **Actions** tab → **GitHub Pages** workflow → **Run workflow**, choosing the branch to deploy from.
 
 ## Deploy manually (without Actions)
 
