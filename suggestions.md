@@ -460,14 +460,14 @@
 | Q20 | **LAN copy-address**               | Already shipped: "Copy web link" in Settings → LAN copies `http://<lan-ip>:<port>/?token=…`.                                                                    | ✅ Done                                                                                |
 | Q21 | **CSV export for performers**      | Q7 notes CSV format is still open — add CSV download alongside the existing JSON export on the Performers page.                                                 | ⚪ Not started                                                                         |
 | Q22 | **Clear completed downloads**      | "Clear completed" button on the Downloads page to prune finished/cancelled/failed jobs via bulk `delete_download`.                                              | ⚪ Not started                                                                         |
-| Q23 | **Spacebar play/pause in player**  | `ScenePlayerDialog` handles ArrowLeft/Right navigation but not Space — add spacebar to toggle play/pause (respecting the existing input-focus guard).           | ⚪ Not started                                                                         |
-| Q24 | **Auto-advance to next scene**     | After a video ends in the player, automatically advance to the next scene in the queue (via `onEnded` on the HTML video element).                               | ⚪ Not started                                                                         |
-| Q25 | **Watched / unwatched count**      | Show a "3 watched / 12 total" summary on the Library → Scenes filter bar, alongside the existing "Hide watched" chip (uses `list_watch_progress`).              | ⚪ Not started                                                                         |
-| Q26 | **Source site badge on SceneCard** | Parse and display the originating site domain from `source_url` as a small badge on library scene cards.                                                        | ⚪ Not started                                                                         |
-| Q27 | **Star rating on SceneCard**       | Wire up the existing `Scene.rating` column (DB + `update_scene` backend + `UpdateSceneRequest` TS type); show star rating on cards and in edit/details dialogs. | ⚪ Not started                                                                         |
-| Q28 | **Mark watched toggle in player**  | Add a "Mark watched / unwatched" button in `ScenePlayerDialog` action bar (uses existing `markWatched` API).                                                    | ⚪ Not started                                                                         |
+| Q23 | **Spacebar play/pause in player**  | `ScenePlayerDialog` handles ArrowLeft/Right navigation but not Space — add spacebar to toggle play/pause (respecting the existing input-focus guard).           | ✅ Done                                                                                |
+| Q24 | **Auto-advance to next scene**     | After a video ends in the player, automatically advance to the next scene in the queue (via `onEnded` on the HTML video element).                               | ✅ Done (`auto_advance_next` setting, default false, `onEnded` handler in player)      |
+| Q25 | **Watched / unwatched count**      | Show a "3 watched / 12 total" summary on the Library → Scenes filter bar, alongside the existing "Hide watched" chip (uses `list_watch_progress`).              | ✅ Done                                                                                |
+| Q26 | **Source site badge on SceneCard** | Parse and display the originating site domain from `source_url` as a small badge on library scene cards.                                                        | ✅ Done (`getItemSourceSite()` in `SceneCard`, grid + list views)                      |
+| Q27 | **Star rating on SceneCard**       | Wire up the existing `Scene.rating` column (DB + `update_scene` backend + `UpdateSceneRequest` TS type); show star rating on cards and in edit/details dialogs. | ✅ Done (backend threads rating through `update_scene`; 5-star input in edit dialog; display on cards + details) |
+| Q28 | **Mark watched toggle in player**  | Add a "Mark watched / unwatched" button in `ScenePlayerDialog` action bar (uses existing `markWatched` API).                                                    | ✅ Done (action bar button with try/catch error handling)                              |
 | Q29 | **Dark mode schedule**             | Add a "Schedule theme" setting (sunrise-to-sunset or custom hours) that auto-switches between Light/Dark; reuses the existing `AppTheme` plumbing.              | ⚪ Not started                                                                         |
-| Q30 | **Keyboard: `W` toggles watched**  | In the Library → Scenes page, `W` toggles the watched state on the currently focused scene (desktop only).                                                      | ⚪ Not started                                                                         |
+| Q30 | **Keyboard: `W` toggles watched**  | In the Library → Scenes page, `W` toggles the watched state on the currently focused scene (desktop only).                                                      | ✅ Done (registered shortcut with refs pattern for latest state access)                |
 
 ---
 
@@ -477,7 +477,7 @@
 
 ### 41. Scene Rating System
 
-**Status:** ⚪ Not started · **Quick Win:** Q27  
+**Status:** ✅ Done · **Quick Win:** Q27  
 **Area:** Library / UX  
 **Currently:** The `scenes.rating` column exists in SQLite (`MIGRATION_001`), and `Scene.rating: Option<u8>` is defined in both Rust (`models.rs`) and TypeScript (`types.ts`), but it is never written or displayed. `update_scene` in `state.rs` / `db/mod.rs` and `UpdateSceneRequest` in `models.rs` do not include a `rating` field.  
 **Suggestion:** Add a `rating: Option<u8>` field to `UpdateSceneRequest` and thread it through `update_scene` (state.rs → db/mod.rs). Add a star-rating input (1–5) in `SceneEditDialog` and `SceneDetailsDialog`. Display a star badge on `SceneCard`. This leverages an already-existing schema column — zero migrations needed.
@@ -491,11 +491,11 @@
 
 ### 43. Player Keyboard Controls
 
-**Status:** ⚪ Not started · **Quick Wins:** Q23, Q24, Q28  
+**Status:** ✅ Done · **Quick Wins:** Q23, Q24, Q28  
 **Area:** Library / Player  
 **Currently:** `ScenePlayerDialog` registers ArrowLeft/ArrowRight for prev/next navigation but does not handle Space (play/pause) or auto-advance on video end. There is also no in-player "mark watched" toggle.  
 **Suggestion:** Add Space to toggle play/pause, an `onEnded` handler to auto-advance to the next scene (with a setting to disable), and a "Mark watched / unwatched" button in the player action bar.
 
 ---
 
-_Last updated: 2026-09-10 (Q21–Q30 quick wins + #41–43 high-priority quick-win features added)_
+_Last updated: 2026-09-11 (Q23–Q30 quick wins + #41–43 high-priority quick-win features implemented and verified)_
