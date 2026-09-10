@@ -1,5 +1,8 @@
 import { forwardRef, useCallback, useEffect, useRef, type Ref } from "react";
 
+export const STREAM_URL_EXPIRED_ERROR =
+  "Playback failed — the stream URL may have expired. Tap Retry for a fresh one.";
+
 export interface HlsVideoPlayerProps {
   src: string;
   controls?: boolean;
@@ -51,6 +54,7 @@ export const HlsVideoPlayer = forwardRef<HTMLVideoElement, HlsVideoPlayerProps>(
           const hls = new Hls({
             enableWorker: true,
             lowLatencyMode: true,
+            capLevelToPlayerSize: true,
           });
           hlsRef.current = hls;
           hls.loadSource(url);
@@ -87,7 +91,11 @@ export const HlsVideoPlayer = forwardRef<HTMLVideoElement, HlsVideoPlayerProps>(
     }, [src, isHls, loadHls]);
 
     const handleVideoError = (e: React.SyntheticEvent<HTMLVideoElement>) => {
-      onError?.(e.currentTarget.error);
+      const mediaError = e.currentTarget.error;
+      if (mediaError?.code === 4) {
+        console.warn("[HlsVideoPlayer] stream URL expired", { src });
+      }
+      onError?.(mediaError);
     };
 
     return (

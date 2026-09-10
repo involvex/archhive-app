@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api/client";
 import { Button } from "@/components/ui/button";
-import { HlsVideoPlayer } from "@/components/HlsVideoPlayer";
+import { HlsVideoPlayer, STREAM_URL_EXPIRED_ERROR } from "@/components/HlsVideoPlayer";
 import { AlertCircle, Loader2, X } from "lucide-react";
 import type { MediaItem } from "@/lib/types";
 
@@ -116,9 +116,7 @@ export function UrlPlayerDialog({ item, open, onClose }: UrlPlayerDialogProps) {
               className="aspect-video w-full rounded-md bg-black"
               onError={(mediaError: MediaError | null) => {
                 if (mediaError?.code === 4) {
-                  setError(
-                    "Playback failed — the stream URL may have expired. Tap Retry for a fresh one.",
-                  );
+                  setError(STREAM_URL_EXPIRED_ERROR);
                 } else {
                   setError("Playback failed.");
                 }

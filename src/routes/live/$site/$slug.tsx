@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api/client";
 import { Button } from "@/components/ui/button";
-import { HlsVideoPlayer } from "@/components/HlsVideoPlayer";
+import { HlsVideoPlayer, STREAM_URL_EXPIRED_ERROR } from "@/components/HlsVideoPlayer";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Radio, ArrowLeft } from "lucide-react";
 import { Link } from "@tanstack/react-router";
@@ -91,9 +91,7 @@ function LivePlayerPage() {
                   className="h-full w-full object-contain"
                   onError={(mediaError: MediaError | null) => {
                     if (mediaError?.code === 4) {
-                      setError(
-                        "Playback failed — the stream URL may have expired. Tap Retry for a fresh one.",
-                      );
+                      setError(STREAM_URL_EXPIRED_ERROR);
                     } else {
                       setError("Playback failed.");
                     }
