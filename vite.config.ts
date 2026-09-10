@@ -27,6 +27,7 @@ export default defineConfig(async () => ({
   },
   define: {
     "import.meta.env.VITE_APP_VERSION": JSON.stringify(pkg.version),
+    __GHPAGES_BASEPATH__: JSON.stringify((process.env.BASE_URL || "/").replace(/\/$/, "") || ""),
   },
   base: process.env.BASE_URL || "/",
   clearScreen: false,

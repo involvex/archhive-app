@@ -16,7 +16,7 @@ initializePlugins(getRegisteredPlugins());
 
 const router = createRouter({
   routeTree,
-  basepath: import.meta.env.BASE_URL.replace(/\/$/, "") || "",
+  basepath: __GHPAGES_BASEPATH__,
 });
 
 declare module "@tanstack/react-router" {
