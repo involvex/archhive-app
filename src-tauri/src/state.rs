@@ -1106,6 +1106,83 @@ impl AppState {
             entries,
         })
     }
+
+    /// List subdirectories of an absolute path for the in-app folder picker.
+    /// Unlike `list_files` (scoped to the library root), this browses the
+    /// real filesystem so users can point downloads anywhere writable.
+    pub fn browse_dirs(&self, path: Option<&str>) -> AppResult<crate::models::DirBrowseResponse> {
+        let start = path.unwrap_or("").trim();
+        let current = if start.is_empty() {
+            self.data_dir.join("downloads")
+        } else {
+            std::path::PathBuf::from(start)
+        };
+        if !current.is_absolute() {
+            return Err(crate::error::AppError::InvalidInput(
+                "Folder path must be absolute.".into(),
+            ));
+        }
+        if !current.is_dir() {
+            return Err(crate::error::AppError::NotFound(format!(
+                "Directory not found: {}",
+                current.display()
+            )));
+        }
+        let mut dirs = Vec::new();
+        for entry in std::fs::read_dir(&current)?.take(2000) {
+            let entry = entry?;
+            // Skip symlinks (could escape to unreadable locations) and hidden dirs.
+            let file_type = entry.file_type()?;
+            if !file_type.is_dir() {
+                continue;
+            }
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.starts_with('.') {
+                continue;
+            }
+            dirs.push(crate::models::DirEntry {
+                name,
+                path: entry.path().to_string_lossy().to_string(),
+            });
+        }
+        dirs.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        let downloads = self.data_dir.join("downloads");
+        let roots = vec![
+            crate::models::DirEntry {
+                name: "Downloads".to_string(),
+                path: downloads.to_string_lossy().to_string(),
+            },
+            crate::models::DirEntry {
+                name: "App data".to_string(),
+                path: self.data_dir.to_string_lossy().to_string(),
+            },
+        ];
+        Ok(crate::models::DirBrowseResponse {
+            current: current.to_string_lossy().to_string(),
+            parent: current.parent().map(|p| p.to_string_lossy().to_string()),
+            dirs,
+            can_write: Self::dir_is_writable(&current),
+            roots,
+        })
+    }
+
+    /// Probe writability without littering: create + remove a temp file.
+    fn dir_is_writable(path: &Path) -> bool {
+        if !path.is_dir() {
+            return false;
+        }
+        let probe = path.join(format!(".archhive-write-test-{}", std::process::id()));
+        let _ = std::fs::remove_file(&probe);
+        let created = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&probe)
+            .is_ok();
+        if created {
+            let _ = std::fs::remove_file(&probe);
+        }
+        created
+    }
 }
 
 fn relative_path(root: &Path, abs: &Path) -> String {

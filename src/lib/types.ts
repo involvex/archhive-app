@@ -230,8 +230,27 @@ export interface BinaryVersions {
   gallery_dl_version?: string;
 }
 
+export interface DirEntry {
+  name: string;
+  path: string;
+}
+
+export interface DirBrowseResponse {
+  current: string;
+  parent: string | null;
+  dirs: DirEntry[];
+  can_write: boolean;
+  roots: DirEntry[];
+}
+
 export interface ClearThumbsResult {
   cleared: number;
+}
+
+export interface SidecarProbe {
+  name: string;
+  bundled: boolean;
+  detail: string;
 }
 
 export interface WatchProgress {

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api/client";
 import { Button } from "@/components/ui/button";
 import { AlertCircle, Loader2, X } from "lucide-react";
@@ -17,36 +17,34 @@ export function UrlPlayerDialog({ item, open, onClose }: UrlPlayerDialogProps) {
   const [queued, setQueued] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
 
-  useEffect(() => {
-    if (!open || !item) return;
-    let cancelled = false;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- standard fetch-in-effect pattern
+  // Resolve a fresh stream URL. Signed CDN URLs expire quickly, so playback
+  // failures are retried through here rather than reusing a stale URL.
+  const resolveStream = useCallback(async () => {
+    if (!item) return;
     setLoading(true);
     setError(null);
     setStreamUrl(null);
+    try {
+      setStreamUrl(await api.resolveStreamUrl(item.url));
+    } catch (e: unknown) {
+      if (typeof e === "string" && e.trim()) {
+        setError(e);
+      } else if (e instanceof Error && e.message) {
+        setError(e.message);
+      } else {
+        setError("Failed to resolve stream URL");
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [item]);
+
+  useEffect(() => {
+    if (!open || !item) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-open pattern
     setQueued(false);
-    void api
-      .resolveStreamUrl(item.url)
-      .then((url) => {
-        if (!cancelled) setStreamUrl(url);
-      })
-      .catch((e: unknown) => {
-        if (cancelled) return;
-        if (typeof e === "string" && e.trim()) {
-          setError(e);
-        } else if (e instanceof Error && e.message) {
-          setError(e.message);
-        } else {
-          setError("Failed to resolve stream URL");
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [open, item]);
+    void resolveStream();
+  }, [open, item, resolveStream]);
 
   useEffect(() => {
     if (!open) return;
@@ -120,7 +118,11 @@ export function UrlPlayerDialog({ item, open, onClose }: UrlPlayerDialogProps) {
               playsInline
               autoPlay
               className="aspect-video w-full rounded-md bg-black"
-              onError={() => setError("Playback failed — the stream URL may have expired.")}
+              onError={() =>
+                setError(
+                  "Playback failed — the stream URL may have expired. Tap Retry for a fresh one.",
+                )
+              }
             >
               <track kind="captions" />
             </video>
@@ -171,6 +173,16 @@ export function UrlPlayerDialog({ item, open, onClose }: UrlPlayerDialogProps) {
           </dl>
 
           <div className="mt-4 flex justify-end gap-2">
+            {error && (
+              <Button
+                variant="outline"
+                onClick={() => void resolveStream()}
+                disabled={loading}
+                className="min-h-10 min-w-[5.5rem]"
+              >
+                {loading ? "Retrying…" : "Retry"}
+              </Button>
+            )}
             <Button
               variant="default"
               onClick={() => {

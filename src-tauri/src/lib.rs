@@ -257,6 +257,8 @@ pub fn run() {
             commands::get_installed_binaries,
             commands::uninstall_binary,
             commands::list_files,
+            commands::browse_dirs,
+            commands::probe_sidecar,
             commands::default_library_dir,
             commands::update_yt_dlp,
         ])

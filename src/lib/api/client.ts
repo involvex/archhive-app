@@ -12,6 +12,8 @@ import type {
   DuplicateGroup,
   CookieSiteInfo,
   FilesListResponse,
+  DirBrowseResponse,
+  SidecarProbe,
   FfmpegStatus,
   HealthResponse,
   LanHost,
@@ -798,5 +800,25 @@ export const api = {
       throw new Error("Folder picking requires the app runtime.");
     }
     return localInvoke<string>("default_library_dir");
+  },
+
+  async browseDirs(path?: string): Promise<DirBrowseResponse> {
+    if (shouldUseRemoteApi()) {
+      throw new Error("Browse folders on the local device, not via Remote LAN.");
+    }
+    if (getAppRuntime() === "browser") {
+      throw new Error("Folder browsing requires the app runtime.");
+    }
+    return localInvoke("browse_dirs", { path: path ?? null });
+  },
+
+  async probeSidecar(name: string): Promise<SidecarProbe> {
+    if (shouldUseRemoteApi()) {
+      throw new Error("Probe sidecars on the local device, not via Remote LAN.");
+    }
+    if (getAppRuntime() === "browser") {
+      throw new Error("Sidecar probing requires the app runtime.");
+    }
+    return localInvoke("probe_sidecar", { name });
   },
 };

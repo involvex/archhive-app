@@ -26,10 +26,12 @@ import type {
   LanHost,
   OrphanSidecar,
   SiteInfo,
+  SidecarProbe,
   AppSettings,
   AppTheme,
 } from "@/lib/types";
 import { DuplicateGroupCard } from "@/components/DuplicateGroupCard";
+import { DirectoryPickerDialog } from "@/components/DirectoryPickerDialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -133,6 +135,7 @@ function SettingsPage() {
   const [ffmpegAvail, setFfmpegAvail] = useState<FfmpegStatus | null>(null);
   // Q13: binary versions card.
   const [binaryVersions, setBinaryVersions] = useState<BinaryVersions | null>(null);
+  const [sidecarProbe, setSidecarProbe] = useState<Record<string, SidecarProbe> | null>(null);
   const [versionsLoading, setVersionsLoading] = useState(false);
   // Q17: clear thumbnail cache.
   const [clearingThumbs, setClearingThumbs] = useState(false);
@@ -148,6 +151,7 @@ function SettingsPage() {
   const [binaryInstallStatus, setBinaryInstallStatus] = useState<string>("");
   const [updatingYtDlp, setUpdatingYtDlp] = useState(false);
   const [pickingFolder, setPickingFolder] = useState(false);
+  const [folderPickerOpen, setFolderPickerOpen] = useState(false);
   const [libraryPickerStatus, setLibraryPickerStatus] = useState("");
 
   useEffect(() => {
@@ -349,13 +353,30 @@ function SettingsPage() {
   const refreshVersions = useCallback(async () => {
     setVersionsLoading(true);
     try {
-      setBinaryVersions(await api.binaryVersions());
+      const v = await api.binaryVersions();
+      setBinaryVersions(v);
+      // On mobile, a missing ffmpeg/ffprobe needs a reason, not just
+      // "not found": probe whether the sidecar is bundled at all.
+      if (runtime === "mobile-tauri" && (!v.ffmpeg_version || !v.ffprobe_version)) {
+        try {
+          const [ffmpeg, ffprobe] = await Promise.all([
+            api.probeSidecar("ffmpeg"),
+            api.probeSidecar("ffprobe"),
+          ]);
+          setSidecarProbe({ ffmpeg, ffprobe });
+        } catch {
+          setSidecarProbe(null);
+        }
+      } else {
+        setSidecarProbe(null);
+      }
     } catch {
       setBinaryVersions(null);
+      setSidecarProbe(null);
     } finally {
       setVersionsLoading(false);
     }
-  }, []);
+  }, [runtime]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -537,9 +558,15 @@ function SettingsPage() {
     }
   }
 
-  // Native folder picker for the download output path (on-device backends).
+  // Folder picker for the download output path (on-device backends).
+  // Mobile uses the in-app browser: the native dialog plugin can only pick
+  // files (ACTION_GET_CONTENT) on Android, not directories.
   async function pickLibraryFolder() {
     if (!hostSettings || pickingFolder) return;
+    if (runtime === "mobile-tauri") {
+      setFolderPickerOpen(true);
+      return;
+    }
     setPickingFolder(true);
     setLibraryPickerStatus("");
     try {
@@ -816,6 +843,16 @@ function SettingsPage() {
                     {libraryPickerStatus}
                   </p>
                 )}
+                <DirectoryPickerDialog
+                  open={folderPickerOpen}
+                  initialPath={hostSettings?.library_path || ""}
+                  onSelect={(path) => {
+                    patchHostSettings({ library_path: path });
+                    setLibraryPickerStatus("Folder selected — press Save to apply.");
+                    setFolderPickerOpen(false);
+                  }}
+                  onClose={() => setFolderPickerOpen(false)}
+                />
               </div>
               <div>
                 <label className="text-xs text-[var(--color-muted-foreground)]">
@@ -989,11 +1026,26 @@ function SettingsPage() {
               {runtime === "mobile-tauri" &&
                 (!binaryVersions?.ffmpeg_version || !binaryVersions?.ffprobe_version) &&
                 !versionsLoading && (
-                  <p className="text-xs text-yellow-400">
-                    ffmpeg/ffprobe are not bundled in this APK — thumbnails, duration probes, and
-                    HLS downloads need them. Rebuild with{" "}
-                    <code>bun run setup:binaries:android</code>.
-                  </p>
+                  <>
+                    <p className="text-xs text-yellow-400">
+                      ffmpeg/ffprobe are missing from this APK — thumbnails, duration probes, and
+                      HLS downloads need them. Run <code>bun run setup:binaries:android</code>, then{" "}
+                      <code>bun run build:apk</code> and reinstall the APK.
+                    </p>
+                    {sidecarProbe &&
+                      (["ffmpeg", "ffprobe"] as const).map((name) => {
+                        const probe = sidecarProbe[name];
+                        if (!probe) return null;
+                        return (
+                          <p
+                            key={name}
+                            className="font-mono text-[11px] break-all text-[var(--color-muted-foreground)]"
+                          >
+                            {name}: {probe.bundled ? "bundled" : "NOT bundled"} — {probe.detail}
+                          </p>
+                        );
+                      })}
+                  </>
                 )}
             </CardContent>
           </Card>

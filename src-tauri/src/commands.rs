@@ -634,6 +634,55 @@ pub fn list_files(
     map_err(state.list_files(path.as_deref().unwrap_or("")))
 }
 
+/// Diagnose why an ffmpeg/ffprobe sidecar reports "not found": distinguishes
+/// "not bundled in this build" from "bundled but failed to execute".
+#[tauri::command]
+pub async fn probe_sidecar(
+    state: State<'_, Arc<AppState>>,
+    name: String,
+) -> CmdResult<crate::models::SidecarProbe> {
+    use tauri_plugin_shell::ShellExt;
+    if name != "ffmpeg" && name != "ffprobe" {
+        return Err("Only ffmpeg and ffprobe can be probed.".to_string());
+    }
+    let app = state.app_handle().clone();
+    let bin = format!("binaries/{name}");
+    if let Err(e) = app.shell().sidecar(&bin) {
+        return Ok(crate::models::SidecarProbe {
+            name: name.clone(),
+            bundled: false,
+            detail: format!("sidecar not bundled in this build: {e}"),
+        });
+    }
+    let runner = crate::sites::yt_dlp::SidecarRunner::new(app);
+    match runner.tool_version(&name).await {
+        Some(detail) => Ok(crate::models::SidecarProbe {
+            name,
+            bundled: true,
+            detail,
+        }),
+        None => {
+            let detail =
+                format!("bundled but failed to execute — check logcat for 'sidecar {name}' errors");
+            Ok(crate::models::SidecarProbe {
+                name,
+                bundled: true,
+                detail,
+            })
+        }
+    }
+}
+
+/// List subdirectories of an absolute filesystem path for the in-app folder
+/// picker (used on mobile, where the native dialog cannot pick directories).
+#[tauri::command]
+pub fn browse_dirs(
+    state: State<'_, Arc<AppState>>,
+    path: Option<String>,
+) -> CmdResult<crate::models::DirBrowseResponse> {
+    map_err(state.browse_dirs(path.as_deref()))
+}
+
 /// Resolve the default on-device download folder (`<app-data>/downloads`,
 /// creating it if needed). Used by the Settings folder picker "Reset" action.
 #[tauri::command]

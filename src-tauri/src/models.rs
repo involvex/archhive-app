@@ -498,9 +498,35 @@ pub struct BinaryVersions {
     pub gallery_dl_version: Option<String>,
 }
 
+/// One subdirectory entry for the in-app folder picker (mobile fallback
+/// where the native dialog plugin cannot pick directories).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DirEntry {
+    pub name: String,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DirBrowseResponse {
+    pub current: String,
+    pub parent: Option<String>,
+    pub dirs: Vec<DirEntry>,
+    pub can_write: bool,
+    pub roots: Vec<DirEntry>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClearThumbsResult {
     pub cleared: u64,
+}
+
+/// Result of probing an ffmpeg/ffprobe sidecar: distinguishes "not bundled
+/// in this build" from "bundled but failed to execute".
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SidecarProbe {
+    pub name: String,
+    pub bundled: bool,
+    pub detail: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
