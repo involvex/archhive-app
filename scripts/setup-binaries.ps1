@@ -89,7 +89,10 @@ if ($IncludeAndroid) {
         $FfprobeAndroid = Join-Path $BinDir "ffprobe-aarch64-linux-android"
         Copy-Item (Join-Path $AndroidBinDir "ffmpeg") $FfmpegAndroid -Force
         Copy-Item (Join-Path $AndroidBinDir "ffprobe") $FfprobeAndroid -Force
-        Write-Host "Android ffmpeg/ffprobe installed to $BinDir"
+        Get-ChildItem -Path $AndroidFfmpegDir.FullName -Recurse -Filter "*.so*" | ForEach-Object {
+            Copy-Item $_.FullName (Join-Path $BinDir $_.Name) -Force
+        }
+        Write-Host "Android ffmpeg/ffprobe (+ shared libs) installed to $BinDir"
         # Drop the ~300 MB staging dir (tarball + extracted tree).
         Remove-Item -Recurse -Force $AndroidStage
     } else {

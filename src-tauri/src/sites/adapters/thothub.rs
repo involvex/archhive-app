@@ -25,6 +25,10 @@ impl SiteAdapter for ThotHubAdapter {
         BASE
     }
 
+    fn requires_cookies(&self) -> bool {
+        true
+    }
+
     fn supported_kinds(&self) -> Vec<BrowseKind> {
         vec![
             BrowseKind::Tag,
@@ -225,6 +229,10 @@ fn parse_listing(html: &str, site_id: &str) -> Vec<MediaItem> {
                     })
                     .unwrap_or_else(|| "Untitled".to_string());
 
+                if is_junk_title(&title) {
+                    continue;
+                }
+
                 let thumbnail = el
                     .select(&img_sel)
                     .find_map(|img| {
@@ -278,6 +286,15 @@ fn parse_listing(html: &str, site_id: &str) -> Vec<MediaItem> {
     items
 }
 
+fn is_junk_title(title: &str) -> bool {
+    let t = title.to_lowercase();
+    t.contains("go to thothub.to and watch")
+        || t.contains("fuck leechers")
+        || t.contains("leechers")
+        || t.contains("watch on thothub")
+        || t.contains("please visit")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -328,5 +345,14 @@ mod tests {
         let items = parse_listing(&html, "thothub");
         assert!(!items.is_empty(), "expected videos from fixture");
         assert!(items.iter().all(|i| i.url.contains("thothub")));
+    }
+
+    #[test]
+    fn is_junk_title_filters_leecher_messages() {
+        assert!(is_junk_title("go to thothub.to and watch, fuck leechers"));
+        assert!(is_junk_title("Please visit thothub.to to watch"));
+        assert!(is_junk_title("some video — fuck leechers"));
+        assert!(!is_junk_title("some legit video title"));
+        assert!(!is_junk_title(""));
     }
 }

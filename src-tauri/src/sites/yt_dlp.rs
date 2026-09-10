@@ -459,6 +459,19 @@ impl SidecarRunner {
         self.spawn("ffprobe", args, |_| {}).await
     }
 
+    /// Try running `<name> --version`. Returns the version string on success,
+    /// or the stderr detail on failure. Used by `probe_sidecar` to give
+    /// actionable diagnostics (e.g., "missing libavdevice.so.61 — needs static build").
+    pub async fn probe_version(&self, name: &str) -> Result<String, String> {
+        match self.run_capture(name, &["--version".to_string()]).await {
+            Ok(out) => {
+                let first = out.lines().next().unwrap_or("").trim().to_string();
+                Ok(first)
+            }
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
     /// Report the first line of `<name> --version` (sidecar first, then PATH).
     /// Returns `None` when the tool is not installed.
     pub async fn tool_version(&self, name: &str) -> Option<String> {

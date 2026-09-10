@@ -113,7 +113,6 @@ export function UrlPlayerDialog({ item, open, onClose }: UrlPlayerDialogProps) {
             <video
               ref={videoRef}
               key={streamUrl}
-              src={streamUrl}
               controls
               playsInline
               autoPlay
@@ -124,6 +123,10 @@ export function UrlPlayerDialog({ item, open, onClose }: UrlPlayerDialogProps) {
                 )
               }
             >
+              <source
+                src={streamUrl}
+                type={streamUrl.endsWith(".m3u8") ? "application/x-mpegURL" : undefined}
+              />
               <track kind="captions" />
             </video>
           )}

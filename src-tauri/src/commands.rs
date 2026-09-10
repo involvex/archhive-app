@@ -655,21 +655,21 @@ pub async fn probe_sidecar(
         });
     }
     let runner = crate::sites::yt_dlp::SidecarRunner::new(app);
-    match runner.tool_version(&name).await {
-        Some(detail) => Ok(crate::models::SidecarProbe {
+    match runner.probe_version(&name).await {
+        Ok(detail) => Ok(crate::models::SidecarProbe {
             name,
             bundled: true,
             detail,
         }),
-        None => {
-            let detail =
-                format!("bundled but failed to execute — check logcat for 'sidecar {name}' errors");
-            Ok(crate::models::SidecarProbe {
-                name,
-                bundled: true,
-                detail,
-            })
-        }
+        Err(e) => Ok(crate::models::SidecarProbe {
+            name,
+            bundled: true,
+            detail: format!(
+                "bundled but failed to execute — {e}. \
+                 If the message mentions a missing shared library, \
+                 the ffmpeg build needs to be static (run bun run setup:binaries:android)."
+            ),
+        }),
     }
 }
 
