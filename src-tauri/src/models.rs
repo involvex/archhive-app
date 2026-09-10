@@ -270,6 +270,9 @@ pub struct AppSettings {
     /// Watchlist poller interval in minutes (#19 auto-queue pairing).
     #[serde(default = "default_watch_poll_interval_mins")]
     pub watch_poll_interval_mins: u32,
+    /// Auto-advance to the next scene in the playlist when playback ends (#24).
+    #[serde(default = "default_auto_advance_next")]
+    pub auto_advance_next: bool,
 }
 
 fn default_phash_threshold() -> u8 {
@@ -338,6 +341,10 @@ fn default_watch_poll_interval_mins() -> u32 {
     60
 }
 
+fn default_auto_advance_next() -> bool {
+    false
+}
+
 impl Default for AppSettings {
     fn default() -> Self {
         #[cfg(mobile)]
@@ -382,6 +389,7 @@ impl Default for AppSettings {
             theme: default_theme(),
             watched_threshold: default_watched_threshold(),
             watch_poll_interval_mins: default_watch_poll_interval_mins(),
+            auto_advance_next: default_auto_advance_next(),
         }
     }
 }
@@ -408,6 +416,8 @@ pub struct UpdateSceneRequest {
     pub rename_file: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notes: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rating: Option<u8>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

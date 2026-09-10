@@ -1,8 +1,9 @@
 import { useCallback, useRef, useState } from "react";
 import type { MediaItem, Scene } from "@/lib/types";
+import { cn } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Check, Clock, Download, Info, Play, Pencil, MoreVertical } from "lucide-react";
+import { Check, Clock, Download, Info, Play, Pencil, MoreVertical, Star } from "lucide-react";
 
 export interface CardWatchState {
   position: number;
@@ -75,8 +76,27 @@ function getItemResolution(item: CardItem): string | undefined {
   if (isMediaItem(item)) return undefined;
   const scene = item as Scene;
   if (scene.width != null && scene.height != null && scene.width > 0 && scene.height > 0) {
-    return `${scene.width}×${scene.height}`;
+    return `${scene.width}x${scene.height}`;
   }
+  return undefined;
+}
+
+function getItemSourceSite(item: CardItem): string | undefined {
+  if (isMediaItem(item)) return undefined;
+  const url = (item as Scene).source_url;
+  if (!url) return undefined;
+  try {
+    const parsed = new URL(url);
+    return parsed.hostname.replace(/^www\./, "");
+  } catch {
+    return undefined;
+  }
+}
+
+function getItemRating(item: CardItem): number | undefined {
+  if (isMediaItem(item)) return undefined;
+  const r = (item as Scene).rating;
+  if (r != null && r > 0) return r;
   return undefined;
 }
 
@@ -101,6 +121,8 @@ export function SceneCard({
   const duration = getItemDuration(item);
   const fileSize = getItemFileSize(item);
   const resolution = getItemResolution(item);
+  const sourceSite = getItemSourceSite(item);
+  const rating = getItemRating(item);
   // #26: fraction watched (0..1) for the overlay bar; hidden when no data.
   const watchFraction =
     watch && !isMediaItem(item) && watch.duration > 0
@@ -204,6 +226,16 @@ export function SceneCard({
               {resolution}
             </span>
           )}
+          {sourceSite && (
+            <span
+              className={cn(
+                "absolute bottom-1 left-1 rounded bg-black/70 px-1.5 py-0.5 text-[10px]",
+                resolution ? "bottom-4" : undefined,
+              )}
+            >
+              {sourceSite}
+            </span>
+          )}
           {showWatched && (
             <span className="absolute top-1 left-1 flex items-center gap-1 rounded bg-green-600/90 px-1.5 py-0.5 text-[10px] font-medium text-white">
               <Check className="h-3 w-3" />
@@ -223,6 +255,19 @@ export function SceneCard({
         <CardContent className="flex flex-1 flex-col justify-between p-3 min-w-0">
           <div className="space-y-1 min-w-0">
             <p className="line-clamp-2 text-sm font-medium leading-tight">{title}</p>
+            {rating != null && (
+              <div className="flex items-center gap-0.5">
+                {[1, 2, 3, 4, 5].map((i) => (
+                  <Star
+                    key={i}
+                    className={
+                      "h-3 w-3 " +
+                      (i <= rating ? "fill-yellow-400 text-yellow-400" : "text-gray-400/50")
+                    }
+                  />
+                ))}
+              </div>
+            )}
             {(channel || performers.length > 0) && (
               <p className="text-[11px] text-[var(--color-muted-foreground)] truncate">
                 {channel || performers.join(", ")}
@@ -393,6 +438,16 @@ export function SceneCard({
             {resolution}
           </span>
         )}
+        {sourceSite && (
+          <span
+            className={cn(
+              "absolute bottom-2 left-2 rounded bg-black/70 px-1.5 py-0.5 text-[10px]",
+              resolution ? "bottom-6" : undefined,
+            )}
+          >
+            {sourceSite}
+          </span>
+        )}
         {showWatched && !selectionMode && (
           <span className="absolute top-2 left-2 flex items-center gap-1 rounded bg-green-600/90 px-1.5 py-0.5 text-[10px] font-medium text-white">
             <Check className="h-3 w-3" />
@@ -447,6 +502,19 @@ export function SceneCard({
 
       <CardContent className="p-2.5 space-y-1.5">
         <p className="line-clamp-2 text-xs font-medium leading-tight">{title}</p>
+        {rating != null && (
+          <div className="flex items-center gap-0.5">
+            {[1, 2, 3, 4, 5].map((i) => (
+              <Star
+                key={i}
+                className={
+                  "h-3 w-3 " +
+                  (i <= rating ? "fill-yellow-400 text-yellow-400" : "text-gray-400/50")
+                }
+              />
+            ))}
+          </div>
+        )}
 
         {(channel || performers.length > 0) && (
           <p className="text-[10px] text-[var(--color-muted-foreground)] truncate">

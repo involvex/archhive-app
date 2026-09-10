@@ -87,6 +87,7 @@ export interface UpdateSceneRequest {
   tags?: string[];
   rename_file?: boolean;
   notes?: string;
+  rating?: number;
 }
 
 export interface BatchUpdateScenesRequest {
@@ -160,6 +161,8 @@ export interface AppSettings {
   theme?: AppTheme;
   watched_threshold?: number;
   watch_poll_interval_mins?: number;
+  /** Auto-advance to next scene in playlist when playback ends (#24). */
+  auto_advance_next?: boolean;
 }
 
 export interface MergeDuplicatesResult {

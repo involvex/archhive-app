@@ -3,7 +3,7 @@ import { api } from "@/lib/api/client";
 import type { Scene } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { X } from "lucide-react";
+import { Star, X } from "lucide-react";
 
 interface SceneEditDialogProps {
   scene: Scene | null;
@@ -29,6 +29,7 @@ function SceneEditForm({
   const [tags, setTags] = useState(scene.tags.join(", "));
   const [renameFile, setRenameFile] = useState(false);
   const [notes, setNotes] = useState(scene.notes ?? "");
+  const [rating, setRating] = useState(scene.rating ?? 0);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -52,6 +53,7 @@ function SceneEditForm({
         tags: tagList,
         rename_file: renameFile,
         notes: notes.trim() || undefined,
+        rating,
       });
       onSaved(updated);
       onClose();
@@ -114,6 +116,27 @@ function SceneEditForm({
             className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-input)] p-2 text-sm"
             placeholder="Personal notes, timestamps, ratings..."
           />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs text-[var(--color-muted-foreground)]">Rating</label>
+          <div className="flex gap-1">
+            {[1, 2, 3, 4, 5].map((i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => setRating(i === rating ? 0 : i)}
+                className="cursor-pointer rounded p-0.5 hover:bg-[var(--color-muted)]"
+                aria-label={`Set rating to ${i} star${i === 1 ? "" : "s"}`}
+              >
+                <Star
+                  className={
+                    "h-5 w-5 " +
+                    (i <= rating ? "fill-yellow-400 text-yellow-400" : "text-gray-400/50")
+                  }
+                />
+              </button>
+            ))}
+          </div>
         </div>
         {scene.path && (
           <label className="flex items-center gap-2 text-sm">

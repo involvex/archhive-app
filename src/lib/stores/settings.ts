@@ -23,6 +23,7 @@ const defaultSettings: AppSettings = {
   remote_host: undefined,
   download_quality: "1080",
   prefer_mp4: true,
+  auto_advance_next: false,
 };
 
 export const useSettingsStore = create<SettingsState>()(

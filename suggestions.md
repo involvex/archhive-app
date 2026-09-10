@@ -436,29 +436,66 @@
 
 ## Quick Wins (< 1 day each)
 
-| #   | Feature                       | Description                                                                                                                                      | Status                                                                                 |
-| --- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
-| Q1  | **Scene count badge**         | Show total scene count on the Library nav item.                                                                                                  | ✅ Done (`AppShell` `scene_count` + `/library` stats)                                  |
-| Q2  | **Last downloaded sort**      | Add "Recently Downloaded" sort option to scenes.                                                                                                 | ✅ Done (`SceneSort::Downloaded`)                                                      |
-| Q3  | **File size display**         | Show file size on SceneCard in grid/list view.                                                                                                   | ✅ Done (`Scene.file_size`, `SceneCard` + details dialogs)                             |
-| Q4  | **Performer image upload**    | Allow setting performer profile images manually.                                                                                                 | ✅ Done (`set_performer_image`)                                                        |
-| Q5  | **Dark/light theme toggle**   | Simple toggle button in the header bar.                                                                                                          | ✅ Done (`AppShell` toggle + Settings selector, `AppTheme`)                            |
-| Q6  | **Keyboard shortcut hints**   | Show shortcut keys in tooltips and menus.                                                                                                        | 🔵 Partial (`ShortcutBadge` + `ShortcutHelp`; tooltips/menu coverage incomplete)       |
-| Q7  | **Export performer list**     | Simple CSV/JSON export of all performers.                                                                                                        | ✅ Done (`export_performers`; CSV format still open)                                   |
-| Q8  | **Scene duration filter**     | Add min/max duration inputs to the scenes filter bar.                                                                                            | ✅ Done (`SceneFilter.min/max_duration` + chips)                                       |
-| Q9  | **Empty state illustrations** | Add friendly illustrations to empty states.                                                                                                      | ✅ Done (`EmptyState` + `ErrorState` + skeletons across routes; custom art still open) |
-| Q10 | **Changelog in-app**          | Show recent changes on first launch after update.                                                                                                | ⚪ Not started                                                                         |
-| Q11 | **Recently played rail**      | "Continue watching" strip on Home (`lib/stores/recentlyViewed.ts` persisted, recorded in `ScenePlayerDialog`, 12-item rail with Clear).          | ✅ Done                                                                                |
-| Q12 | **Copy scene debug JSON**     | Copy button in Scene Details (id, path, hashes, source URL, resolution, size) for bug reports.                                                   | ✅ Done                                                                                |
-| Q13 | **Binary version card**       | "Media tools" card in Settings → Library (`binary_versions` command + `/api/system/versions`: yt-dlp / gallery-dl / ffmpeg / ffprobe).           | ✅ Done                                                                                |
-| Q14 | **Duplicate count badge**     | Duplicates entry in desktop sidebar with group-count badge (99+ cap) + `Ctrl+7` shortcut.                                                        | ✅ Done                                                                                |
-| Q15 | **Performer sort by scenes**  | Sort toggle (Name / Scenes) on performers page.                                                                                                  | ✅ Done                                                                                |
-| Q16 | **Resolution badge**          | WxH badge on SceneCard (grid + list) from probed data (`scenes.width/height`, `MIGRATION_008`; backfilled by probe flows + details/player rows). | ✅ Done                                                                                |
-| Q17 | **Clear thumbnail cache**     | "Clear thumbnail cache" in Settings → Library (`clear_all_thumbs` command + `DELETE /api/library/thumbs`, confirm + rebuild hint).               | ✅ Done                                                                                |
-| Q18 | **`?` opens shortcuts**       | Fixed `?`/`Shift+/` never matching in `shortcuts/registry.ts` (Shift-mask exemption for symbol keys); `ShortcutHelp` now opens.                  | ✅ Done                                                                                |
-| Q19 | **Orphan cleanup totals**     | "Orphan sidecars" card in Settings → Library: scan, count + reclaimable bytes, per-item and Delete-all.                                          | ✅ Done                                                                                |
-| Q20 | **LAN copy-address**          | Already shipped: "Copy web link" in Settings → LAN copies `http://<lan-ip>:<port>/?token=…`.                                                     | ✅ Done                                                                                |
+| #   | Feature                            | Description                                                                                                                                                     | Status                                                                                 |
+| --- | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Q1  | **Scene count badge**              | Show total scene count on the Library nav item.                                                                                                                 | ✅ Done (`AppShell` `scene_count` + `/library` stats)                                  |
+| Q2  | **Last downloaded sort**           | Add "Recently Downloaded" sort option to scenes.                                                                                                                | ✅ Done (`SceneSort::Downloaded`)                                                      |
+| Q3  | **File size display**              | Show file size on SceneCard in grid/list view.                                                                                                                  | ✅ Done (`Scene.file_size`, `SceneCard` + details dialogs)                             |
+| Q4  | **Performer image upload**         | Allow setting performer profile images manually.                                                                                                                | ✅ Done (`set_performer_image`)                                                        |
+| Q5  | **Dark/light theme toggle**        | Simple toggle button in the header bar.                                                                                                                         | ✅ Done (`AppShell` toggle + Settings selector, `AppTheme`)                            |
+| Q6  | **Keyboard shortcut hints**        | Show shortcut keys in tooltips and menus.                                                                                                                       | 🔵 Partial (`ShortcutBadge` + `ShortcutHelp`; tooltips/menu coverage incomplete)       |
+| Q7  | **Export performer list**          | Simple CSV/JSON export of all performers.                                                                                                                       | ✅ Done (`export_performers`; CSV format still open)                                   |
+| Q8  | **Scene duration filter**          | Add min/max duration inputs to the scenes filter bar.                                                                                                           | ✅ Done (`SceneFilter.min/max_duration` + chips)                                       |
+| Q9  | **Empty state illustrations**      | Add friendly illustrations to empty states.                                                                                                                     | ✅ Done (`EmptyState` + `ErrorState` + skeletons across routes; custom art still open) |
+| Q10 | **Changelog in-app**               | Show recent changes on first launch after update.                                                                                                               | ⚪ Not started                                                                         |
+| Q11 | **Recently played rail**           | "Continue watching" strip on Home (`lib/stores/recentlyViewed.ts` persisted, recorded in `ScenePlayerDialog`, 12-item rail with Clear).                         | ✅ Done                                                                                |
+| Q12 | **Copy scene debug JSON**          | Copy button in Scene Details (id, path, hashes, source URL, resolution, size) for bug reports.                                                                  | ✅ Done                                                                                |
+| Q13 | **Binary version card**            | "Media tools" card in Settings → Library (`binary_versions` command + `/api/system/versions`: yt-dlp / gallery-dl / ffmpeg / ffprobe).                          | ✅ Done                                                                                |
+| Q14 | **Duplicate count badge**          | Duplicates entry in desktop sidebar with group-count badge (99+ cap) + `Ctrl+7` shortcut.                                                                       | ✅ Done                                                                                |
+| Q15 | **Performer sort by scenes**       | Sort toggle (Name / Scenes) on performers page.                                                                                                                 | ✅ Done                                                                                |
+| Q16 | **Resolution badge**               | WxH badge on SceneCard (grid + list) from probed data (`scenes.width/height`, `MIGRATION_008`; backfilled by probe flows + details/player rows).                | ✅ Done                                                                                |
+| Q17 | **Clear thumbnail cache**          | "Clear thumbnail cache" in Settings → Library (`clear_all_thumbs` command + `DELETE /api/library/thumbs`, confirm + rebuild hint).                              | ✅ Done                                                                                |
+| Q18 | **`?` opens shortcuts**            | Fixed `?`/`Shift+/` never matching in `shortcuts/registry.ts` (Shift-mask exemption for symbol keys); `ShortcutHelp` now opens.                                 | ✅ Done                                                                                |
+| Q19 | **Orphan cleanup totals**          | "Orphan sidecars" card in Settings → Library: scan, count + reclaimable bytes, per-item and Delete-all.                                                         | ✅ Done                                                                                |
+| Q20 | **LAN copy-address**               | Already shipped: "Copy web link" in Settings → LAN copies `http://<lan-ip>:<port>/?token=…`.                                                                    | ✅ Done                                                                                |
+| Q21 | **CSV export for performers**      | Q7 notes CSV format is still open — add CSV download alongside the existing JSON export on the Performers page.                                                 | ⚪ Not started                                                                         |
+| Q22 | **Clear completed downloads**      | "Clear completed" button on the Downloads page to prune finished/cancelled/failed jobs via bulk `delete_download`.                                              | ⚪ Not started                                                                         |
+| Q23 | **Spacebar play/pause in player**  | `ScenePlayerDialog` handles ArrowLeft/Right navigation but not Space — add spacebar to toggle play/pause (respecting the existing input-focus guard).           | ⚪ Not started                                                                         |
+| Q24 | **Auto-advance to next scene**     | After a video ends in the player, automatically advance to the next scene in the queue (via `onEnded` on the HTML video element).                               | ⚪ Not started                                                                         |
+| Q25 | **Watched / unwatched count**      | Show a "3 watched / 12 total" summary on the Library → Scenes filter bar, alongside the existing "Hide watched" chip (uses `list_watch_progress`).              | ⚪ Not started                                                                         |
+| Q26 | **Source site badge on SceneCard** | Parse and display the originating site domain from `source_url` as a small badge on library scene cards.                                                        | ⚪ Not started                                                                         |
+| Q27 | **Star rating on SceneCard**       | Wire up the existing `Scene.rating` column (DB + `update_scene` backend + `UpdateSceneRequest` TS type); show star rating on cards and in edit/details dialogs. | ⚪ Not started                                                                         |
+| Q28 | **Mark watched toggle in player**  | Add a "Mark watched / unwatched" button in `ScenePlayerDialog` action bar (uses existing `markWatched` API).                                                    | ⚪ Not started                                                                         |
+| Q29 | **Dark mode schedule**             | Add a "Schedule theme" setting (sunrise-to-sunset or custom hours) that auto-switches between Light/Dark; reuses the existing `AppTheme` plumbing.              | ⚪ Not started                                                                         |
+| Q30 | **Keyboard: `W` toggles watched**  | In the Library → Scenes page, `W` toggles the watched state on the currently focused scene (desktop only).                                                      | ⚪ Not started                                                                         |
 
 ---
 
-_Last updated: 2026-09-06 (Q11–Q20 + #26/#28 follow-ups implemented)_
+## High-Priority Quick-Win Features
+
+> Newly identified features that are feasible in under a day each and fill clear UX gaps.
+
+### 41. Scene Rating System
+
+**Status:** ⚪ Not started · **Quick Win:** Q27  
+**Area:** Library / UX  
+**Currently:** The `scenes.rating` column exists in SQLite (`MIGRATION_001`), and `Scene.rating: Option<u8>` is defined in both Rust (`models.rs`) and TypeScript (`types.ts`), but it is never written or displayed. `update_scene` in `state.rs` / `db/mod.rs` and `UpdateSceneRequest` in `models.rs` do not include a `rating` field.  
+**Suggestion:** Add a `rating: Option<u8>` field to `UpdateSceneRequest` and thread it through `update_scene` (state.rs → db/mod.rs). Add a star-rating input (1–5) in `SceneEditDialog` and `SceneDetailsDialog`. Display a star badge on `SceneCard`. This leverages an already-existing schema column — zero migrations needed.
+
+### 42. Clear Completed Downloads
+
+**Status:** ⚪ Not started · **Quick Win:** Q22  
+**Area:** Downloads  
+**Currently:** The Downloads page lists all jobs (pending, active, completed, failed, cancelled) with per-job pause/resume/retry/cancel/delete, but there is no way to bulk-prune finished jobs.  
+**Suggestion:** Add a "Clear completed" button (with a confirmation dialog) that calls `delete_download` for all non-active jobs. Bonus: a dropdown to clear only "completed" vs "completed + failed".
+
+### 43. Player Keyboard Controls
+
+**Status:** ⚪ Not started · **Quick Wins:** Q23, Q24, Q28  
+**Area:** Library / Player  
+**Currently:** `ScenePlayerDialog` registers ArrowLeft/ArrowRight for prev/next navigation but does not handle Space (play/pause) or auto-advance on video end. There is also no in-player "mark watched" toggle.  
+**Suggestion:** Add Space to toggle play/pause, an `onEnded` handler to auto-advance to the next scene (with a setting to disable), and a "Mark watched / unwatched" button in the player action bar.
+
+---
+
+_Last updated: 2026-09-10 (Q21–Q30 quick wins + #41–43 high-priority quick-win features added)_

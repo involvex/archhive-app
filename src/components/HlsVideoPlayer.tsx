@@ -16,6 +16,7 @@ export interface HlsVideoPlayerProps {
   onTimeUpdate?: () => void;
   onPause?: () => void;
   onPlay?: () => void;
+  onEnded?: () => void;
 }
 
 export const HlsVideoPlayer = forwardRef<HTMLVideoElement, HlsVideoPlayerProps>(
@@ -33,6 +34,7 @@ export const HlsVideoPlayer = forwardRef<HTMLVideoElement, HlsVideoPlayerProps>(
       onTimeUpdate,
       onPause,
       onPlay,
+      onEnded,
     }: HlsVideoPlayerProps,
     ref: Ref<HTMLVideoElement>,
   ) => {
@@ -113,6 +115,7 @@ export const HlsVideoPlayer = forwardRef<HTMLVideoElement, HlsVideoPlayerProps>(
         onTimeUpdate={onTimeUpdate}
         onPause={onPause}
         onPlay={onPlay}
+        onEnded={onEnded}
       >
         {isHls && <source src={src} type="application/x-mpegURL" />}
         <track kind="captions" />

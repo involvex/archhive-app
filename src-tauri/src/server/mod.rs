@@ -483,13 +483,14 @@ async fn update_scene(
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let scene = state
         .app
-        .update_scene(
+         .update_scene(
             &id,
             body.title.as_deref(),
             body.performers.as_deref(),
             body.tags.as_deref(),
             body.rename_file.unwrap_or(false),
             body.notes.as_deref(),
+            body.rating,
         )
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(serde_json::json!(scene)))

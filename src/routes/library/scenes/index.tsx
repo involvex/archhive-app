@@ -16,6 +16,7 @@ import { SkeletonGrid } from "@/components/SkeletonGrid";
 import { ErrorState } from "@/components/ErrorState";
 import { EmptyState } from "@/components/EmptyState";
 import { usePullToRefresh } from "@/lib/hooks/usePullToRefresh";
+import { registerShortcut, unregisterShortcut } from "@/lib/shortcuts/registry";
 import { Film, LayoutGrid, List, RefreshCw, X } from "lucide-react";
 
 export const Route = createFileRoute("/library/scenes/")({
@@ -110,17 +111,26 @@ function ScenesPage() {
     (filter.tag_names?.length ?? 0) > 0;
 
   const missingThumbCount = scenes.filter((s) => !s.thumb).length;
+  const watchedCount = scenes.filter((s) => watchMap.get(s.id)?.watched).length;
   const [genThumbsLoading, setGenThumbsLoading] = useState(false);
   const [genThumbsResult, setGenThumbsResult] = useState("");
   // #26 watch-history map (scene id → progress).
   const [watchMap, setWatchMap] = useState<WatchMap>(new Map());
+
+  // Q30: refs for the `W` toggle-watched shortcut action.
+  const selectedIdsRef = useRef(selectedIds);
+  const watchMapRef = useRef(watchMap);
+  useEffect(() => {
+    selectedIdsRef.current = selectedIds;
+    watchMapRef.current = watchMap;
+  }, [selectedIds, watchMap]);
 
   const refreshWatch = useCallback(() => {
     void api
       .listWatchProgress()
       .then((all) => setWatchMap(toWatchMap(all)))
       .catch(() => {});
-  }, []);
+  }, [setWatchMap]);
 
   const refresh = useCallback(() => {
     setLoading(true);
@@ -161,6 +171,26 @@ function ScenesPage() {
       if (longPressTimer.current) clearTimeout(longPressTimer.current);
     };
   }, []);
+
+  // Q30: register `W` to toggle watched state for selected scenes (desktop only).
+  useEffect(() => {
+    registerShortcut({
+      id: "scenes-toggle-watched",
+      label: "Toggle watched (W)",
+      keys: "w",
+      category: "actions",
+      action: () => {
+        const ids = Array.from(selectedIdsRef.current);
+        if (ids.length === 0) return;
+        const allWatched = ids.every((id) => watchMapRef.current.get(id)?.watched);
+        void api.markWatched(ids, !allWatched).then(() => {
+          refreshWatch();
+          setSelectedIds(new Set());
+        });
+      },
+    });
+    return () => unregisterShortcut("scenes-toggle-watched");
+  }, [refreshWatch]);
 
   const handleRefresh = useCallback(async () => {
     refresh();
@@ -407,6 +437,11 @@ function ScenesPage() {
             </button>
           );
         })}
+        {scenes.length > 0 && (
+          <span className="text-xs text-[var(--color-muted-foreground)] ml-1 whitespace-nowrap">
+            {watchedCount} watched / {scenes.length} total
+          </span>
+        )}
         <div className="flex items-center gap-1 ml-2">
           <Input
             type="number"

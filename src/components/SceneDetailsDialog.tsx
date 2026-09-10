@@ -5,7 +5,7 @@ import { getAppRuntime } from "@/lib/runtime";
 import { HlsVideoPlayer } from "@/components/HlsVideoPlayer";
 import type { Scene } from "@/lib/types";
 import { Button } from "@/components/ui/button";
-import { Check, Copy, X } from "lucide-react";
+import { Check, Copy, Star, X } from "lucide-react";
 
 interface SceneDetailsDialogProps {
   scene: Scene | null;
@@ -170,6 +170,22 @@ function SceneDetailsBody({ scene, onClose }: { scene: Scene; onClose: () => voi
             <dt className="text-[var(--color-muted-foreground)]">Resolution</dt>
             <dd>
               {data.width}×{data.height}
+            </dd>
+          </div>
+        )}
+        {data.rating != null && data.rating > 0 && (
+          <div>
+            <dt className="text-[var(--color-muted-foreground)]">Rating</dt>
+            <dd className="flex items-center gap-0.5">
+              {[1, 2, 3, 4, 5].map((i) => (
+                <Star
+                  key={i}
+                  className={
+                    "h-4 w-4 " +
+                    (i <= data.rating! ? "fill-yellow-400 text-yellow-400" : "text-gray-400/50")
+                  }
+                />
+              ))}
             </dd>
           </div>
         )}

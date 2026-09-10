@@ -7,7 +7,7 @@ import { HlsVideoPlayer } from "@/components/HlsVideoPlayer";
 import type { Scene, WatchProgress } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { formatDuration } from "@/components/SceneCard";
-import { ChevronLeft, ChevronRight, Pencil, Play, RotateCcw, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Check, Clock, Pencil, Play, RotateCcw, X } from "lucide-react";
 
 interface ScenePlayerDialogProps {
   scene: Scene | null;
@@ -33,6 +33,7 @@ function ScenePlayerBody({
   onClose,
   onEdit,
   onNavigate,
+  videoRef,
 }: {
   scene: Scene;
   scenes?: Scene[];
@@ -40,15 +41,19 @@ function ScenePlayerBody({
   onClose: () => void;
   onEdit?: (scene: Scene) => void;
   onNavigate?: (scene: Scene, index: number) => void;
+  videoRef: React.RefObject<HTMLVideoElement | null>;
 }) {
   const [detail, setDetail] = useState<Scene | null>(null);
   const caps = getCapabilities();
   // #26 watch-history tracking.
-  const videoRef = useRef<HTMLVideoElement>(null);
   const posRef = useRef(0);
   const durRef = useRef(0);
   const lastSavedRef = useRef(0);
   const [resume, setResume] = useState<WatchProgress | null>(null);
+  // #24 auto-advance: fetch from settings alongside the watched threshold.
+  const [autoAdvanceNext, setAutoAdvanceNext] = useState(false);
+  // #28 mark watched toggle in player.
+  const [isWatched, setIsWatched] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -62,12 +67,13 @@ function ScenePlayerBody({
     // the watched threshold so "resume" and "watched" stay consistent.
     void Promise.all([
       api.getWatchProgress(scene.id).catch(() => null),
-      api
-        .getSettings()
-        .then((s) => s.watched_threshold ?? 0.9)
-        .catch(() => 0.9),
-    ]).then(([p, threshold]) => {
-      if (cancelled || !p) return;
+      api.getSettings().catch(() => ({ watched_threshold: 0.9, auto_advance_next: false })),
+    ]).then(([p, settings]) => {
+      if (cancelled) return;
+      setAutoAdvanceNext(settings.auto_advance_next ?? false);
+      if (!p) return;
+      const threshold = settings.watched_threshold ?? 0.9;
+      if (p.watched) setIsWatched(true);
       const cutoff = Math.min(0.99, Math.max(0.5, threshold));
       const resumable =
         p.position_secs > 10 &&
@@ -154,6 +160,23 @@ function ScenePlayerBody({
           )}
           <button
             type="button"
+            onClick={async () => {
+              const next = !isWatched;
+              try {
+                await api.markWatched([scene.id], next);
+                setIsWatched(next);
+              } catch (e) {
+                console.error("markWatched failed:", e);
+              }
+            }}
+            className="rounded p-2 hover:bg-[var(--color-muted)]"
+            aria-label={isWatched ? "Mark as unwatched" : "Mark as watched"}
+            title={isWatched ? "Mark as unwatched" : "Mark as watched"}
+          >
+            {isWatched ? <Check className="h-4 w-4" /> : <Clock className="h-4 w-4" />}
+          </button>
+          <button
+            type="button"
             onClick={onClose}
             className="rounded p-2 hover:bg-[var(--color-muted)]"
             aria-label="Close"
@@ -190,6 +213,17 @@ function ScenePlayerBody({
           className="aspect-video w-full rounded-md bg-black"
           onTimeUpdate={handleTimeUpdate}
           onPause={handlePause}
+          onEnded={() => {
+            if (
+              autoAdvanceNext &&
+              onNavigate &&
+              scenes &&
+              currentIndex != null &&
+              currentIndex < scenes.length - 1
+            ) {
+              onNavigate(scenes[currentIndex + 1], currentIndex + 1);
+            }
+          }}
           onError={(mediaError: MediaError | null) => {
             if (mediaError) {
               console.error("Video playback failed", mediaSrc, mediaError);
@@ -351,6 +385,7 @@ export function ScenePlayerDialog({
   onEdit,
   onNavigate,
 }: ScenePlayerDialogProps) {
+  const videoRef = useRef<HTMLVideoElement>(null);
   // Q11: record every opened scene for the "Continue watching" rail.
   useEffect(() => {
     if (open && scene) {
@@ -365,7 +400,13 @@ export function ScenePlayerDialog({
     if (!onNavigate) return;
     const nav = onNavigate;
     function handleKey(e: KeyboardEvent) {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement ||
+        e.target instanceof HTMLButtonElement
+      ) {
+        return;
+      }
       if (e.key === "ArrowLeft") {
         e.preventDefault();
         if (idx > 0) {
@@ -382,6 +423,31 @@ export function ScenePlayerDialog({
     return () => window.removeEventListener("keydown", handleKey);
   }, [open, scenes, currentIndex, onNavigate]);
 
+  // #23 spacebar play/pause — uses the lifted video ref instead of a fragile DOM query.
+  useEffect(() => {
+    if (!open) return;
+    function handleSpace(e: KeyboardEvent) {
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement ||
+        e.target instanceof HTMLButtonElement
+      ) {
+        return;
+      }
+      if (e.key !== " " && e.key !== "Spacebar") return;
+      const video = videoRef.current;
+      if (!video) return;
+      e.preventDefault();
+      if (video.paused) {
+        video.play().catch(() => {});
+      } else {
+        video.pause();
+      }
+    }
+    window.addEventListener("keydown", handleSpace);
+    return () => window.removeEventListener("keydown", handleSpace);
+  }, [open]);
+
   if (!open || !scene) return null;
 
   return (
@@ -397,6 +463,7 @@ export function ScenePlayerDialog({
             scene={scene}
             scenes={scenes}
             currentIndex={currentIndex}
+            videoRef={videoRef}
             onClose={onClose}
             onEdit={onEdit}
             onNavigate={onNavigate}

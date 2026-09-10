@@ -327,6 +327,7 @@ pub fn update_scene(
         body.tags.as_deref(),
         body.rename_file.unwrap_or(false),
         body.notes.as_deref(),
+        body.rating,
     ))
 }
 

@@ -900,6 +900,21 @@ function SettingsPage() {
                   className="w-full max-w-xs accent-[var(--color-primary)]"
                 />
               </div>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium">Auto-advance to next scene</p>
+                  <p className="text-xs text-[var(--color-muted-foreground)]">
+                    Automatically play the next scene in the playlist when playback ends.
+                  </p>
+                </div>
+                <Switch.Root
+                  checked={hostSettings?.auto_advance_next ?? false}
+                  onCheckedChange={(checked) => patchHostSettings({ auto_advance_next: checked })}
+                  className="h-5 w-9 shrink-0 rounded-full bg-[var(--color-secondary)] data-[state=checked]:bg-[var(--color-primary)]"
+                >
+                  <Switch.Thumb className="block h-4 w-4 translate-x-0.5 rounded-full bg-white transition data-[state=checked]:translate-x-[18px]" />
+                </Switch.Root>
+              </div>
               <div>
                 <label className="text-xs text-[var(--color-muted-foreground)]">
                   Auto-tag rules (one regex per line)

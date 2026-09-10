@@ -420,9 +420,11 @@ impl AppState {
         tags: Option<&[String]>,
         rename_file: bool,
         notes: Option<&str>,
+        rating: Option<u8>,
     ) -> AppResult<Scene> {
+        let rating = rating.map(|r| r.min(5));
         self.db
-            .update_scene(id, title, performers, tags, rename_file, notes)
+            .update_scene(id, title, performers, tags, rename_file, notes, rating)
     }
 
     pub fn batch_update_scenes(
