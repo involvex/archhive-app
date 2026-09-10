@@ -114,9 +114,12 @@ function LivePlayerPage() {
       </div>
 
       {error && (
-        <p className="text-sm text-red-400 rounded-md border border-red-400/30 bg-red-400/10 px-3 py-2">
-          {error}
-        </p>
+        <div className="flex items-center justify-between rounded-md border border-red-400/30 bg-red-400/10 px-3 py-2 text-sm text-red-400">
+          <p>{error}</p>
+          <Button variant="ghost" size="sm" onClick={() => void loadStream()}>
+            Retry
+          </Button>
+        </div>
       )}
 
       <div className="flex gap-4 flex-col lg:flex-row">
@@ -135,7 +138,19 @@ function LivePlayerPage() {
                   controls
                   autoPlay
                   playsInline
-                />
+                  onError={(e) => {
+                    const target = e.currentTarget;
+                    const code = target?.error?.code;
+                    let msg = "Playback failed.";
+                    if (code === 4) {
+                      msg =
+                        "Playback failed — the stream URL may have expired. Tap Retry for a fresh one.";
+                    }
+                    setError(msg);
+                  }}
+                >
+                  <track kind="captions" />
+                </video>
               ) : (
                 <div className="flex h-full items-center justify-center text-white/60">
                   No stream available
