@@ -1,0 +1,60 @@
+# cargo-audit configuration
+# Run: cargo audit
+# Docs: https://doc.rustsec.org/cargo-audit/
+
+# The following advisories are from Tauri framework transitive dependencies
+# and cannot be resolved without upstream Tauri updates. All are warnings,
+# not vulnerabilities (0 vulnerabilities in the current dependency tree).
+
+# RUSTSEC-2024-0370: proc-macro-error is unmaintained.
+# Pulled in by glib-macros -> glib (Linux GTK backend via Tauri).
+# Not a security risk; no known exploits in this context.
+[[advisories]]
+id = "RUSTSEC-2024-0370"
+ignored = true
+reason = "Transitive dependency via Tauri GTK backend (Linux only)"
+
+# RUSTSEC-2025-0081: unic-char-property is unmaintained.
+# Pulled in by tauri-utils via urlpattern crate.
+# No known security impact.
+[[advisories]]
+id = "RUSTSEC-2025-0081"
+ignored = true
+reason = "Transitive dependency via Tauri framework (tauri-utils -> urlpattern)"
+
+# RUSTSEC-2025-0075: unic-char-range is unmaintained.
+# Same chain as unic-char-property.
+[[advisories]]
+id = "RUSTSEC-2025-0075"
+ignored = true
+reason = "Transitive dependency via Tauri framework (tauri-utils -> urlpattern)"
+
+# RUSTSEC-2025-0080: unic-common is unmaintained.
+# Same chain as unic-char-property.
+[[advisories]]
+id = "RUSTSEC-2025-0080"
+ignored = true
+reason = "Transitive dependency via Tauri framework (tauri-utils -> urlpattern)"
+
+# RUSTSEC-2025-0100: unic-ucd-ident is unmaintained.
+# Same chain as unic-char-property.
+[[advisories]]
+id = "RUSTSEC-2025-0100"
+ignored = true
+reason = "Transitive dependency via Tauri framework (tauri-utils -> urlpattern)"
+
+# RUSTSEC-2025-0098: unic-ucd-version is unmaintained.
+# Same chain as unic-char-property.
+[[advisories]]
+id = "RUSTSEC-2025-0098"
+ignored = true
+reason = "Transitive dependency via Tauri framework (tauri-utils -> urlpattern)"
+
+# RUSTSEC-2024-0429: glib unsoundness in VariantStrIter.
+# Only affects Linux GTK builds via Tauri's tray-icon GTK backend.
+# ArcHive is primarily Windows/Android; the fix requires Tauri to upgrade
+# glib 0.18 to 0.19+, which is a breaking change upstream.
+[[advisories]]
+id = "RUSTSEC-2024-0429"
+ignored = true
+reason = "Affects only Linux GTK builds (Tauri tray-icon); not a concern for Windows/Android targets"
