@@ -11,6 +11,8 @@ Deploy the ArcHive **frontend SPA** to GitHub Pages so it is accessible from any
 | SQLite library          | Desktop ArcHive | Queried via LAN API                      |
 | Video streams           | Desktop ArcHive | Proxied through `/api/scenes/{id}/media` |
 
+> **Routing note:** TanStack Router must be told the site's subdirectory prefix via a build-time `basepath` constant (`__GHPAGES_BASEPATH__`). Vite's `import.meta.env.BASE_URL` is **not** inlined in minified output, so the workflow uses a `define()` replacement instead. See [Build configuration](#router-basepath) below.
+
 No server-side runtime is needed on Pages. CORS is already permissive on the ArcHive LAN server (`CorsLayer::permissive()`), so cross-origin requests from `yourname.github.io` to `http://<desktop-ip>:8787` work out of the box.
 
 ## Prerequisites
@@ -33,14 +35,49 @@ base: process.env.BASE_URL || "/",
 - **Default (`"/"`)** — standalone desktop build, LAN server, etc.
 - **GitHub Pages (`"/<repo-name>/"`)**: set `BASE_URL=/<repo-name>/` at build time.
 
+## Router basepath
+
+TanStack Router needs a `basepath` to prefix all client-side routes. Since Vite 8 does not inline `import.meta.env.BASE_URL` into the minified bundle, the workflow injects a build-time constant via Vite's `define` option:
+
+**`vite.config.ts`:**
+
+```typescript
+define: {
+  __GHPAGES_BASEPATH__: JSON.stringify(
+    (process.env.BASE_URL || "/").replace(/\/$/, "") || "",
+  ),
+},
+```
+
+**`src/main.tsx`:**
+
+```typescript
+const router = createRouter({
+  routeTree,
+  basepath: __GHPAGES_BASEPATH__,
+});
+```
+
+**`src/vite-env.d.ts`:**
+
+```typescript
+declare const __GHPAGES_BASEPATH__: string;
+```
+
+Result:
+
+- Desktop/LAN build (`BASE_URL=/`): `basepath=""` — routes are `/`, `/browse`, `/library`, etc.
+- GitHub Pages build (`BASE_URL=/archhive-app/`): `basepath="/archhive-app"` — routes are `/archhive-app/`, `/archhive-app/browse`, etc.
+
 ## Deploy via GitHub Actions (recommended)
 
 Push to the `pages` branch to trigger deployment. The workflow builds the frontend and deploys the static output to the `gh-pages` branch automatically.
 
 ### One-time setup
 
-1. In your repo, go to **Settings → Pages** → **Source** and select **Deploy from a workflow**.
-2. Ensure the repo name is correct (default: the repository's own name, e.g. `archhive-app`).
+1. In your repo, go to **Settings → Pages**.
+2. Set **Source** to the `gh-pages` branch, root (`/`) folder.
+3. Set **Build and deployment** → **Build type** to **Legacy** (recommended for external CI workflows).
 
 ### Workflow trigger
 
