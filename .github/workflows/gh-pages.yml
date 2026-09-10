@@ -1,0 +1,66 @@
+name: GitHub Pages
+
+on:
+  push:
+    branches:
+      - gh-pages
+  workflow_dispatch:
+    inputs:
+      cname:
+        description: "Custom domain (optional, e.g. docs.archhive.app)"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: gh-pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Deploy to GitHub Pages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install frontend dependencies
+        run: bun install --frozen-lockfile
+        continue-on-error: true
+
+      - name: Install frontend dependencies (no lockfile)
+        if: failure()
+        run: bun install
+
+      - name: Generate plugins registry
+        run: bun run plugins:generate
+
+      - name: Lint and typecheck
+        run: bun run lint && bun run typecheck
+
+      - name: Determine repo name for base path
+        id: repo-name
+        run: |
+          echo "name=${GITHUB_REPOSITORY#*/}" >> "$GITHUB_OUTPUT"
+
+      - name: Build frontend
+        run: BASE_URL=/${{ steps.repo-name.outputs.name }}/ bunx vite build
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: dist
+          keep_branch: false
+          enable_jekyll: false
+          force_orphan: true
+          cname: ${{ inputs.cname || '' }}
+          destination_dir: .

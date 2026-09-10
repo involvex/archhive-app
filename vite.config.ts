@@ -28,6 +28,7 @@ export default defineConfig(async () => ({
   define: {
     "import.meta.env.VITE_APP_VERSION": JSON.stringify(pkg.version),
   },
+  base: process.env.BASE_URL || "/",
   clearScreen: false,
   server: {
     port: 1420,
