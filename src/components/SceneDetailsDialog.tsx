@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/api/client";
 import { sceneThumbUrl, sceneMediaUrl, isWebPlayableScene, isHttpMediaSrc } from "@/lib/mediaUrl";
 import { getAppRuntime } from "@/lib/runtime";
+import { HlsVideoPlayer } from "@/components/HlsVideoPlayer";
 import type { Scene } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Check, Copy, X } from "lucide-react";
@@ -117,11 +118,11 @@ function SceneDetailsBody({ scene, onClose }: { scene: Scene; onClose: () => voi
 
       {showVideo ? (
         <div className="mb-4 aspect-video overflow-hidden rounded-md bg-black">
-          <video
+          <HlsVideoPlayer
             src={mediaSrc}
             controls
             playsInline
-            {...(useCors ? { crossOrigin: "anonymous" as const } : {})}
+            crossOrigin={useCors ? "anonymous" : undefined}
             className="h-full w-full"
           />
         </div>

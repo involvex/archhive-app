@@ -3,6 +3,7 @@ import { sceneMediaUrl, isWebPlayableScene, isHttpMediaSrc, isVideoScene } from 
 import { getCapabilities, hasLocalBackend } from "@/lib/runtime";
 import { useRecentlyViewedStore } from "@/lib/stores/recentlyViewed";
 import { api } from "@/lib/api/client";
+import { HlsVideoPlayer } from "@/components/HlsVideoPlayer";
 import type { Scene, WatchProgress } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { formatDuration } from "@/components/SceneCard";
@@ -178,18 +179,22 @@ function ScenePlayerBody({
       )}
 
       {webPlayable ? (
-        <video
-          key={mediaSrc}
+        <HlsVideoPlayer
           ref={videoRef}
           src={mediaSrc}
+          key={mediaSrc}
           controls
           playsInline
           preload="metadata"
-          {...(useCors ? { crossOrigin: "anonymous" as const } : {})}
+          crossOrigin={useCors ? "anonymous" : undefined}
           className="aspect-video w-full rounded-md bg-black"
           onTimeUpdate={handleTimeUpdate}
           onPause={handlePause}
-          onError={() => console.error("Video playback failed", mediaSrc)}
+          onError={(mediaError: MediaError | null) => {
+            if (mediaError) {
+              console.error("Video playback failed", mediaSrc, mediaError);
+            }
+          }}
         />
       ) : (
         <div className="space-y-3 rounded-md border border-[var(--color-border)] bg-[var(--color-muted)] p-3">

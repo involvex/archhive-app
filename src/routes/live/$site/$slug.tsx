@@ -1,7 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api/client";
 import { Button } from "@/components/ui/button";
+import { HlsVideoPlayer } from "@/components/HlsVideoPlayer";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Radio, ArrowLeft } from "lucide-react";
 import { Link } from "@tanstack/react-router";
@@ -17,8 +18,6 @@ const SITE_LABELS: Record<string, string> = {
 
 function LivePlayerPage() {
   const { site, slug } = Route.useParams();
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const hlsRef = useRef<import("hls.js").default | null>(null);
 
   const [streamUrl, setStreamUrl] = useState("");
   const [embedUrl, setEmbedUrl] = useState("");
@@ -47,53 +46,6 @@ function LivePlayerPage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadStream();
   }, [loadStream]);
-
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video || !streamUrl) return;
-
-    // Try HLS.js for non-Safari browsers
-    if (streamUrl.includes(".m3u8")) {
-      const loadHls = async () => {
-        try {
-          // Safari has native HLS support
-          if (video.canPlayType("application/vnd.apple.mpegurl")) {
-            video.src = streamUrl;
-            return;
-          }
-
-          const { default: Hls } = await import("hls.js");
-          if (Hls.isSupported()) {
-            const hls = new Hls({
-              enableWorker: true,
-              lowLatencyMode: true,
-            });
-            hlsRef.current = hls;
-            hls.loadSource(streamUrl);
-            hls.attachMedia(video);
-            hls.on(Hls.Events.MANIFEST_PARSED, () => {
-              void video.play();
-            });
-          } else {
-            // Fallback: try direct src
-            video.src = streamUrl;
-          }
-        } catch {
-          video.src = streamUrl;
-        }
-      };
-      void loadHls();
-    } else {
-      video.src = streamUrl;
-    }
-
-    return () => {
-      if (hlsRef.current) {
-        hlsRef.current.destroy();
-        hlsRef.current = null;
-      }
-    };
-  }, [streamUrl]);
 
   return (
     <div className="space-y-4">
@@ -132,25 +84,21 @@ function LivePlayerPage() {
                   Resolving stream...
                 </div>
               ) : streamUrl ? (
-                <video
-                  ref={videoRef}
-                  className="h-full w-full object-contain"
-                  controls
+                <HlsVideoPlayer
+                  src={streamUrl}
                   autoPlay
                   playsInline
-                  onError={(e) => {
-                    const target = e.currentTarget;
-                    const code = target?.error?.code;
-                    let msg = "Playback failed.";
-                    if (code === 4) {
-                      msg =
-                        "Playback failed — the stream URL may have expired. Tap Retry for a fresh one.";
+                  className="h-full w-full object-contain"
+                  onError={(mediaError: MediaError | null) => {
+                    if (mediaError?.code === 4) {
+                      setError(
+                        "Playback failed — the stream URL may have expired. Tap Retry for a fresh one.",
+                      );
+                    } else {
+                      setError("Playback failed.");
                     }
-                    setError(msg);
                   }}
-                >
-                  <track kind="captions" />
-                </video>
+                />
               ) : (
                 <div className="flex h-full items-center justify-center text-white/60">
                   No stream available

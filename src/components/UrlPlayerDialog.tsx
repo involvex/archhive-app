@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api/client";
 import { Button } from "@/components/ui/button";
+import { HlsVideoPlayer } from "@/components/HlsVideoPlayer";
 import { AlertCircle, Loader2, X } from "lucide-react";
 import type { MediaItem } from "@/lib/types";
 
@@ -15,7 +16,6 @@ export function UrlPlayerDialog({ item, open, onClose }: UrlPlayerDialogProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [queued, setQueued] = useState(false);
-  const videoRef = useRef<HTMLVideoElement>(null);
 
   // Resolve a fresh stream URL. Signed CDN URLs expire quickly, so playback
   // failures are retried through here rather than reusing a stale URL.
@@ -110,25 +110,20 @@ export function UrlPlayerDialog({ item, open, onClose }: UrlPlayerDialogProps) {
           )}
 
           {streamUrl && !error && (
-            <video
-              ref={videoRef}
-              key={streamUrl}
-              controls
-              playsInline
+            <HlsVideoPlayer
+              src={streamUrl}
               autoPlay
               className="aspect-video w-full rounded-md bg-black"
-              onError={() =>
-                setError(
-                  "Playback failed — the stream URL may have expired. Tap Retry for a fresh one.",
-                )
-              }
-            >
-              <source
-                src={streamUrl}
-                type={streamUrl.endsWith(".m3u8") ? "application/x-mpegURL" : undefined}
-              />
-              <track kind="captions" />
-            </video>
+              onError={(mediaError: MediaError | null) => {
+                if (mediaError?.code === 4) {
+                  setError(
+                    "Playback failed — the stream URL may have expired. Tap Retry for a fresh one.",
+                  );
+                } else {
+                  setError("Playback failed.");
+                }
+              }}
+            />
           )}
 
           <dl className="mt-4 space-y-2 text-sm">

@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api/client";
 import { fileStreamUrl, isImageFilePath, isVideoFilePath } from "@/lib/mediaUrl";
+import { HlsVideoPlayer } from "@/components/HlsVideoPlayer";
 import type { FileEntry } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -98,7 +99,7 @@ function FilesPage() {
         <Card>
           <CardContent className="space-y-2 p-4">
             <p className="text-sm font-medium">{playing.name}</p>
-            <video
+            <HlsVideoPlayer
               key={playUrl}
               src={playUrl}
               controls
