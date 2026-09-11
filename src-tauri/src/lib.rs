@@ -69,16 +69,16 @@ fn bootstrap_mobile_settings(db: &Database, data_dir: &std::path::Path) -> Resul
 }
 
 /// On Android, Tauri's shell plugin may not set execute permissions on extracted sidecars.
-/// This verifies ffmpeg/ffprobe work via shell().sidecar() and removes any wrongly-installed x86_64 binaries.
+/// This pre-extracts ffmpeg/ffprobe from APK resources to the app data dir with correct
+/// permissions, so that `shell().sidecar()` or `extract_android_binary()` can find and
+/// execute them without "Permission denied (os error 13)".
 #[cfg(target_os = "android")]
 fn ensure_sidecar_permissions(app: &tauri::AppHandle) {
-    // Verify ffmpeg/ffprobe sidecars work by attempting to resolve them.
-    // Tauri's sidecar() handles extraction and permissions automatically.
+    // Verify ffmpeg/ffprobe sidecars can be resolved.
     for name in &["ffmpeg", "ffprobe"] {
         match app.shell().sidecar(format!("binaries/{name}")) {
-            Ok(sidecar) => {
+            Ok(_sidecar) => {
                 eprintln!("[sidecar] {name} resolved successfully");
-                let _ = sidecar;
             }
             Err(e) => {
                 eprintln!("[sidecar] {name} resolution failed: {e}");
@@ -94,6 +94,19 @@ fn ensure_sidecar_permissions(app: &tauri::AppHandle) {
             if path.exists() {
                 let _ = std::fs::remove_file(&path);
             }
+        }
+    }
+
+    // Pre-extract ffmpeg/ffprobe from APK resources to app data dir with
+    // executable permissions. The SidecarRunner::extract_android_binary() fallback
+    // handles this at spawn time, but pre-extracting at startup avoids latency
+    // on the first player/thumb generation call.
+    let runner = crate::sites::yt_dlp::SidecarRunner::new(app.clone());
+    for name in &["ffmpeg", "ffprobe"] {
+        if let Some(path) = runner.extract_android_binary(name) {
+            eprintln!("[sidecar] {name} pre-extracted to {}", path.display());
+        } else {
+            eprintln!("[sidecar] {name} resource not available for pre-extraction");
         }
     }
 }

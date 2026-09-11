@@ -3,6 +3,8 @@ use regex::Regex;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+#[cfg(target_os = "android")]
+use tauri::path::BaseDirectory;
 use tauri::AppHandle;
 use tauri::Manager;
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
@@ -447,6 +449,57 @@ impl SidecarRunner {
         Ok(stdout)
     }
 
+    /// On Android, extract a resource-bundled binary (ffmpeg/ffprobe) to the app
+    /// data dir and set executable permissions. Returns the path to the extracted
+    /// binary if successful, or `None` if the resource could not be found.
+    /// This is a fallback for when `shell().sidecar()` fails with
+    /// "Permission denied (os error 13)" because Tauri's Android sidecar
+    /// extraction doesn't always set the executable bit.
+    #[cfg(target_os = "android")]
+    pub fn extract_android_binary(&self, name: &str) -> Option<PathBuf> {
+        let resource_path = self
+            .app
+            .path()
+            .resolve(format!("binaries/{name}"), BaseDirectory::Resource)
+            .ok()?;
+        if !resource_path.exists() {
+            return None;
+        }
+
+        let data_dir = self.app.path().app_data_dir().ok()?;
+        let bin_dir = data_dir.join("bin");
+        let _ = std::fs::create_dir_all(&bin_dir);
+        let dest = bin_dir.join(name);
+
+        // Only re-copy if the resource is newer or the destination doesn't exist.
+        let need_copy = dest
+            .metadata()
+            .map(|m| {
+                let src_mtime = resource_path.metadata().ok().and_then(|m| m.modified().ok());
+                let dst_mtime = m.modified().ok();
+                src_mtime > dst_mtime
+            })
+            .unwrap_or(true);
+
+        if need_copy {
+            if std::fs::copy(&resource_path, &dest).is_err() {
+                return None;
+            }
+        }
+
+        // Set executable permissions (0o755).
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let perms = std::fs::Permissions::from_mode(0o755);
+            if std::fs::set_permissions(&dest, perms).is_err() {
+                return None;
+            }
+        }
+
+        Some(dest)
+    }
+
     pub async fn spawn_ffmpeg(
         &self,
         args: &[String],
@@ -509,6 +562,19 @@ impl SidecarRunner {
                 Err(e) => {
                     eprintln!("[android] sidecar {name} resolution failed: {e}");
                 }
+            }
+            // Fallback: manually extract the resource-bundled binary to the app data
+            // dir and set executable permissions (shell().sidecar() may not chmod
+            // on Android — root cause of "Permission denied (os error 13)").
+            if let Some(extracted) = self.extract_android_binary(name) {
+                let (rx, _child) = self
+                    .app
+                    .shell()
+                    .command(extracted.to_string_lossy().as_ref())
+                    .args(args)
+                    .spawn()
+                    .map_err(|e| AppError::Download(format!("spawn {name} from extracted path: {e}")))?;
+                return self.consume(rx, name, on_line).await;
             }
         }
 
