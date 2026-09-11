@@ -469,6 +469,24 @@ pub async fn get_library_stats(state: State<'_, Arc<AppState>>) -> CmdResult<Lib
 }
 
 #[tauri::command]
+pub async fn get_diagnostics(
+    state: State<'_, Arc<AppState>>,
+) -> CmdResult<crate::models::DiagnosticsData> {
+    map_err(state.get_diagnostics().await)
+}
+
+#[tauri::command]
+pub fn clear_logs() -> CmdResult<()> {
+    crate::log_buffer::LogBuffer::instance().clear();
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_recent_logs(limit: Option<usize>) -> CmdResult<Vec<crate::models::LogEntry>> {
+    Ok(crate::log_buffer::LogBuffer::instance().get_recent(limit.unwrap_or(200)))
+}
+
+#[tauri::command]
 pub fn record_watch_progress(
     state: State<'_, Arc<AppState>>,
     scene_id: String,
@@ -765,7 +783,9 @@ pub fn add_scene_to_collection(
     scene_id: String,
     collection_id: String,
 ) -> CmdResult<()> {
-    state.add_scene_to_collection(&scene_id, &collection_id).map_err(|e| e.to_string())
+    state
+        .add_scene_to_collection(&scene_id, &collection_id)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -774,7 +794,9 @@ pub fn remove_scene_from_collection(
     scene_id: String,
     collection_id: String,
 ) -> CmdResult<()> {
-    state.remove_scene_from_collection(&scene_id, &collection_id).map_err(|e| e.to_string())
+    state
+        .remove_scene_from_collection(&scene_id, &collection_id)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -782,7 +804,9 @@ pub fn list_collection_scenes(
     state: State<'_, AppState>,
     collection_id: String,
 ) -> CmdResult<Vec<Scene>> {
-    state.list_collection_scenes(&collection_id).map_err(|e| e.to_string())
+    state
+        .list_collection_scenes(&collection_id)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -790,5 +814,7 @@ pub fn scene_collection_ids(
     state: State<'_, AppState>,
     scene_id: String,
 ) -> CmdResult<Vec<String>> {
-    state.scene_collection_ids(&scene_id).map_err(|e| e.to_string())
+    state
+        .scene_collection_ids(&scene_id)
+        .map_err(|e| e.to_string())
 }

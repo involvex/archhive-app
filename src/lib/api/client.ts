@@ -42,6 +42,8 @@ import type {
   SceneSort,
   ThumbGenResult,
   WatchProgress,
+  DiagnosticsData,
+  LogEntry,
 } from "../types";
 import { getAppRuntime, shouldUseRemoteApi } from "../runtime";
 import { useSettingsStore } from "../stores/settings";
@@ -824,6 +826,28 @@ export const api = {
 
   async getLibraryStats(): Promise<LibraryStats> {
     return localInvoke<LibraryStats>("get_library_stats");
+  },
+
+  async getDiagnostics(): Promise<DiagnosticsData> {
+    if (shouldUseRemoteApi()) {
+      return remoteFetch<DiagnosticsData>("/api/diagnostics");
+    }
+    return localInvoke<DiagnosticsData>("get_diagnostics");
+  },
+
+  async getRecentLogs(limit?: number): Promise<LogEntry[]> {
+    if (shouldUseRemoteApi()) {
+      const qs = limit ? `?limit=${limit}` : "";
+      return remoteFetch<LogEntry[]>(`/api/logs${qs}`);
+    }
+    return localInvoke<LogEntry[]>("get_recent_logs", { limit });
+  },
+
+  async clearLogs(): Promise<void> {
+    if (shouldUseRemoteApi()) {
+      return remoteFetch("/api/logs/clear", { method: "POST" });
+    }
+    return localInvoke("clear_logs");
   },
 
   async exportPerformers(): Promise<Performer[]> {

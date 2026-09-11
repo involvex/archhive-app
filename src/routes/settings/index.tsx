@@ -20,10 +20,12 @@ import { visibleSettingsTabs } from "@/lib/settings/capabilities";
 import type {
   BinaryVersions,
   CookieSiteInfo,
+  DiagnosticsData,
   DuplicateGroup,
   EngineMode,
   FfmpegStatus,
   LanHost,
+  LogEntry,
   OrphanSidecar,
   SiteInfo,
   SidecarProbe,
@@ -183,6 +185,11 @@ function SettingsPage() {
   const [pickingFolder, setPickingFolder] = useState(false);
   const [folderPickerOpen, setFolderPickerOpen] = useState(false);
   const [libraryPickerStatus, setLibraryPickerStatus] = useState("");
+  const [diagnostics, setDiagnostics] = useState<DiagnosticsData | null>(null);
+  const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [logsLoading, setLogsLoading] = useState(false);
+  const [clearingLogs, setClearingLogs] = useState(false);
 
   useEffect(() => {
     void resolveAppVersion().then(setAppVersion);
@@ -409,9 +416,40 @@ function SettingsPage() {
   }, [runtime]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     void refreshVersions();
   }, [refreshVersions]);
+
+  // #33: In-app diagnostics log viewer + export.
+  const loadDiagnostics = useCallback(async () => {
+    setDiagnosticsLoading(true);
+    try {
+      const data = await api.getDiagnostics();
+      setDiagnostics(data);
+    } catch (e) {
+      void e;
+    } finally {
+      setDiagnosticsLoading(false);
+    }
+  }, []);
+
+  const loadLogs = useCallback(async () => {
+    setLogsLoading(true);
+    try {
+      const entries = await api.getRecentLogs(200);
+      setLogs(entries);
+    } catch (e) {
+      void e;
+    } finally {
+      setLogsLoading(false);
+    }
+  }, []);
+
+  // #33: Load diagnostics + logs on mount.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadDiagnostics();
+    void loadLogs();
+  }, [loadDiagnostics, loadLogs]);
 
   // Q17: clear all thumbnail references (sidecar files stay on disk; the
   // orphan cleaner below removes leftovers). Regenerate via "Generate missing
@@ -640,6 +678,35 @@ function SettingsPage() {
       setLibraryPickerStatus("Saved.");
     } catch (e) {
       setLibraryPickerStatus(e instanceof Error ? e.message : "Save failed");
+    }
+  }
+
+  // #33: In-app diagnostics log viewer + export (callbacks declared above).
+  async function handleClearLogs() {
+    if (!window.confirm("Clear all log entries? This cannot be undone.")) return;
+    setClearingLogs(true);
+    try {
+      await api.clearLogs();
+      setLogs([]);
+    } finally {
+      setClearingLogs(false);
+    }
+  }
+
+  async function handleExportDiagnostics() {
+    try {
+      const data = diagnostics ?? (await api.getDiagnostics());
+      const blob = new Blob([JSON.stringify(data, null, 2)], {
+        type: "application/json",
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `archhive-diagnostics-${Date.now()}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      void e;
     }
   }
 
@@ -1763,6 +1830,160 @@ function SettingsPage() {
                 }
               >
                 Save trending sites
+              </Button>
+            </CardContent>
+          </Card>
+        </Tabs.Content>
+
+        <Tabs.Content value="diagnostics" className="mt-4 space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">System Info</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2 text-sm">
+              {diagnosticsLoading ? (
+                <p className="text-[var(--color-muted-foreground)]">Loading…</p>
+              ) : diagnostics ? (
+                <div className="grid grid-cols-[120px_1fr] gap-1">
+                  <span className="text-[var(--color-muted-foreground)]">App version</span>
+                  <span>{diagnostics.app_version}</span>
+                  <span className="text-[var(--color-muted-foreground)]">Engine mode</span>
+                  <span>{diagnostics.engine_mode}</span>
+                  <span className="text-[var(--color-muted-foreground)]">Library configured</span>
+                  <span>{diagnostics.library_path_set ? "Yes" : "No"}</span>
+                  <span className="text-[var(--color-muted-foreground)]">Cookies configured</span>
+                  <span>{diagnostics.cookies_configured ? "Yes" : "No"}</span>
+                  <span className="text-[var(--color-muted-foreground)]">LAN enabled</span>
+                  <span>
+                    {diagnostics.lan_enabled ? `Yes (port ${diagnostics.lan_port})` : "No"}
+                  </span>
+                </div>
+              ) : (
+                <p className="text-[var(--color-muted-foreground)]">Failed to load diagnostics.</p>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Binaries</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2 text-sm">
+              {diagnostics?.binary_versions && (
+                <div className="grid grid-cols-[120px_1fr] gap-1">
+                  {diagnostics.binary_versions.ytdlp_version && (
+                    <>
+                      <span className="text-[var(--color-muted-foreground)]">yt-dlp</span>
+                      <span>{diagnostics.binary_versions.ytdlp_version}</span>
+                    </>
+                  )}
+                  {diagnostics.binary_versions.gallery_dl_version && (
+                    <>
+                      <span className="text-[var(--color-muted-foreground)]">gallery-dl</span>
+                      <span>{diagnostics.binary_versions.gallery_dl_version}</span>
+                    </>
+                  )}
+                  {diagnostics.binary_versions.ffmpeg_version && (
+                    <>
+                      <span className="text-[var(--color-muted-foreground)]">ffmpeg</span>
+                      <span>{diagnostics.binary_versions.ffmpeg_version}</span>
+                    </>
+                  )}
+                  {diagnostics.binary_versions.ffprobe_version && (
+                    <>
+                      <span className="text-[var(--color-muted-foreground)]">ffprobe</span>
+                      <span>{diagnostics.binary_versions.ffprobe_version}</span>
+                    </>
+                  )}
+                </div>
+              )}
+              {diagnostics?.ffmpeg_status && (
+                <p className="text-xs text-[var(--color-muted-foreground)]">
+                  ffmpeg: {diagnostics.ffmpeg_status.ffmpeg_available ? "available" : "missing"} ·
+                  ffprobe: {diagnostics.ffmpeg_status.ffprobe_available ? "available" : "missing"}
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
+          {diagnostics?.library_stats && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Library Stats</CardTitle>
+              </CardHeader>
+              <CardContent className="grid grid-cols-[120px_1fr] gap-1 text-sm">
+                <span className="text-[var(--color-muted-foreground)]">Scenes</span>
+                <span>{diagnostics.library_stats.scene_count}</span>
+                <span className="text-[var(--color-muted-foreground)]">Performers</span>
+                <span>{diagnostics.library_stats.performer_count}</span>
+                <span className="text-[var(--color-muted-foreground)]">Tags</span>
+                <span>{diagnostics.library_stats.tag_count}</span>
+                <span className="text-[var(--color-muted-foreground)]">Total size</span>
+                <span>{formatBytesShort(diagnostics.library_stats.total_size_bytes)}</span>
+                <span className="text-[var(--color-muted-foreground)]">Free space</span>
+                <span>{formatBytesShort(diagnostics.library_stats.free_space_bytes)}</span>
+              </CardContent>
+            </Card>
+          )}
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle className="text-base">Recent Logs</CardTitle>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void loadLogs()}
+                  disabled={logsLoading}
+                >
+                  {logsLoading ? "Refreshing…" : "Refresh"}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void handleClearLogs()}
+                  disabled={clearingLogs}
+                >
+                  {clearingLogs ? "Clearing…" : "Clear"}
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="max-h-96 overflow-y-auto font-mono text-xs">
+                {logs.map((entry, i) => (
+                  <div key={`${entry.timestamp}-${i}`} className="whitespace-pre-wrap break-all">
+                    <span
+                      className={
+                        entry.level === "WARN" || entry.level === "ERROR"
+                          ? "text-red-400"
+                          : entry.level === "INFO"
+                            ? "text-blue-400"
+                            : "text-[var(--color-muted-foreground)]"
+                      }
+                    >
+                      [{entry.level}]
+                    </span>{" "}
+                    <span className="text-[var(--color-muted-foreground)]">
+                      {new Date(entry.timestamp * 1000).toLocaleString()}
+                    </span>{" "}
+                    <span className="text-[var(--color-muted-foreground)]">[{entry.target}]</span>{" "}
+                    {entry.message}
+                  </div>
+                ))}
+                {logs.length === 0 && (
+                  <p className="text-[var(--color-muted-foreground)]">No log entries.</p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Export</CardTitle>
+            </CardHeader>
+            <CardContent className="flex gap-2">
+              <Button size="sm" variant="outline" onClick={() => void handleExportDiagnostics()}>
+                Copy diagnostics (JSON)
               </Button>
             </CardContent>
           </Card>

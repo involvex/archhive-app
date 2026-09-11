@@ -9,6 +9,7 @@ export const SETTINGS_TABS = [
   "lan",
   "desktop",
   "browse",
+  "diagnostics",
 ] as const;
 export type SettingsTab = (typeof SETTINGS_TABS)[number];
 

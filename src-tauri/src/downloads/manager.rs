@@ -3,7 +3,6 @@ use crate::error::{AppError, AppResult};
 use crate::library::auto_tag::apply_filename_rules;
 use crate::library::import::import_download;
 use crate::library::thumbnail::download_remote_thumbnail;
-use tauri_plugin_notification::NotificationExt;
 use crate::library::LibraryScanner;
 use crate::media::FfmpegProcessor;
 use crate::models::{DownloadJob, DownloadPlan, DownloadStatus, DownloadTool};
@@ -15,6 +14,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
+use tauri_plugin_notification::NotificationExt;
 use tokio::sync::{mpsc, Semaphore};
 
 const MAX_CONCURRENT_DOWNLOADS: usize = 2;

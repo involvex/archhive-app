@@ -1058,7 +1058,7 @@ impl Database {
             Some(Err(e)) => {
                 // Review: previously swallowed silently, which caused a full
                 // re-baseline badge spike. Log and treat as empty.
-                eprintln!("[watchlist] corrupt snapshot for {id}: {e}");
+                tracing::warn!("[watchlist] corrupt snapshot for {id}: {e}");
                 Vec::new()
             }
         })

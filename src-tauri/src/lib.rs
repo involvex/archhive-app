@@ -4,6 +4,7 @@ mod discovery;
 mod downloads;
 mod error;
 mod library;
+mod log_buffer;
 mod media;
 mod mobile;
 mod models;
@@ -14,6 +15,47 @@ mod vault;
 
 #[cfg(not(mobile))]
 mod desktop;
+
+fn init_log_subscriber() {
+    let log_buffer = log_buffer::LogBuffer::instance();
+    let make_writer = move || LogWriter::new(log_buffer);
+
+    tracing_subscriber::fmt()
+        .with_writer(make_writer)
+        .with_max_level(tracing::Level::INFO)
+        .init();
+}
+
+struct LogWriter {
+    buffer: &'static log_buffer::LogBuffer,
+}
+
+impl LogWriter {
+    fn new(buffer: &'static log_buffer::LogBuffer) -> Self {
+        Self { buffer }
+    }
+}
+
+impl std::io::Write for LogWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let msg = String::from_utf8_lossy(buf).trim_end().to_string();
+        if !msg.is_empty() {
+            self.buffer.push("INFO", "app", msg);
+        }
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for LogWriter {
+    type Writer = LogWriter;
+    fn make_writer(&'a self) -> Self::Writer {
+        LogWriter::new(self.buffer)
+    }
+}
 
 use crate::models::EngineMode;
 use db::Database;
@@ -113,6 +155,8 @@ fn ensure_sidecar_permissions(app: &tauri::AppHandle) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    init_log_subscriber();
+
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
@@ -152,7 +196,7 @@ pub fn run() {
             let mobile_port = state.get_settings().map(|s| s.lan_port).unwrap_or(8787);
             tauri::async_runtime::spawn(async move {
                 if let Err(e) = st.ensure_loopback_server(mobile_port).await {
-                    eprintln!("Loopback server start failed: {e}");
+                    tracing::warn!("Loopback server start failed: {e}");
                 }
             });
         }
@@ -185,7 +229,7 @@ pub fn run() {
                 tauri::async_runtime::spawn(async move {
                     let port = st.get_settings().map(|s| s.lan_port).unwrap_or(8787);
                     if let Err(e) = st.ensure_lan_server(port).await {
-                        eprintln!("LAN auto-start failed: {e}");
+                        tracing::warn!("LAN auto-start failed: {e}");
                     }
                 });
             }
@@ -251,6 +295,9 @@ pub fn run() {
             commands::clear_all_thumbs,
             commands::binary_versions,
             commands::get_library_stats,
+            commands::get_diagnostics,
+            commands::clear_logs,
+            commands::get_recent_logs,
             commands::export_performers,
             commands::set_performer_image,
             commands::record_watch_progress,

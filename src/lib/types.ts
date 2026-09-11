@@ -360,3 +360,23 @@ export interface LibraryStats {
   total_size_bytes: number;
   free_space_bytes: number;
 }
+
+export interface LogEntry {
+  timestamp: number;
+  level: string;
+  target: string;
+  message: string;
+}
+
+export interface DiagnosticsData {
+  app_version: string;
+  binary_versions: BinaryVersions;
+  ffmpeg_status: FfmpegStatus | null;
+  library_stats: LibraryStats | null;
+  lan_enabled: boolean;
+  lan_port: number;
+  engine_mode: string;
+  library_path_set: boolean;
+  cookies_configured: boolean;
+  recent_logs: LogEntry[];
+}

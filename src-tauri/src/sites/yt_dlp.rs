@@ -475,7 +475,10 @@ impl SidecarRunner {
         let need_copy = dest
             .metadata()
             .map(|m| {
-                let src_mtime = resource_path.metadata().ok().and_then(|m| m.modified().ok());
+                let src_mtime = resource_path
+                    .metadata()
+                    .ok()
+                    .and_then(|m| m.modified().ok());
                 let dst_mtime = m.modified().ok();
                 src_mtime > dst_mtime
             })
@@ -573,7 +576,9 @@ impl SidecarRunner {
                     .command(extracted.to_string_lossy().as_ref())
                     .args(args)
                     .spawn()
-                    .map_err(|e| AppError::Download(format!("spawn {name} from extracted path: {e}")))?;
+                    .map_err(|e| {
+                        AppError::Download(format!("spawn {name} from extracted path: {e}"))
+                    })?;
                 return self.consume(rx, name, on_line).await;
             }
         }

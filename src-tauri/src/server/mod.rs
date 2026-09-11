@@ -55,6 +55,11 @@ struct CategoriesQuery {
 }
 
 #[derive(Deserialize)]
+struct GetLogsQuery {
+    limit: Option<u32>,
+}
+
+#[derive(Deserialize)]
 struct CookieBody {
     cookies: String,
 }
@@ -158,6 +163,9 @@ impl LanServer {
                 post(generate_missing_thumbs).delete(clear_all_thumbs),
             )
             .route("/api/system/versions", get(binary_versions))
+            .route("/api/diagnostics", get(diagnostics))
+            .route("/api/logs", get(list_logs))
+            .route("/api/logs/clear", post(clear_logs_route))
             .route("/api/library/orphans", get(list_orphan_sidecars))
             .route("/api/library/filter", post(list_scenes_with_filter))
             .route("/api/library/ffmpeg-status", get(ffmpeg_status))
@@ -503,7 +511,7 @@ async fn update_scene(
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let scene = state
         .app
-         .update_scene(
+        .update_scene(
             &id,
             body.title.as_deref(),
             body.performers.as_deref(),
@@ -906,6 +914,29 @@ async fn binary_versions(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(serde_json::json!(versions)))
+}
+
+async fn diagnostics(State(state): State<ApiState>) -> Result<Json<serde_json::Value>, StatusCode> {
+    let data = state
+        .app
+        .get_diagnostics()
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(serde_json::json!(data)))
+}
+
+async fn list_logs(
+    State(state): State<ApiState>,
+    Query(q): Query<GetLogsQuery>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let limit = q.limit.unwrap_or(200).min(1000) as usize;
+    let entries = crate::log_buffer::LogBuffer::instance().get_recent(limit);
+    Ok(Json(serde_json::json!(entries)))
+}
+
+async fn clear_logs_route(State(_state): State<ApiState>) -> Result<StatusCode, StatusCode> {
+    crate::log_buffer::LogBuffer::instance().clear();
+    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn list_collections_lan(

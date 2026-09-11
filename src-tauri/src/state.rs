@@ -2,10 +2,9 @@ use crate::db::Database;
 use crate::downloads::DownloadManager;
 use crate::error::AppResult;
 use crate::models::{
-    AppSettings, BrowseKind, BrowseOrientation, BrowseQuery, Collection,
-    CollectionType, CreateCollectionRequest, DuplicateGroup, DownloadJob,
-    HealthResponse, MediaItem, Performer, ScanResult, Scene, SiteInfo,
-    Tag, UpdateCollectionRequest,
+    AppSettings, BrowseKind, BrowseOrientation, BrowseQuery, Collection, CollectionType,
+    CreateCollectionRequest, DownloadJob, DuplicateGroup, HealthResponse, MediaItem, Performer,
+    ScanResult, Scene, SiteInfo, Tag, UpdateCollectionRequest,
 };
 use crate::server::LanServer;
 use crate::sites::registry::SiteRegistry;
@@ -153,7 +152,7 @@ impl AppState {
             }
             match self.queue_download(trimmed, None).await {
                 Ok(job) => jobs.push(job),
-                Err(e) => eprintln!("[queue] skipped {trimmed}: {e}"),
+                Err(e) => tracing::warn!("[queue] skipped {trimmed}: {e}"),
             }
         }
         Ok(jobs)
@@ -225,7 +224,7 @@ impl AppState {
                         }
                     }
                     Err(e) => {
-                        eprintln!("[bulk] browse expand failed {url}: {e}");
+                        tracing::warn!("[bulk] browse expand failed {url}: {e}");
                         skipped += 1;
                     }
                 }
@@ -376,7 +375,7 @@ impl AppState {
             Some(token.clone())
         };
         self.save_settings(&settings)?;
-        eprintln!(
+        tracing::info!(
             "[lan] server started on port {port} auth_required={}",
             !token.is_empty()
         );
@@ -398,7 +397,7 @@ impl AppState {
         settings.lan_port = port;
         settings.lan_token = None;
         self.save_settings(&settings)?;
-        eprintln!("[loopback] server started on port {port}");
+        tracing::info!("[loopback] server started on port {port}");
         Ok(String::new())
     }
 
@@ -699,16 +698,50 @@ impl AppState {
         self.db.list_scenes_with_filter(filter)
     }
 
+    pub async fn get_diagnostics(&self) -> AppResult<crate::models::DiagnosticsData> {
+        let settings = self.db.get_settings()?;
+        let stats = self.get_library_stats().ok();
+        let ffmpeg = self.ffmpeg_status().await.ok();
+        let installer = crate::mobile::binary_installer::BinaryInstaller::new(
+            self.app.clone(),
+            self.data_dir.clone(),
+        )?;
+        let binaries = installer.get_installed_versions().await;
+        let logs = crate::log_buffer::LogBuffer::instance()
+            .get_recent(200)
+            .into_iter()
+            .map(|e| crate::models::LogEntry {
+                timestamp: e.timestamp,
+                level: e.level,
+                target: e.target,
+                message: e.message,
+            })
+            .collect();
+        Ok(crate::models::DiagnosticsData {
+            app_version: env!("CARGO_PKG_VERSION").to_string(),
+            binary_versions: binaries,
+            ffmpeg_status: ffmpeg,
+            library_stats: stats,
+            lan_enabled: settings.lan_enabled,
+            lan_port: settings.lan_port,
+            engine_mode: format!("{:?}", settings.engine_mode),
+            library_path_set: !settings.library_path.trim().is_empty(),
+            cookies_configured: self
+                .vault
+                .list_sites()
+                .map(|s| !s.is_empty())
+                .unwrap_or(false),
+            recent_logs: logs,
+        })
+    }
+
     pub fn list_collections(&self) -> AppResult<Vec<Collection>> {
         self.db.list_collections()
     }
 
     pub fn create_collection(&self, req: CreateCollectionRequest) -> AppResult<String> {
-        self.db.create_collection(
-            &req.name,
-            req.collection_type,
-            req.description.as_deref(),
-        )
+        self.db
+            .create_collection(&req.name, req.collection_type, req.description.as_deref())
     }
 
     pub fn delete_collection(&self, id: &str) -> AppResult<()> {
@@ -716,15 +749,21 @@ impl AppState {
     }
 
     pub fn update_collection(&self, id: &str, req: UpdateCollectionRequest) -> AppResult<()> {
-        self.db.update_collection(id, req.name.as_deref(), req.description.as_deref())
+        self.db
+            .update_collection(id, req.name.as_deref(), req.description.as_deref())
     }
 
     pub fn add_scene_to_collection(&self, scene_id: &str, collection_id: &str) -> AppResult<()> {
         self.db.add_scene_to_collection(scene_id, collection_id)
     }
 
-    pub fn remove_scene_from_collection(&self, scene_id: &str, collection_id: &str) -> AppResult<()> {
-        self.db.remove_scene_from_collection(scene_id, collection_id)
+    pub fn remove_scene_from_collection(
+        &self,
+        scene_id: &str,
+        collection_id: &str,
+    ) -> AppResult<()> {
+        self.db
+            .remove_scene_from_collection(scene_id, collection_id)
     }
 
     pub fn list_collection_scenes(&self, collection_id: &str) -> AppResult<Vec<Scene>> {
@@ -896,14 +935,14 @@ impl AppState {
                         match self.queue_downloads(&urls).await {
                             Ok(jobs) => queued += jobs.len() as u32,
                             Err(e) => {
-                                eprintln!("[watchlist] queue failed for {}: {e}", search.name);
+                                tracing::warn!("[watchlist] queue failed for {}: {e}", search.name);
                                 errors += 1;
                             }
                         }
                     }
                 }
                 Err(e) => {
-                    eprintln!("[watchlist] check failed for {}: {e}", search.name);
+                    tracing::warn!("[watchlist] check failed for {}: {e}", search.name);
                     errors += 1;
                 }
             }
@@ -960,12 +999,14 @@ impl AppState {
                 tick.tick().await;
                 match state.poll_watchlist_once().await {
                     Ok(r) if r.checked > 0 => {
-                        eprintln!(
+                        tracing::info!(
                             "[watchlist] poll: checked {}, queued {}, errors {}",
-                            r.checked, r.queued, r.errors
+                            r.checked,
+                            r.queued,
+                            r.errors
                         );
                     }
-                    Err(e) => eprintln!("[watchlist] poll failed: {e}"),
+                    Err(e) => tracing::warn!("[watchlist] poll failed: {e}"),
                     _ => {}
                 }
             }

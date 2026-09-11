@@ -105,7 +105,7 @@ impl LibraryScanner {
                         // Add to set so duplicate files in the same scan are caught.
                         known_paths.insert(path_str);
                     }
-                    Err(e) => eprintln!("scan skip {}: {e}", path_str),
+                    Err(e) => tracing::warn!("scan skip {}: {e}", path_str),
                 }
             }
 
@@ -194,7 +194,7 @@ impl LibraryScanner {
                         }
                     }
                     Err(e) => {
-                        eprintln!("[thumb] failed for {path_str}: {e}");
+                        tracing::warn!("[thumb] failed for {path_str}: {e}");
                         errors.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     }
                 }

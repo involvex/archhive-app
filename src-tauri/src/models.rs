@@ -566,6 +566,28 @@ pub struct BinaryVersions {
     pub gallery_dl_version: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct LogEntry {
+    pub timestamp: u64,
+    pub level: String,
+    pub target: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct DiagnosticsData {
+    pub app_version: String,
+    pub binary_versions: BinaryVersions,
+    pub ffmpeg_status: Option<FfmpegStatus>,
+    pub library_stats: Option<LibraryStats>,
+    pub lan_enabled: bool,
+    pub lan_port: u16,
+    pub engine_mode: String,
+    pub library_path_set: bool,
+    pub cookies_configured: bool,
+    pub recent_logs: Vec<LogEntry>,
+}
+
 /// One subdirectory entry for the in-app folder picker (mobile fallback
 /// where the native dialog plugin cannot pick directories).
 #[derive(Debug, Clone, Serialize, Deserialize)]
