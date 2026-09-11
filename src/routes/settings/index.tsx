@@ -38,7 +38,7 @@ import { Button } from "@/components/ui/button";
 import * as Tabs from "@radix-ui/react-tabs";
 import * as Switch from "@radix-ui/react-switch";
 import { useTheme } from "@/lib/hooks/useTheme";
-import { Sun, Moon, Monitor } from "lucide-react";
+import { Sun, Moon, Monitor, Clock } from "lucide-react";
 
 export const Route = createFileRoute("/settings/")({
   component: SettingsPage,
@@ -75,10 +75,12 @@ const THEME_OPTIONS: { value: AppTheme; icon: typeof Sun; label: string }[] = [
   { value: "dark", icon: Moon, label: "Dark" },
   { value: "light", icon: Sun, label: "Light" },
   { value: "system", icon: Monitor, label: "System" },
+  { value: "scheduled", icon: Clock, label: "Schedule" },
 ];
 
 function AppearanceSection() {
   const { theme, setTheme } = useTheme();
+  const { settings, updateSettings } = useUnifiedSettings();
   return (
     <div className="space-y-2">
       <p className="text-sm font-medium">Theme</p>
@@ -95,6 +97,32 @@ function AppearanceSection() {
           </Button>
         ))}
       </div>
+      {theme === "scheduled" && (
+        <div className="flex flex-col gap-3 pt-1">
+          <div className="flex items-center gap-3">
+            <label className="text-xs text-[var(--color-muted-foreground)]">Dark from</label>
+            <Input
+              type="time"
+              value={settings.theme_schedule_from ?? "19:00"}
+              onChange={(e) => updateSettings({ theme_schedule_from: e.target.value })}
+              className="w-32"
+            />
+          </div>
+          <div className="flex items-center gap-3">
+            <label className="text-xs text-[var(--color-muted-foreground)]">Light from</label>
+            <Input
+              type="time"
+              value={settings.theme_schedule_to ?? "07:00"}
+              onChange={(e) => updateSettings({ theme_schedule_to: e.target.value })}
+              className="w-32"
+            />
+          </div>
+          <p className="text-xs text-[var(--color-muted-foreground)]">
+            Switch to dark at the dark time, light at the light time. Times are in your local
+            timezone.
+          </p>
+        </div>
+      )}
     </div>
   );
 }

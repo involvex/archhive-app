@@ -24,6 +24,8 @@ const defaultSettings: AppSettings = {
   download_quality: "1080",
   prefer_mp4: true,
   auto_advance_next: false,
+  theme_schedule_from: "19:00",
+  theme_schedule_to: "07:00",
 };
 
 export const useSettingsStore = create<SettingsState>()(

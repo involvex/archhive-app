@@ -14,8 +14,30 @@ function applyTheme(theme: AppTheme) {
   }
 }
 
+/** Parse "HH:MM" into minutes-since-midnight. */
+function parseTimeHM(time: string): number | null {
+  const [h, m] = time.split(":").map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
+  return h * 60 + m;
+}
+
+/** Returns "dark" if current time is in the scheduled dark window, "light" otherwise. */
+function scheduledTheme(from: string, to: string): "dark" | "light" {
+  const now = new Date();
+  const current = now.getHours() * 60 + now.getMinutes();
+  const fromMin = parseTimeHM(from);
+  const toMin = parseTimeHM(to);
+  if (fromMin == null || toMin == null) return "dark";
+
+  if (fromMin <= toMin) {
+    return current >= fromMin && current < toMin ? "dark" : "light";
+  }
+  return current >= fromMin || current < toMin ? "dark" : "light";
+}
+
 export function useTheme() {
-  const theme = useSettingsStore((s) => s.settings.theme ?? "dark");
+  const settings = useSettingsStore((s) => s.settings);
+  const theme = settings.theme ?? "dark";
   const updateSettings = useSettingsStore((s) => s.updateSettings);
 
   useEffect(() => {
@@ -27,7 +49,21 @@ export function useTheme() {
       mq.addEventListener("change", handler);
       return () => mq.removeEventListener("change", handler);
     }
-  }, [theme]);
+
+    if (theme === "scheduled") {
+      const tick = () => {
+        const resolved = scheduledTheme(
+          settings.theme_schedule_from ?? "19:00",
+          settings.theme_schedule_to ?? "07:00",
+        );
+        document.documentElement.classList.remove("light", "dark");
+        document.documentElement.classList.add(resolved);
+      };
+      tick();
+      const interval = setInterval(tick, 60_000);
+      return () => clearInterval(interval);
+    }
+  }, [theme, settings.theme_schedule_from, settings.theme_schedule_to]);
 
   const setTheme = (t: AppTheme) => {
     updateSettings({ theme: t });

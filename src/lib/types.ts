@@ -136,7 +136,7 @@ export type SceneSort = "newest" | "name" | "downloaded";
 
 export type DownloadQuality = "best" | "1080" | "720" | "480";
 
-export type AppTheme = "dark" | "light" | "system";
+export type AppTheme = "dark" | "light" | "system" | "scheduled";
 
 export interface AppSettings {
   engine_mode: EngineMode;
@@ -163,6 +163,10 @@ export interface AppSettings {
   watch_poll_interval_mins?: number;
   /** Auto-advance to next scene in playlist when playback ends (#24). */
   auto_advance_next?: boolean;
+  /** Dark schedule start time HH:MM (e.g. "19:00"). (#29) */
+  theme_schedule_from?: string;
+  /** Light schedule start time HH:MM (e.g. "07:00"). (#29) */
+  theme_schedule_to?: string;
 }
 
 export interface MergeDuplicatesResult {

@@ -273,6 +273,12 @@ pub struct AppSettings {
     /// Auto-advance to the next scene in the playlist when playback ends (#24).
     #[serde(default = "default_auto_advance_next")]
     pub auto_advance_next: bool,
+    /// Schedule-based theme: when dark mode starts (HH:MM, e.g. "19:00"). (#29)
+    #[serde(default = "default_theme_schedule_from")]
+    pub theme_schedule_from: String,
+    /// Schedule-based theme: when light mode starts (HH:MM, e.g. "07:00"). (#29)
+    #[serde(default = "default_theme_schedule_to")]
+    pub theme_schedule_to: String,
 }
 
 fn default_phash_threshold() -> u8 {
@@ -327,6 +333,7 @@ pub enum AppTheme {
     Dark,
     Light,
     System,
+    Scheduled,
 }
 
 fn default_theme() -> AppTheme {
@@ -343,6 +350,14 @@ fn default_watch_poll_interval_mins() -> u32 {
 
 fn default_auto_advance_next() -> bool {
     false
+}
+
+fn default_theme_schedule_from() -> String {
+    "19:00".to_string()
+}
+
+fn default_theme_schedule_to() -> String {
+    "07:00".to_string()
 }
 
 impl Default for AppSettings {
@@ -390,6 +405,8 @@ impl Default for AppSettings {
             watched_threshold: default_watched_threshold(),
             watch_poll_interval_mins: default_watch_poll_interval_mins(),
             auto_advance_next: default_auto_advance_next(),
+            theme_schedule_from: default_theme_schedule_from(),
+            theme_schedule_to: default_theme_schedule_to(),
         }
     }
 }
