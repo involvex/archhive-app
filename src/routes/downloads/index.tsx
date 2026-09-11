@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { RotateCcw } from "lucide-react";
+import { RotateCcw, Trash2 } from "lucide-react";
 import { api } from "@/lib/api/client";
 import type { DownloadJob } from "@/lib/types";
 import { isDesktopTauri } from "@/lib/tauri";
@@ -25,6 +25,16 @@ function DownloadsPage() {
     [jobs],
   );
 
+  const completedIds = useMemo(
+    () =>
+      jobs
+        .filter(
+          (j) => j.status === "completed" || j.status === "failed" || j.status === "cancelled",
+        )
+        .map((j) => j.id),
+    [jobs],
+  );
+
   const retryFailed = useCallback(async () => {
     for (const id of failedIds) {
       try {
@@ -35,6 +45,24 @@ function DownloadsPage() {
     }
     refreshJobs();
   }, [failedIds, refreshJobs]);
+
+  const clearCompleted = useCallback(async () => {
+    if (
+      !window.confirm(
+        `Remove ${completedIds.length} completed/failed/cancelled download(s) from the queue?\nThis does not delete the downloaded files.`,
+      )
+    ) {
+      return;
+    }
+    for (const id of completedIds) {
+      try {
+        await api.deleteDownload(id);
+      } catch (e) {
+        console.error("delete failed", id, e);
+      }
+    }
+    refreshJobs();
+  }, [completedIds, refreshJobs]);
 
   useEffect(() => {
     refreshJobs();
@@ -69,6 +97,12 @@ function DownloadsPage() {
           <Button variant="outline" size="sm" onClick={() => void retryFailed()}>
             <RotateCcw className="mr-1.5 h-4 w-4" />
             Retry failed ({failedIds.length})
+          </Button>
+        )}
+        {completedIds.length > 0 && (
+          <Button variant="outline" size="sm" onClick={() => void clearCompleted()}>
+            <Trash2 className="mr-1.5 h-4 w-4" />
+            Clear completed ({completedIds.length})
           </Button>
         )}
       </div>
