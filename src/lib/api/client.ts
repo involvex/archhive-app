@@ -29,6 +29,9 @@ import type {
   Performer,
   Scene,
   SceneFilter,
+  Collection,
+  CreateCollectionRequest,
+  UpdateCollectionRequest,
   SiteInfo,
   Tag,
   UpdateSceneRequest,
@@ -452,6 +455,83 @@ export const api = {
       });
     }
     return localInvoke<Scene[]>("list_scenes_with_filter", { filter });
+  },
+
+  async listCollections(): Promise<Collection[]> {
+    if (shouldUseRemoteApi()) {
+      return remoteFetch<Collection[]>("/api/collections");
+    }
+    return localInvoke<Collection[]>("list_collections");
+  },
+
+  async createCollection(req: CreateCollectionRequest): Promise<string> {
+    if (shouldUseRemoteApi()) {
+      const res = await remoteFetch<{ id: string }>("/api/collections", {
+        method: "POST",
+        body: JSON.stringify(req),
+      });
+      return res.id;
+    }
+    return localInvoke<{ id: string }>("create_collection", { req }).then((r) => r.id);
+  },
+
+  async deleteCollection(id: string): Promise<void> {
+    if (shouldUseRemoteApi()) {
+      await remoteFetch(`/api/collections/${id}`, { method: "DELETE" });
+      return;
+    }
+    return localInvoke("delete_collection", { id });
+  },
+
+  async updateCollection(id: string, req: UpdateCollectionRequest): Promise<void> {
+    if (shouldUseRemoteApi()) {
+      await remoteFetch(`/api/collections/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(req),
+      });
+      return;
+    }
+    return localInvoke("update_collection", { id, req });
+  },
+
+  async listCollectionScenes(collectionId: string): Promise<Scene[]> {
+    if (shouldUseRemoteApi()) {
+      return remoteFetch<Scene[]>(`/api/collections/${collectionId}/scenes`);
+    }
+    return localInvoke<Scene[]>("list_collection_scenes", { collection_id: collectionId });
+  },
+
+  async addSceneToCollection(sceneId: string, collectionId: string): Promise<void> {
+    if (shouldUseRemoteApi()) {
+      await remoteFetch(`/api/collections/${collectionId}/scenes/${sceneId}`, {
+        method: "POST",
+      });
+      return;
+    }
+    return localInvoke("add_scene_to_collection", {
+      scene_id: sceneId,
+      collection_id: collectionId,
+    });
+  },
+
+  async removeSceneFromCollection(sceneId: string, collectionId: string): Promise<void> {
+    if (shouldUseRemoteApi()) {
+      await remoteFetch(`/api/collections/${collectionId}/scenes/${sceneId}`, {
+        method: "DELETE",
+      });
+      return;
+    }
+    return localInvoke("remove_scene_from_collection", {
+      scene_id: sceneId,
+      collection_id: collectionId,
+    });
+  },
+
+  async sceneCollectionIds(sceneId: string): Promise<string[]> {
+    if (shouldUseRemoteApi()) {
+      return remoteFetch<string[]>(`/api/scenes/${sceneId}/collections`);
+    }
+    return localInvoke<string[]>("scene_collection_ids", { scene_id: sceneId });
   },
 
   async listOrphanSidecars(): Promise<OrphanSidecar[]> {

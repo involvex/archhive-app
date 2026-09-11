@@ -189,6 +189,26 @@ impl LanServer {
                 "/api/library/probe-durations",
                 post(probe_library_durations),
             )
+            .route(
+                "/api/collections",
+                get(list_collections_lan).post(create_collection_lan),
+            )
+            .route(
+                "/api/collections/{id}",
+                delete(delete_collection_lan).patch(update_collection_lan),
+            )
+            .route(
+                "/api/collections/{id}/scenes",
+                get(list_collection_scenes_lan),
+            )
+            .route(
+                "/api/collections/{id}/scenes/{scene_id}",
+                post(add_scene_to_collection_lan).delete(remove_scene_from_collection_lan),
+            )
+            .route(
+                "/api/scenes/{id}/collections",
+                get(scene_collection_ids_lan),
+            )
             .layer(middleware::from_fn_with_state(api.clone(), auth_middleware))
             .with_state(api);
 
@@ -886,6 +906,94 @@ async fn binary_versions(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(serde_json::json!(versions)))
+}
+
+async fn list_collections_lan(
+    State(state): State<ApiState>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let collections = state
+        .app
+        .list_collections()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(serde_json::json!(collections)))
+}
+
+async fn create_collection_lan(
+    State(state): State<ApiState>,
+    Json(req): Json<crate::models::CreateCollectionRequest>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let id = state
+        .app
+        .create_collection(req)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(serde_json::json!({ "id": id })))
+}
+
+async fn delete_collection_lan(
+    State(state): State<ApiState>,
+    Path(id): Path<String>,
+) -> Result<StatusCode, StatusCode> {
+    state
+        .app
+        .delete_collection(&id)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn update_collection_lan(
+    State(state): State<ApiState>,
+    Path(id): Path<String>,
+    Json(req): Json<crate::models::UpdateCollectionRequest>,
+) -> Result<StatusCode, StatusCode> {
+    state
+        .app
+        .update_collection(&id, req)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn list_collection_scenes_lan(
+    State(state): State<ApiState>,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let scenes = state
+        .app
+        .list_collection_scenes(&id)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(serde_json::json!(scenes)))
+}
+
+async fn add_scene_to_collection_lan(
+    State(state): State<ApiState>,
+    Path((collection_id, scene_id)): Path<(String, String)>,
+) -> Result<StatusCode, StatusCode> {
+    state
+        .app
+        .add_scene_to_collection(&scene_id, &collection_id)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn remove_scene_from_collection_lan(
+    State(state): State<ApiState>,
+    Path((collection_id, scene_id)): Path<(String, String)>,
+) -> Result<StatusCode, StatusCode> {
+    state
+        .app
+        .remove_scene_from_collection(&scene_id, &collection_id)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn scene_collection_ids_lan(
+    State(state): State<ApiState>,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let ids = state
+        .app
+        .scene_collection_ids(&id)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(serde_json::json!(ids)))
 }
 
 async fn clear_all_thumbs(

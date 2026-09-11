@@ -24,6 +24,8 @@ interface SceneContextMenuProps {
   /** #26: toggle watched state; `watched` is the scene's current state. */
   onMarkWatched?: (scene: Scene, watched: boolean) => void;
   watched?: boolean;
+  /** #2/#6: open collection picker to add/remove this scene. */
+  onAddToCollection?: (scene: Scene) => void;
 }
 
 export function SceneContextMenu({
@@ -39,6 +41,7 @@ export function SceneContextMenu({
   onDelete,
   onMarkWatched,
   watched,
+  onAddToCollection,
 }: SceneContextMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
   const caps = getCapabilities();
@@ -110,6 +113,14 @@ export function SceneContextMenu({
       },
       shortcut: "w",
       show: Boolean(onMarkWatched),
+    },
+    {
+      label: "Add to collection",
+      action: () => {
+        onAddToCollection?.(menu.scene);
+        onClose();
+      },
+      show: Boolean(onAddToCollection),
     },
     {
       label: "Regenerate thumbnail",

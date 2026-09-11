@@ -275,6 +275,14 @@ pub fn run() {
             commands::probe_sidecar,
             commands::default_library_dir,
             commands::update_yt_dlp,
+            commands::list_collections,
+            commands::create_collection,
+            commands::delete_collection,
+            commands::update_collection,
+            commands::add_scene_to_collection,
+            commands::remove_scene_from_collection,
+            commands::list_collection_scenes,
+            commands::scene_collection_ids,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

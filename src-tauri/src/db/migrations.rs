@@ -180,3 +180,27 @@ END;
 INSERT INTO scenes_fts(rowid, title, notes)
 SELECT rowid, title, notes FROM scenes;
 "#;
+
+pub const MIGRATION_014: &str = r#"
+CREATE TABLE IF NOT EXISTS collections (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    type TEXT NOT NULL DEFAULT 'collection',
+    description TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS collection_scenes (
+    collection_id TEXT NOT NULL,
+    scene_id TEXT NOT NULL,
+    position INTEGER NOT NULL DEFAULT 0,
+    added_at TEXT NOT NULL,
+    PRIMARY KEY (collection_id, scene_id),
+    FOREIGN KEY (collection_id) REFERENCES collections(id) ON DELETE CASCADE,
+    FOREIGN KEY (scene_id) REFERENCES scenes(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_collection_scenes_scene ON collection_scenes(scene_id);
+CREATE INDEX IF NOT EXISTS idx_collection_scenes_order ON collection_scenes(collection_id, position);
+"#;

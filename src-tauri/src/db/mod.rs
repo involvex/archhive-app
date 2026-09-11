@@ -3,11 +3,12 @@ mod migrations;
 use crate::db::migrations::{
     MIGRATION_001, MIGRATION_002, MIGRATION_003, MIGRATION_004, MIGRATION_005, MIGRATION_006,
     MIGRATION_007, MIGRATION_008, MIGRATION_009, MIGRATION_010, MIGRATION_011, MIGRATION_012,
-    MIGRATION_013,
+    MIGRATION_013, MIGRATION_014,
 };
 use crate::error::{AppError, AppResult};
 use crate::models::{
-    AppSettings, DownloadJob, DownloadStatus, DuplicateGroup, Performer, Scene, Tag,
+    AppSettings, Collection, CollectionType, DownloadJob, DownloadStatus, DuplicateGroup,
+    Performer, Scene, Tag,
 };
 use chrono::Utc;
 use rusqlite::{params, Connection, OptionalExtension};
@@ -79,6 +80,7 @@ impl Database {
         conn.execute_batch(MIGRATION_012)?;
         if !column_exists(&conn, "scenes_fts", "notes") {
             conn.execute_batch(MIGRATION_013)?;
+            conn.execute_batch(MIGRATION_014)?;
         }
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
@@ -1135,6 +1137,10 @@ impl Database {
         if let Some(min_file_size) = filter.min_file_size {
             conditions.push(format!("scenes.file_size >= {min_file_size}"));
         }
+        if let Some(cid) = &filter.collection_id {
+            joins.push("JOIN collection_scenes cs ON scenes.id = cs.scene_id".to_string());
+            conditions.push(format!("cs.collection_id = '{cid}'"));
+        }
         if !filter.performer_names.is_empty() {
             let in_clause = filter
                 .performer_names
@@ -1632,6 +1638,217 @@ impl Database {
             set.insert(row?);
         }
         Ok(set)
+    }
+
+    pub fn list_collections(&self) -> AppResult<Vec<Collection>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let mut stmt = conn.prepare(
+            "SELECT c.id, c.name, c.type, c.description, c.created_at, c.updated_at,
+                    COUNT(cs.scene_id) as scene_count
+             FROM collections c
+             LEFT JOIN collection_scenes cs ON cs.collection_id = c.id
+             GROUP BY c.id
+             ORDER BY c.type, c.name",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            let collection_type_str: String = row.get(2)?;
+            let collection_type = match collection_type_str.as_str() {
+                "watchlist" => CollectionType::Watchlist,
+                _ => CollectionType::Collection,
+            };
+            Ok(Collection {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                collection_type,
+                description: row.get(3)?,
+                scene_count: row.get::<_, i64>(6)? as u32,
+                created_at: row.get(4)?,
+                updated_at: row.get(5)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(AppError::from)
+    }
+
+    pub fn create_collection(
+        &self,
+        name: &str,
+        collection_type: CollectionType,
+        description: Option<&str>,
+    ) -> AppResult<String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let id = Uuid::new_v4().to_string();
+        let now = Utc::now().to_rfc3339();
+        let type_str = match collection_type {
+            CollectionType::Watchlist => "watchlist",
+            CollectionType::Collection => "collection",
+        };
+        conn.execute(
+            "INSERT INTO collections (id, name, type, description, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![id, name, type_str, description, now, now],
+        )?;
+        Ok(id)
+    }
+
+    pub fn delete_collection(&self, id: &str) -> AppResult<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        conn.execute("DELETE FROM collections WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    pub fn update_collection(
+        &self,
+        id: &str,
+        name: Option<&str>,
+        description: Option<&str>,
+    ) -> AppResult<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let now = Utc::now().to_rfc3339();
+        if let Some(name) = name {
+            conn.execute(
+                "UPDATE collections SET name = ?1, updated_at = ?2 WHERE id = ?3",
+                params![name, now, id],
+            )?;
+        }
+        if let Some(desc) = description {
+            conn.execute(
+                "UPDATE collections SET description = ?1, updated_at = ?2 WHERE id = ?3",
+                params![desc, now, id],
+            )?;
+        }
+        Ok(())
+    }
+
+    pub fn add_scene_to_collection(&self, scene_id: &str, collection_id: &str) -> AppResult<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let now = Utc::now().to_rfc3339();
+        let max_pos: Option<i64> = conn
+            .query_row(
+                "SELECT MAX(position) FROM collection_scenes WHERE collection_id = ?1",
+                params![collection_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        let position = max_pos.unwrap_or(0) + 1;
+        conn.execute(
+            "INSERT OR IGNORE INTO collection_scenes (collection_id, scene_id, position, added_at) VALUES (?1, ?2, ?3, ?4)",
+            params![collection_id, scene_id, position, now],
+        )?;
+        Ok(())
+    }
+
+    pub fn remove_scene_from_collection(
+        &self,
+        scene_id: &str,
+        collection_id: &str,
+    ) -> AppResult<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        conn.execute(
+            "DELETE FROM collection_scenes WHERE collection_id = ?1 AND scene_id = ?2",
+            params![collection_id, scene_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_collection_scenes(&self, collection_id: &str) -> AppResult<Vec<Scene>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let sql = "SELECT s.id, s.title, s.path, s.thumb, s.source_url, s.duration, s.channel, s.file_size, s.width, s.height, s.rating, s.created_at
+             FROM scenes s
+             JOIN collection_scenes cs ON s.id = cs.scene_id
+             WHERE cs.collection_id = ?1
+             ORDER BY cs.position";
+        let mut stmt = conn.prepare(sql)?;
+        let rows: Vec<SceneRow> = stmt
+            .query_map(params![collection_id], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                    row.get::<_, Option<String>>(4)?,
+                    row.get::<_, Option<u32>>(5)?,
+                    row.get::<_, Option<String>>(6)?,
+                    row.get::<_, Option<i64>>(7)?,
+                    row.get::<_, Option<u32>>(8)?,
+                    row.get::<_, Option<u32>>(9)?,
+                    row.get::<_, Option<u8>>(10)?,
+                ))
+            })
+            .map_err(AppError::from)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(AppError::from)?;
+
+        let mut result = Vec::new();
+        for (
+            id,
+            title,
+            path,
+            thumb,
+            source_url,
+            duration,
+            channel,
+            file_size,
+            width,
+            height,
+            rating,
+        ) in rows
+        {
+            let performers = self.scene_performers(&conn, &id)?;
+            let tags = self.scene_tags(&conn, &id)?;
+            result.push(Scene {
+                id,
+                title,
+                path,
+                duration,
+                thumb,
+                source_url,
+                studio_id: None,
+                studio_name: None,
+                date: None,
+                rating,
+                performers,
+                tags,
+                channel,
+                phash: None,
+                oshash: None,
+                file_size: file_size.map(|v| v as u64),
+                notes: None,
+                width,
+                height,
+            });
+        }
+        Ok(result)
+    }
+
+    pub fn scene_collection_ids(&self, scene_id: &str) -> AppResult<Vec<String>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let mut stmt =
+            conn.prepare("SELECT collection_id FROM collection_scenes WHERE scene_id = ?1")?;
+        let rows = stmt.query_map(params![scene_id], |row| row.get::<_, String>(0))?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(AppError::from)
     }
 
     pub fn find_duplicate_groups(&self, phash_threshold: u8) -> AppResult<Vec<DuplicateGroup>> {

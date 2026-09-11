@@ -1,11 +1,12 @@
 use crate::error::AppResult;
 use crate::models::{
     AppSettings, BatchUpdateScenesRequest, BatchUpdateScenesResult, BrowseKind, BrowseOrientation,
-    CheckSavedSearchResult, DownloadJob, DuplicateGroup, FfmpegStatus, HealthResponse, LanHost,
-    LibraryStats, MarkWatchedRequest, MarkWatchedResult, MediaItem, MergeDuplicatesResult,
-    OrphanSidecar, Performer, PornhubCategoryEntry, SaveSearchRequest, SavedSearch, ScanResult,
-    Scene, SceneFilter, SceneSort, SiteInfo, Tag, UpdateSavedSearchRequest, UpdateSceneRequest,
-    WatchProgress, WatchlistPollResult, WatchlistStatus,
+    CheckSavedSearchResult, Collection, CreateCollectionRequest, DownloadJob, DuplicateGroup,
+    FfmpegStatus, HealthResponse, LanHost, LibraryStats, MarkWatchedRequest, MarkWatchedResult,
+    MediaItem, MergeDuplicatesResult, OrphanSidecar, Performer, PornhubCategoryEntry,
+    SaveSearchRequest, SavedSearch, ScanResult, Scene, SceneFilter, SceneSort, SiteInfo, Tag,
+    UpdateCollectionRequest, UpdateSavedSearchRequest, UpdateSceneRequest, WatchProgress,
+    WatchlistPollResult, WatchlistStatus,
 };
 use crate::state::AppState;
 use crate::vault::CookieSiteInfo;
@@ -729,4 +730,65 @@ pub async fn update_yt_dlp(state: State<'_, Arc<AppState>>) -> CmdResult<String>
                 .to_string(),
         )
     }
+}
+
+#[tauri::command]
+pub fn list_collections(state: State<'_, AppState>) -> CmdResult<Vec<Collection>> {
+    state.list_collections().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn create_collection(
+    state: State<'_, AppState>,
+    req: CreateCollectionRequest,
+) -> CmdResult<String> {
+    state.create_collection(req).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_collection(state: State<'_, AppState>, id: String) -> CmdResult<()> {
+    state.delete_collection(&id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_collection(
+    state: State<'_, AppState>,
+    id: String,
+    req: UpdateCollectionRequest,
+) -> CmdResult<()> {
+    state.update_collection(&id, req).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn add_scene_to_collection(
+    state: State<'_, AppState>,
+    scene_id: String,
+    collection_id: String,
+) -> CmdResult<()> {
+    state.add_scene_to_collection(&scene_id, &collection_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn remove_scene_from_collection(
+    state: State<'_, AppState>,
+    scene_id: String,
+    collection_id: String,
+) -> CmdResult<()> {
+    state.remove_scene_from_collection(&scene_id, &collection_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn list_collection_scenes(
+    state: State<'_, AppState>,
+    collection_id: String,
+) -> CmdResult<Vec<Scene>> {
+    state.list_collection_scenes(&collection_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn scene_collection_ids(
+    state: State<'_, AppState>,
+    scene_id: String,
+) -> CmdResult<Vec<String>> {
+    state.scene_collection_ids(&scene_id).map_err(|e| e.to_string())
 }

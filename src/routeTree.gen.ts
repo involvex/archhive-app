@@ -19,6 +19,7 @@ import { Route as LibraryIndexRouteImport } from './routes/library/index'
 import { Route as LiveIndexRouteImport } from './routes/live/index'
 import { Route as SettingsIndexRouteImport } from './routes/settings/index'
 import { Route as BrowseSiteIndexRouteImport } from './routes/browse/$site/index'
+import { Route as LibraryCollectionsIndexRouteImport } from './routes/library/collections/index'
 import { Route as LibraryPerformersIndexRouteImport } from './routes/library/performers/index'
 import { Route as LibraryScenesIndexRouteImport } from './routes/library/scenes/index'
 import { Route as LibraryTagsIndexRouteImport } from './routes/library/tags/index'
@@ -75,6 +76,11 @@ const BrowseSiteIndexRoute = BrowseSiteIndexRouteImport.update({
   path: '/browse/$site/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LibraryCollectionsIndexRoute = LibraryCollectionsIndexRouteImport.update({
+  id: '/library/collections/',
+  path: '/library/collections/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LibraryPerformersIndexRoute = LibraryPerformersIndexRouteImport.update({
   id: '/library/performers/',
   path: '/library/performers/',
@@ -113,6 +119,7 @@ export interface FileRoutesByFullPath {
   '/settings/': typeof SettingsIndexRoute
   '/live/$site/$slug': typeof LiveSiteSlugRoute
   '/browse/$site/': typeof BrowseSiteIndexRoute
+  '/library/collections/': typeof LibraryCollectionsIndexRoute
   '/library/performers/': typeof LibraryPerformersIndexRoute
   '/library/scenes/': typeof LibraryScenesIndexRoute
   '/library/tags/': typeof LibraryTagsIndexRoute
@@ -130,6 +137,7 @@ export interface FileRoutesByTo {
   '/settings': typeof SettingsIndexRoute
   '/live/$site/$slug': typeof LiveSiteSlugRoute
   '/browse/$site': typeof BrowseSiteIndexRoute
+  '/library/collections': typeof LibraryCollectionsIndexRoute
   '/library/performers': typeof LibraryPerformersIndexRoute
   '/library/scenes': typeof LibraryScenesIndexRoute
   '/library/tags': typeof LibraryTagsIndexRoute
@@ -148,6 +156,7 @@ export interface FileRoutesById {
   '/settings/': typeof SettingsIndexRoute
   '/live/$site/$slug': typeof LiveSiteSlugRoute
   '/browse/$site/': typeof BrowseSiteIndexRoute
+  '/library/collections/': typeof LibraryCollectionsIndexRoute
   '/library/performers/': typeof LibraryPerformersIndexRoute
   '/library/scenes/': typeof LibraryScenesIndexRoute
   '/library/tags/': typeof LibraryTagsIndexRoute
@@ -167,6 +176,7 @@ export interface FileRouteTypes {
     | '/settings/'
     | '/live/$site/$slug'
     | '/browse/$site/'
+    | '/library/collections/'
     | '/library/performers/'
     | '/library/scenes/'
     | '/library/tags/'
@@ -184,6 +194,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/live/$site/$slug'
     | '/browse/$site'
+    | '/library/collections'
     | '/library/performers'
     | '/library/scenes'
     | '/library/tags'
@@ -201,6 +212,7 @@ export interface FileRouteTypes {
     | '/settings/'
     | '/live/$site/$slug'
     | '/browse/$site/'
+    | '/library/collections/'
     | '/library/performers/'
     | '/library/scenes/'
     | '/library/tags/'
@@ -219,6 +231,7 @@ export interface RootRouteChildren {
   SettingsIndexRoute: typeof SettingsIndexRoute
   LiveSiteSlugRoute: typeof LiveSiteSlugRoute
   BrowseSiteIndexRoute: typeof BrowseSiteIndexRoute
+  LibraryCollectionsIndexRoute: typeof LibraryCollectionsIndexRoute
   LibraryPerformersIndexRoute: typeof LibraryPerformersIndexRoute
   LibraryScenesIndexRoute: typeof LibraryScenesIndexRoute
   LibraryTagsIndexRoute: typeof LibraryTagsIndexRoute
@@ -297,6 +310,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BrowseSiteIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/library/collections/': {
+      id: '/library/collections/'
+      path: '/library/collections'
+      fullPath: '/library/collections/'
+      preLoaderRoute: typeof LibraryCollectionsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/library/performers/': {
       id: '/library/performers/'
       path: '/library/performers'
@@ -347,6 +367,7 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsIndexRoute: SettingsIndexRoute,
   LiveSiteSlugRoute: LiveSiteSlugRoute,
   BrowseSiteIndexRoute: BrowseSiteIndexRoute,
+  LibraryCollectionsIndexRoute: LibraryCollectionsIndexRoute,
   LibraryPerformersIndexRoute: LibraryPerformersIndexRoute,
   LibraryScenesIndexRoute: LibraryScenesIndexRoute,
   LibraryTagsIndexRoute: LibraryTagsIndexRoute,

@@ -225,6 +225,30 @@ export interface SceneFilter {
   tag_names?: string[];
   min_rating?: number;
   min_file_size?: number;
+  collection_id?: string;
+}
+
+export type CollectionType = "collection" | "watchlist";
+
+export interface Collection {
+  id: string;
+  name: string;
+  type: CollectionType;
+  description?: string;
+  scene_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateCollectionRequest {
+  name: string;
+  type?: CollectionType;
+  description?: string;
+}
+
+export interface UpdateCollectionRequest {
+  name?: string;
+  description?: string;
 }
 
 export interface FfmpegStatus {

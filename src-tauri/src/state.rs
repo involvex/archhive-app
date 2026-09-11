@@ -2,8 +2,10 @@ use crate::db::Database;
 use crate::downloads::DownloadManager;
 use crate::error::AppResult;
 use crate::models::{
-    AppSettings, BrowseKind, BrowseOrientation, BrowseQuery, DownloadJob, DuplicateGroup,
-    HealthResponse, MediaItem, Performer, ScanResult, Scene, SiteInfo, Tag,
+    AppSettings, BrowseKind, BrowseOrientation, BrowseQuery, Collection,
+    CollectionType, CreateCollectionRequest, DuplicateGroup, DownloadJob,
+    HealthResponse, MediaItem, Performer, ScanResult, Scene, SiteInfo,
+    Tag, UpdateCollectionRequest,
 };
 use crate::server::LanServer;
 use crate::sites::registry::SiteRegistry;
@@ -695,6 +697,42 @@ impl AppState {
         filter: &crate::models::SceneFilter,
     ) -> AppResult<Vec<crate::models::Scene>> {
         self.db.list_scenes_with_filter(filter)
+    }
+
+    pub fn list_collections(&self) -> AppResult<Vec<Collection>> {
+        self.db.list_collections()
+    }
+
+    pub fn create_collection(&self, req: CreateCollectionRequest) -> AppResult<String> {
+        self.db.create_collection(
+            &req.name,
+            req.collection_type,
+            req.description.as_deref(),
+        )
+    }
+
+    pub fn delete_collection(&self, id: &str) -> AppResult<()> {
+        self.db.delete_collection(id)
+    }
+
+    pub fn update_collection(&self, id: &str, req: UpdateCollectionRequest) -> AppResult<()> {
+        self.db.update_collection(id, req.name.as_deref(), req.description.as_deref())
+    }
+
+    pub fn add_scene_to_collection(&self, scene_id: &str, collection_id: &str) -> AppResult<()> {
+        self.db.add_scene_to_collection(scene_id, collection_id)
+    }
+
+    pub fn remove_scene_from_collection(&self, scene_id: &str, collection_id: &str) -> AppResult<()> {
+        self.db.remove_scene_from_collection(scene_id, collection_id)
+    }
+
+    pub fn list_collection_scenes(&self, collection_id: &str) -> AppResult<Vec<Scene>> {
+        self.db.list_collection_scenes(collection_id)
+    }
+
+    pub fn scene_collection_ids(&self, scene_id: &str) -> AppResult<Vec<String>> {
+        self.db.scene_collection_ids(scene_id)
     }
 
     pub fn list_orphan_sidecars(&self) -> AppResult<Vec<crate::models::OrphanSidecar>> {

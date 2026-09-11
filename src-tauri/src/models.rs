@@ -473,6 +473,41 @@ pub struct ScanProgress {
     pub updated: u32,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum CollectionType {
+    #[default]
+    Collection,
+    Watchlist,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Collection {
+    pub id: String,
+    pub name: String,
+    #[serde(rename = "type")]
+    pub collection_type: CollectionType,
+    pub description: Option<String>,
+    pub scene_count: u32,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateCollectionRequest {
+    pub name: String,
+    #[serde(default)]
+    pub collection_type: CollectionType,
+    #[serde(default)]
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateCollectionRequest {
+    pub name: Option<String>,
+    pub description: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DuplicateGroup {
     pub match_type: String,
@@ -509,6 +544,8 @@ pub struct SceneFilter {
     pub min_rating: Option<u8>,
     #[serde(default)]
     pub min_file_size: Option<u64>,
+    #[serde(default)]
+    pub collection_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
