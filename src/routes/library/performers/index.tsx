@@ -5,7 +5,7 @@ import type { Performer } from "@/lib/types";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Filter, Users, Download, Camera } from "lucide-react";
+import { Filter, Users, Download, Camera, Table2 } from "lucide-react";
 
 export const Route = createFileRoute("/library/performers/")({
   component: PerformersPage,
@@ -65,6 +65,36 @@ function PerformersPage() {
     }
   }
 
+  function csvEscape(value: string): string {
+    if (value.includes(",") || value.includes('"') || value.includes("\n")) {
+      return `"${value.replace(/"/g, '""')}"`;
+    }
+    return value;
+  }
+
+  async function exportPerformersCsv() {
+    try {
+      const data = await api.exportPerformers();
+      const header = ["name", "aliases", "favorite", "scene_count"];
+      const rows = data.map((p) => [
+        csvEscape(p.name),
+        csvEscape(p.aliases.join(", ")),
+        String(p.favorite),
+        String(p.scene_count),
+      ]);
+      const csv = [header.join(","), ...rows.map((r) => r.join(","))].join("\n");
+      const blob = new Blob([csv], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "performers.csv";
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error("CSV export failed", e);
+    }
+  }
+
   const handleImageUpload = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
@@ -101,7 +131,11 @@ function PerformersPage() {
         <div className="flex gap-2">
           <Button size="sm" variant="outline" onClick={exportPerformers}>
             <Download className="mr-1 h-3.5 w-3.5" />
-            Export
+            Export JSON
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => void exportPerformersCsv()}>
+            <Table2 className="mr-1 h-3.5 w-3.5" />
+            Export CSV
           </Button>
           {selected.size > 0 && (
             <Button size="sm" onClick={applyFilter}>
