@@ -2442,6 +2442,66 @@ mod tests {
     }
 
     #[test]
+    fn fts5_notes_index_rebuild_m013() {
+        let dir = tempdir().unwrap();
+        let db = Database::new(dir.path().to_path_buf()).unwrap();
+
+        let id = test_scene(&db, "Scene A", None);
+        db.update_scene(
+            &id,
+            None,
+            None,
+            None,
+            false,
+            Some("custom notes here"),
+            None,
+        )
+        .unwrap();
+
+        let results = db
+            .list_scenes(Some("custom notes"), crate::models::SceneSort::Newest)
+            .unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].title, "Scene A");
+
+        let missing = db
+            .list_scenes(
+                Some("nonexistent_term_xyz"),
+                crate::models::SceneSort::Newest,
+            )
+            .unwrap();
+        assert!(missing.is_empty());
+    }
+
+    #[test]
+    fn fts5_notes_index_synced_after_update() {
+        let dir = tempdir().unwrap();
+        let db = Database::new(dir.path().to_path_buf()).unwrap();
+
+        let id = test_scene(&db, "Scene B", None);
+        db.update_scene(&id, None, None, None, false, Some("alpha note"), None)
+            .unwrap();
+
+        let found = db
+            .list_scenes(Some("alpha"), crate::models::SceneSort::Newest)
+            .unwrap();
+        assert_eq!(found.len(), 1);
+
+        db.update_scene(&id, None, None, None, false, Some("beta note"), None)
+            .unwrap();
+
+        let found = db
+            .list_scenes(Some("alpha"), crate::models::SceneSort::Newest)
+            .unwrap();
+        assert!(found.is_empty());
+
+        let found = db
+            .list_scenes(Some("beta"), crate::models::SceneSort::Newest)
+            .unwrap();
+        assert_eq!(found.len(), 1);
+    }
+
+    #[test]
     fn poll_run_record_and_watched_urls() {
         let dir = tempdir().unwrap();
         let db = Database::new(dir.path().to_path_buf()).unwrap();
