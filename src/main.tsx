@@ -2,6 +2,7 @@ import { StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { RouterProvider, createRouter } from "@tanstack/react-router";
 import { listen } from "@tauri-apps/api/event";
+import { Toaster } from "react-hot-toast";
 import { routeTree } from "./routeTree.gen";
 import { initializePlugins } from "./lib/plugins/loader";
 import { getRegisteredPlugins } from "./lib/plugins/registry.generated";
@@ -10,6 +11,7 @@ import { bootstrapLanBrowser } from "./lib/lanBootstrap";
 import { useSettingsStore } from "./lib/stores/settings";
 import { isDesktopTauri } from "./lib/tauri";
 import { AppErrorBoundary } from "./components/AppErrorBoundary";
+import { useDownloadNotifications } from "@/lib/hooks/useDownloadNotifications";
 import "./styles/globals.css";
 
 initializePlugins(getRegisteredPlugins());
@@ -57,12 +59,19 @@ function TrayNavigationListener() {
   return null;
 }
 
+function DownloadNotifications() {
+  useDownloadNotifications();
+  return null;
+}
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <AppErrorBoundary>
+      <DownloadNotifications />
       <BootstrapSettings />
       <TrayNavigationListener />
       <RouterProvider router={router} />
+      <Toaster position="bottom-right" />
     </AppErrorBoundary>
   </StrictMode>,
 );
