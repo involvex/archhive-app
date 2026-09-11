@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { getCapabilities } from "@/lib/runtime";
 import { isVideoScene } from "@/lib/mediaUrl";
 import type { Scene } from "@/lib/types";
+import { ShortcutBadge } from "@/components/ui/shortcut-badge";
 
 export interface SceneContextMenuState {
   scene: Scene;
@@ -64,7 +65,13 @@ export function SceneContextMenu({
 
   if (!menu) return null;
 
-  const items: { label: string; action: () => void; show?: boolean; danger?: boolean }[] = [
+  const items: {
+    label: string;
+    action: () => void;
+    show?: boolean;
+    danger?: boolean;
+    shortcut?: string;
+  }[] = [
     {
       label: "Play",
       action: () => {
@@ -101,6 +108,7 @@ export function SceneContextMenu({
         onMarkWatched?.(menu.scene, !watched);
         onClose();
       },
+      shortcut: "w",
       show: Boolean(onMarkWatched),
     },
     {
@@ -150,12 +158,13 @@ export function SceneContextMenu({
           <button
             key={item.label}
             type="button"
-            className={`block w-full px-3 py-1.5 text-left text-sm hover:bg-[var(--color-muted)] ${
+            className={`flex w-full items-center justify-between px-3 py-1.5 text-left text-sm hover:bg-[var(--color-muted)] ${
               item.danger ? "text-red-400" : ""
             }`}
             onClick={item.action}
           >
-            {item.label}
+            <span>{item.label}</span>
+            {item.shortcut && <ShortcutBadge keys={item.shortcut} />}
           </button>
         ))}
     </div>

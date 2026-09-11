@@ -174,6 +174,9 @@ function ScenePlayerBody({
             title={isWatched ? "Mark as unwatched" : "Mark as watched"}
           >
             {isWatched ? <Check className="h-4 w-4" /> : <Clock className="h-4 w-4" />}
+            <kbd className="ml-1 hidden sm:inline-block rounded border border-[var(--color-border)] bg-[var(--color-muted)] px-1 font-mono text-[8px] text-[var(--color-muted-foreground)]">
+              W
+            </kbd>
           </button>
           <button
             type="button"
@@ -182,6 +185,9 @@ function ScenePlayerBody({
             aria-label="Close"
           >
             <X className="h-4 w-4" />
+            <kbd className="ml-1 hidden sm:inline-block rounded border border-[var(--color-border)] bg-[var(--color-muted)] px-1 font-mono text-[8px] text-[var(--color-muted-foreground)]">
+              Esc
+            </kbd>
           </button>
         </div>
       </div>
@@ -258,10 +264,22 @@ function ScenePlayerBody({
             disabled={currentIndex <= 0}
             onClick={() => onNavigate(scenes[currentIndex - 1], currentIndex - 1)}
             className="min-h-10"
+            aria-label="Previous scene (ArrowLeft)"
           >
             <ChevronLeft className="h-4 w-4" />
             Previous
           </Button>
+          <div className="flex items-center gap-2 text-xs text-[var(--color-muted-foreground)]">
+            <kbd className="inline-flex h-5 min-w-[20px] items-center justify-center rounded border border-[var(--color-border)] bg-[var(--color-muted)] px-1 font-mono text-[10px]">
+              ← →
+            </kbd>
+            <kbd className="inline-flex h-5 min-w-[20px] items-center justify-center rounded border border-[var(--color-border)] bg-[var(--color-muted)] px-1 font-mono text-[10px]">
+              Space
+            </kbd>
+            <kbd className="inline-flex h-5 min-w-[20px] items-center justify-center rounded border border-[var(--color-border)] bg-[var(--color-muted)] px-1 font-mono text-[10px]">
+              W
+            </kbd>
+          </div>
           <span className="text-xs text-[var(--color-muted-foreground)]">
             {currentIndex + 1} / {scenes.length}
           </span>
@@ -271,6 +289,7 @@ function ScenePlayerBody({
             disabled={currentIndex >= scenes.length - 1}
             onClick={() => onNavigate(scenes[currentIndex + 1], currentIndex + 1)}
             className="min-h-10"
+            aria-label="Next scene (ArrowRight)"
           >
             Next
             <ChevronRight className="h-4 w-4" />
