@@ -224,11 +224,19 @@ pub async fn resolve_livestream(
     state: State<'_, Arc<AppState>>,
     url: String,
 ) -> CmdResult<serde_json::Value> {
-    let stream_url = state
-        .resolve_stream_url(&url)
-        .await
-        .map_err(|e| e.to_string())?;
     let embed_url = crate::sites::urls::derive_embed_url(&url);
+    // Try yt-dlp stream URL resolution first. If it fails, fall back to the
+    // embed iframe (e.g. Chaturbate affiliate embed with embed_video_only=1).
+    let stream_url = match state.resolve_stream_url(&url).await {
+        Ok(u) => u,
+        Err(e) => {
+            tracing::warn!(
+                "resolve_stream_url failed for live stream, falling back to embed iframe: {}",
+                e
+            );
+            String::new()
+        }
+    };
     Ok(serde_json::json!({
         "stream_url": stream_url,
         "embed_url": embed_url,

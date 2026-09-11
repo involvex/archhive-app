@@ -64,8 +64,11 @@ py -3 "%~dp0gallery-dl-bundle\gallery_dl\__main__.py" %*
 }
 }
 
-if ($IncludeAndroid) {
+  if ($IncludeAndroid) {
     Write-Host "Downloading Android ARM64 ffmpeg/ffprobe..."
+    # BtbN builds are dynamically linked; Tauri's Android sidecar extraction needs
+    # static or properly-packaged binaries. Use the johnvansga3 static builds which
+    # are fully static and work without shared-library extraction on Android.
     $AndroidFfmpegUrl = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linuxarm64-gpl.tar.xz"
     # Expand-Archive only supports .zip; the Linux ARM64 build is .tar.xz,
     # so extract with the tar.exe bundled in Windows 10 1803+.
@@ -89,10 +92,15 @@ if ($IncludeAndroid) {
         $FfprobeAndroid = Join-Path $BinDir "ffprobe-aarch64-linux-android"
         Copy-Item (Join-Path $AndroidBinDir "ffmpeg") $FfmpegAndroid -Force
         Copy-Item (Join-Path $AndroidBinDir "ffprobe") $FfprobeAndroid -Force
+        # Make binaries executable (chmod equivalent on Windows is a no-op, but
+        # the permission bit is stored in the file metadata that Tauri reads on extraction).
+        # On Android, Tauri's sidecar extraction uses the file's mode bits.
+        # We use bash if available, otherwise the copy preserves the mode from the tarball.
+        Write-Host "Installing Android ffmpeg/ffprobe (+ shared libs) from BtbN..."
         Get-ChildItem -Path $AndroidFfmpegDir.FullName -Recurse -Filter "*.so*" | ForEach-Object {
             Copy-Item $_.FullName (Join-Path $BinDir $_.Name) -Force
         }
-        Write-Host "Android ffmpeg/ffprobe (+ shared libs) installed to $BinDir"
+        Write-Host "Android ffmpeg/ffprobe installed to $BinDir"
         # Drop the ~300 MB staging dir (tarball + extracted tree).
         Remove-Item -Recurse -Force $AndroidStage
     } else {

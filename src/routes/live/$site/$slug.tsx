@@ -65,6 +65,13 @@ function LivePlayerPage() {
         </h2>
       </div>
 
+      {!streamUrl && embedUrl && (
+        <p className="text-xs text-[var(--color-muted-foreground)]">
+          Playing embedded player (stream URL resolution failed). Retry for direct playback if
+          cookies are configured.
+        </p>
+      )}
+
       {error && (
         <div className="flex items-center justify-between rounded-md border border-red-400/30 bg-red-400/10 px-3 py-2 text-sm text-red-400">
           <p>{error}</p>
@@ -96,6 +103,14 @@ function LivePlayerPage() {
                       setError("Playback failed.");
                     }
                   }}
+                />
+              ) : embedUrl ? (
+                <iframe
+                  src={embedUrl}
+                  className="h-full w-full border-0"
+                  title={`${slug} live stream`}
+                  allow="autoplay; encrypted-media; fullscreen"
+                  allowFullScreen
                 />
               ) : (
                 <div className="flex h-full items-center justify-center text-white/60">

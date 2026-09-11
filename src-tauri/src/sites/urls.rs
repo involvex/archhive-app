@@ -13,10 +13,14 @@ pub fn query_slug(slug: &str) -> String {
 }
 
 /// Derive an embed URL from a live cam room URL.
+/// For Chaturbate, appends `embed_video_only=1` so the iframe plays video
+/// directly (no chat) as a fallback when yt-dlp stream resolution fails.
 /// Returns the original URL if no known pattern matches.
 pub fn derive_embed_url(url: &str) -> String {
     if let Some(username) = extract_username_from_url(url, "chaturbate.com") {
-        return format!("https://chaturbate.com/embed/{username}/");
+        return format!(
+            "https://chaturbate.com/embed/{username}/?embed_video_only=1&disable_sound=1&autoplay=1"
+        );
     }
     if let Some(username) = extract_username_from_url(url, "stripchat.com") {
         return format!("https://stripchat.com/embed/{username}/");
