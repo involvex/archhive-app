@@ -16,6 +16,7 @@
     "dialog:allow-open",
     "opener:default",
     "shell:default",
+    "notification:default",
     {
       "identifier": "shell:allow-execute",
       "allow": [

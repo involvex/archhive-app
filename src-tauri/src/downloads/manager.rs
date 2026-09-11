@@ -3,6 +3,7 @@ use crate::error::{AppError, AppResult};
 use crate::library::auto_tag::apply_filename_rules;
 use crate::library::import::import_download;
 use crate::library::thumbnail::download_remote_thumbnail;
+use tauri_plugin_notification::NotificationExt;
 use crate::library::LibraryScanner;
 use crate::media::FfmpegProcessor;
 use crate::models::{DownloadJob, DownloadPlan, DownloadStatus, DownloadTool};
@@ -290,6 +291,13 @@ pub(crate) fn mark_job_failed(
         .unwrap_or(30);
 
     if job.retry_count >= max_retries {
+        let title = job.title.as_deref().unwrap_or("Download failed");
+        let _ = app
+            .notification()
+            .builder()
+            .title("Download failed")
+            .body(title)
+            .show();
         return;
     }
 
@@ -600,6 +608,13 @@ async fn run_job_with_plan(
             job.output_path = Some(existing.last().cloned().unwrap_or_default());
             db.update_download_job(&job)?;
             let _ = app.emit("download:progress", &job);
+            let title = job.title.as_deref().unwrap_or("Download complete");
+            let _ = app
+                .notification()
+                .builder()
+                .title("Download complete")
+                .body(title)
+                .show();
 
             let mut enriched_performers = plan.performers.clone();
             let mut enriched_tags = plan.tags.clone();
