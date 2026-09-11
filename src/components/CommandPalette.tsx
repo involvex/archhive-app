@@ -1,7 +1,80 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import { getAllShortcuts, type Shortcut } from "@/lib/shortcuts/registry";
 import { ShortcutBadge } from "@/components/ui/shortcut-badge";
-import { Search } from "lucide-react";
+import { api } from "@/lib/api/client";
+import {
+  Search,
+  Home,
+  Compass,
+  Library,
+  Radio,
+  Download,
+  Copy,
+  Settings,
+  Folder,
+} from "lucide-react";
+
+interface PaletteItem {
+  id: string;
+  label: string;
+  category: string;
+  icon?: React.ReactNode;
+  shortcut?: string;
+  action: () => void;
+}
+
+const NAV_LINKS = [
+  {
+    id: "nav-home",
+    label: "Home",
+    path: "/",
+    icon: <Home className="h-4 w-4" />,
+    shortcut: "Ctrl+1",
+  },
+  {
+    id: "nav-browse",
+    label: "Browse",
+    path: "/browse",
+    icon: <Compass className="h-4 w-4" />,
+    shortcut: "Ctrl+2",
+  },
+  {
+    id: "nav-library",
+    label: "Library",
+    path: "/library",
+    icon: <Library className="h-4 w-4" />,
+    shortcut: "Ctrl+3",
+  },
+  {
+    id: "nav-live",
+    label: "Live",
+    path: "/live",
+    icon: <Radio className="h-4 w-4" />,
+    shortcut: "Ctrl+4",
+  },
+  {
+    id: "nav-downloads",
+    label: "Downloads",
+    path: "/downloads",
+    icon: <Download className="h-4 w-4" />,
+    shortcut: "Ctrl+5",
+  },
+  {
+    id: "nav-settings",
+    label: "Settings",
+    path: "/settings",
+    icon: <Settings className="h-4 w-4" />,
+    shortcut: "Ctrl+6",
+  },
+  {
+    id: "nav-duplicates",
+    label: "Duplicates",
+    path: "/duplicates",
+    icon: <Copy className="h-4 w-4" />,
+    shortcut: "Ctrl+7",
+  },
+];
 
 export function CommandPalette() {
   const [open, setOpen] = useState(false);
@@ -9,19 +82,63 @@ export function CommandPalette() {
   const [selectedIdx, setSelectedIdx] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
 
   const shortcuts = useMemo(() => getAllShortcuts(), []);
 
+  const navItems: PaletteItem[] = useMemo(
+    () =>
+      NAV_LINKS.map((link) => ({
+        id: link.id,
+        label: link.label,
+        category: "Navigation",
+        icon: link.icon,
+        shortcut: link.shortcut,
+        action: () => {
+          setOpen(false);
+          setTimeout(() => navigate({ to: link.path }), 10);
+        },
+      })),
+    [navigate],
+  );
+
+  const actionItems: PaletteItem[] = useMemo(
+    () => [
+      {
+        id: "action-new-download",
+        label: "New download (Ctrl+N)",
+        category: "Actions",
+        icon: <Download className="h-4 w-4" />,
+        action: () => {
+          setOpen(false);
+          setTimeout(() => navigate({ to: "/browse/by-url" }), 10);
+        },
+      },
+      {
+        id: "action-scan-library",
+        label: "Scan library",
+        category: "Actions",
+        icon: <Folder className="h-4 w-4" />,
+        action: () => {
+          setOpen(false);
+          void api.scanLibrary();
+        },
+      },
+    ],
+    [navigate],
+  );
+
+  const allItems = useMemo(() => [...navItems, ...actionItems], [navItems, actionItems]);
+
   const filtered = useMemo(() => {
-    if (!query.trim()) return shortcuts;
-    const q = query.toLowerCase();
-    return shortcuts.filter(
-      (s) =>
-        s.label.toLowerCase().includes(q) ||
-        s.keys.toLowerCase().includes(q) ||
-        s.category.toLowerCase().includes(q),
+    const q = query.toLowerCase().trim();
+    if (!q) {
+      return [...shortcuts, ...allItems];
+    }
+    return allItems.filter(
+      (item) => item.label.toLowerCase().includes(q) || item.category.toLowerCase().includes(q),
     );
-  }, [shortcuts, query]);
+  }, [shortcuts, allItems, query]);
 
   useEffect(() => {
     if (!open) return;
@@ -39,7 +156,12 @@ export function CommandPalette() {
     return () => window.removeEventListener("shortcut:cmd-palette", onOpen);
   }, []);
 
-  const execute = useCallback((s: Shortcut) => {
+  const execute = useCallback((item: PaletteItem) => {
+    setOpen(false);
+    setTimeout(() => item.action(), 10);
+  }, []);
+
+  const executeShortcut = useCallback((s: Shortcut) => {
     setOpen(false);
     setTimeout(() => s.action(), 10);
   }, []);
@@ -56,7 +178,12 @@ export function CommandPalette() {
       e.preventDefault();
       setSelectedIdx((i) => Math.max(i - 1, 0));
     } else if (e.key === "Enter" && filtered[selectedIdx]) {
-      execute(filtered[selectedIdx]);
+      const item = filtered[selectedIdx];
+      if ("keys" in item) {
+        executeShortcut(item as Shortcut);
+      } else {
+        execute(item as PaletteItem);
+      }
     }
   }
 
@@ -82,7 +209,7 @@ export function CommandPalette() {
               setSelectedIdx(0);
             }}
             onKeyDown={handleKeyDown}
-            placeholder="Type a command or search..."
+            placeholder="Type a command, search, or route..."
             className="flex-1 bg-transparent py-3 px-2 text-sm outline-none placeholder:text-[var(--color-muted-foreground)]"
           />
         </div>
@@ -92,25 +219,34 @@ export function CommandPalette() {
               No commands found
             </p>
           )}
-          {filtered.map((s, i) => (
-            <button
-              key={s.id}
-              type="button"
-              onClick={() => execute(s)}
-              onMouseEnter={() => setSelectedIdx(i)}
-              className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-sm transition-colors ${
-                i === selectedIdx
-                  ? "bg-[var(--color-accent)] text-[var(--color-accent-foreground)]"
-                  : "text-[var(--color-foreground)]"
-              }`}
-            >
-              <span className="flex items-center gap-2">
-                <span className="text-xs text-[var(--color-muted-foreground)]">{s.category}</span>
-                {s.label}
-              </span>
-              <ShortcutBadge keys={s.keys} />
-            </button>
-          ))}
+          {filtered.map((item, i) => {
+            const isShortcut = "keys" in item;
+            const icon = (item as PaletteItem).icon;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() =>
+                  isShortcut ? executeShortcut(item as Shortcut) : execute(item as PaletteItem)
+                }
+                onMouseEnter={() => setSelectedIdx(i)}
+                className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-sm transition-colors ${
+                  i === selectedIdx
+                    ? "bg-[var(--color-accent)] text-[var(--color-accent-foreground)]"
+                    : "text-[var(--color-foreground)]"
+                }`}
+              >
+                <span className="flex items-center gap-2">
+                  {icon}
+                  <span className="text-xs text-[var(--color-muted-foreground)]">
+                    {(item as PaletteItem).category}
+                  </span>
+                  {(item as PaletteItem).label}
+                </span>
+                {isShortcut && <ShortcutBadge keys={(item as Shortcut).keys} />}
+              </button>
+            );
+          })}
         </div>
       </div>
     </div>
