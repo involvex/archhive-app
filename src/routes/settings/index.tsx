@@ -38,7 +38,8 @@ import { Button } from "@/components/ui/button";
 import * as Tabs from "@radix-ui/react-tabs";
 import * as Switch from "@radix-ui/react-switch";
 import { useTheme } from "@/lib/hooks/useTheme";
-import { Sun, Moon, Monitor, Clock } from "lucide-react";
+import { Sun, Moon, Monitor, Clock, Book } from "lucide-react";
+import { ChangelogDialog, useChangelogDialog } from "@/components/ChangelogDialog";
 
 export const Route = createFileRoute("/settings/")({
   component: SettingsPage,
@@ -175,6 +176,7 @@ function SettingsPage() {
   const [discovering, setDiscovering] = useState(false);
   const [discoverStatus, setDiscoverStatus] = useState("");
   const [appVersion, setAppVersion] = useState("…");
+  const { open: showChangelog, setOpen: setShowChangelog } = useChangelogDialog(appVersion);
   const [installingBinary, setInstallingBinary] = useState<string | null>(null);
   const [binaryInstallStatus, setBinaryInstallStatus] = useState<string>("");
   const [updatingYtDlp, setUpdatingYtDlp] = useState(false);
@@ -1767,9 +1769,22 @@ function SettingsPage() {
         </Tabs.Content>
       </Tabs.Root>
 
-      <p className="text-xs text-[var(--color-muted-foreground)]">
-        ArcHive v{appVersion} · {runtime}
-      </p>
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-[var(--color-muted-foreground)]">
+          ArcHive v{appVersion} · {runtime}
+        </p>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setShowChangelog(true)}
+          className="text-xs"
+        >
+          <Book className="mr-1 h-3 w-3" />
+          View Changelog
+        </Button>
+      </div>
+
+      <ChangelogDialog open={showChangelog} onOpenChange={setShowChangelog} />
     </div>
   );
 }
