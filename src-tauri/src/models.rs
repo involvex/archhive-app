@@ -505,6 +505,10 @@ pub struct SceneFilter {
     pub performer_names: Vec<String>,
     #[serde(default)]
     pub tag_names: Vec<String>,
+    #[serde(default)]
+    pub min_rating: Option<u8>,
+    #[serde(default)]
+    pub min_file_size: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

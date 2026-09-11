@@ -107,6 +107,8 @@ function ScenesPage() {
     filter.hide_watched ||
     filter.min_duration != null ||
     filter.max_duration != null ||
+    filter.min_rating != null ||
+    filter.min_file_size != null ||
     (filter.performer_names?.length ?? 0) > 0 ||
     (filter.tag_names?.length ?? 0) > 0;
 
@@ -407,13 +409,18 @@ function ScenesPage() {
           { key: "short", label: "\u2264 15s" },
           { key: "hash_named", label: "Hash-named" },
           { key: "hide_watched", label: "Hide watched" },
+          { key: "rating-3", label: "\u2605\u2605\u2605+" },
+          { key: "rating-4", label: "\u2605\u2605\u2605\u2605+" },
+          { key: "rating-5", label: "\u2605\u2605\u2605\u2605\u2605" },
         ].map(({ key, label }) => {
           const active =
             key === "all"
               ? !hasFilter
               : key === "short"
                 ? filter.max_duration === 15
-                : !!filter[key as keyof SceneFilter];
+                : key.startsWith("rating-")
+                  ? filter.min_rating === Number(key.slice(7))
+                  : !!filter[key as keyof SceneFilter];
           return (
             <button
               key={key}
@@ -425,7 +432,18 @@ function ScenesPage() {
                     ...f,
                     max_duration: f.max_duration === 15 ? undefined : 15,
                   }));
-                else setFilter((f) => ({ ...f, [key]: !f[key as keyof SceneFilter] }));
+                else if (key === "rating-3") {
+                  if (filter.min_rating === 3) setFilter((f) => ({ ...f, min_rating: undefined }));
+                  else setFilter((f) => ({ ...f, min_rating: 3 }));
+                } else if (key === "rating-4") {
+                  if (filter.min_rating === 4) setFilter((f) => ({ ...f, min_rating: undefined }));
+                  else setFilter((f) => ({ ...f, min_rating: 4 }));
+                } else if (key === "rating-5") {
+                  if (filter.min_rating === 5) setFilter((f) => ({ ...f, min_rating: undefined }));
+                  else setFilter((f) => ({ ...f, min_rating: 5 }));
+                } else {
+                  setFilter((f) => ({ ...f, [key]: !f[key as keyof SceneFilter] }));
+                }
               }}
               className={`rounded-full px-3 py-1 text-xs font-medium transition ${
                 active
@@ -465,6 +483,22 @@ function ScenesPage() {
             }}
             className="h-7 w-16 text-xs"
             aria-label="Maximum duration in seconds"
+          />
+        </div>
+        <div className="flex items-center gap-1">
+          <Input
+            type="number"
+            placeholder="Min size (MB)"
+            value={filter.min_file_size ? Math.round(filter.min_file_size / 1048576) : ""}
+            onChange={(e) => {
+              const mb = e.target.value ? Number(e.target.value) : 0;
+              setFilter((f) => ({
+                ...f,
+                min_file_size: mb > 0 ? mb * 1048576 : undefined,
+              }));
+            }}
+            className="h-7 w-24 text-xs"
+            aria-label="Minimum file size in MB"
           />
         </div>
       </div>
@@ -587,6 +621,18 @@ function ScenesPage() {
                 className="h-7 w-36 text-xs"
               />
             </form>
+          )}
+          {filter.min_rating != null && (
+            <FilterPill
+              label={`\u2605 ${filter.min_rating}+`}
+              onRemove={() => setFilter((f) => ({ ...f, min_rating: undefined }))}
+            />
+          )}
+          {filter.min_file_size != null && (
+            <FilterPill
+              label={`\u2265 ${Math.round(filter.min_file_size / 1048576)}MB`}
+              onRemove={() => setFilter((f) => ({ ...f, min_file_size: undefined }))}
+            />
           )}
           <button
             type="button"

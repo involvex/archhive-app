@@ -223,6 +223,8 @@ export interface SceneFilter {
   hide_watched?: boolean;
   performer_names?: string[];
   tag_names?: string[];
+  min_rating?: number;
+  min_file_size?: number;
 }
 
 export interface FfmpegStatus {

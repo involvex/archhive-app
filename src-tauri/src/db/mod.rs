@@ -1129,6 +1129,12 @@ impl Database {
         if let Some(max_dur) = filter.max_duration {
             conditions.push(format!("scenes.duration <= {max_dur}"));
         }
+        if let Some(min_rating) = filter.min_rating {
+            conditions.push(format!("scenes.rating >= {min_rating}"));
+        }
+        if let Some(min_file_size) = filter.min_file_size {
+            conditions.push(format!("scenes.file_size >= {min_file_size}"));
+        }
         if !filter.performer_names.is_empty() {
             let in_clause = filter
                 .performer_names
