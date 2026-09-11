@@ -59,21 +59,22 @@ CREATE TABLE IF NOT EXISTS scene_tags (
 
 CREATE VIRTUAL TABLE IF NOT EXISTS scenes_fts USING fts5(
     title,
+    notes,
     content='scenes',
     content_rowid='rowid'
 );
 
 CREATE TRIGGER IF NOT EXISTS scenes_ai AFTER INSERT ON scenes BEGIN
-    INSERT INTO scenes_fts(rowid, title) VALUES (new.rowid, new.title);
+    INSERT INTO scenes_fts(rowid, title, notes) VALUES (new.rowid, new.title, new.notes);
 END;
 
 CREATE TRIGGER IF NOT EXISTS scenes_ad AFTER DELETE ON scenes BEGIN
-    INSERT INTO scenes_fts(scenes_fts, rowid, title) VALUES('delete', old.rowid, old.title);
+    INSERT INTO scenes_fts(scenes_fts, rowid, title, notes) VALUES('delete', old.rowid, old.title, old.notes);
 END;
 
 CREATE TRIGGER IF NOT EXISTS scenes_au AFTER UPDATE ON scenes BEGIN
-    INSERT INTO scenes_fts(scenes_fts, rowid, title) VALUES('delete', old.rowid, old.title);
-    INSERT INTO scenes_fts(rowid, title) VALUES (new.rowid, new.title);
+    INSERT INTO scenes_fts(scenes_fts, rowid, title, notes) VALUES('delete', old.rowid, old.title, old.notes);
+    INSERT INTO scenes_fts(rowid, title, notes) VALUES (new.rowid, new.title, new.notes);
 END;
 "#;
 
@@ -148,4 +149,34 @@ CREATE TABLE IF NOT EXISTS watchlist_poll_state (
     queued INTEGER NOT NULL DEFAULT 0,
     errors INTEGER NOT NULL DEFAULT 0
 );
+"#;
+
+pub const MIGRATION_013: &str = r#"
+DROP TRIGGER IF EXISTS scenes_ai;
+DROP TRIGGER IF EXISTS scenes_ad;
+DROP TRIGGER IF EXISTS scenes_au;
+DROP TABLE IF EXISTS scenes_fts;
+
+CREATE VIRTUAL TABLE scenes_fts USING fts5(
+    title,
+    notes,
+    content='scenes',
+    content_rowid='rowid'
+);
+
+CREATE TRIGGER scenes_ai AFTER INSERT ON scenes BEGIN
+    INSERT INTO scenes_fts(rowid, title, notes) VALUES (new.rowid, new.title, new.notes);
+END;
+
+CREATE TRIGGER scenes_ad AFTER DELETE ON scenes BEGIN
+    INSERT INTO scenes_fts(scenes_fts, rowid, title, notes) VALUES('delete', old.rowid, old.title, old.notes);
+END;
+
+CREATE TRIGGER scenes_au AFTER UPDATE ON scenes BEGIN
+    INSERT INTO scenes_fts(scenes_fts, rowid, title, notes) VALUES('delete', old.rowid, old.title, old.notes);
+    INSERT INTO scenes_fts(rowid, title, notes) VALUES (new.rowid, new.title, new.notes);
+END;
+
+INSERT INTO scenes_fts(rowid, title, notes)
+SELECT rowid, title, notes FROM scenes;
 "#;

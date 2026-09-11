@@ -170,7 +170,8 @@
 **Status:** ✅ Done  
 **Area:** Library  
 **Currently:** `scenes.notes TEXT` (`MIGRATION_006`), `Scene.notes`, `UpdateSceneRequest.notes`, `state.update_scene(..., notes)`, editable in scene edit/details UI.  
-**Suggestion (remaining):** Make notes searchable via FTS5 (currently FTS indexes title only — extend `scenes_fts` to include notes) and add timestamp-jump annotations (`[01:23] note` click-to-seek in player).
+**Done:** Extended `scenes_fts` FTS5 index to include `notes` column (MIGRATION_013 rebuilds the index for existing databases; triggers now sync on insert/update/delete). Scene search now matches text in both title and notes.  
+**Suggestion (remaining):** Add timestamp-jump annotations (`[01:23] note` click-to-seek in player).
 
 ### 16. Per-Scene Custom Thumbnail
 
@@ -498,4 +499,4 @@
 
 ---
 
-_Last updated: 2026-09-11 (Q22/Q42 clear completed downloads implemented; Q23–Q30 + #41–43 already done)_
+_Last updated: 2026-09-11 (Q22/Q42 clear completed downloads + #15 FTS5 notes search implemented; Q23–Q30 + #41–43 already done)_
