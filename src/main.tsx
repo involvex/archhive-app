@@ -2,7 +2,7 @@ import { StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { RouterProvider, createRouter } from "@tanstack/react-router";
 import { listen } from "@tauri-apps/api/event";
-import { Toaster } from "react-hot-toast";
+import { Toaster, toast } from "react-hot-toast";
 import { routeTree } from "./routeTree.gen";
 import { initializePlugins } from "./lib/plugins/loader";
 import { getRegisteredPlugins } from "./lib/plugins/registry.generated";
@@ -60,7 +60,7 @@ function TrayNavigationListener() {
 }
 
 function DownloadNotifications() {
-  useDownloadNotifications();
+  useDownloadNotifications(toast);
   return null;
 }
 
