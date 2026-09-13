@@ -1,5 +1,5 @@
 import { createFileRoute, useSearch } from "@tanstack/react-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api/client";
 import type { Collection, CollectionType, Scene } from "@/lib/types";
 import { Button } from "@/components/ui/button";
@@ -50,6 +50,8 @@ function CollectionsPage() {
   const [contextMenu, setContextMenu] = useState<SceneContextMenuState | null>(null);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
 
+  const processedFilterRef = useRef<string | null>(null);
+
   const loadCollections = useCallback(() => {
     setLoading(true);
     api
@@ -66,11 +68,14 @@ function CollectionsPage() {
 
   // Handle pre-filled Smart Collection filter from URL
   useEffect(() => {
-    if (search.newSmartFilter) {
+    const filterParam = search.newSmartFilter;
+    if (filterParam && filterParam !== processedFilterRef.current) {
+      processedFilterRef.current = filterParam;
       try {
-        const filter = JSON.parse(decodeURIComponent(search.newSmartFilter));
+        const filter = JSON.parse(decodeURIComponent(filterParam));
         // Only open if we have actual filters
         if (Object.keys(filter).length > 0) {
+          // eslint-disable-next-line react-hooks/set-state-in-effect
           setShowCreate(true);
         }
       } catch (e) {
