@@ -204,3 +204,9 @@ CREATE TABLE IF NOT EXISTS collection_scenes (
 CREATE INDEX IF NOT EXISTS idx_collection_scenes_scene ON collection_scenes(scene_id);
 CREATE INDEX IF NOT EXISTS idx_collection_scenes_order ON collection_scenes(collection_id, position);
 "#;
+
+pub const MIGRATION_015: &str = r#"
+ALTER TABLE collections ADD COLUMN filter_json TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_collections_type ON collections(type);
+"#;

@@ -479,6 +479,7 @@ pub enum CollectionType {
     #[default]
     Collection,
     Watchlist,
+    Smart,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -488,6 +489,8 @@ pub struct Collection {
     #[serde(rename = "type")]
     pub collection_type: CollectionType,
     pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub filter_json: Option<String>,
     pub scene_count: u32,
     pub created_at: String,
     pub updated_at: String,
@@ -500,12 +503,16 @@ pub struct CreateCollectionRequest {
     pub collection_type: CollectionType,
     #[serde(default)]
     pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub filter: Option<SceneFilter>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpdateCollectionRequest {
     pub name: Option<String>,
     pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub filter: Option<SceneFilter>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -520,6 +527,17 @@ pub struct DuplicateGroup {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MergeDuplicatesResult {
     pub removed: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExportCollectionRequest {
+    pub format: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExportCollectionResult {
+    pub content: String,
+    pub filename: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

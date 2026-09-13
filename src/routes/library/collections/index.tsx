@@ -14,7 +14,16 @@ import { SceneContextMenu, type SceneContextMenuState } from "@/components/Scene
 import { SceneEditDialog } from "@/components/SceneEditDialog";
 import { CollectionPickerDialog } from "@/components/CollectionPickerDialog";
 import { CollectionFormDialog } from "@/components/CollectionFormDialog";
-import { Plus, Folder, List, LayoutGrid, FolderOpen, X, FolderSymlink } from "lucide-react";
+import {
+  Plus,
+  Folder,
+  List,
+  LayoutGrid,
+  FolderOpen,
+  X,
+  FolderSymlink,
+  Download,
+} from "lucide-react";
 
 export const Route = createFileRoute("/library/collections/")({
   component: CollectionsPage,
@@ -130,39 +139,57 @@ function CollectionsPage() {
         />
       ) : (
         <div className="space-y-2">
-          {collections.map((col) => (
-            <div
-              key={col.id}
-              className={`flex items-center justify-between rounded-md border p-3 transition-colors ${
-                selected?.id === col.id
-                  ? "border-[var(--color-primary)] bg-[var(--color-accent)]/10"
-                  : "border-[var(--color-border)] hover:bg-[var(--color-muted)]/30"
-              }`}
-            >
-              <button
-                type="button"
-                className="flex items-center gap-2 text-left flex-1"
-                onClick={() => loadScenes(col)}
+          {collections.map((col) => {
+            const isSmart = col.type === "smart";
+            const coverScenes = isSmart ? scenes.slice(0, 4) : [];
+            return (
+              <div
+                key={col.id}
+                className={`flex items-center justify-between rounded-md border p-3 transition-colors ${
+                  selected?.id === col.id
+                    ? "border-[var(--color-primary)] bg-[var(--color-accent)]/10"
+                    : "border-[var(--color-border)] hover:bg-[var(--color-muted)]/30"
+                }`}
               >
-                <Folder className="h-4 w-4" />
-                <div>
-                  <span className="font-medium">{col.name}</span>
-                  <span className="text-xs text-[var(--color-muted-foreground)] ml-2">
-                    {col.type === "watchlist" ? "Watchlist" : "Collection"} - {col.scene_count}{" "}
-                    scene{col.scene_count !== 1 ? "s" : ""}
-                  </span>
-                </div>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleDelete(col.id)}
-                className="p-1 text-red-400 hover:text-red-300"
-                aria-label="Delete collection"
-              >
-                <X className="h-3 w-3" />
-              </button>
-            </div>
-          ))}
+                <button
+                  type="button"
+                  className="flex items-center gap-2 text-left flex-1"
+                  onClick={() => loadScenes(col)}
+                >
+                  {isSmart && coverScenes.length > 0 && (
+                    <div className="relative w-12 h-12 rounded-md overflow-hidden mr-2 flex-shrink-0">
+                      <div className="grid grid-cols-2 gap-1 w-full h-full">
+                        {coverScenes.map((s) => (
+                          <img
+                            key={s.id}
+                            src={sceneThumbUrl(s) || "/placeholder.png"}
+                            alt=""
+                            className="w-full h-full object-cover"
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {!isSmart && <Folder className="h-4 w-4" />}
+                  <div>
+                    <span className="font-medium">{col.name}</span>
+                    <span className="text-xs text-[var(--color-muted-foreground)] ml-2">
+                      {col.type === "watchlist" ? "Watchlist" : isSmart ? "Smart" : "Collection"} -{" "}
+                      {col.scene_count} scene{col.scene_count !== 1 ? "s" : ""}
+                    </span>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDelete(col.id)}
+                  className="p-1 text-red-400 hover:text-red-300"
+                  aria-label="Delete collection"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -171,6 +198,27 @@ function CollectionsPage() {
           <div className="flex items-center justify-between">
             <h3 className="text-lg font-semibold">{selected.name} - Scenes</h3>
             <div className="flex gap-1">
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    const { content, filename } = await api.exportCollection(selected.id, "m3u");
+                    const blob = new Blob([content], { type: "audio/x-mpegurl" });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = filename;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  } catch (e) {
+                    console.error("Export failed:", e);
+                  }
+                }}
+                className={`p-1 ${viewMode === "grid" ? "text-primary" : "text-muted-foreground"}`}
+                aria-label="Export as M3U"
+              >
+                <Download className="h-4 w-4" />
+              </button>
               <button
                 type="button"
                 onClick={() => setViewMode("grid")}

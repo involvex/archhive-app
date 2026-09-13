@@ -536,6 +536,30 @@ export const api = {
     return localInvoke<string[]>("scene_collection_ids", { scene_id: sceneId });
   },
 
+  async exportCollection(
+    collectionId: string,
+    format: "m3u" = "m3u",
+  ): Promise<{ content: string; filename: string }> {
+    if (shouldUseRemoteApi()) {
+      const response = await fetch(`/api/collections/${collectionId}/export?format=${format}`, {
+        method: "GET",
+      });
+      if (!response.ok) {
+        throw new Error("Export failed");
+      }
+      const blob = await response.blob();
+      const content = await blob.text();
+      const filename =
+        response.headers.get("content-disposition")?.match(/filename="(.+)"/)?.[1] ||
+        `${collectionId}.m3u`;
+      return { content, filename };
+    }
+    return localInvoke<{ content: string; filename: string }>("export_collection", {
+      collection_id: collectionId,
+      req: { format },
+    });
+  },
+
   async listOrphanSidecars(): Promise<OrphanSidecar[]> {
     if (shouldUseRemoteApi()) {
       return remoteFetch<OrphanSidecar[]>("/api/library/orphans");

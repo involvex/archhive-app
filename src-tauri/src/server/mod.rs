@@ -210,6 +210,10 @@ impl LanServer {
                 get(list_collection_scenes_lan),
             )
             .route(
+                "/api/collections/{id}/export",
+                get(export_collection_lan),
+            )
+            .route(
                 "/api/collections/{id}/scenes/{scene_id}",
                 post(add_scene_to_collection_lan).delete(remove_scene_from_collection_lan),
             )
@@ -992,6 +996,31 @@ async fn list_collection_scenes_lan(
         .list_collection_scenes(&id)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(serde_json::json!(scenes)))
+}
+
+async fn export_collection_lan(
+    State(state): State<ApiState>,
+    Path(id): Path<String>,
+    Query(req): Query<crate::models::ExportCollectionRequest>,
+) -> Result<axum::response::Response, StatusCode> {
+    let result = state
+        .app
+        .export_collection(id, req)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let mut headers = axum::http::HeaderMap::new();
+    headers.insert(
+        axum::http::header::CONTENT_DISPOSITION,
+        format!("attachment; filename=\"{}\"", result.filename)
+            .parse()
+            .unwrap(),
+    );
+    headers.insert(
+        axum::http::header::CONTENT_TYPE,
+        "audio/x-mpegurl".parse().unwrap(),
+    );
+
+    Ok((headers, result.content).into_response())
 }
 
 async fn add_scene_to_collection_lan(

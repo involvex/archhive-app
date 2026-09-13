@@ -228,13 +228,15 @@ export interface SceneFilter {
   collection_id?: string;
 }
 
-export type CollectionType = "collection" | "watchlist";
+export type CollectionType = "collection" | "watchlist" | "smart";
 
 export interface Collection {
   id: string;
   name: string;
   type: CollectionType;
   description?: string;
+  filter_json?: string;
+  filter?: SceneFilter;
   scene_count: number;
   created_at: string;
   updated_at: string;
@@ -244,11 +246,18 @@ export interface CreateCollectionRequest {
   name: string;
   type?: CollectionType;
   description?: string;
+  filter?: SceneFilter;
 }
 
 export interface UpdateCollectionRequest {
   name?: string;
   description?: string;
+  filter?: SceneFilter;
+}
+
+export interface ExportCollectionResult {
+  content: string;
+  filename: string;
 }
 
 export interface FfmpegStatus {

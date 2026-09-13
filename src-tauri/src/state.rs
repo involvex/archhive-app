@@ -741,7 +741,7 @@ impl AppState {
 
     pub fn create_collection(&self, req: CreateCollectionRequest) -> AppResult<String> {
         self.db
-            .create_collection(&req.name, req.collection_type, req.description.as_deref())
+            .create_collection(&req.name, req.collection_type, req.description.as_deref(), req.filter.as_ref())
     }
 
     pub fn delete_collection(&self, id: &str) -> AppResult<()> {
@@ -750,7 +750,7 @@ impl AppState {
 
     pub fn update_collection(&self, id: &str, req: UpdateCollectionRequest) -> AppResult<()> {
         self.db
-            .update_collection(id, req.name.as_deref(), req.description.as_deref())
+            .update_collection(id, req.name.as_deref(), req.description.as_deref(), req.filter.as_ref())
     }
 
     pub fn add_scene_to_collection(&self, scene_id: &str, collection_id: &str) -> AppResult<()> {
@@ -768,6 +768,47 @@ impl AppState {
 
     pub fn list_collection_scenes(&self, collection_id: &str) -> AppResult<Vec<Scene>> {
         self.db.list_collection_scenes(collection_id)
+    }
+
+    pub fn export_collection(
+        &self,
+        collection_id: String,
+        req: crate::models::ExportCollectionRequest,
+    ) -> AppResult<crate::models::ExportCollectionResult> {
+        let scenes = self.db.list_collection_scenes(&collection_id)?;
+        let collection = self
+            .db
+            .list_collections()?
+            .into_iter()
+            .find(|c| c.id == collection_id)
+            .ok_or_else(|| crate::error::AppError::Other("Collection not found".into()))?;
+
+        let format = req.format.to_lowercase();
+        if format != "m3u" {
+            return Err(crate::error::AppError::Other(
+                "Unsupported format. Only 'm3u' is supported.".into(),
+            ));
+        }
+
+        let mut m3u = String::new();
+        m3u.push_str("#EXTM3U\n");
+
+        for scene in scenes {
+            let title = scene.title.replace('\n', " ").replace('\r', "");
+            let duration = scene.duration.unwrap_or(0);
+            let path = scene.path.unwrap_or_default();
+            m3u.push_str(&format!("#EXTINF:{},{}", duration, title));
+            m3u.push('\n');
+            m3u.push_str(&path);
+            m3u.push('\n');
+        }
+
+        let filename = format!("{}.m3u", collection.name.replace('/', "_").replace('\\', "_"));
+
+        Ok(crate::models::ExportCollectionResult {
+            content: m3u,
+            filename,
+        })
     }
 
     pub fn scene_collection_ids(&self, scene_id: &str) -> AppResult<Vec<String>> {

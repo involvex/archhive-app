@@ -2,11 +2,12 @@ use crate::error::AppResult;
 use crate::models::{
     AppSettings, BatchUpdateScenesRequest, BatchUpdateScenesResult, BrowseKind, BrowseOrientation,
     CheckSavedSearchResult, Collection, CreateCollectionRequest, DownloadJob, DuplicateGroup,
-    FfmpegStatus, HealthResponse, LanHost, LibraryStats, MarkWatchedRequest, MarkWatchedResult,
-    MediaItem, MergeDuplicatesResult, OrphanSidecar, Performer, PornhubCategoryEntry,
-    SaveSearchRequest, SavedSearch, ScanResult, Scene, SceneFilter, SceneSort, SiteInfo, Tag,
-    UpdateCollectionRequest, UpdateSavedSearchRequest, UpdateSceneRequest, WatchProgress,
-    WatchlistPollResult, WatchlistStatus,
+    ExportCollectionRequest, ExportCollectionResult, FfmpegStatus, HealthResponse, LanHost,
+    LibraryStats, MarkWatchedRequest, MarkWatchedResult, MediaItem, MergeDuplicatesResult,
+    OrphanSidecar, Performer, PornhubCategoryEntry, SaveSearchRequest, SavedSearch, ScanResult,
+    Scene, SceneFilter, SceneSort, SiteInfo, Tag, UpdateCollectionRequest,
+    UpdateSavedSearchRequest, UpdateSceneRequest, WatchProgress, WatchlistPollResult,
+    WatchlistStatus,
 };
 use crate::state::AppState;
 use crate::vault::CookieSiteInfo;
@@ -817,4 +818,44 @@ pub fn scene_collection_ids(
     state
         .scene_collection_ids(&scene_id)
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn export_collection(
+    state: State<'_, AppState>,
+    collection_id: String,
+    req: ExportCollectionRequest,
+) -> CmdResult<ExportCollectionResult> {
+    let scenes = state.list_collection_scenes(&collection_id).map_err(|e| e.to_string())?;
+    let collection = state
+        .list_collections()
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .find(|c| c.id == collection_id)
+        .ok_or("Collection not found")?;
+
+    let format = req.format.to_lowercase();
+    if format != "m3u" {
+        return Err("Unsupported format. Only 'm3u' is supported.".into());
+    }
+
+    let mut m3u = String::new();
+    m3u.push_str("#EXTM3U\n");
+
+    for scene in scenes {
+        let title = scene.title.replace('\n', " ").replace('\r', "");
+        let duration = scene.duration.unwrap_or(0);
+        let path = scene.path.unwrap_or_default();
+        m3u.push_str(&format!("#EXTINF:{},{}", duration, title));
+        m3u.push('\n');
+        m3u.push_str(&path);
+        m3u.push('\n');
+    }
+
+    let filename = format!("{}.m3u", collection.name.replace('/', "_").replace('\\', "_"));
+
+    Ok(ExportCollectionResult {
+        content: m3u,
+        filename,
+    })
 }

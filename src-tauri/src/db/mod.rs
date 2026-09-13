@@ -3,12 +3,12 @@ mod migrations;
 use crate::db::migrations::{
     MIGRATION_001, MIGRATION_002, MIGRATION_003, MIGRATION_004, MIGRATION_005, MIGRATION_006,
     MIGRATION_007, MIGRATION_008, MIGRATION_009, MIGRATION_010, MIGRATION_011, MIGRATION_012,
-    MIGRATION_013, MIGRATION_014,
+    MIGRATION_013, MIGRATION_014, MIGRATION_015,
 };
 use crate::error::{AppError, AppResult};
 use crate::models::{
     AppSettings, Collection, CollectionType, DownloadJob, DownloadStatus, DuplicateGroup,
-    Performer, Scene, Tag,
+    Performer, Scene, SceneFilter, Tag,
 };
 use chrono::Utc;
 use rusqlite::{params, Connection, OptionalExtension};
@@ -81,6 +81,9 @@ impl Database {
         if !column_exists(&conn, "scenes_fts", "notes") {
             conn.execute_batch(MIGRATION_013)?;
             conn.execute_batch(MIGRATION_014)?;
+        }
+        if !column_exists(&conn, "collections", "filter_json") {
+            conn.execute_batch(MIGRATION_015)?;
         }
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
@@ -1646,7 +1649,7 @@ impl Database {
             .lock()
             .map_err(|e| AppError::Other(e.to_string()))?;
         let mut stmt = conn.prepare(
-            "SELECT c.id, c.name, c.type, c.description, c.created_at, c.updated_at,
+            "SELECT c.id, c.name, c.type, c.description, c.filter_json, c.created_at, c.updated_at,
                     COUNT(cs.scene_id) as scene_count
              FROM collections c
              LEFT JOIN collection_scenes cs ON cs.collection_id = c.id
@@ -1657,6 +1660,7 @@ impl Database {
             let collection_type_str: String = row.get(2)?;
             let collection_type = match collection_type_str.as_str() {
                 "watchlist" => CollectionType::Watchlist,
+                "smart" => CollectionType::Smart,
                 _ => CollectionType::Collection,
             };
             Ok(Collection {
@@ -1664,9 +1668,10 @@ impl Database {
                 name: row.get(1)?,
                 collection_type,
                 description: row.get(3)?,
-                scene_count: row.get::<_, i64>(6)? as u32,
-                created_at: row.get(4)?,
-                updated_at: row.get(5)?,
+                filter_json: row.get(4)?,
+                scene_count: row.get::<_, i64>(7)? as u32,
+                created_at: row.get(5)?,
+                updated_at: row.get(6)?,
             })
         })?;
         rows.collect::<Result<Vec<_>, _>>().map_err(AppError::from)
@@ -1677,6 +1682,7 @@ impl Database {
         name: &str,
         collection_type: CollectionType,
         description: Option<&str>,
+        filter: Option<&SceneFilter>,
     ) -> AppResult<String> {
         let conn = self
             .conn
@@ -1686,11 +1692,13 @@ impl Database {
         let now = Utc::now().to_rfc3339();
         let type_str = match collection_type {
             CollectionType::Watchlist => "watchlist",
+            CollectionType::Smart => "smart",
             CollectionType::Collection => "collection",
         };
+        let filter_json = filter.map(|f| serde_json::to_string(f).unwrap_or_default());
         conn.execute(
-            "INSERT INTO collections (id, name, type, description, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![id, name, type_str, description, now, now],
+            "INSERT INTO collections (id, name, type, description, filter_json, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![id, name, type_str, description, filter_json, now, now],
         )?;
         Ok(id)
     }
@@ -1709,6 +1717,7 @@ impl Database {
         id: &str,
         name: Option<&str>,
         description: Option<&str>,
+        filter: Option<&SceneFilter>,
     ) -> AppResult<()> {
         let conn = self
             .conn
@@ -1725,6 +1734,13 @@ impl Database {
             conn.execute(
                 "UPDATE collections SET description = ?1, updated_at = ?2 WHERE id = ?3",
                 params![desc, now, id],
+            )?;
+        }
+        if let Some(f) = filter {
+            let filter_json = serde_json::to_string(f).unwrap_or_default();
+            conn.execute(
+                "UPDATE collections SET filter_json = ?1, updated_at = ?2 WHERE id = ?3",
+                params![filter_json, now, id],
             )?;
         }
         Ok(())
@@ -1768,6 +1784,32 @@ impl Database {
     }
 
     pub fn list_collection_scenes(&self, collection_id: &str) -> AppResult<Vec<Scene>> {
+        // First, check if this is a Smart collection with a filter
+        let collection_opt: Option<(String, Option<String>)> = {
+            let conn = self
+                .conn
+                .lock()
+                .map_err(|e| AppError::Other(e.to_string()))?;
+            conn.query_row(
+                "SELECT type, filter_json FROM collections WHERE id = ?1",
+                params![collection_id],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)),
+            )
+            .optional()
+            .map_err(AppError::from)?
+        };
+
+        if let Some((coll_type, filter_json)) = collection_opt {
+            if coll_type == "smart" {
+                if let Some(json) = filter_json {
+                    if let Ok(filter) = serde_json::from_str::<SceneFilter>(&json) {
+                        return self.list_scenes_with_filter(&filter);
+                    }
+                }
+            }
+        }
+
+        // Fallback: manual collection (Collection or Watchlist) - use existing JOIN logic
         let conn = self
             .conn
             .lock()
