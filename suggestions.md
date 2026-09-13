@@ -21,10 +21,10 @@
 
 ### 2. Watchlists / Favorites System
 
-**Status:** ⚪ Not started  
+**Status:** ✅ Done  
 **Area:** Library / Browse  
-**Currently:** `Performer.favorite` bool exists (`performers.favorite`, managed in performers page) but no saved searches, subscriptions, or new-match detection.  
-**Suggestion:** Allow users to star/bookmark performers and save search queries as watchlists. When a new scene appears on a site matching a saved search, show it in a "New Matches" dashboard. Wire into the Browse page so users can subscribe to tag/model pages and get notified of new content.
+**Currently:** Unified Collections + Watchlists shipped in `MIGRATION_014`: new `collections` + `collection_scenes` tables, `CollectionType` enum (`Collection` / `Watchlist`), full CRUD + LAN routes, `/library/collections` route with UI, `CollectionFormDialog`, `CollectionPickerDialog`, "Add to collection" context menu on scenes. `Performer.favorite` bool also exists.  
+**Suggestion (remaining):** "New Matches" dashboard for watchlists when new scenes appear on saved searches (pairs with #28 saved searches).
 
 ### 3. Bulk Download Queue Management
 
@@ -64,10 +64,10 @@
 
 ### 6. Scene Collections / Playlists
 
-**Status:** ⚪ Not started  
+**Status:** ✅ Done  
 **Area:** Library  
-**Currently:** No collections table or `/library/collections` route.  
-**Suggestion:** Let users create named collections (e.g., "Favorites", "Watch Later", "Custom Compilation"). Scenes can belong to multiple collections. Collections are browsable as a dedicated route (`/library/collections/`). Support reordering within a collection. Useful for curating content from different sites. See #27 for smart-collection extension.
+**Currently:** Shipped alongside #2 in `MIGRATION_014`: `collections` + `collection_scenes` tables, `CollectionType` enum, `/library/collections` route, full UI for creating collections, adding/removing scenes, scene context-menu action. Scenes can belong to multiple collections.  
+**Suggestion (remaining):** Drag reorder within a collection, cover mosaic, M3U/LAN export (see #41/#42).
 
 ### 7. Studio / Channel Tracking
 
@@ -102,40 +102,24 @@
 
 ### 10. Keyboard Shortcuts & Command Palette
 
-**Status:** 🔵 Partial  
+**Status:** ✅ Done  
 **Area:** Frontend / UX  
-**Currently:** `CommandPalette.tsx` (lists registered shortcuts, `Ctrl+K` open via `shortcut:cmd-palette` event), `lib/shortcuts/registry.ts` + `defaults.ts`, `useKeyboardShortcuts.ts` wired in `AppShell`, `ShortcutHelp` dialog + `ShortcutBadge` component exist.  
-**Suggestion:** Extend the existing system:
-
-- `Ctrl+K` or `Ctrl+Shift+P` opens a command palette (à la VS Code) — ✅ done, add route navigation + actions (scan library, open settings, new download).
-- Configurable shortcut map in Settings (custom keybindings, enable/disable).
-- Quick-jump to scenes, performers, tags by name from the palette (fuzzy search over library, not just commands).
+**Currently:** `CommandPalette.tsx` with `Ctrl+K` open; navigation items (Home/Browse/Library/Live/Downloads/Settings/Duplicates) and action items (New download, Scan library, Open settings) integrated with `api.client`; `ShortcutHelp` dialog + `ShortcutBadge`; `useKeyboardShortcuts` wired in `AppShell`.  
+**Suggestion (remaining):** Configurable shortcut map in Settings (custom keybindings, enable/disable); fuzzy-search jump to scenes/performers/tags from palette.
 
 ### 11. Notification System
 
-**Status:** ⚪ Not started  
+**Status:** ✅ Done  
 **Area:** UX / Downloads  
-**Currently:** Desktop tray exists (`desktop/tray.rs`, close-to-tray/minimize-to-tray, `Ctrl+Shift+A` hotkey) but no download/scan/duplicate notifications; no toast system.  
-**Suggestion:** System tray notifications (desktop) or in-app toast notifications for:
-
-- Download completed / failed.
-- Library scan finished.
-- New duplicates detected.
-- LAN connection status changes.
-- Use Tauri's notification API for native desktop notifications.
+**Currently:** Native OS notifications via `tauri-plugin-notification` (download complete/failed in `DownloadManager`); in-app toasts via `react-hot-toast` + `useDownloadNotifications` hook — subscribes to Tauri events on desktop, falls back to 5s polling in LAN remote mode (mobile + desktop `remote_lan`). Desktop tray (`desktop/tray.rs`, close-to-tray/minimize-to-tray, `Ctrl+Shift+A` hotkey) remains.  
+**Suggestion (remaining):** Per-event notification preferences in Settings (download complete/failed, scan done, duplicate found, LAN status) + quiet-hours suppression (see #43).
 
 ### 12. Advanced Search with Filters
 
-**Status:** 🔵 Partial  
+**Status:** ✅ Done  
 **Area:** Library  
-**Currently:** `SceneFilter {missing_thumb, missing_duration, min_duration, max_duration, hash_named, performer_names, tag_names}` + `list_scenes_with_filter`, `SceneSort {Newest, Name, Downloaded}`, FTS5 title search, filter chips in `library/scenes/index.tsx` — ✅ duration + missing-thumb/duration filters done.  
-**Suggestion:**
-
-- Filter by date range, rating, file size (duration ✅ done).
-- Filter by performer count, tag count.
-- Boolean tag combinations (AND/OR).
-- Regex search mode.
-- Save search filters as presets (feeds into #27/#28).
+**Currently:** `SceneFilter {missing_thumb, missing_duration, min_duration, max_duration, hash_named, performer_names, tag_names, min_rating, min_file_size}` + `list_scenes_with_filter`, `SceneSort {Newest, Name, Downloaded}`, FTS5 title search, filter chips in `library/scenes/index.tsx`; rating quick-filter pills (3/4/5★), min-file-size input, active filter pills for new fields.  
+**Suggestion (remaining):** Filter by date range; filter by performer count, tag count; boolean tag combinations (AND/OR); regex search mode; save search filters as presets (feeds into #27/#28).
 
 ---
 
@@ -261,13 +245,13 @@
 
 **Status:** 🔵 Partial  
 **Area:** Library / Settings  
-**Currently:** `scenes.rating INTEGER` column + `Scene.rating: Option<u8>` exist but are always `None` (never read/written in UI or filters).  
-**Suggestion:** Add a content rating system (e.g., SFW / NSFW / Explicit). Allow users to:
+**Currently:** `scenes.rating` column now wired: star rating (1–5) on `SceneCard` + edit/details dialogs via `update_scene`; `min_rating` filter in `SceneFilter` with quick-filter pills (3/4/5★). Remains unused: SFW/NSFW/Explicit classification, per-session default rating filter, PIN lock for parental controls.  
+**Suggestion:** Add a content rating system (e.g., SFW / NSFW / Explicit) separate from 1–5 star quality rating. Allow users to:
 
-- Tag scenes with a rating (wire up existing column + `update_scene`).
-- Filter by rating in browse and library views.
-- Set a default rating filter per session.
-- Lock certain ratings with a PIN (parental controls).
+- Tag scenes with a content rating (new column or enum).
+- Filter by content rating in browse and library views.
+- Set a default content-rating filter per session.
+- Lock certain content ratings with a PIN (parental controls).
 
 ### 25. REST API Pagination & Filtering
 
@@ -294,13 +278,13 @@
 
 ### 27. Smart Collections (Saved Filters as Auto-Playlists)
 
-**Status:** ⚪ Not started  
+**Status:** 🔵 Partial  
 **Area:** Library  
-**Currently:** No collections; `SceneFilter` exists but cannot be saved.  
-**Suggestion:**
+**Currently:** Manual collections + watchlists shipped (#2, #6, MIGRATION_014): `collections` + `collection_scenes` tables, `CollectionType` enum, `/library/collections` route, UI for creating, add/remove scenes. `SceneFilter` exists but cannot yet be saved as a "smart collection" that re-evaluates on open.  
+**Suggestion (remaining):**
 
-- Manual collections (join table `collection_scenes`) + smart collections (stored `SceneFilter` re-evaluated on open).
-- `/library/collections/` route with cover mosaic, drag reorder, add-from-context-menu ("Add to collection").
+- Smart collections: persist a `SceneFilter` per collection, re-evaluate on open (auto-playlist behavior).
+- Cover mosaic for collections, drag reorder scenes within collection (see #42).
 - Export collection as M3U / share over LAN.
 
 ### 28. Saved Searches + New-Match Notifications
@@ -355,13 +339,10 @@
 
 ### 33. In-App Log Viewer + Diagnostics Export
 
-**Status:** ⚪ Not started  
+**Status:** ✅ Done  
 **Area:** Settings / Support  
-**Currently:** Errors surface as toasts/dialog strings; `ffmpeg_status`, download `error` column exist but no central log view. `docs/troubleshooting-android.md` is manual.  
-**Suggestion:**
-
-- Settings → Diagnostics: rolling log (download errors, scan skips, LAN auth failures, yt-dlp stderr tail), yt-dlp/gallery-dl/ffmpeg version cards, "Copy diagnostics" / "Export .zip" for bug reports.
-- Per-download "View log" drawer (stderr excerpt) to cut triage time.
+**Currently:** `LogBuffer` ring buffer (1000 entries) + `tracing` subscriber captures logs from Rust; Settings → Diagnostics tab with system info cards (app version, binary versions, ffmpeg status, library stats, LAN config, cookie vault status), color-coded log viewer, JSON export, clear logs; `/api/diagnostics`, `/api/logs`, `POST /api/logs/clear`; key modules converted from `eprintln!` to `tracing`.  
+**Suggestion (remaining):** Per-download "View log" drawer (stderr excerpt) in Downloads page.
 
 ### 34. Binary Update Manager (yt-dlp / gallery-dl / ffmpeg)
 
@@ -435,6 +416,43 @@
 
 ---
 
+### 41. Smart Collections (Saved-Filter Auto-Playlists)
+
+**Status:** ⚪ Not started  
+**Area:** Library  
+**Currently:** Manual collections + watchlists exist (#2, #6); `SceneFilter` exists but cannot be persisted as a collection type.  
+**Suggestion:** Add a `Smart` variant to `CollectionType` (or separate table) that stores a serialized `SceneFilter`. On open, re-run the filter to populate scenes dynamically (auto-playlist behavior). UI: toggle "Smart" when creating a collection, show filter builder, cover mosaic auto-generated from member scenes, drag reorder not applicable (order by filter sort), M3U/LAN export support.
+
+### 42. Collection Cover Mosaic + Reordering
+
+**Status:** ⚪ Not started  
+**Area:** Library  
+**Currently:** Collections exist but no cover mosaic, no drag-reorder, no bulk "add to collection" from multi-select.  
+**Suggestion:**
+
+- Cover mosaic: auto-generate a grid of member scene thumbnails as the collection cover (CSS grid or generated image).
+- Drag-and-drop reorder scenes within a manual collection.
+- Bulk "Add to collection" from SceneBulkEditBar / multi-select in library grid.
+- Scene context-menu: "Remove from this collection" when viewing a collection.
+
+### 43. Notification Preferences
+
+**Status:** ⚪ Not started  
+**Area:** Settings / UX  
+**Currently:** Notification pipe shipped (#11: native OS + in-app toasts) but no user-facing toggles.  
+**Suggestion:** Settings → Notifications (or Diagnostics tab): per-event enable/disable toggles for:
+
+- Download completed
+- Download failed
+- Library scan finished
+- New duplicates detected
+- LAN connection status changes
+- Saved-search new matches (pairs with #28)
+
+Add "Quiet hours" window (e.g., 22:00–08:00) to suppress non-critical toasts; persist in `app_settings`.
+
+---
+
 ## Quick Wins (< 1 day each)
 
 | #   | Feature                            | Description                                                                                                                                                     | Status                                                                                                                                                 |
@@ -499,4 +517,4 @@
 
 ---
 
-_Last updated: 2026-09-11 (Q21/Q22/Q42 CSV+clear completed downloads + #15 FTS5 notes search implemented; Q23–Q30, Q30, #41–43 already done)_
+_Last updated: 2026-09-11 (Collections/Watchlists #2/#6 MIGRATION_014, Notifications #11 native+in-app, Diagnostics #33 log viewer+export, CommandPalette #10 nav+actions, Advanced Search #12 rating+file-size, #15 FTS5 notes search, Q21–Q30, #41–43 added)_
