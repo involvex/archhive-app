@@ -1,5 +1,5 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { createFileRoute, useSearch } from "@tanstack/react-router";
+import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api/client";
 import type { Collection, CollectionType, Scene } from "@/lib/types";
 import { Button } from "@/components/ui/button";
@@ -26,10 +26,16 @@ import {
 } from "lucide-react";
 
 export const Route = createFileRoute("/library/collections/")({
+  validateSearch: (search: Record<string, unknown>): { newSmartFilter?: string } => {
+    return {
+      newSmartFilter: typeof search.newSmartFilter === "string" ? search.newSmartFilter : undefined,
+    };
+  },
   component: CollectionsPage,
 });
 
 function CollectionsPage() {
+  const search = useSearch({ strict: false });
   const [collections, setCollections] = useState<Collection[]>([]);
   const [selected, setSelected] = useState<Collection | null>(null);
   const [scenes, setScenes] = useState<Scene[]>([]);
@@ -44,19 +50,34 @@ function CollectionsPage() {
   const [contextMenu, setContextMenu] = useState<SceneContextMenuState | null>(null);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
 
-  const loadCollections = () => {
+  const loadCollections = useCallback(() => {
     setLoading(true);
     api
       .listCollections()
       .then(setCollections)
       .catch(() => setCollections([]))
       .finally(() => setLoading(false));
-  };
+  }, []);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadCollections();
-  }, []);
+  }, [loadCollections]);
+
+  // Handle pre-filled Smart Collection filter from URL
+  useEffect(() => {
+    if (search.newSmartFilter) {
+      try {
+        const filter = JSON.parse(decodeURIComponent(search.newSmartFilter));
+        // Only open if we have actual filters
+        if (Object.keys(filter).length > 0) {
+          setShowCreate(true);
+        }
+      } catch (e) {
+        console.error("Failed to parse smart filter:", e);
+      }
+    }
+  }, [search.newSmartFilter]);
 
   const loadScenes = (col: Collection) => {
     setSelected(col);

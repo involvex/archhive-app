@@ -17,7 +17,7 @@ import { ErrorState } from "@/components/ErrorState";
 import { EmptyState } from "@/components/EmptyState";
 import { usePullToRefresh } from "@/lib/hooks/usePullToRefresh";
 import { registerShortcut, unregisterShortcut } from "@/lib/shortcuts/registry";
-import { Film, LayoutGrid, List, RefreshCw, X } from "lucide-react";
+import { Film, LayoutGrid, List, RefreshCw, X, Zap } from "lucide-react";
 
 export const Route = createFileRoute("/library/scenes/")({
   validateSearch: (search: Record<string, unknown>): { performers?: string[]; tags?: string[] } => {
@@ -646,6 +646,24 @@ function ScenesPage() {
           >
             Clear all
           </button>
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            onClick={() => {
+              // Navigate to collections page with pre-filled Smart collection form
+              // We'll use URL params to pass the filter
+              const filterJson = encodeURIComponent(JSON.stringify(filter));
+              navigate({
+                to: "/library/collections",
+                search: { newSmartFilter: filterJson },
+              });
+            }}
+            className="h-7"
+          >
+            <Zap className="h-3.5 w-3.5 mr-1" />
+            Save as Smart Collection
+          </Button>
         </div>
       )}
       {genThumbsResult && (
