@@ -40,8 +40,6 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: []
 
       - name: Install cargo-audit
         run: cargo install cargo-audit
@@ -60,8 +58,6 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: []
 
       - name: Run Rust tests
         run: cd src-tauri && cargo test
