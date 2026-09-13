@@ -18,10 +18,11 @@ jobs:
 
       - name: Add swap space
         run: |
-          sudo dd if=/dev/zero of=/swapfile bs=1M count=4096
+          sudo dd if=/dev/zero of=/swapfile bs=1M count=2048
           sudo chmod 600 /swapfile
           sudo mkswap /swapfile
           sudo swapon /swapfile
+        continue-on-error: true
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -47,10 +48,11 @@ jobs:
 
       - name: Add swap space
         run: |
-          sudo dd if=/dev/zero of=/swapfile bs=1M count=4096
+          sudo dd if=/dev/zero of=/swapfile bs=1M count=2048
           sudo chmod 600 /swapfile
           sudo mkswap /swapfile
           sudo swapon /swapfile
+        continue-on-error: true
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -72,10 +74,11 @@ jobs:
 
       - name: Add swap space
         run: |
-          sudo dd if=/dev/zero of=/swapfile bs=1M count=4096
+          sudo dd if=/dev/zero of=/swapfile bs=1M count=2048
           sudo chmod 600 /swapfile
           sudo mkswap /swapfile
           sudo swapon /swapfile
+        continue-on-error: true
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -91,10 +94,11 @@ jobs:
 
       - name: Add swap space
         run: |
-          sudo dd if=/dev/zero of=/swapfile bs=1M count=4096
+          sudo dd if=/dev/zero of=/swapfile bs=1M count=2048
           sudo chmod 600 /swapfile
           sudo mkswap /swapfile
           sudo swapon /swapfile
+        continue-on-error: true
 
       - uses: oven-sh/setup-bun@v2
         with:
