@@ -182,10 +182,10 @@ export const api = {
     );
   },
 
-  async queueDownload(url: string, adapter?: string): Promise<DownloadJob> {
-    return localOrRemote("queue_download", { url, adapter }, "/api/downloads", {
+  async queueDownload(url: string, adapter?: string, title?: string): Promise<DownloadJob> {
+    return localOrRemote("queue_download", { url, adapter, title }, "/api/downloads", {
       method: "POST",
-      body: JSON.stringify({ url, adapter }),
+      body: JSON.stringify({ url, adapter, title }),
     });
   },
 

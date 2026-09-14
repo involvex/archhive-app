@@ -36,6 +36,7 @@ struct BrowseParams {
 struct QueueBody {
     url: String,
     adapter: Option<String>,
+    title: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -384,7 +385,7 @@ async fn queue_download(
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let job = state
         .app
-        .queue_download(&body.url, body.adapter.as_deref())
+        .queue_download(&body.url, body.adapter.as_deref(), body.title.as_deref())
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(serde_json::json!(job)))
@@ -813,12 +814,18 @@ async fn resolve_livestream(
 
 /// Proxy a remote media URL through the LAN server so the WebView can play
 /// CDN streams that require a Referer (e.g. PornHub). Loopback-only use.
+///
+/// Supports HTTP Range (progressive seeking), vault cookies for gated CDNs,
+/// and m3u8 rewriting so HLS segments also pass through this proxy.
 async fn proxy_remote_media(
+    State(state): State<ApiState>,
+    headers: axum::http::HeaderMap,
     Query(params): Query<std::collections::HashMap<String, String>>,
 ) -> Result<Response, StatusCode> {
     use axum::body::Body;
     use axum::http::{header, HeaderValue};
     use axum::response::IntoResponse;
+    use futures_util::StreamExt;
 
     let url = params.get("url").map(String::as_str).unwrap_or("").trim();
     if url.is_empty() || !(url.starts_with("https://") || url.starts_with("http://")) {
@@ -827,41 +834,213 @@ async fn proxy_remote_media(
     let referer = params
         .get("referer")
         .map(String::as_str)
-        .unwrap_or("https://www.pornhub.com/");
+        .unwrap_or("https://www.pornhub.com/")
+        .to_string();
 
     let client = reqwest::Client::builder()
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         .build()
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let mut req = client.get(url).header("Referer", referer);
-    if let Some(cookie) = params.get("cookie").filter(|c| !c.is_empty()) {
+    let mut req = client.get(url).header("Referer", &referer);
+
+    let cookie = params
+        .get("cookie")
+        .filter(|c| !c.is_empty())
+        .cloned()
+        .or_else(|| {
+            let site = site_id_from_referer(&referer);
+            state.app.vault.cookie_header(site).ok().flatten()
+        });
+    if let Some(ref cookie) = cookie {
         req = req.header("Cookie", cookie.as_str());
+    }
+    if let Some(range) = headers.get(header::RANGE).and_then(|v| v.to_str().ok()) {
+        req = req.header(header::RANGE, range);
     }
 
     let upstream = req.send().await.map_err(|_| StatusCode::BAD_GATEWAY)?;
-    let status = StatusCode::from_u16(upstream.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
+    let status =
+        StatusCode::from_u16(upstream.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
     let content_type = upstream
         .headers()
         .get(reqwest::header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
         .unwrap_or("application/octet-stream")
         .to_string();
+    let content_length = upstream
+        .headers()
+        .get(reqwest::header::CONTENT_LENGTH)
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string);
+    let content_range = upstream
+        .headers()
+        .get(reqwest::header::CONTENT_RANGE)
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string);
+    let accept_ranges = upstream
+        .headers()
+        .get(reqwest::header::ACCEPT_RANGES)
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string);
 
-    let bytes = upstream
-        .bytes()
-        .await
-        .map_err(|_| StatusCode::BAD_GATEWAY)?;
+    let looks_hls = url.to_lowercase().contains(".m3u8")
+        || content_type.contains("mpegurl")
+        || content_type.contains("m3u8");
 
-    let mut response = Body::from(bytes).into_response();
+    if looks_hls {
+        let text = upstream.text().await.map_err(|_| StatusCode::BAD_GATEWAY)?;
+        let port = state
+            .app
+            .db
+            .get_settings()
+            .map(|s| s.lan_port)
+            .unwrap_or(8787);
+        // Cookie is re-attached from the vault on each segment request via referer.
+        let rewritten = rewrite_m3u8_for_proxy(&text, url, &referer, port);
+        let mut response = rewritten.into_response();
+        *response.status_mut() = status;
+        response.headers_mut().insert(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("application/vnd.apple.mpegurl"),
+        );
+        response
+            .headers_mut()
+            .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+        return Ok(response);
+    }
+
+    let stream = upstream.bytes_stream().map(|r| {
+        r.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))
+    });
+    let mut response = Body::from_stream(stream).into_response();
     *response.status_mut() = status;
     if let Ok(v) = HeaderValue::from_str(&content_type) {
         response.headers_mut().insert(header::CONTENT_TYPE, v);
+    }
+    if let Some(len) = content_length {
+        if let Ok(v) = HeaderValue::from_str(&len) {
+            response.headers_mut().insert(header::CONTENT_LENGTH, v);
+        }
+    }
+    if let Some(cr) = content_range {
+        if let Ok(v) = HeaderValue::from_str(&cr) {
+            response.headers_mut().insert(header::CONTENT_RANGE, v);
+        }
+    }
+    if let Some(ar) = accept_ranges {
+        if let Ok(v) = HeaderValue::from_str(&ar) {
+            response.headers_mut().insert(header::ACCEPT_RANGES, v);
+        }
+    } else {
+        response
+            .headers_mut()
+            .insert(header::ACCEPT_RANGES, HeaderValue::from_static("bytes"));
     }
     response
         .headers_mut()
         .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     Ok(response)
+}
+
+fn site_id_from_referer(referer: &str) -> &'static str {
+    let lower = referer.to_lowercase();
+    if lower.contains("pornhub") {
+        "pornhub"
+    } else if lower.contains("xvideos") {
+        "xvideos"
+    } else if lower.contains("xhamster") {
+        "xhamster"
+    } else if lower.contains("xnxx") {
+        "xnxx"
+    } else if lower.contains("youporn") {
+        "youporn"
+    } else if lower.contains("redgifs") {
+        "redgifs"
+    } else {
+        "pornhub"
+    }
+}
+
+fn rewrite_m3u8_for_proxy(body: &str, playlist_url: &str, referer: &str, port: u16) -> String {
+    let base = url::Url::parse(playlist_url).ok();
+    body.lines()
+        .map(|line| {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with('#') {
+                if let Some(rewritten) =
+                    rewrite_m3u8_tag_uris(line, base.as_ref(), referer, port)
+                {
+                    return rewritten;
+                }
+                return line.to_string();
+            }
+            let absolute = resolve_playlist_uri(trimmed, base.as_ref());
+            proxy_media_url(&absolute, referer, port)
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn rewrite_m3u8_tag_uris(
+    line: &str,
+    base: Option<&url::Url>,
+    referer: &str,
+    port: u16,
+) -> Option<String> {
+    if !line.contains("URI=\"") {
+        return None;
+    }
+    let mut out = line.to_string();
+    let mut search_from = 0;
+    while let Some(rel) = out[search_from..].find("URI=\"") {
+        let start = search_from + rel + 5;
+        let Some(end_rel) = out[start..].find('"') else {
+            break;
+        };
+        let end = start + end_rel;
+        let uri = &out[start..end];
+        if uri.starts_with("http://127.0.0.1") || uri.starts_with("http://localhost") {
+            search_from = end + 1;
+            continue;
+        }
+        let absolute = resolve_playlist_uri(uri, base);
+        let proxied = proxy_media_url(&absolute, referer, port);
+        out.replace_range(start..end, &proxied);
+        search_from = start + proxied.len() + 1;
+    }
+    Some(out)
+}
+
+fn resolve_playlist_uri(uri: &str, base: Option<&url::Url>) -> String {
+    if uri.starts_with("http://") || uri.starts_with("https://") {
+        return uri.to_string();
+    }
+    if let Some(base) = base {
+        if let Ok(joined) = base.join(uri) {
+            return joined.to_string();
+        }
+    }
+    uri.to_string()
+}
+
+fn proxy_media_url(url: &str, referer: &str, port: u16) -> String {
+    format!(
+        "http://127.0.0.1:{port}/api/media/proxy?url={}&referer={}",
+        encode_query_component(url),
+        encode_query_component(referer)
+    )
+}
+
+fn encode_query_component(s: &str) -> String {
+    s.bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                (b as char).to_string()
+            }
+            _ => format!("%{b:02X}"),
+        })
+        .collect()
 }
 
 #[derive(Deserialize)]

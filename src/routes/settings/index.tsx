@@ -12,6 +12,7 @@ import {
   DEVTOOLS_COOKIE_CONSOLE_SNIPPET,
 } from "@/lib/cookies/import";
 import { useUnifiedSettings } from "@/hooks/useUnifiedSettings";
+import { useSettingsStore } from "@/lib/stores/settings";
 import { hasLocalBackend } from "@/lib/runtime";
 import { open } from "@tauri-apps/plugin-dialog";
 import { mergeDiscoveredHosts } from "@/lib/lan-discovery";
@@ -315,6 +316,13 @@ function SettingsPage() {
   function selectDiscoveredHost(host: LanHost) {
     updateSettings({ remote_host: host.url, remote_token: undefined });
     setDiscoverStatus(`Selected ${host.url} (no token)`);
+    if (hostSettings) {
+      void persistBackendSettings({
+        remote_host: host.url,
+        remote_token: undefined,
+        engine_mode: "remote_lan",
+      }).catch(() => {});
+    }
   }
 
   async function testRemote() {
@@ -763,12 +771,17 @@ function SettingsPage() {
   const pluginPanelsByTab = (tab: string) => pluginPanels.filter((p) => p.tab === tab);
   const settingsTabs = visibleSettingsTabs(caps);
 
-  async function persistTraySettings(partial: Partial<AppSettings>) {
+  async function persistBackendSettings(partial: Partial<AppSettings>) {
     if (!hostSettings) return;
     const merged = { ...hostSettings, ...partial };
     patchHostSettings(partial);
     await api.saveSettings(merged);
     updateSettings(partial);
+  }
+
+  /** @deprecated Use persistBackendSettings — kept for call-site clarity on Desktop tab. */
+  async function persistTraySettings(partial: Partial<AppSettings>) {
+    await persistBackendSettings(partial);
   }
 
   return (
@@ -814,7 +827,19 @@ function SettingsPage() {
                     type="radio"
                     name="engine"
                     checked={settings.engine_mode === mode}
-                    onChange={() => updateSettings({ engine_mode: mode })}
+                    onChange={() => {
+                      // Must persist to SQLite — Zustand-only updates are overwritten
+                      // when Settings remounts and reloads from the backend.
+                      if (hostSettings) {
+                        void persistBackendSettings({ engine_mode: mode }).catch((e: unknown) =>
+                          setTestStatus(
+                            e instanceof Error ? e.message : "Failed to save engine mode",
+                          ),
+                        );
+                      } else {
+                        updateSettings({ engine_mode: mode });
+                      }
+                    }}
                   />
                   {ENGINE_LABELS[mode]}
                   {mode === "local" && runtime === "mobile-tauri" && " (recommended)"}
@@ -892,12 +917,28 @@ function SettingsPage() {
                     placeholder="http://192.168.178.69:8787"
                     value={settings.remote_host || ""}
                     onChange={(e) => updateSettings({ remote_host: e.target.value })}
+                    onBlur={() => {
+                      if (!hostSettings) return;
+                      const s = useSettingsStore.getState().settings;
+                      void persistBackendSettings({
+                        remote_host: s.remote_host?.trim() || undefined,
+                        remote_token: s.remote_token?.trim() || undefined,
+                      }).catch(() => {});
+                    }}
                   />
                   <Input
                     placeholder="API token (optional if desktop LAN has no token)"
                     type="password"
                     value={settings.remote_token || ""}
                     onChange={(e) => updateSettings({ remote_token: e.target.value })}
+                    onBlur={() => {
+                      if (!hostSettings) return;
+                      const s = useSettingsStore.getState().settings;
+                      void persistBackendSettings({
+                        remote_host: s.remote_host?.trim() || undefined,
+                        remote_token: s.remote_token?.trim() || undefined,
+                      }).catch(() => {});
+                    }}
                   />
                   <Button variant="outline" onClick={() => void testRemote()}>
                     Test Connection

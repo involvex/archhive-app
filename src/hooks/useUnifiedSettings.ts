@@ -24,17 +24,32 @@ export function useUnifiedSettings() {
           const backend = await api.getSettings();
           if (!cancelled) {
             setHostSettings(backend);
+            const priorHost = useSettingsStore.getState().settings.remote_host?.trim();
+            const priorToken = useSettingsStore.getState().settings.remote_token?.trim();
+            const remoteHost = backend.remote_host?.trim() || priorHost || undefined;
+            const remoteToken = backend.remote_token?.trim() || priorToken || undefined;
             updateSettings({
               engine_mode: backend.engine_mode,
               library_path: backend.library_path,
               lan_enabled: backend.lan_enabled,
               lan_port: backend.lan_port,
               lan_token: backend.lan_token,
+              remote_host: remoteHost,
+              remote_token: remoteToken,
               phash_threshold: backend.phash_threshold,
               close_to_tray: backend.close_to_tray,
               minimize_to_tray: backend.minimize_to_tray,
               tray_hotkey: backend.tray_hotkey,
             });
+            if (priorHost && !backend.remote_host?.trim()) {
+              const merged = {
+                ...backend,
+                remote_host: priorHost,
+                remote_token: priorToken || backend.remote_token,
+              };
+              void api.saveSettings(merged).catch(() => {});
+              setHostSettings(merged);
+            }
           }
         } else if (runtime !== "browser") {
           if (!settings.remote_host?.trim()) {
@@ -71,7 +86,10 @@ export function useUnifiedSettings() {
     if (hasLocalBackend(runtime)) {
       await api.saveSettings(hostSettings);
       updateSettings({
+        engine_mode: hostSettings.engine_mode,
         library_path: hostSettings.library_path,
+        remote_host: hostSettings.remote_host,
+        remote_token: hostSettings.remote_token,
         phash_threshold: hostSettings.phash_threshold,
       });
     } else if (caps.libraryScanRemote) {

@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { useInfiniteScroll } from "@/lib/hooks/useInfiniteScroll";
 import { usePullToRefresh } from "@/lib/hooks/usePullToRefresh";
 import { browseCacheKey, useBrowseStore } from "@/lib/stores/browse";
+import { PORNHUB_CATEGORIES } from "@/lib/sites/pornhub-categories";
 
 export const Route = createFileRoute("/browse/$site/$kind/$slug")({
   component: BrowseDetailPage,
@@ -26,9 +27,18 @@ function normalizeInitialSlug(rawSlug: string): string {
   return rawSlug;
 }
 
+/** Turn legacy numeric category ids (e.g. "27") into readable slugs ("lesbian"). */
+function normalizePornhubCategorySlug(raw: string): string {
+  if (!/^\d+$/.test(raw)) return raw;
+  const hit = PORNHUB_CATEGORIES.find((c) => String(c.categoryId) === raw);
+  return hit?.slug ?? raw;
+}
+
 function BrowseDetailPage() {
   const { site, kind, slug } = Route.useParams();
   const cleanSlug = normalizeInitialSlug(slug);
+  const browseSlug =
+    site === "pornhub" && kind === "category" ? normalizePornhubCategorySlug(cleanSlug) : cleanSlug;
   const [orientation, setOrientation] = useState<BrowseOrientation>("straight");
   const isPornhubAnimal =
     site === "pornhub" && (kind === "category" || kind === "tag" || kind === "search");
@@ -44,9 +54,9 @@ function BrowseDetailPage() {
       browseCacheKey({
         site,
         kind,
-        slug: cleanSlug,
+        slug: browseSlug,
       }),
-    [site, kind, cleanSlug],
+    [site, kind, browseSlug],
   );
   const cached = useBrowseStore((s) => s.caches[cacheKey]);
   const setCache = useBrowseStore((s) => s.set);
@@ -54,7 +64,7 @@ function BrowseDetailPage() {
   const [items, setItems] = useState<MediaItem[]>(cached?.items ?? []);
   const [page, setPage] = useState(cached?.page ?? 1);
   const [hasMore, setHasMore] = useState(cached?.hasMore ?? false);
-  const [querySlug, setQuerySlug] = useState(cached?.querySlug ?? cleanSlug);
+  const [querySlug, setQuerySlug] = useState(cached?.querySlug ?? browseSlug);
   const [loading, setLoading] = useState(false);
   const [initial, setInitial] = useState(!cached?.items?.length);
   const [error, setError] = useState("");
@@ -123,7 +133,7 @@ function BrowseDetailPage() {
   });
 
   async function handleDownload(item: MediaItem) {
-    await api.queueDownload(item.url, site);
+    await api.queueDownload(item.url, site, item.title);
   }
 
   // #28: detect whether this exact search is already saved.
@@ -137,13 +147,13 @@ function BrowseDetailPage() {
           (s) =>
             s.site_id === site &&
             s.kind === (kind as BrowseKind) &&
-            s.slug === cleanSlug &&
+            s.slug === browseSlug &&
             (s.orientation ?? undefined) === (isPornhubAnimal ? orientation : undefined),
         );
         setSavedId(match?.id ?? null);
       })
       .catch(() => {});
-  }, [site, kind, cleanSlug, orientation, isPornhubAnimal]);
+  }, [site, kind, browseSlug, orientation, isPornhubAnimal]);
 
   async function toggleSavedSearch() {
     if (savingSearch) return;
@@ -154,10 +164,10 @@ function BrowseDetailPage() {
         setSavedId(null);
       } else {
         const saved = await api.saveSearch({
-          name: `${site} ${kind}: ${cleanSlug}`,
+          name: `${site} ${kind}: ${browseSlug}`,
           site_id: site,
           kind: kind as BrowseKind,
-          slug: cleanSlug,
+          slug: browseSlug,
           orientation: isPornhubAnimal ? orientation : undefined,
         });
         setSavedId(saved.id);
@@ -225,7 +235,7 @@ function BrowseDetailPage() {
               size="sm"
               variant={savedId ? "default" : "outline"}
               onClick={() => void toggleSavedSearch()}
-              disabled={savingSearch || !cleanSlug}
+              disabled={savingSearch || !browseSlug}
               title={savedId ? "Remove saved search" : "Save this search"}
             >
               {savedId ? <BookmarkCheck className="h-4 w-4" /> : <Bookmark className="h-4 w-4" />}
@@ -384,8 +394,10 @@ function BrowseDetailPage() {
 
       <UrlPlayerDialog
         item={watchItem}
+        playlist={items}
         open={watchItem !== null}
         onClose={() => setWatchItem(null)}
+        onSelectItem={setWatchItem}
       />
     </div>
   );

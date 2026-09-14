@@ -120,7 +120,7 @@ export function PornhubCategoryBrowser() {
   }
 
   async function handleDownload(item: MediaItem) {
-    await api.queueDownload(item.url, "pornhub");
+    await api.queueDownload(item.url, "pornhub", item.title);
   }
 
   return (
@@ -254,8 +254,10 @@ export function PornhubCategoryBrowser() {
       />
       <UrlPlayerDialog
         item={watchItem}
+        playlist={items}
         open={watchItem !== null}
         onClose={() => setWatchItem(null)}
+        onSelectItem={setWatchItem}
       />
     </div>
   );

@@ -50,23 +50,38 @@ Debug builds already allow cleartext; the LAN patch is mainly for release APKs.
 
 ## Run on device or emulator
 
-```bash
+**Use one of these (they share the same helper now):**
+
+```powershell
+bun run android:dev
 bun run tauri:android:dev
 ```
 
-On Windows, use the helper script to auto-start an AVD and avoid the interactive device picker:
+That script:
+
+1. Boots an AVD if needed
+2. Sets `TAURI_DEV_HOST` / `--host` to your PC LAN IP (fixes Android “Website not available” — `localhost` on the phone is not your PC)
+3. Uses a separate `CARGO_TARGET_DIR` (`*-android`) so a desktop `tauri dev` cannot steal the cargo file lock
+4. Does **not** start desktop ArcHive by default (standalone Local engine)
+
+For Remote LAN testing (desktop API on :8787):
 
 ```powershell
+# Option A — dedicated flag (starts desktop in another window, then Android)
+bun run android:dev:lan
+
+# Option B — two terminals (clearest when debugging locks)
+# Terminal 1:
+$env:ARCHIVE_AUTO_LAN='1'; bun run tauri dev
+# Terminal 2 (after http://127.0.0.1:8787/api/health is up):
 bun run android:dev
 ```
 
 Or pass a device id explicitly (from `adb devices`):
 
-```bash
-bun run tauri android dev emulator-5554
+```powershell
+bun run android:dev -- -Device emulator-5554
 ```
-
-Connect a USB device with USB debugging enabled, or start an Android emulator first.
 
 ## Physical device over Wi‑Fi (ADB wireless)
 
@@ -98,11 +113,13 @@ Allow both ports through Windows Firewall on the desktop.
 
 ## Remote LAN test flow
 
-1. Close any extra `tauri dev` windows. Run `bun run android:dev` (auto-starts desktop LAN in open mode).
-2. **Desktop:** confirm `http://127.0.0.1:8787/api/health` returns `"auth_required": false`.
-3. **Phone:** Settings → Engine → Remote LAN → tap discovered **ArcHive @ 192.168.x.x** → **Test Connection**.
-4. **Windows Firewall:** allow inbound **TCP 8787** on the desktop PC.
-5. Dashboard shows a green connection chip when health succeeds.
+1. Prefer `bun run android:dev` (sets LAN IP for Vite). Do **not** run bare `tauri android dev` without `--host` — the WebView will try `localhost` on the phone and show “Website not available”.
+2. Close extra desktop `tauri dev` windows unless you need Remote LAN. Dual cargo watchers need separate target dirs (the helper sets `*-android` automatically).
+3. Run `bun run android:dev` (auto-starts AVD; add `android:dev:lan` only when you need desktop :8787).
+4. **Desktop:** confirm `http://127.0.0.1:8787/api/health` returns `"auth_required": false` when using LAN.
+5. **Phone:** Settings → Engine → Remote LAN → tap discovered **ArcHive @ 192.168.x.x** → **Test Connection**.
+6. **Windows Firewall:** allow inbound **TCP 8787** (and **1420** for Vite hot reload) on the desktop PC.
+7. Dashboard shows a green connection chip when health succeeds.
 
 ### Verification checklist
 
@@ -164,12 +181,13 @@ Video playback uses `GET /api/scenes/{id}/media` and `GET /api/files/stream` wit
 
 ## Scripts
 
-| Command                           | Description                                      |
-| --------------------------------- | ------------------------------------------------ |
-| `bun run android:regen`           | Regenerate `gen/android` after identifier change |
-| `bun run android:dev`             | Auto-boot AVD + run dev (Windows)                |
-| `bun run tauri:android:dev`       | Build and run on connected device/emulator       |
-| `bun run tauri android build`     | Release APK/AAB                                  |
-| `bun run build:apk`               | Debug APK, aarch64 only (faster)                 |
-| `bun run build:apk:fast`          | Skip lint/format; vite build + aarch64 APK       |
-| `.\scripts\patch-android-lan.ps1` | Allow HTTP + mDNS multicast on Android           |
+| Command                           | Description                                            |
+| --------------------------------- | ------------------------------------------------------ |
+| `bun run android:regen`           | Regenerate `gen/android` after identifier change       |
+| `bun run android:dev`             | AVD + Android dev (LAN IP host, separate cargo target) |
+| `bun run android:dev:lan`         | Same + auto-start desktop LAN on :8787                 |
+| `bun run tauri:android:dev`       | Alias of `android:dev`                                 |
+| `bun run tauri android build`     | Release APK/AAB                                        |
+| `bun run build:apk`               | Debug APK, aarch64 only (faster)                       |
+| `bun run build:apk:fast`          | Skip lint/format; vite build + aarch64 APK             |
+| `.\scripts\patch-android-lan.ps1` | Allow HTTP + mDNS multicast on Android                 |

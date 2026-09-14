@@ -34,7 +34,7 @@ bun run tauri dev
 
 ## Quick start (Android + Remote LAN)
 
-1. Desktop: `bun run android:dev` (starts LAN server + emulator/device build)
+1. Desktop: `bun run android:dev:lan` (or `$env:ARCHIVE_AUTO_LAN='1'; bun run tauri dev`, then `bun run android:dev`)
 2. Phone: Settings → Engine → **Remote LAN** → pick discovered host (`http://<pc-ip>:8787`)
 3. **Phone browser (no app):** open `http://<pc-ip>:8787/?token=<lan-token>` — full web UI + `/files` folder streaming
 4. Copy LAN token from desktop Settings → LAN if auth is required
@@ -57,8 +57,9 @@ Configure in **Settings → Engine**.
 | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
 | `bun run dev`                       | Vite dev server (1420)                                                                                                |
 | `bun run tauri dev`                 | Desktop app                                                                                                           |
-| `bun run tauri:android:dev`         | Android on device/emulator                                                                                            |
-| `bun run android:dev`               | Windows helper: AVD + LAN auto-start                                                                                  |
+| `bun run tauri:android:dev`         | Same as `android:dev` (LAN IP + no dual cargo by default)                                                             |
+| `bun run android:dev`               | Windows helper: AVD + Android hot reload (`*-android` cargo target)                                                   |
+| `bun run android:dev:lan`           | Same + auto-start desktop LAN host on :8787                                                                           |
 | `bun run android:regen`             | Regenerate `gen/android` after identifier/icon change (runs `tauri icon` if `assets/branding/icon-source.png` exists) |
 | `bun run build:apk`                 | Debug APK (aarch64)                                                                                                   |
 | `bun run build:apk:release`         | Release APK (aarch64)                                                                                                 |

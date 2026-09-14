@@ -51,8 +51,13 @@ pub async fn queue_download(
     state: State<'_, Arc<AppState>>,
     url: String,
     adapter: Option<String>,
+    title: Option<String>,
 ) -> CmdResult<DownloadJob> {
-    map_err(state.queue_download(&url, adapter.as_deref()).await)
+    map_err(
+        state
+            .queue_download(&url, adapter.as_deref(), title.as_deref())
+            .await,
+    )
 }
 
 #[tauri::command]

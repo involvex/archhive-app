@@ -91,7 +91,20 @@ export function categoriesForOrientation(orientation: BrowseOrientation): Pornhu
 }
 
 export function categoryBrowseSlug(cat: PornhubCategory): string {
-  return cat.categoryId != null ? String(cat.categoryId) : cat.slug;
+  // Prefer human-readable slug in the route / search input. Backend maps
+  // known slugs (and legacy numeric ids) to PornHub `c=` params.
+  return cat.slug || (cat.categoryId != null ? String(cat.categoryId) : "");
+}
+
+/** Resolve a numeric category id back to a display name when possible. */
+export function categoryDisplayLabel(slug: string, orientation?: BrowseOrientation): string {
+  if (!/^\d+$/.test(slug)) return slug;
+  const matches = PORNHUB_CATEGORIES.filter((c) => String(c.categoryId) === slug);
+  if (orientation) {
+    const exact = matches.find((c) => c.orientation === orientation);
+    if (exact) return exact.name;
+  }
+  return matches[0]?.name ?? slug;
 }
 
 /** Merge live scraped counts/IDs into the static catalog. */

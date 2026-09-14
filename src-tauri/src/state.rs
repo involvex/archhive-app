@@ -119,16 +119,30 @@ impl AppState {
             .await
     }
 
-    pub async fn queue_download(&self, url: &str, adapter: Option<&str>) -> AppResult<DownloadJob> {
+    pub async fn queue_download(
+        &self,
+        url: &str,
+        adapter: Option<&str>,
+        title: Option<&str>,
+    ) -> AppResult<DownloadJob> {
         let adapter_id = adapter
             .map(|s| s.to_string())
             .or_else(|| self.sites.detect(url))
             .unwrap_or_else(|| "youtube".to_string());
 
         if let Some(site_adapter) = self.sites.get(&adapter_id) {
+            let resolved_title = title
+                .map(str::trim)
+                .filter(|t| !t.is_empty() && !looks_like_http_url(t))
+                .unwrap_or("")
+                .to_string();
             let item = MediaItem {
                 id: uuid::Uuid::new_v4().to_string(),
-                title: url.to_string(),
+                title: if resolved_title.is_empty() {
+                    url.to_string()
+                } else {
+                    resolved_title
+                },
                 url: url.to_string(),
                 thumbnail: None,
                 duration: None,
@@ -148,7 +162,7 @@ impl AppState {
             return self.downloads.queue_plan(plan);
         }
 
-        self.downloads.queue(url, &adapter_id, None)
+        self.downloads.queue(url, &adapter_id, title)
     }
 
     pub async fn queue_downloads(&self, urls: &[String]) -> AppResult<Vec<DownloadJob>> {
@@ -158,7 +172,7 @@ impl AppState {
             if trimmed.is_empty() {
                 continue;
             }
-            match self.queue_download(trimmed, None).await {
+            match self.queue_download(trimmed, None, None).await {
                 Ok(job) => jobs.push(job),
                 Err(e) => tracing::warn!("[queue] skipped {trimmed}: {e}"),
             }
@@ -225,7 +239,7 @@ impl AppState {
                         expanded += 1;
                         for (_, _, video_url, _) in entries {
                             if is_likely_video_url(&video_url) || import_all {
-                                if self.queue_download(&video_url, None).await.is_ok() {
+                                if self.queue_download(&video_url, None, None).await.is_ok() {
                                     queued += 1;
                                 }
                             }
@@ -240,7 +254,7 @@ impl AppState {
             }
 
             if is_likely_video_url(url) || import_all {
-                if self.queue_download(url, None).await.is_ok() {
+                if self.queue_download(url, None, None).await.is_ok() {
                     queued += 1;
                 }
             } else {
@@ -1361,6 +1375,11 @@ impl AppState {
         }
         created
     }
+}
+
+fn looks_like_http_url(s: &str) -> bool {
+    let t = s.trim().to_ascii_lowercase();
+    t.starts_with("http://") || t.starts_with("https://")
 }
 
 fn relative_path(root: &Path, abs: &Path) -> String {

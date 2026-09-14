@@ -29,7 +29,9 @@ ArcHive is a desktop and mobile application that lets users browse, download, an
 bun install                  # install JS dependencies
 bun run dev                  # Vite dev server (localhost:1420)
 bun run tauri dev            # Desktop app with hot reload
-bun run tauri:android:dev    # Android app on device/emulator
+bun run tauri:android:dev    # Same as android:dev (LAN IP + separate cargo target)
+bun run android:dev          # Preferred Android hot-reload helper
+bun run android:dev:lan      # Android + desktop LAN host (:8787)
 ```
 
 ### Build & Production
@@ -449,7 +451,7 @@ bun run format:check
 - `build:apk` uses `--target aarch64` with a typecheck prebuild; `build:apk:fast` skips lint/format and only runs `tsc && vite build` before the APK build
 - Custom URL browse route is `/browse/by-url`
 - Desktop system tray (`src-tauri/src/desktop/tray.rs`): close-to-tray and minimize-to-tray default on, global show/hide hotkey default **Ctrl+Shift+A**, tray menu opens Settings; configure in Settings → **Desktop**
-- Windows Android helpers: `bun run android:dev` (auto-boot AVD + deploy + LAN host) and `bun run android:regen` (regenerate `gen/android` after identifier/icon changes; verify `com.archhive.app`; sets `kotlin.incremental=false` for cross-drive Gradle)
+- Windows Android helpers: `bun run android:dev` / `tauri:android:dev` (AVD + `TAURI_DEV_HOST` LAN IP + `CARGO_TARGET_DIR=*-android`); `bun run android:dev:lan` when desktop :8787 is needed; `bun run android:regen` after identifier/icon changes
 - Frontend plugins: Bun + TypeScript only, clone into `plugins/`, run `bun run plugins:generate` after changes (`predev`/`prebuild` run it automatically); scrape/download backends still need Rust site adapters
 - Physical Android device: Remote LAN host `http://<pc-lan-ip>:8787`; emulator `http://10.0.2.2:8787`; release APK needs `scripts/patch-android-lan.ps1` for cleartext HTTP and mDNS (`gen/android` is gitignored)
 - `scripts/` AI/ComfyUI helpers (`migrate-models-supercopy.ps1`, `lib/supercopy-migrate.ps1`, `stop-agent-io-storm.ps1`, `AI-SETUP-README.md`); canonical AI models on `I:\Models`, Stability Matrix on `I:\StabilityMatrix-win-x64`

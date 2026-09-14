@@ -88,7 +88,7 @@ function CustomBrowsePage() {
   });
 
   async function handleDownload(item: MediaItem) {
-    await api.queueDownload(item.url, "custom");
+    await api.queueDownload(item.url, "custom", item.title);
   }
 
   return (
@@ -204,8 +204,10 @@ function CustomBrowsePage() {
 
       <UrlPlayerDialog
         item={watchItem}
+        playlist={items}
         open={watchItem !== null}
         onClose={() => setWatchItem(null)}
+        onSelectItem={setWatchItem}
       />
     </div>
   );

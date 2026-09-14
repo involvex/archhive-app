@@ -43,12 +43,14 @@ export const HlsVideoPlayer = forwardRef<HTMLVideoElement, HlsVideoPlayerProps>(
 
     const isHls = (() => {
       const lower = src.toLowerCase();
-      // CDN URLs often append query tokens: .../master.m3u8?validfrom=...
+      // Loopback proxy URLs put the real path in ?url=...m3u8..., so pathname
+      // is /api/media/proxy — check the full string, not just pathname.
+      if (lower.includes(".m3u8")) return true;
       try {
         const path = new URL(src).pathname.toLowerCase();
         return path.endsWith(".m3u8") || path.includes(".m3u8/");
       } catch {
-        return lower.includes(".m3u8");
+        return false;
       }
     })();
 

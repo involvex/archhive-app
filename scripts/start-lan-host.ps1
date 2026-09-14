@@ -53,6 +53,8 @@ if ($health -and $health.auth_required -eq $true) {
 }
 
 Write-Host "Starting desktop ArcHive (LAN auto-start on port $Port)..."
+Write-Host "NOTE: Keep this desktop window as the only desktop cargo watcher."
+Write-Host "      Android builds use CARGO_TARGET_DIR=*-android to avoid file locks."
 $env:ARCHIVE_AUTO_LAN = "1"
 Start-Process powershell -ArgumentList @(
     "-NoExit",

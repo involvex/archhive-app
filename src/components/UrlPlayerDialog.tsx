@@ -1,21 +1,39 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api/client";
 import { Button } from "@/components/ui/button";
 import { HlsVideoPlayer, STREAM_URL_EXPIRED_ERROR } from "@/components/HlsVideoPlayer";
-import { AlertCircle, Loader2, X } from "lucide-react";
+import { AlertCircle, ChevronLeft, ChevronRight, Loader2, X } from "lucide-react";
 import type { MediaItem } from "@/lib/types";
 
 interface UrlPlayerDialogProps {
   item: MediaItem | null;
+  /** Browse playlist — enables Previous / Next when more than one item. */
+  playlist?: MediaItem[];
   open: boolean;
   onClose: () => void;
+  onSelectItem?: (item: MediaItem) => void;
 }
 
-export function UrlPlayerDialog({ item, open, onClose }: UrlPlayerDialogProps) {
+export function UrlPlayerDialog({
+  item,
+  playlist,
+  open,
+  onClose,
+  onSelectItem,
+}: UrlPlayerDialogProps) {
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [queued, setQueued] = useState(false);
+
+  const index = useMemo(() => {
+    if (!item || !playlist?.length) return -1;
+    return playlist.findIndex((p) => p.id === item.id || p.url === item.url);
+  }, [item, playlist]);
+
+  const prevItem = index > 0 ? playlist![index - 1] : null;
+  const nextItem =
+    index >= 0 && playlist && index < playlist.length - 1 ? playlist[index + 1] : null;
 
   // Resolve a fresh stream URL. Signed CDN URLs expire quickly, so playback
   // failures are retried through here rather than reusing a stale URL.
@@ -57,11 +75,20 @@ export function UrlPlayerDialog({ item, open, onClose }: UrlPlayerDialogProps) {
       if (e.key === "Escape") {
         e.preventDefault();
         onClose();
+        return;
+      }
+      if (e.key === "ArrowRight" && nextItem && onSelectItem) {
+        e.preventDefault();
+        onSelectItem(nextItem);
+      }
+      if (e.key === "ArrowLeft" && prevItem && onSelectItem) {
+        e.preventDefault();
+        onSelectItem(prevItem);
       }
     }
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [open, onClose]);
+  }, [open, onClose, nextItem, prevItem, onSelectItem]);
 
   if (!open || !item) return null;
 
@@ -129,6 +156,34 @@ export function UrlPlayerDialog({ item, open, onClose }: UrlPlayerDialogProps) {
             />
           )}
 
+          {(prevItem || nextItem) && onSelectItem && (
+            <div className="mt-3 flex items-center justify-between gap-2">
+              <Button
+                variant="outline"
+                disabled={!prevItem}
+                onClick={() => prevItem && onSelectItem(prevItem)}
+                className="min-h-10 gap-1"
+              >
+                <ChevronLeft className="h-4 w-4" />
+                Previous
+              </Button>
+              {index >= 0 && playlist && (
+                <span className="text-xs text-[var(--color-muted-foreground)]">
+                  {index + 1} / {playlist.length}
+                </span>
+              )}
+              <Button
+                variant="outline"
+                disabled={!nextItem}
+                onClick={() => nextItem && onSelectItem(nextItem)}
+                className="min-h-10 gap-1"
+              >
+                Next
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
+
           <dl className="mt-4 space-y-2 text-sm">
             {item.performers.length > 0 && (
               <div>
@@ -189,7 +244,7 @@ export function UrlPlayerDialog({ item, open, onClose }: UrlPlayerDialogProps) {
               onClick={() => {
                 if (!item) return;
                 void api
-                  .queueDownload(item.url, item.site_id)
+                  .queueDownload(item.url, item.site_id, item.title)
                   .then(() => setQueued(true))
                   .catch((e: unknown) =>
                     setError(e instanceof Error ? e.message : "Failed to queue download"),

@@ -203,11 +203,23 @@ impl SiteAdapter for PornhubAdapter {
         ctx: &SiteContext,
         item: &MediaItem,
     ) -> AppResult<DownloadPlan> {
-        let (performers, tags, channel) = ctx
-            .fetch_html(&item.url, self.id())
-            .await
-            .map(|html| scrape_tube_video_page(&html, self.id()))
+        let html = ctx.fetch_html(&item.url, self.id()).await.ok();
+        let (performers, tags, channel) = html
+            .as_deref()
+            .map(|h| scrape_tube_video_page(h, self.id()))
             .unwrap_or_default();
+        let title = html
+            .as_deref()
+            .and_then(scrape_tube_video_title)
+            .or_else(|| {
+                let t = item.title.trim();
+                if !t.is_empty() && !t.starts_with("http://") && !t.starts_with("https://") {
+                    Some(t.to_string())
+                } else {
+                    None
+                }
+            })
+            .or_else(|| viewkey_title_fallback(&item.url));
         // On mobile, yt-dlp is 403-blocked by PornHub's edge, so fetch the
         // direct MP4 via the Rust extractor and download it with a Referer
         // header (phncdn requires one). Falls through to yt-dlp on failure.
@@ -220,7 +232,7 @@ impl SiteAdapter for PornhubAdapter {
                     url: media_url,
                     output_template: "%(title)s.%(ext)s".to_string(),
                     tool: DownloadTool::DirectHttp,
-                    title: Some(item.title.clone()),
+                    title: title.clone(),
                     performers: performers.clone(),
                     tags: tags.clone(),
                     adapter_id: self.id().to_string(),
@@ -239,7 +251,7 @@ impl SiteAdapter for PornhubAdapter {
                     url: hls_url,
                     output_template: "%(title)s.%(ext)s".to_string(),
                     tool: DownloadTool::FfmpegHls,
-                    title: Some(item.title.clone()),
+                    title,
                     performers,
                     tags,
                     adapter_id: self.id().to_string(),
@@ -254,7 +266,7 @@ impl SiteAdapter for PornhubAdapter {
             url: item.url.clone(),
             output_template: "%(uploader)s/%(title)s.%(ext)s".to_string(),
             tool: DownloadTool::YtDlp,
-            title: Some(item.title.clone()),
+            title,
             performers,
             tags,
             adapter_id: self.id().to_string(),
@@ -266,13 +278,18 @@ impl SiteAdapter for PornhubAdapter {
     }
     async fn resolve_stream_url(&self, ctx: &SiteContext, url: &str) -> AppResult<String> {
         // Prefer a progressive MP4 (works through the loopback Referer proxy).
-        // HLS playlists need segment-level headers that the WebView can't send.
+        // Fall back to proxied HLS (playlist + segments rewritten by the proxy).
         #[cfg(mobile)]
         {
             if let Ok(Some(stream_url)) =
                 crate::sites::extractors::pornhub::extract_download_url(ctx, url).await
             {
                 return Ok(maybe_loopback_proxy(ctx, &stream_url, "https://www.pornhub.com/"));
+            }
+            if let Ok(Some(hls_url)) =
+                crate::sites::extractors::pornhub::extract_hls_url(ctx, url).await
+            {
+                return Ok(maybe_loopback_proxy(ctx, &hls_url, "https://www.pornhub.com/"));
             }
         }
 
@@ -495,8 +512,13 @@ fn build_pornhub_category_url(query: &BrowseQuery) -> String {
     let orientation = query.orientation.unwrap_or(BrowseOrientation::Straight);
     let slug = path_slug(&query.slug);
 
-    if query.slug.chars().all(|c| c.is_ascii_digit()) {
-        let id = &query.slug;
+    let category_id = if query.slug.chars().all(|c| c.is_ascii_digit()) {
+        Some(query.slug.clone())
+    } else {
+        pornhub_category_id_for_slug(&slug, orientation).map(|id| id.to_string())
+    };
+
+    if let Some(id) = category_id {
         return match orientation {
             BrowseOrientation::Straight => {
                 format!("{PH_BASE}/video?c={id}{}", page_amp(query.page))
@@ -532,6 +554,15 @@ fn build_pornhub_category_url(query: &BrowseQuery) -> String {
                 page_amp(query.page)
             )
         }
+    }
+}
+
+/// Known PornHub `c=` ids for human-readable category slugs (mirrors frontend catalog).
+fn pornhub_category_id_for_slug(slug: &str, _orientation: BrowseOrientation) -> Option<u32> {
+    match slug.to_ascii_lowercase().as_str() {
+        // Frontend catalog sets categoryId for Lesbian — slug paths are unreliable.
+        "lesbian" => Some(27),
+        _ => None,
     }
 }
 
@@ -874,6 +905,48 @@ fn parse_video_count(text: &str) -> Option<u32> {
     digits.replace(',', "").parse().ok()
 }
 
+fn scrape_tube_video_title(html: &str) -> Option<String> {
+    use scraper::{Html, Selector};
+    let doc = Html::parse_document(html);
+    for sel in [
+        r#"meta[property="og:title"]"#,
+        r#"meta[name="twitter:title"]"#,
+        "h1.title",
+        "h1",
+    ] {
+        let Ok(selector) = Selector::parse(sel) else {
+            continue;
+        };
+        if let Some(el) = doc.select(&selector).next() {
+            let text = if sel.starts_with("meta") {
+                el.value()
+                    .attr("content")
+                    .unwrap_or("")
+                    .trim()
+                    .to_string()
+            } else {
+                el.text().collect::<String>().trim().to_string()
+            };
+            if !text.is_empty() && text.len() < 200 && !is_junk_nav_title(&text) {
+                return Some(text);
+            }
+        }
+    }
+    None
+}
+
+fn viewkey_title_fallback(url: &str) -> Option<String> {
+    let parsed = url::Url::parse(url).ok()?;
+    let key = parsed
+        .query_pairs()
+        .find(|(k, _)| k == "viewkey")
+        .map(|(_, v)| v.to_string())?;
+    if key.is_empty() {
+        return None;
+    }
+    Some(format!("pornhub-{key}"))
+}
+
 /// Scrape performers, tags, and channel from a tube site video page.
 pub(crate) fn scrape_tube_video_page(
     html: &str,
@@ -1000,6 +1073,17 @@ mod category_tests {
             orientation: Some(BrowseOrientation::Lesbian),
         });
         assert_eq!(url, format!("{PH_BASE}/lesbian/video?c=8"));
+    }
+
+    #[test]
+    fn lesbian_slug_maps_to_category_id() {
+        let url = build_pornhub_category_url(&BrowseQuery {
+            kind: BrowseKind::Category,
+            slug: "lesbian".into(),
+            page: 1,
+            orientation: Some(BrowseOrientation::Straight),
+        });
+        assert_eq!(url, format!("{PH_BASE}/video?c=27"));
     }
 
     #[test]

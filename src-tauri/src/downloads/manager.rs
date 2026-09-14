@@ -524,10 +524,20 @@ async fn run_job_with_plan(
             let base = plan
                 .title
                 .clone()
+                .filter(|t| {
+                    let lower = t.trim().to_ascii_lowercase();
+                    !lower.is_empty()
+                        && !lower.starts_with("http://")
+                        && !lower.starts_with("https://")
+                })
                 .map(|t| crate::downloads::image::sanitize_filename(&t))
                 .filter(|s| !s.is_empty())
                 .unwrap_or_else(|| "video".to_string());
-            let filename = if base.contains('.') {
+            let filename = if Path::new(&base)
+                .extension()
+                .and_then(|e| e.to_str())
+                .is_some_and(|e| matches!(e.to_ascii_lowercase().as_str(), "mp4" | "webm" | "m4v" | "mov" | "mkv"))
+            {
                 base
             } else {
                 format!("{base}.mp4")

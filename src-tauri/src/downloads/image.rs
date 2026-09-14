@@ -55,7 +55,7 @@ pub async fn download_direct(
     use tokio::io::AsyncWriteExt;
 
     let client = reqwest::Client::builder()
-        .user_agent("Mozilla/5.0 (compatible; ArcHive/1.0)")
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         .build()
         .map_err(|e| AppError::Download(e.to_string()))?;
 
@@ -80,28 +80,24 @@ pub async fn download_direct(
         )));
     }
 
+    let content_type = resp
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_lowercase();
+    if content_type.contains("application/json") || content_type.contains("text/html") {
+        return Err(AppError::Download(format!(
+            "refusing to save non-media response ({content_type}) — URL may be a get_media JSON endpoint"
+        )));
+    }
+
     let total = resp.content_length();
     let ext = extension_from_response(url, resp.headers().get(reqwest::header::CONTENT_TYPE));
 
     std::fs::create_dir_all(output_dir)?;
-    let base = title
-        .map(sanitize_filename)
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| {
-            url::Url::parse(url)
-                .ok()
-                .and_then(|u| {
-                    u.path_segments()
-                        .and_then(|s| s.last().map(|s| s.to_string()))
-                })
-                .map(|s| sanitize_filename(&s))
-                .unwrap_or_else(|| "download".to_string())
-        });
-    let filename = if base.contains('.') {
-        base
-    } else {
-        format!("{base}{ext}")
-    };
+    let stem = media_filename_stem(title, url);
+    let filename = format!("{stem}{ext}");
     let path = Path::new(output_dir).join(&filename);
     let path = unique_path(path);
     let mut file = tokio::fs::File::create(&path)
@@ -200,6 +196,47 @@ pub(crate) fn sanitize_filename(name: &str) -> String {
     safe.trim_matches('_').to_string()
 }
 
+/// Build a filename stem that never treats page URLs (or `.php` junk) as the name.
+fn media_filename_stem(title: Option<&str>, url: &str) -> String {
+    let from_title = title
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .filter(|t| {
+            let lower = t.to_ascii_lowercase();
+            !lower.starts_with("http://") && !lower.starts_with("https://")
+        })
+        .map(sanitize_filename)
+        .filter(|s| !s.is_empty());
+    let raw = from_title.unwrap_or_else(|| {
+        url::Url::parse(url)
+            .ok()
+            .and_then(|u| {
+                u.path_segments()
+                    .and_then(|s| s.last().map(|s| s.to_string()))
+            })
+            .map(|s| sanitize_filename(&s))
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "video".to_string())
+    });
+    // Strip bogus extensions like `.php` left over from sanitized URLs.
+    let lower = raw.to_ascii_lowercase();
+    for bogus in [".php", ".html", ".htm", ".asp", ".aspx", ".jsp"] {
+        if let Some(stripped) = lower.strip_suffix(bogus) {
+            let end = stripped.len();
+            return raw[..end].trim_matches('_').to_string();
+        }
+    }
+    // If the stem already ends with a real media extension, drop it — caller adds `ext`.
+    for real in [".mp4", ".webm", ".m4v", ".mov", ".mkv", ".jpg", ".jpeg", ".png", ".gif", ".webp"]
+    {
+        if let Some(stripped) = lower.strip_suffix(real) {
+            let end = stripped.len();
+            return raw[..end].trim_matches('_').to_string();
+        }
+    }
+    raw
+}
+
 pub(crate) fn unique_path(path: PathBuf) -> PathBuf {
     if !path.exists() {
         return path;
@@ -244,5 +281,16 @@ mod tests {
         use crate::models::DownloadTool;
         let tool = resolve_download_tool("https://v.redd.it/abc123", "reddit");
         assert_eq!(tool, DownloadTool::YtDlp);
+    }
+
+    #[test]
+    fn media_stem_rejects_page_urls_and_php() {
+        let stem = media_filename_stem(
+            Some("https://www.pornhub.com/view_video.php?viewkey=abc"),
+            "https://cdn.example.com/v/a720.mp4?token=1",
+        );
+        assert_eq!(stem, "a720");
+        let stem2 = media_filename_stem(Some("Hot Scene"), "https://cdn.example.com/x");
+        assert_eq!(stem2, "Hot_Scene");
     }
 }

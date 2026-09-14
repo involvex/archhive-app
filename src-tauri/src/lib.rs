@@ -85,7 +85,13 @@ fn resolve_lan_static_ui(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
 fn bootstrap_mobile_settings(db: &Database, data_dir: &std::path::Path) -> Result<(), String> {
     let mut settings = db.get_settings().unwrap_or_default();
     let mut changed = false;
-    if settings.engine_mode == EngineMode::RemoteLan {
+    // Only fall back to Local when Remote LAN has no host configured.
+    // Previously this forced Local on every launch and wiped intentional Remote LAN.
+    let has_remote_host = settings
+        .remote_host
+        .as_ref()
+        .is_some_and(|h| !h.trim().is_empty());
+    if settings.engine_mode == EngineMode::RemoteLan && !has_remote_host {
         settings.engine_mode = EngineMode::Local;
         changed = true;
     }

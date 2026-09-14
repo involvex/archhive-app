@@ -73,12 +73,14 @@ Common causes:
 
 Release builds enable R8 minify; keep rules live in [`src-tauri/android-overlays/proguard-ytdlp.pro`](../src-tauri/android-overlays/proguard-ytdlp.pro).
 
-## WebView / white screen
+## WebView / white screen / “Website not available”
 
 1. Update **Android System WebView** and **Chrome** from Play Store (required on some Huawei/Honor devices).
 2. Clear app data: Settings → Apps → ArcHive → Storage → Clear cache/data.
-3. Dev: ensure Vite is reachable when using `tauri android dev` (port 1420 on PC).
-4. Remote LAN: use desktop API port **8787**, not Vite 1420.
+3. Dev: use `bun run android:dev` (or `tauri:android:dev`) so `TAURI_DEV_HOST` is your PC LAN IP. Bare `tauri android dev` with `devUrl=http://localhost:1420` fails on device — the phone’s localhost is not the PC.
+4. Quick check: open `http://<pc-lan-ip>:1420` in the phone’s browser. If that fails, fix Wi‑Fi/firewall before blaming the app.
+5. Do not run desktop `tauri dev` and Android cargo on the **same** `CARGO_TARGET_DIR` without the helper (it uses `*-android`). Dual lock = stuck builds / half-started Vite.
+6. Remote LAN: use desktop API port **8787**, not Vite 1420.
 
 ## ffmpeg / ffprobe show “not found” in Settings
 
