@@ -10,6 +10,8 @@ env:
   CARGO_TARGET_DIR: src-tauri/target
   CARGO_BUILD_JOBS: "1"
   NODE_OPTIONS: "--max-old-space-size=4096"
+  RUSTFLAGS: "-C codegen-units=1"
+  CARGO_INCREMENTAL: "0"
 
 jobs:
   lint-frontend:
@@ -20,7 +22,7 @@ jobs:
 
       - name: Add swap space
         run: |
-          sudo dd if=/dev/zero of=/swapfile bs=1M count=4096
+          sudo dd if=/dev/zero of=/swapfile bs=1M count=6144
           sudo chmod 600 /swapfile
           sudo mkswap /swapfile
           sudo swapon /swapfile
@@ -50,7 +52,7 @@ jobs:
 
       - name: Add swap space
         run: |
-          sudo dd if=/dev/zero of=/swapfile bs=1M count=4096
+          sudo dd if=/dev/zero of=/swapfile bs=1M count=6144
           sudo chmod 600 /swapfile
           sudo mkswap /swapfile
           sudo swapon /swapfile
@@ -63,7 +65,7 @@ jobs:
         run: cargo install cargo-audit
 
       - name: Run clippy
-        run: cd src-tauri && cargo clippy --jobs=1
+        run: cd src-tauri && cargo clippy --jobs=1 -- -D warnings
 
       - name: Run cargo audit
         run: cd src-tauri && cargo audit
@@ -76,7 +78,7 @@ jobs:
 
       - name: Add swap space
         run: |
-          sudo dd if=/dev/zero of=/swapfile bs=1M count=4096
+          sudo dd if=/dev/zero of=/swapfile bs=1M count=6144
           sudo chmod 600 /swapfile
           sudo mkswap /swapfile
           sudo swapon /swapfile
@@ -96,7 +98,7 @@ jobs:
 
       - name: Add swap space
         run: |
-          sudo dd if=/dev/zero of=/swapfile bs=1M count=4096
+          sudo dd if=/dev/zero of=/swapfile bs=1M count=6144
           sudo chmod 600 /swapfile
           sudo mkswap /swapfile
           sudo swapon /swapfile
