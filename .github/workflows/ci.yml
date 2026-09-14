@@ -26,6 +26,9 @@ jobs:
       - name: Format check
         run: bun run format:check
 
+      - name: Generate plugins registry
+        run: bun run plugins:generate
+
       - name: Typecheck
         run: bun run typecheck
 
