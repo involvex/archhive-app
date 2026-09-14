@@ -328,6 +328,8 @@ impl AppState {
         crate::library::LibraryScanner::scan(&self.db, &path, &rules, None)
     }
 
+    /// Library root is intentionally user-chosen (Settings → Library).
+    /// CodeQL path-injection alerts here are by design: the operator picks the folder.
     pub fn validate_library_path(library_path: &str, _data_dir: &Path) -> AppResult<String> {
         let trimmed = library_path.trim();
         if trimmed.is_empty() {
@@ -342,6 +344,7 @@ impl AppState {
             ));
         }
         if !path.exists() {
+            // User-selected absolute library root — create if missing.
             std::fs::create_dir_all(path)?;
         }
         let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());

@@ -59,13 +59,19 @@ We support good-faith security research. Do not access data that is not yours, d
 
 Understanding these areas helps write useful reports:
 
-| Area             | Notes                                                                                                                                                                                                                        |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Cookie vault** | Site cookies are encrypted at rest (AES-256-GCM). Plaintext cookie files may exist briefly for yt-dlp `--cookies` usage.                                                                                                     |
-| **LAN server**   | Bearer token required for all endpoints except `/api/health`. Default token is randomly generated; treat it like a password. `/api/files/stream` and `/api/scenes/{id}/media` expose library files to anyone with the token. |
-| **Downloads**    | External URLs are passed to yt-dlp, gallery-dl, or direct HTTP fetchers. Command invocation uses argument arrays, not shell interpolation.                                                                                   |
-| **CSP**          | Content Security Policy is currently disabled in `tauri.conf.json` for development flexibility. Hardening before wide distribution is planned.                                                                               |
-| **Plugins**      | TypeScript plugins in `plugins/` run in the app context. Only install plugins from sources you trust.                                                                                                                        |
+| Area             | Notes                                                                                                                                                                                                                          |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Cookie vault** | Site cookies are encrypted at rest (AES-256-GCM). Plaintext cookie files may exist briefly for yt-dlp `--cookies` usage. Cookie `site_id` values are restricted to `[A-Za-z0-9_-]` so file paths cannot escape the cookie dir. |
+| **LAN server**   | Bearer token required for all endpoints except `/api/health`. Default token is randomly generated; treat it like a password. `/api/files/stream` and `/api/scenes/{id}/media` expose library files to anyone with the token.   |
+| **Downloads**    | External URLs are passed to yt-dlp, gallery-dl, or direct HTTP fetchers. Command invocation uses argument arrays, not shell interpolation.                                                                                     |
+| **CSP**          | Content Security Policy is currently disabled in `tauri.conf.json` for development flexibility. Hardening before wide distribution is planned.                                                                                 |
+| **Plugins**      | TypeScript plugins in `plugins/` run in the app context. Only install plugins from sources you trust.                                                                                                                          |
+
+## Known deferred dependency advisories
+
+| Advisory                                                                                       | Package            | Severity | Status                                                                                                                                                                                                                                                                                                                                          |
+| ---------------------------------------------------------------------------------------------- | ------------------ | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [GHSA-wrw7-89jp-8q8g](https://github.com/advisories/GHSA-wrw7-89jp-8q8g) (`RUSTSEC-2024-0429`) | `glib` &lt; 0.20.0 | Medium   | **Deferred** — transitive via Tauri Linux GTK (`gtk 0.18` → `glib 0.18.5`). Cannot bump alone (`cargo update -p glib --precise 0.20.0` conflicts with `gtk = "^0.18"`). Upstream Tauri still depends on `gtk 0.18` / `webkit2gtk 2.x`. Linux-only; Windows/Android builds do not link this crate. Revisit when Tauri migrates to gtk-rs ≥ 0.20. |
 
 ## Coordinated disclosure
 

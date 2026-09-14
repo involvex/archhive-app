@@ -47,6 +47,10 @@ impl BinaryInstaller {
     }
 
     pub async fn check_installed(&self, name: &str) -> Option<PathBuf> {
+        // Allowlist only known binary basenames — never join untrusted path segments.
+        if !matches!(name, "yt-dlp" | "gallery-dl") {
+            return None;
+        }
         let path = self.install_dir.join(name);
         if path.exists() {
             Some(path)

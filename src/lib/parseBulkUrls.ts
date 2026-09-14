@@ -28,6 +28,11 @@ export function isBrowseUrl(url: string): boolean {
   }
 }
 
+/** True when hostname is the domain or a subdomain (blocks `notyoutube.com`, `youtube.com.evil.tld`). */
+function hostMatches(host: string, domain: string): boolean {
+  return host === domain || host.endsWith(`.${domain}`);
+}
+
 /** True when URL looks like a single video/watch page. */
 export function isLikelyVideoUrl(url: string): boolean {
   if (isBrowseUrl(url)) return false;
@@ -36,9 +41,9 @@ export function isLikelyVideoUrl(url: string): boolean {
     const path = u.pathname.toLowerCase();
     const host = u.hostname.toLowerCase();
     if (path.includes("/watch") || path.includes("/video")) return true;
-    if (host.includes("youtu.be")) return true;
-    if (host.includes("youtube.com") && u.searchParams.has("v")) return true;
-    if (host.includes("redgifs.com") && path.length > 1) return true;
+    if (hostMatches(host, "youtu.be")) return true;
+    if (hostMatches(host, "youtube.com") && u.searchParams.has("v")) return true;
+    if (hostMatches(host, "redgifs.com") && path.length > 1) return true;
     return false;
   } catch {
     return false;

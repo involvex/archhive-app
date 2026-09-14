@@ -1,11 +1,10 @@
 use crate::error::{AppError, AppResult};
 use aes_gcm::{
-    aead::{Aead, KeyInit},
+    aead::{Aead, AeadCore, KeyInit, OsRng},
     Aes256Gcm, Nonce,
 };
 use base64::{engine::general_purpose::STANDARD, Engine};
 use chrono::Utc;
-use rand::RngCore;
 use rusqlite::params;
 use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
@@ -58,9 +57,10 @@ impl CookieVault {
     pub fn save_cookies(&self, site_id: &str, netscape_cookies: &str) -> AppResult<()> {
         // Normalize pasted exports (e.g. wrong TRUE/FALSE tailmatch flag) so
         // strict parsers like Python's http.cookiejar accept the file.
+        let site_id = validate_site_id(site_id)?;
         let normalized = normalize_netscape(netscape_cookies);
         let encrypted = self.encrypt(normalized.as_bytes())?;
-        let path = self.cookie_file_path(site_id);
+        let path = self.cookie_file_path(site_id)?;
         std::fs::write(&path, &normalized)?;
         let now = Utc::now().to_rfc3339();
         let conn = self
@@ -76,6 +76,7 @@ impl CookieVault {
     }
 
     pub fn delete_cookies(&self, site_id: &str) -> AppResult<()> {
+        let site_id = validate_site_id(site_id)?;
         let conn = self
             .conn
             .lock()
@@ -84,19 +85,20 @@ impl CookieVault {
             "DELETE FROM site_cookies WHERE site_id = ?1",
             params![site_id],
         )?;
-        let path = self.cookie_file_path(site_id);
+        let path = self.cookie_file_path(site_id)?;
         if path.exists() {
             std::fs::remove_file(path)?;
         }
         Ok(())
     }
 
-    pub fn cookie_file_path(&self, site_id: &str) -> PathBuf {
-        self.cookie_dir.join(format!("{site_id}.txt"))
+    pub fn cookie_file_path(&self, site_id: &str) -> AppResult<PathBuf> {
+        let site_id = validate_site_id(site_id)?;
+        Ok(self.cookie_dir.join(format!("{site_id}.txt")))
     }
 
     pub fn cookie_file_for_site(&self, site_id: &str) -> Option<PathBuf> {
-        let path = self.cookie_file_path(site_id);
+        let path = self.cookie_file_path(site_id).ok()?;
         if !path.exists() {
             return None;
         }
@@ -131,14 +133,12 @@ impl CookieVault {
     }
 
     fn encrypt(&self, plain: &[u8]) -> AppResult<Vec<u8>> {
-        let mut nonce_bytes = [0u8; 12];
-        rand::thread_rng().fill_bytes(&mut nonce_bytes);
-        let nonce = Nonce::from_slice(&nonce_bytes);
+        let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
         let ciphertext = self
             .cipher
-            .encrypt(nonce, plain)
+            .encrypt(&nonce, plain)
             .map_err(|e| AppError::Other(format!("encrypt: {e}")))?;
-        let mut out = nonce_bytes.to_vec();
+        let mut out = nonce.to_vec();
         out.extend(ciphertext);
         Ok(out)
     }
@@ -155,23 +155,34 @@ impl CookieVault {
     }
 }
 
+/// Reject path separators / traversal so cookie files stay under `cookie_dir`.
+fn validate_site_id(site_id: &str) -> AppResult<&str> {
+    if site_id.is_empty()
+        || !site_id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return Err(AppError::InvalidInput(format!(
+            "Invalid site_id (use alphanumeric, '-', '_'): {site_id:?}"
+        )));
+    }
+    Ok(site_id)
+}
+
 fn load_or_create_key(path: &PathBuf) -> AppResult<[u8; 32]> {
     if path.exists() {
         let encoded = std::fs::read_to_string(path)?;
         let bytes = STANDARD
             .decode(encoded.trim())
             .map_err(|e| AppError::Other(format!("key decode: {e}")))?;
-        if bytes.len() != 32 {
-            return Err(AppError::Other("invalid vault key length".into()));
-        }
-        let mut key = [0u8; 32];
-        key.copy_from_slice(&bytes);
+        let key: [u8; 32] = bytes
+            .try_into()
+            .map_err(|_| AppError::Other("invalid vault key length".into()))?;
         return Ok(key);
     }
-    let mut key = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut key);
+    let key = Aes256Gcm::generate_key(OsRng);
     std::fs::write(path, STANDARD.encode(key))?;
-    Ok(key)
+    Ok(key.into())
 }
 
 fn netscape_to_header(netscape: &str) -> String {
@@ -229,7 +240,18 @@ fn normalize_netscape(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::normalize_netscape;
+    use super::{normalize_netscape, validate_site_id};
+
+    #[test]
+    fn rejects_path_traversal_site_ids() {
+        assert!(validate_site_id("../etc").is_err());
+        assert!(validate_site_id("foo/bar").is_err());
+        assert!(validate_site_id("foo\\bar").is_err());
+        assert!(validate_site_id("").is_err());
+        assert!(validate_site_id("pornhub").is_ok());
+        assert!(validate_site_id("you_porn").is_ok());
+        assert!(validate_site_id("x-videos").is_ok());
+    }
 
     #[test]
     fn fixes_dot_domain_with_false_flag() {
