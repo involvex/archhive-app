@@ -8,6 +8,8 @@ on:
 
 env:
   CARGO_TARGET_DIR: src-tauri/target
+  CARGO_BUILD_JOBS: "1"
+  NODE_OPTIONS: "--max-old-space-size=4096"
 
 jobs:
   lint-frontend:
@@ -18,7 +20,7 @@ jobs:
 
       - name: Add swap space
         run: |
-          sudo dd if=/dev/zero of=/swapfile bs=1M count=2048
+          sudo dd if=/dev/zero of=/swapfile bs=1M count=4096
           sudo chmod 600 /swapfile
           sudo mkswap /swapfile
           sudo swapon /swapfile
@@ -48,7 +50,7 @@ jobs:
 
       - name: Add swap space
         run: |
-          sudo dd if=/dev/zero of=/swapfile bs=1M count=2048
+          sudo dd if=/dev/zero of=/swapfile bs=1M count=4096
           sudo chmod 600 /swapfile
           sudo mkswap /swapfile
           sudo swapon /swapfile
@@ -61,7 +63,7 @@ jobs:
         run: cargo install cargo-audit
 
       - name: Run clippy
-        run: cd src-tauri && cargo clippy
+        run: cd src-tauri && cargo clippy --jobs=1
 
       - name: Run cargo audit
         run: cd src-tauri && cargo audit
@@ -74,7 +76,7 @@ jobs:
 
       - name: Add swap space
         run: |
-          sudo dd if=/dev/zero of=/swapfile bs=1M count=2048
+          sudo dd if=/dev/zero of=/swapfile bs=1M count=4096
           sudo chmod 600 /swapfile
           sudo mkswap /swapfile
           sudo swapon /swapfile
@@ -84,7 +86,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Run Rust tests
-        run: cd src-tauri && cargo test
+        run: cd src-tauri && cargo test --jobs=1
 
   audit:
     name: Security Audit
@@ -94,7 +96,7 @@ jobs:
 
       - name: Add swap space
         run: |
-          sudo dd if=/dev/zero of=/swapfile bs=1M count=2048
+          sudo dd if=/dev/zero of=/swapfile bs=1M count=4096
           sudo chmod 600 /swapfile
           sudo mkswap /swapfile
           sudo swapon /swapfile
