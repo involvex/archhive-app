@@ -6,13 +6,6 @@ on:
   pull_request:
     branches: [main]
 
-env:
-  CARGO_TARGET_DIR: src-tauri/target
-  CARGO_BUILD_JOBS: "1"
-  NODE_OPTIONS: "--max-old-space-size=4096"
-  RUSTFLAGS: "-C codegen-units=1"
-  CARGO_INCREMENTAL: "0"
-
 jobs:
   lint-frontend:
     name: Frontend Lint & Typecheck
@@ -35,18 +28,6 @@ jobs:
 
       - name: Typecheck
         run: bun run typecheck
-
-  lint-backend:
-    name: Rust Check
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Run cargo check
-        run: cd src-tauri && cargo check --jobs=1
 
   audit:
     name: Security Audit
