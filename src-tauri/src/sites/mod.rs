@@ -16,15 +16,33 @@ pub struct SiteContext {
     pub client: reqwest::Client,
     vault: Arc<CookieVault>,
     app: tauri::AppHandle,
+    lan_port: u16,
 }
 
 impl SiteContext {
     pub fn new(vault: Arc<CookieVault>, app: tauri::AppHandle) -> AppResult<Self> {
+        Self::with_lan_port(vault, app, 8787)
+    }
+
+    pub fn with_lan_port(
+        vault: Arc<CookieVault>,
+        app: tauri::AppHandle,
+        lan_port: u16,
+    ) -> AppResult<Self> {
         let client = reqwest::Client::builder()
             .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
             .cookie_store(true)
             .build()?;
-        Ok(Self { client, vault, app })
+        Ok(Self {
+            client,
+            vault,
+            app,
+            lan_port,
+        })
+    }
+
+    pub fn lan_port(&self) -> u16 {
+        self.lan_port
     }
 
     pub fn app(&self) -> &tauri::AppHandle {
@@ -40,10 +58,25 @@ impl SiteContext {
     }
 
     pub async fn fetch_html(&self, url: &str, site_id: &str) -> AppResult<String> {
+        self.fetch_with_headers(url, site_id, None).await
+    }
+
+    /// GET with vault cookies plus optional extra headers (API listings, XHR endpoints).
+    pub async fn fetch_with_headers(
+        &self,
+        url: &str,
+        site_id: &str,
+        extra: Option<&[(&str, &str)]>,
+    ) -> AppResult<String> {
         let mut req = self.client.get(url);
         if let Ok(Some(header)) = self.vault.cookie_header(site_id) {
             if !header.is_empty() {
                 req = req.header("Cookie", header);
+            }
+        }
+        if let Some(pairs) = extra {
+            for (k, v) in pairs {
+                req = req.header(*k, *v);
             }
         }
         let resp = req.send().await?;
@@ -51,6 +84,22 @@ impl SiteContext {
             return Err(AppError::Site(format!("HTTP {} for {url}", resp.status())));
         }
         Ok(resp.text().await?)
+    }
+
+    /// JSON room-list style APIs (Chaturbate / Stripchat ts endpoints).
+    pub async fn fetch_json_api(&self, url: &str, site_id: &str, referer: &str) -> AppResult<String> {
+        let origin = referer.trim_end_matches('/');
+        self.fetch_with_headers(
+            url,
+            site_id,
+            Some(&[
+                ("Accept", "*/*"),
+                ("Referer", referer),
+                ("Origin", origin),
+                ("X-Requested-With", "XMLHttpRequest"),
+            ]),
+        )
+        .await
     }
 }
 

@@ -10,11 +10,13 @@
 HTTP client uses **rustls** (not OpenSSL), so no `OPENSSL_DIR` / NDK OpenSSL setup is required for Android builds.
 
 Android standalone builds ship an embedded yt-dlp engine (youtubedl-android Kotlin plugin)
-plus `ffmpeg`/`ffprobe` sidecars via `tauri.android.conf.json` (`externalBin` +
-`resources` mapping). The sidecar binaries are **not** in git — run
-`bun run setup:binaries:android` (i.e. `scripts/setup-binaries.ps1 -IncludeAndroid`)
-before `bun run build:apk`, otherwise Settings → Library → Media tools reports
-ffmpeg/ffprobe as "not found" and thumbnails / duration probes / HLS downloads fail.
+plus Android-native ffmpeg/ffprobe from the same AAR (`FFmpeg.init` unpacks
+`libffmpeg.zip.so` at runtime). You do **not** need `setup:binaries:android` for
+media tools — they are included with the APK via Gradle dependencies applied by
+`scripts/patch-android-ytdlp.ps1` / `bun run android:regen`. APK scripts
+(`build:apk`, `build:apk:fast`, `build:apk:release`) re-apply that overlay
+automatically before packaging.
+
 Remote LAN mode offloads downloads to the desktop host and needs no on-device engines.
 
 ## One-time setup
@@ -30,13 +32,21 @@ If you changed `identifier` in `tauri.conf.json` (e.g. `com.scrawler` → `com.a
 bun run android:regen
 ```
 
-On Windows, enable cleartext HTTP for LAN (required for `http://192.168.x.x`):
+`android:regen` also applies:
+
+- [`scripts/patch-android-lan.ps1`](../scripts/patch-android-lan.ps1) — cleartext HTTP + media permissions
+- [`scripts/patch-android-ytdlp.ps1`](../scripts/patch-android-ytdlp.ps1) — restores `YtDlpPlugin.kt`, youtubedl-android Gradle deps, and ProGuard keep rules from [`src-tauri/android-overlays/`](../src-tauri/android-overlays/)
+
+**Do not skip the YtDlp overlay.** Without it, release R8 minify or a fresh `tauri android init` can leave `register_android_plugin("YtDlpPlugin")` failing at boot.
+
+On Windows, you can also re-apply patches without a full regen:
 
 ```powershell
 .\scripts\patch-android-lan.ps1
+.\scripts\patch-android-ytdlp.ps1
 ```
 
-Debug builds already allow cleartext; the patch is mainly for release APKs.
+Debug builds already allow cleartext; the LAN patch is mainly for release APKs.
 
 ## Run on device or emulator
 

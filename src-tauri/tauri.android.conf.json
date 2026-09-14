@@ -1,11 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "bundle": {
-    "externalBin": ["binaries/ffmpeg", "binaries/ffprobe"],
     "resources": {
-      "../dist": "lan-ui",
-      "binaries/ffmpeg-aarch64-linux-android": "binaries/ffmpeg",
-      "binaries/ffprobe-aarch64-linux-android": "binaries/ffprobe"
+      "../dist": "lan-ui"
     }
   }
 }

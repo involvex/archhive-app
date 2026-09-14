@@ -450,12 +450,12 @@ impl SidecarRunner {
     }
 
     /// On Android, extract a resource-bundled binary (ffmpeg/ffprobe) to the app
-    /// data dir and set executable permissions. Returns the path to the extracted
-    /// binary if successful, or `None` if the resource could not be found.
-    /// This is a fallback for when `shell().sidecar()` fails with
-    /// "Permission denied (os error 13)" because Tauri's Android sidecar
-    /// extraction doesn't always set the executable bit.
+    /// data dir and set executable permissions.
+    ///
+    /// Deprecated: Android now uses youtubedl-android `FFmpeg.init` (see
+    /// `ytdlp_bridge::ensure_media_tools`). Kept for diagnostics only.
     #[cfg(target_os = "android")]
+    #[allow(dead_code)]
     pub fn extract_android_binary(&self, name: &str) -> Option<PathBuf> {
         let resource_path = self
             .app
@@ -548,39 +548,27 @@ impl SidecarRunner {
         args: &[String],
         on_line: impl FnMut(&str),
     ) -> AppResult<String> {
-        // On Android, use shell().sidecar() for ffmpeg/ffprobe instead of
-        // shell().command(absolute_path), which may fail to extract Resource binaries.
+        // On Android, use youtubedl-android's native ffmpeg/ffprobe (via Kotlin plugin).
+        // Linux BtbN sidecars in APK assets cannot execute on bionic and Resource
+        // paths are asset:// URIs that std::fs cannot open.
         #[cfg(target_os = "android")]
         if name == "ffmpeg" || name == "ffprobe" {
-            let sidecar_result = self
-                .app
-                .shell()
-                .sidecar(format!("binaries/{name}"))
-                .map(|cmd| cmd.args(args).spawn());
-            match sidecar_result {
-                Ok(Ok((rx, _child))) => return self.consume(rx, name, on_line).await,
-                Ok(Err(e)) => {
-                    eprintln!("[android] sidecar {name} spawn failed: {e}");
-                }
-                Err(e) => {
-                    eprintln!("[android] sidecar {name} resolution failed: {e}");
-                }
+            let app = self.app.clone();
+            let tool = name.to_string();
+            let args = args.to_vec();
+            let text = tokio::task::spawn_blocking(move || {
+                // Ensure binaries are unpacked, then run.
+                let _ = crate::mobile::ytdlp_bridge::ensure_media_tools(&app);
+                crate::mobile::ytdlp_bridge::execute_media(&app, &tool, &args)
+            })
+            .await
+            .map_err(|e| AppError::Download(format!("{name} task failed: {e}")))??;
+            // Replay output for progress callbacks (best-effort; full text at end).
+            let mut on_line = on_line;
+            for line in text.lines() {
+                on_line(line);
             }
-            // Fallback: manually extract the resource-bundled binary to the app data
-            // dir and set executable permissions (shell().sidecar() may not chmod
-            // on Android — root cause of "Permission denied (os error 13)").
-            if let Some(extracted) = self.extract_android_binary(name) {
-                let (rx, _child) = self
-                    .app
-                    .shell()
-                    .command(extracted.to_string_lossy().as_ref())
-                    .args(args)
-                    .spawn()
-                    .map_err(|e| {
-                        AppError::Download(format!("spawn {name} from extracted path: {e}"))
-                    })?;
-                return self.consume(rx, name, on_line).await;
-            }
+            return Ok(text);
         }
 
         if let Some(path) = self.resolve_binary_path(name) {

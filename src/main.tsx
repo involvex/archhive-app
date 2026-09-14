@@ -9,7 +9,8 @@ import { getRegisteredPlugins } from "./lib/plugins/registry.generated";
 import { api } from "./lib/api/client";
 import { bootstrapLanBrowser } from "./lib/lanBootstrap";
 import { useSettingsStore } from "./lib/stores/settings";
-import { isDesktopTauri } from "./lib/tauri";
+import { isDesktopTauri, isTauri } from "./lib/tauri";
+import { getAppRuntime } from "./lib/runtime";
 import { AppErrorBoundary } from "./components/AppErrorBoundary";
 import { useDownloadNotifications } from "@/lib/hooks/useDownloadNotifications";
 import "./styles/globals.css";
@@ -30,11 +31,22 @@ declare module "@tanstack/react-router" {
 function BootstrapSettings() {
   useEffect(() => {
     void bootstrapLanBrowser().then(() => {
-      if (!isDesktopTauri()) return;
+      // Sync backend settings on desktop and mobile-tauri (not browser-only LAN UI).
+      if (!isTauri()) return;
       void api
         .getSettings()
         .then((backend) => {
-          useSettingsStore.getState().updateSettings(backend);
+          const runtime = getAppRuntime();
+          const next = { ...backend };
+          // Migrate stale persisted remote_lan on mobile when backend is local/standalone.
+          if (
+            runtime === "mobile-tauri" &&
+            next.engine_mode === "remote_lan" &&
+            !next.remote_host?.trim()
+          ) {
+            next.engine_mode = "local";
+          }
+          useSettingsStore.getState().updateSettings(next);
         })
         .catch(console.error);
     });

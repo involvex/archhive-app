@@ -112,12 +112,13 @@ function ScenesPage() {
     (filter.performer_names?.length ?? 0) > 0 ||
     (filter.tag_names?.length ?? 0) > 0;
 
-  const missingThumbCount = scenes.filter((s) => !s.thumb).length;
-  const watchedCount = scenes.filter((s) => watchMap.get(s.id)?.watched).length;
   const [genThumbsLoading, setGenThumbsLoading] = useState(false);
   const [genThumbsResult, setGenThumbsResult] = useState("");
-  // #26 watch-history map (scene id → progress).
+  // #26 watch-history map (scene id → progress). Must be declared before any
+  // render-time reads (TDZ: using watchMap above this line crashes Library).
   const [watchMap, setWatchMap] = useState<WatchMap>(new Map());
+  const missingThumbCount = scenes.filter((s) => !s.thumb).length;
+  const watchedCount = scenes.filter((s) => watchMap.get(s.id)?.watched).length;
 
   // Q30: refs for the `W` toggle-watched shortcut action.
   const selectedIdsRef = useRef(selectedIds);

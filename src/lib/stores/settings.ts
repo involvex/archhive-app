@@ -1,7 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { AppSettings, EngineMode } from "../types";
-import { isMobileDevice } from "../tauri";
 
 interface SettingsState {
   settings: AppSettings;
@@ -15,7 +14,7 @@ interface SettingsState {
 }
 
 const defaultSettings: AppSettings = {
-  engine_mode: isMobileDevice() ? "remote_lan" : "local",
+  engine_mode: "local",
   library_path: "",
   naming_template: "{performer}/{title}.{ext}",
   lan_enabled: false,

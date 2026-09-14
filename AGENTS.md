@@ -288,7 +288,7 @@ Key files:
 
 Configure in **Settings → Engine**. The frontend client (`api/client.ts`) automatically switches between local IPC and remote HTTP based on this setting.
 
-- **Mobile defaults to `RemoteLan`**: `src-tauri/src/lib.rs` sets `settings.engine_mode = EngineMode::RemoteLan` on mobile startup.
+- **Mobile defaults to `Local`**: `bootstrap_mobile_settings` in `src-tauri/src/lib.rs` forces `EngineMode::RemoteLan` → `Local` and sets a library path under app data. Remote LAN remains available when the user configures a desktop host.
 - **Desktop-only code paths**: Webview bridge (`chaturbate_webview.rs`), tray (`desktop/tray.rs`), system tray hotkey, LAN server hosting.
 - **Mobile standalone**: `src-tauri/src/mobile/standalone.rs` — limited to `resolve_standalone()` which handles YouTube + direct URLs only.
 
@@ -441,9 +441,10 @@ bun run format:check
 ## Learned Workspace Facts
 
 - Desktop LAN on port **8787** serves the bundled React SPA (`lan-ui` Tauri resource), REST API, scene media streaming (`/api/scenes/{id}/media`), and `/files` folder browser; Vite dev UI is port **1420** only (see `docs/lan-web.md`)
-- Android standalone runs an embedded yt-dlp engine (youtubedl-android Kotlin plugin, updatable in Settings → Library → Download engine); `tauri.android.conf.json` bundles `ffmpeg`/`ffprobe` sidecars — rebuild with `bun run setup:binaries:android` or the Tools card reports them as not found
+- Android standalone runs an embedded yt-dlp engine (youtubedl-android Kotlin plugin, updatable in Settings → Library → Download engine); Android-native ffmpeg/ffprobe come from the same AAR (`FFmpeg.init`) — no `setup:binaries:android` step required for media tools
+- `build:apk` / `build:apk:fast` / `build:apk:release` auto-run `scripts/patch-android-ytdlp.ps1` so the YtDlp/FFmpeg overlay is always applied before packaging
 - `reqwest` uses **rustls** (not OpenSSL) to avoid NDK OpenSSL setup for Android cross-compiles
-- Mobile defaults to `remote_lan` engine mode; browse/download/library APIs route over HTTP to the desktop LAN host
+- Mobile defaults to `local` engine mode with on-device yt-dlp (youtubedl-android) + loopback media server; Remote LAN is optional when a desktop host is configured
 - Mobile bottom navigation must include **Settings** (Home, Browse, Downloads, Library, Settings)
 - `build:apk` uses `--target aarch64` with a typecheck prebuild; `build:apk:fast` skips lint/format and only runs `tsc && vite build` before the APK build
 - Custom URL browse route is `/browse/by-url`

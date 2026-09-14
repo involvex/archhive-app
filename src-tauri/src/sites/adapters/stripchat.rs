@@ -108,19 +108,16 @@ impl StripchatAdapter {
         let url = build_listing_url(&query);
         let api_url = build_api_url(&query);
 
-        // Run API and HTML fetches concurrently, then pick the first with rooms.
-        let (api_result, html_result) = tokio::join!(
-            ctx.fetch_html(&api_url, self.id()),
-            ctx.fetch_html(&url, self.id())
-        );
-
-        if let Ok(body) = api_result {
+        if let Ok(body) = ctx
+            .fetch_json_api(&api_url, self.id(), &format!("{BASE}/"))
+            .await
+        {
             if let Some(rooms) = parse_api_json(&body) {
                 return Ok(build_browse_page(rooms, query.page));
             }
         }
 
-        if let Ok(html) = html_result {
+        if let Ok(html) = ctx.fetch_html(&url, self.id()).await {
             if let Some(rooms) = parse_listing_html(&html) {
                 return Ok(build_browse_page(rooms, query.page));
             }
@@ -206,6 +203,7 @@ struct HttpRoom {
     viewers: Option<u32>,
     age: Option<u32>,
     gender: Option<String>,
+    stream_url: Option<String>,
 }
 
 fn room_to_item(room: &HttpRoom) -> MediaItem {
@@ -226,7 +224,7 @@ fn room_to_item(room: &HttpRoom) -> MediaItem {
         viewers: room.viewers,
         age: room.age,
         gender: room.gender.clone(),
-        stream_url: None,
+        stream_url: room.stream_url.clone(),
         embed_url: Some(embed_url),
     }
 }
@@ -258,16 +256,23 @@ fn build_webview_browse_page(
 }
 
 fn build_api_url(query: &BrowseQuery) -> String {
+    let offset = (query.page.saturating_sub(1)) * 48;
     match query.kind {
-        BrowseKind::Tag => format!(
-            "{BASE}/api/ts/roomlist/room-list/?tag={}",
-            path_slug(&query.slug)
+        BrowseKind::Tag => {
+            let tag = path_slug(&query.slug);
+            format!(
+                "{BASE}/api/front/models?improveTs=false&removeShows=false&limit={MAX_ROOMS}&offset={offset}&primaryTag=girls&sortBy=stripRanking&filterGroupTags=%5B%5B%22{tag}%22%5D%5D"
+            )
+        }
+        BrowseKind::Search => {
+            let q = url_slug(&query.slug);
+            format!(
+                "{BASE}/api/front/v4/models/search/group/username?query={q}&limit={MAX_ROOMS}&offset={offset}&primaryTag=girls"
+            )
+        }
+        _ => format!(
+            "{BASE}/api/front/models?improveTs=false&removeShows=false&limit={MAX_ROOMS}&offset={offset}&primaryTag=girls&sortBy=stripRanking"
         ),
-        BrowseKind::Search => format!(
-            "{BASE}/api/ts/roomlist/room-list/?q={}",
-            url_slug(&query.slug)
-        ),
-        _ => format!("{BASE}/api/ts/roomlist/room-list/"),
     }
 }
 
@@ -314,28 +319,41 @@ fn parse_api_json(body: &str) -> Option<Vec<HttpRoom>> {
         .filter_map(|r| {
             let username = r.get("username")?.as_str()?;
             let title = r
-                .get("title")
+                .get("subject")
+                .or_else(|| r.get("title"))
                 .or_else(|| r.get("display_name"))
+                .or_else(|| r.get("room_subject"))
                 .and_then(|t| t.as_str())
                 .unwrap_or(username)
                 .to_string();
             let thumbnail = r
-                .get("thumbnailUrl")
+                .get("previewUrlThumbSmall")
+                .or_else(|| r.get("previewUrlThumbBig"))
+                .or_else(|| r.get("previewUrl"))
+                .or_else(|| r.get("avatarUrl"))
+                .or_else(|| r.get("img"))
+                .or_else(|| r.get("thumbnailUrl"))
                 .or_else(|| r.get("thumbnail"))
                 .or_else(|| r.get("image_url"))
                 .or_else(|| r.get("preview"))
                 .and_then(|t| t.as_str())
                 .map(|s| s.to_string());
             let viewers = r
-                .get("num_users")
+                .get("viewersCount")
+                .or_else(|| r.get("num_users"))
                 .or_else(|| r.get("viewers"))
-                .or_else(|| r.get("viewersCount"))
                 .and_then(|v| v.as_u64())
                 .map(|n| n as u32);
             let age = r.get("age").and_then(|a| a.as_u64()).map(|n| n as u32);
             let gender = r
                 .get("gender")
+                .or_else(|| r.get("genderGroup"))
                 .and_then(|g| g.as_str())
+                .map(|s| s.to_string());
+            let stream_url = r
+                .get("hlsPlaylist")
+                .and_then(|t| t.as_str())
+                .filter(|s| !s.is_empty())
                 .map(|s| s.to_string());
             Some(HttpRoom {
                 username: username.to_string(),
@@ -348,6 +366,7 @@ fn parse_api_json(body: &str) -> Option<Vec<HttpRoom>> {
                 viewers,
                 age,
                 gender,
+                stream_url,
             })
         })
         .take(MAX_ROOMS)
@@ -356,6 +375,31 @@ fn parse_api_json(body: &str) -> Option<Vec<HttpRoom>> {
         None
     } else {
         Some(rooms)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_api_json_reads_stripchat_models() {
+        let body = r#"{
+            "models": [{
+                "username": "demo_model",
+                "previewUrlThumbSmall": "https://example.com/thumb.jpg",
+                "viewersCount": 42,
+                "genderGroup": "F",
+                "hlsPlaylist": "https://edge-hls.example/hls/1/master/1_240p.m3u8",
+                "isLive": true
+            }],
+            "totalCount": 1
+        }"#;
+        let rooms = parse_api_json(body).expect("rooms");
+        assert_eq!(rooms.len(), 1);
+        assert_eq!(rooms[0].username, "demo_model");
+        assert_eq!(rooms[0].viewers, Some(42));
+        assert!(rooms[0].stream_url.as_deref().unwrap().contains("m3u8"));
     }
 }
 
@@ -422,6 +466,7 @@ fn parse_listing_html(html: &str) -> Option<Vec<HttpRoom>> {
                 viewers,
                 age,
                 gender: None,
+                stream_url: None,
             });
 
             if rooms.len() >= MAX_ROOMS {

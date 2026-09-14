@@ -25,6 +25,11 @@ export function UrlPlayerDialog({ item, open, onClose }: UrlPlayerDialogProps) {
     setError(null);
     setStreamUrl(null);
     try {
+      // Prefer an already-resolved HLS URL from live listings (e.g. Stripchat).
+      if (item.stream_url?.trim()) {
+        setStreamUrl(item.stream_url.trim());
+        return;
+      }
       setStreamUrl(await api.resolveStreamUrl(item.url));
     } catch (e: unknown) {
       if (typeof e === "string" && e.trim()) {

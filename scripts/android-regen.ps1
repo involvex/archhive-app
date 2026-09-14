@@ -42,6 +42,7 @@ if (Test-Path $gradlew) {
 }
 
 & (Join-Path $PSScriptRoot "patch-android-lan.ps1")
+& (Join-Path $PSScriptRoot "patch-android-ytdlp.ps1")
 
 $iconSource = Join-Path $root "assets\branding\icon-source.png"
 $iconSquare = Join-Path $root "assets\branding\icon-square.png"

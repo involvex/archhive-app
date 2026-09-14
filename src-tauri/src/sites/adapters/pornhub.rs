@@ -94,40 +94,26 @@ macro_rules! ytdlp_tube_adapter {
             }
 
             async fn resolve_stream_url(&self, ctx: &SiteContext, url: &str) -> AppResult<String> {
-                #[cfg(mobile)]
-                {
-                    let _ = (&ctx, &url);
-                    return Err(crate::error::AppError::Other(format!(
-                        "{} streaming is not available in standalone mode. \
-                         Use Remote LAN mode (connect to a desktop host), \
-                         or try YouTube, TikTok, Twitter, Reddit, or RedGifs which support standalone.",
-                        $name
-                    )));
+                let runner = crate::sites::yt_dlp::SidecarRunner::new(ctx.app().clone());
+                let cookies = ctx.cookie_file_for_site($id);
+                let mut args = vec![
+                    url.to_string(),
+                    "--get-url".to_string(),
+                    "--no-warnings".to_string(),
+                    "--no-playlist".to_string(),
+                ];
+                if let Some(cookies) = cookies.as_ref() {
+                    args.push("--cookies".to_string());
+                    args.push(cookies.to_string_lossy().to_string());
                 }
-
-                #[cfg(not(mobile))]
-                {
-                    let runner = crate::sites::yt_dlp::SidecarRunner::new(ctx.app().clone());
-                    let cookies = ctx.cookie_file_for_site($id);
-                    let mut args = vec![
-                        url.to_string(),
-                        "--get-url".to_string(),
-                        "--no-warnings".to_string(),
-                        "--no-playlist".to_string(),
-                    ];
-                    if let Some(cookies) = cookies.as_ref() {
-                        args.push("--cookies".to_string());
-                        args.push(cookies.to_string_lossy().to_string());
-                    }
-                    let raw = runner.run_capture_for_stream_url("yt-dlp", &args).await?;
-                    let stream_url = raw
-                        .lines()
-                        .map(str::trim)
-                        .find(|line| !line.is_empty())
-                        .ok_or_else(|| crate::error::AppError::Other("No stream URL resolved".to_string()))?
-                        .to_string();
-                    Ok(stream_url)
-                }
+                let raw = runner.run_capture_for_stream_url("yt-dlp", &args).await?;
+                let stream_url = raw
+                    .lines()
+                    .map(str::trim)
+                    .find(|line| !line.is_empty())
+                    .ok_or_else(|| crate::error::AppError::Other("No stream URL resolved".to_string()))?
+                    .to_string();
+                Ok(stream_url)
             }
         }
     };
@@ -279,19 +265,14 @@ impl SiteAdapter for PornhubAdapter {
         })
     }
     async fn resolve_stream_url(&self, ctx: &SiteContext, url: &str) -> AppResult<String> {
-        // PornHub's edge often 403s yt-dlp (Python TLS fingerprint). On mobile,
-        // try the Rust extractor first: reqwest/rustls presents a different
-        // fingerprint and sometimes passes where yt-dlp is blocked. Any failure
-        // falls through to yt-dlp below.
-        // Note: PornHub CDN URLs may require a Referer header that the HTML5
-        // <video> element cannot send; if preview playback fails, download
-        // the video instead (the download path sends proper headers).
+        // Prefer a progressive MP4 (works through the loopback Referer proxy).
+        // HLS playlists need segment-level headers that the WebView can't send.
         #[cfg(mobile)]
         {
             if let Ok(Some(stream_url)) =
                 crate::sites::extractors::pornhub::extract_download_url(ctx, url).await
             {
-                return Ok(stream_url);
+                return Ok(maybe_loopback_proxy(ctx, &stream_url, "https://www.pornhub.com/"));
             }
         }
 
@@ -302,6 +283,8 @@ impl SiteAdapter for PornhubAdapter {
             "--get-url".to_string(),
             "--no-warnings".to_string(),
             "--no-playlist".to_string(),
+            "-f".to_string(),
+            "b".to_string(), // best single file (prefer progressive for in-app preview)
         ];
         if let Some(cookies) = cookies.as_ref() {
             args.push("--cookies".to_string());
@@ -314,8 +297,48 @@ impl SiteAdapter for PornhubAdapter {
             .find(|line| !line.is_empty())
             .ok_or_else(|| crate::error::AppError::Other("No stream URL resolved".to_string()))?
             .to_string();
-        Ok(stream_url)
+        Ok(maybe_loopback_proxy(
+            ctx,
+            &stream_url,
+            "https://www.pornhub.com/",
+        ))
     }
+}
+
+/// Rewrite CDN URLs through the local LAN proxy so the WebView can play them
+/// with a proper Referer (HTML5 <video> cannot set Referer itself).
+fn maybe_loopback_proxy(ctx: &SiteContext, stream_url: &str, referer: &str) -> String {
+    #[cfg(mobile)]
+    {
+        if !(stream_url.starts_with("http://") || stream_url.starts_with("https://")) {
+            return stream_url.to_string();
+        }
+        if stream_url.contains("127.0.0.1") || stream_url.contains("localhost") {
+            return stream_url.to_string();
+        }
+        let port = ctx.lan_port();
+        return format!(
+            "http://127.0.0.1:{port}/api/media/proxy?url={}&referer={}",
+            urlencoding_encode(stream_url),
+            urlencoding_encode(referer)
+        );
+    }
+    #[cfg(not(mobile))]
+    {
+        let _ = (ctx, referer);
+        stream_url.to_string()
+    }
+}
+
+fn urlencoding_encode(s: &str) -> String {
+    s.bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                (b as char).to_string()
+            }
+            _ => format!("%{b:02X}"),
+        })
+        .collect()
 }
 
 ytdlp_tube_adapter!(

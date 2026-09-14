@@ -182,6 +182,7 @@ function SettingsPage() {
   const [installingBinary, setInstallingBinary] = useState<string | null>(null);
   const [binaryInstallStatus, setBinaryInstallStatus] = useState<string>("");
   const [updatingYtDlp, setUpdatingYtDlp] = useState(false);
+  const [diagnosticsCopyStatus, setDiagnosticsCopyStatus] = useState<string | null>(null);
   const [pickingFolder, setPickingFolder] = useState(false);
   const [folderPickerOpen, setFolderPickerOpen] = useState(false);
   const [libraryPickerStatus, setLibraryPickerStatus] = useState("");
@@ -401,6 +402,15 @@ function SettingsPage() {
             api.probeSidecar("ffprobe"),
           ]);
           setSidecarProbe({ ffmpeg, ffprobe });
+          // Promote successful probe version lines into the version cards.
+          const next = { ...v };
+          if (!next.ffmpeg_version && ffmpeg.detail.toLowerCase().includes("ffmpeg version")) {
+            next.ffmpeg_version = ffmpeg.detail;
+          }
+          if (!next.ffprobe_version && ffprobe.detail.toLowerCase().includes("ffprobe version")) {
+            next.ffprobe_version = ffprobe.detail;
+          }
+          setBinaryVersions(next);
         } catch {
           setSidecarProbe(null);
         }
@@ -695,19 +705,28 @@ function SettingsPage() {
   }
 
   async function handleExportDiagnostics() {
+    setDiagnosticsCopyStatus(null);
     try {
       const data = diagnostics ?? (await api.getDiagnostics());
-      const blob = new Blob([JSON.stringify(data, null, 2)], {
-        type: "application/json",
-      });
+      const text = JSON.stringify(data, null, 2);
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        setDiagnosticsCopyStatus("Copied diagnostics JSON to clipboard.");
+        return;
+      }
+      // Fallback for environments without Clipboard API (some WebViews).
+      const blob = new Blob([text], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
       a.download = `archhive-diagnostics-${Date.now()}.json`;
+      document.body.appendChild(a);
       a.click();
+      a.remove();
       URL.revokeObjectURL(url);
+      setDiagnosticsCopyStatus("Downloaded diagnostics JSON (clipboard unavailable).");
     } catch (e) {
-      void e;
+      setDiagnosticsCopyStatus(e instanceof Error ? e.message : "Failed to copy diagnostics JSON.");
     }
   }
 
@@ -798,7 +817,8 @@ function SettingsPage() {
                     onChange={() => updateSettings({ engine_mode: mode })}
                   />
                   {ENGINE_LABELS[mode]}
-                  {mode === "remote_lan" && runtime !== "desktop-tauri" && " (recommended)"}
+                  {mode === "local" && runtime === "mobile-tauri" && " (recommended)"}
+                  {mode === "remote_lan" && runtime === "browser" && " (recommended)"}
                 </label>
               ))}
               {caps.lanServer && settings.lan_enabled && displayLanToken && (
@@ -1141,9 +1161,10 @@ function SettingsPage() {
                 !versionsLoading && (
                   <>
                     <p className="text-xs text-yellow-400">
-                      ffmpeg/ffprobe are missing from this APK — thumbnails, duration probes, and
-                      HLS downloads need them. Run <code>bun run setup:binaries:android</code>, then{" "}
-                      <code>bun run build:apk</code> and reinstall the APK.
+                      ffmpeg/ffprobe are not ready yet — thumbnails, duration probes, and HLS
+                      downloads need them. They ship inside the APK via youtubedl-android; try
+                      Refresh versions, or reinstall after <code>bun run android:regen</code> +{" "}
+                      <code>bun run build:apk</code> if the YtDlp overlay is missing.
                     </p>
                     {sidecarProbe &&
                       (["ffmpeg", "ffprobe"] as const).map((name) => {
@@ -1982,10 +2003,15 @@ function SettingsPage() {
             <CardHeader>
               <CardTitle className="text-base">Export</CardTitle>
             </CardHeader>
-            <CardContent className="flex gap-2">
+            <CardContent className="flex flex-col gap-2">
               <Button size="sm" variant="outline" onClick={() => void handleExportDiagnostics()}>
                 Copy diagnostics (JSON)
               </Button>
+              {diagnosticsCopyStatus && (
+                <p className="text-xs text-[var(--color-muted-foreground)]">
+                  {diagnosticsCopyStatus}
+                </p>
+              )}
             </CardContent>
           </Card>
         </Tabs.Content>

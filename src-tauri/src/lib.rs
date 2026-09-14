@@ -20,10 +20,11 @@ fn init_log_subscriber() {
     let log_buffer = log_buffer::LogBuffer::instance();
     let make_writer = move || LogWriter::new(log_buffer);
 
-    tracing_subscriber::fmt()
+    // try_init: avoid panic if a global subscriber is already registered
+    let _ = tracing_subscriber::fmt()
         .with_writer(make_writer)
         .with_max_level(tracing::Level::INFO)
-        .init();
+        .try_init();
 }
 
 struct LogWriter {
@@ -63,8 +64,6 @@ use state::AppState;
 use std::sync::Arc;
 use tauri::path::BaseDirectory;
 use tauri::Manager;
-#[cfg(target_os = "android")]
-use tauri_plugin_shell::ShellExt;
 
 fn resolve_lan_static_ui(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
     if let Ok(cwd) = std::env::current_dir() {
@@ -110,28 +109,15 @@ fn bootstrap_mobile_settings(db: &Database, data_dir: &std::path::Path) -> Resul
     Ok(())
 }
 
-/// On Android, Tauri's shell plugin may not set execute permissions on extracted sidecars.
-/// This pre-extracts ffmpeg/ffprobe from APK resources to the app data dir with correct
-/// permissions, so that `shell().sidecar()` or `extract_android_binary()` can find and
-/// execute them without "Permission denied (os error 13)".
+/// On Android, initialize youtubedl-android FFmpeg so native ffmpeg/ffprobe are
+/// unpacked from libffmpeg.zip.so. Also remove wrongly-installed Linux binaries
+/// from the binary installer (x86_64 / glibc) that cannot run on device.
 #[cfg(target_os = "android")]
 fn ensure_sidecar_permissions(app: &tauri::AppHandle) {
-    // Verify ffmpeg/ffprobe sidecars can be resolved.
-    for name in &["ffmpeg", "ffprobe"] {
-        match app.shell().sidecar(format!("binaries/{name}")) {
-            Ok(_sidecar) => {
-                eprintln!("[sidecar] {name} resolved successfully");
-            }
-            Err(e) => {
-                eprintln!("[sidecar] {name} resolution failed: {e}");
-            }
-        }
-    }
-
-    // Remove any wrongly-installed x86_64 binaries from the binary installer
+    // Remove any wrongly-installed x86_64 / Linux binaries from the binary installer
     if let Ok(data_dir) = app.path().app_data_dir() {
         let bin_dir = data_dir.join("bin");
-        for name in &["yt-dlp", "gallery-dl"] {
+        for name in &["yt-dlp", "gallery-dl", "ffmpeg", "ffprobe"] {
             let path = bin_dir.join(name);
             if path.exists() {
                 let _ = std::fs::remove_file(&path);
@@ -139,18 +125,32 @@ fn ensure_sidecar_permissions(app: &tauri::AppHandle) {
         }
     }
 
-    // Pre-extract ffmpeg/ffprobe from APK resources to app data dir with
-    // executable permissions. The SidecarRunner::extract_android_binary() fallback
-    // handles this at spawn time, but pre-extracting at startup avoids latency
-    // on the first player/thumb generation call.
-    let runner = crate::sites::yt_dlp::SidecarRunner::new(app.clone());
-    for name in &["ffmpeg", "ffprobe"] {
-        if let Some(path) = runner.extract_android_binary(name) {
-            eprintln!("[sidecar] {name} pre-extracted to {}", path.display());
-        } else {
-            eprintln!("[sidecar] {name} resource not available for pre-extraction");
+    // FFmpeg.init unpacks ~35MB — do it off the setup thread.
+    let app = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        match crate::mobile::ytdlp_bridge::ensure_media_tools(&app) {
+            Ok(status) => {
+                eprintln!(
+                    "[sidecar] media tools ok={} ffmpeg={} ffprobe={} ({})",
+                    status.ok,
+                    if status.ffmpeg_version.is_empty() {
+                        status.ffmpeg_path.as_str()
+                    } else {
+                        status.ffmpeg_version.as_str()
+                    },
+                    if status.ffprobe_version.is_empty() {
+                        status.ffprobe_path.as_str()
+                    } else {
+                        status.ffprobe_version.as_str()
+                    },
+                    status.message
+                );
+            }
+            Err(e) => {
+                eprintln!("[sidecar] ensure_media_tools failed: {e}");
+            }
         }
-    }
+    });
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -173,7 +173,7 @@ pub fn run() {
         let data_dir = app
             .path()
             .app_data_dir()
-            .expect("failed to resolve app data dir");
+            .map_err(|e| format!("failed to resolve app data dir: {e}"))?;
         std::fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
         let db = Arc::new(Database::new(data_dir.clone()).map_err(|e| e.to_string())?);
 
@@ -201,7 +201,7 @@ pub fn run() {
             });
         }
 
-        // #19 watchlist auto-queue poller (desktop only; mobile uses Remote LAN).
+        // #19 watchlist auto-queue poller (desktop only).
         #[cfg(not(mobile))]
         state.spawn_watchlist_poller();
 
@@ -332,5 +332,11 @@ pub fn run() {
             commands::scene_collection_ids,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .unwrap_or_else(|e| {
+            eprintln!("error while running tauri application: {e}");
+            tracing::error!("error while running tauri application: {e}");
+            // Mobile entry uses stop_unwind → abort on panic; prefer an explicit exit
+            // so the message is visible in logcat before process death.
+            std::process::exit(1);
+        });
 }

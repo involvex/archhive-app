@@ -80,8 +80,10 @@ impl Database {
         conn.execute_batch(MIGRATION_012)?;
         if !column_exists(&conn, "scenes_fts", "notes") {
             conn.execute_batch(MIGRATION_013)?;
-            conn.execute_batch(MIGRATION_014)?;
         }
+        // Collections must not be gated on FTS notes — older DBs may already have notes
+        // without collections, which would make MIGRATION_015 fail and abort startup.
+        conn.execute_batch(MIGRATION_014)?;
         if !column_exists(&conn, "collections", "filter_json") {
             conn.execute_batch(MIGRATION_015)?;
         }

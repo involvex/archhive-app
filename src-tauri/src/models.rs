@@ -376,9 +376,6 @@ impl Default for AppSettings {
         #[cfg(not(mobile))]
         let engine_mode = EngineMode::Local;
 
-        #[cfg(mobile)]
-        let remote_host = Some("http://192.168.178.69:8787".to_string());
-        #[cfg(not(mobile))]
         let remote_host = None;
 
         Self {

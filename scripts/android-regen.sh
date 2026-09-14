@@ -30,8 +30,10 @@ fi
 
 if command -v pwsh >/dev/null 2>&1; then
   pwsh -NoProfile -File "$ROOT/scripts/patch-android-lan.ps1"
+  pwsh -NoProfile -File "$ROOT/scripts/patch-android-ytdlp.ps1"
 else
   bash "$ROOT/scripts/patch-android-lan.sh"
+  bash "$ROOT/scripts/patch-android-ytdlp.sh"
 fi
 
 ICON="$ROOT/assets/branding/icon-source.png"

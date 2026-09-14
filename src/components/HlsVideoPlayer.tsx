@@ -41,7 +41,16 @@ export const HlsVideoPlayer = forwardRef<HTMLVideoElement, HlsVideoPlayerProps>(
     const videoRef = useRef<HTMLVideoElement>(null);
     const hlsRef = useRef<import("hls.js").default | null>(null);
 
-    const isHls = src.toLowerCase().endsWith(".m3u8");
+    const isHls = (() => {
+      const lower = src.toLowerCase();
+      // CDN URLs often append query tokens: .../master.m3u8?validfrom=...
+      try {
+        const path = new URL(src).pathname.toLowerCase();
+        return path.endsWith(".m3u8") || path.includes(".m3u8/");
+      } catch {
+        return lower.includes(".m3u8");
+      }
+    })();
 
     const loadHls = useCallback(async (video: HTMLVideoElement, url: string) => {
       if (hlsRef.current) {

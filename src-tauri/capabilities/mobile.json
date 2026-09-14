@@ -20,36 +20,6 @@
     "dialog:allow-open",
     "opener:default",
     "shell:default",
-    "notification:default",
-    {
-      "identifier": "shell:allow-execute",
-      "allow": [
-        {
-          "name": "binaries/ffmpeg",
-          "sidecar": true,
-          "args": true
-        },
-        {
-          "name": "binaries/ffprobe",
-          "sidecar": true,
-          "args": true
-        }
-      ]
-    },
-    {
-      "identifier": "shell:allow-spawn",
-      "allow": [
-        {
-          "name": "binaries/ffmpeg",
-          "sidecar": true,
-          "args": true
-        },
-        {
-          "name": "binaries/ffprobe",
-          "sidecar": true,
-          "args": true
-        }
-      ]
-    }
+    "notification:default"
   ]
 }

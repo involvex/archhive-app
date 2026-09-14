@@ -670,35 +670,81 @@ pub async fn probe_sidecar(
     state: State<'_, Arc<AppState>>,
     name: String,
 ) -> CmdResult<crate::models::SidecarProbe> {
-    use tauri_plugin_shell::ShellExt;
     if name != "ffmpeg" && name != "ffprobe" {
         return Err("Only ffmpeg and ffprobe can be probed.".to_string());
     }
-    let app = state.app_handle().clone();
-    let bin = format!("binaries/{name}");
-    if let Err(e) = app.shell().sidecar(&bin) {
-        return Ok(crate::models::SidecarProbe {
-            name: name.clone(),
-            bundled: false,
-            detail: format!("sidecar not bundled in this build: {e}"),
-        });
+
+    #[cfg(target_os = "android")]
+    {
+        let app = state.app_handle().clone();
+        let tool = name.clone();
+        let status = tokio::task::spawn_blocking(move || {
+            let status = crate::mobile::ytdlp_bridge::ensure_media_tools(&app)?;
+            let version = if tool == "ffmpeg" {
+                status.ffmpeg_version.clone()
+            } else {
+                status.ffprobe_version.clone()
+            };
+            let path = if tool == "ffmpeg" {
+                status.ffmpeg_path.clone()
+            } else {
+                status.ffprobe_path.clone()
+            };
+            if version.is_empty() && path.is_empty() {
+                return Ok(crate::models::SidecarProbe {
+                    name: tool,
+                    bundled: false,
+                    detail: format!(
+                        "not found after FFmpeg.init — {}",
+                        status.message
+                    ),
+                });
+            }
+            Ok(crate::models::SidecarProbe {
+                name: tool,
+                bundled: true,
+                detail: if version.is_empty() {
+                    path
+                } else {
+                    version
+                },
+            })
+        })
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e: crate::error::AppError| e.to_string())?;
+        return Ok(status);
     }
-    let runner = crate::sites::yt_dlp::SidecarRunner::new(app);
-    match runner.probe_version(&name).await {
-        Ok(detail) => Ok(crate::models::SidecarProbe {
-            name,
-            bundled: true,
-            detail,
-        }),
-        Err(e) => Ok(crate::models::SidecarProbe {
-            name,
-            bundled: true,
-            detail: format!(
-                "bundled but failed to execute — {e}. \
-                 If the message mentions a missing shared library, \
-                 the ffmpeg build needs to be static (run bun run setup:binaries:android)."
-            ),
-        }),
+
+    #[cfg(not(target_os = "android"))]
+    {
+        use tauri_plugin_shell::ShellExt;
+        let app = state.app_handle().clone();
+        let bin = format!("binaries/{name}");
+        if let Err(e) = app.shell().sidecar(&bin) {
+            return Ok(crate::models::SidecarProbe {
+                name: name.clone(),
+                bundled: false,
+                detail: format!("sidecar not bundled in this build: {e}"),
+            });
+        }
+        let runner = crate::sites::yt_dlp::SidecarRunner::new(app);
+        match runner.probe_version(&name).await {
+            Ok(detail) => Ok(crate::models::SidecarProbe {
+                name,
+                bundled: true,
+                detail,
+            }),
+            Err(e) => Ok(crate::models::SidecarProbe {
+                name,
+                bundled: true,
+                detail: format!(
+                    "bundled but failed to execute — {e}. \
+                     If the message mentions a missing shared library, \
+                     re-run bun run setup:binaries for a static desktop build."
+                ),
+            }),
+        }
     }
 }
 

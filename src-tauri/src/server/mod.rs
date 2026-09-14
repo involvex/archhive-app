@@ -142,6 +142,7 @@ impl LanServer {
             .route("/api/media/resolve", post(resolve_media_details))
             .route("/api/media/stream-url", post(resolve_stream_url))
             .route("/api/media/livestream", post(resolve_livestream))
+            .route("/api/media/proxy", get(proxy_remote_media))
             .route("/api/performers/ensure", post(ensure_performer))
             .route("/api/files", get(list_files))
             .route("/api/files/stream", get(stream_file))
@@ -808,6 +809,59 @@ async fn resolve_livestream(
         "stream_url": stream_url,
         "embed_url": embed_url,
     })))
+}
+
+/// Proxy a remote media URL through the LAN server so the WebView can play
+/// CDN streams that require a Referer (e.g. PornHub). Loopback-only use.
+async fn proxy_remote_media(
+    Query(params): Query<std::collections::HashMap<String, String>>,
+) -> Result<Response, StatusCode> {
+    use axum::body::Body;
+    use axum::http::{header, HeaderValue};
+    use axum::response::IntoResponse;
+
+    let url = params.get("url").map(String::as_str).unwrap_or("").trim();
+    if url.is_empty() || !(url.starts_with("https://") || url.starts_with("http://")) {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let referer = params
+        .get("referer")
+        .map(String::as_str)
+        .unwrap_or("https://www.pornhub.com/");
+
+    let client = reqwest::Client::builder()
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        .build()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let mut req = client.get(url).header("Referer", referer);
+    if let Some(cookie) = params.get("cookie").filter(|c| !c.is_empty()) {
+        req = req.header("Cookie", cookie.as_str());
+    }
+
+    let upstream = req.send().await.map_err(|_| StatusCode::BAD_GATEWAY)?;
+    let status = StatusCode::from_u16(upstream.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
+    let content_type = upstream
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("application/octet-stream")
+        .to_string();
+
+    let bytes = upstream
+        .bytes()
+        .await
+        .map_err(|_| StatusCode::BAD_GATEWAY)?;
+
+    let mut response = Body::from(bytes).into_response();
+    *response.status_mut() = status;
+    if let Ok(v) = HeaderValue::from_str(&content_type) {
+        response.headers_mut().insert(header::CONTENT_TYPE, v);
+    }
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    Ok(response)
 }
 
 #[derive(Deserialize)]

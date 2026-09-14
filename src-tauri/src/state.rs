@@ -37,7 +37,15 @@ impl AppState {
     ) -> AppResult<Self> {
         let vault = Arc::new(CookieVault::new(data_dir.clone(), db.connection())?);
         let sites = Arc::new(SiteRegistry::new());
-        let site_ctx = Arc::new(SiteContext::new(vault.clone(), app.clone())?);
+        let lan_port = db
+            .get_settings()
+            .map(|s| s.lan_port)
+            .unwrap_or(8787);
+        let site_ctx = Arc::new(SiteContext::with_lan_port(
+            vault.clone(),
+            app.clone(),
+            lan_port,
+        )?);
         let downloads = Arc::new(DownloadManager::new(db.clone(), app.clone(), vault.clone()));
         Ok(Self {
             db,
@@ -656,39 +664,66 @@ impl AppState {
     }
 
     pub async fn ffmpeg_status(&self) -> AppResult<crate::models::FfmpegStatus> {
-        let ffmpeg = crate::media::FfmpegProcessor::new(self.site_ctx.app().clone());
-        let available = ffmpeg.check_availability().await.is_ok();
-        // If the combined check passes, both are available.
-        // If it fails, try each individually to give granular info.
-        if available {
+        #[cfg(target_os = "android")]
+        {
+            let app = self.site_ctx.app().clone();
+            let status = tokio::task::spawn_blocking(move || {
+                crate::mobile::ytdlp_bridge::ensure_media_tools(&app)
+            })
+            .await
+            .map_err(|e| crate::error::AppError::Other(format!("media tools task failed: {e}")))?
+            .unwrap_or_else(|e| {
+                tracing::warn!("ensure_media_tools: {e}");
+                crate::mobile::ytdlp_bridge::MediaToolsStatus {
+                    ok: false,
+                    ffmpeg_path: String::new(),
+                    ffprobe_path: String::new(),
+                    ffmpeg_version: String::new(),
+                    ffprobe_version: String::new(),
+                    message: e.to_string(),
+                }
+            });
             return Ok(crate::models::FfmpegStatus {
-                ffmpeg_available: true,
-                ffprobe_available: true,
+                ffmpeg_available: !status.ffmpeg_path.is_empty()
+                    || !status.ffmpeg_version.is_empty(),
+                ffprobe_available: !status.ffprobe_path.is_empty()
+                    || !status.ffprobe_version.is_empty(),
             });
         }
-        // Try ffmpeg alone
-        let ffmpeg_ok = {
-            let args = vec!["-version".to_string()];
-            self.site_ctx
-                .app()
-                .shell()
-                .sidecar("binaries/ffmpeg")
-                .and_then(|cmd| cmd.args(&args).spawn())
-                .is_ok()
-        };
-        let ffprobe_ok = {
-            let args = vec!["-version".to_string()];
-            self.site_ctx
-                .app()
-                .shell()
-                .sidecar("binaries/ffprobe")
-                .and_then(|cmd| cmd.args(&args).spawn())
-                .is_ok()
-        };
-        Ok(crate::models::FfmpegStatus {
-            ffmpeg_available: ffmpeg_ok,
-            ffprobe_available: ffprobe_ok,
-        })
+
+        #[cfg(not(target_os = "android"))]
+        {
+            let ffmpeg = crate::media::FfmpegProcessor::new(self.site_ctx.app().clone());
+            let available = ffmpeg.check_availability().await.is_ok();
+            if available {
+                return Ok(crate::models::FfmpegStatus {
+                    ffmpeg_available: true,
+                    ffprobe_available: true,
+                });
+            }
+            let ffmpeg_ok = {
+                let args = vec!["-version".to_string()];
+                self.site_ctx
+                    .app()
+                    .shell()
+                    .sidecar("binaries/ffmpeg")
+                    .and_then(|cmd| cmd.args(&args).spawn())
+                    .is_ok()
+            };
+            let ffprobe_ok = {
+                let args = vec!["-version".to_string()];
+                self.site_ctx
+                    .app()
+                    .shell()
+                    .sidecar("binaries/ffprobe")
+                    .and_then(|cmd| cmd.args(&args).spawn())
+                    .is_ok()
+            };
+            Ok(crate::models::FfmpegStatus {
+                ffmpeg_available: ffmpeg_ok,
+                ffprobe_available: ffprobe_ok,
+            })
+        }
     }
 
     pub fn list_scenes_with_filter(
@@ -702,11 +737,10 @@ impl AppState {
         let settings = self.db.get_settings()?;
         let stats = self.get_library_stats().ok();
         let ffmpeg = self.ffmpeg_status().await.ok();
-        let installer = crate::mobile::binary_installer::BinaryInstaller::new(
-            self.app.clone(),
-            self.data_dir.clone(),
-        )?;
-        let binaries = installer.get_installed_versions().await;
+        // Prefer live tool probes (Android AAR / desktop sidecars). The optional
+        // binary installer only covers user-downloaded PATH tools and is empty
+        // on Android standalone.
+        let binaries = self.binary_versions().await.unwrap_or_default();
         let logs = crate::log_buffer::LogBuffer::instance()
             .get_recent(200)
             .into_iter()
@@ -1118,26 +1152,48 @@ impl AppState {
     }
 
     pub async fn binary_versions(&self) -> AppResult<crate::models::BinaryVersions> {
-        use crate::sites::yt_dlp::SidecarRunner;
-        let runner = SidecarRunner::new(self.site_ctx.app().clone());
-        // On Android yt-dlp runs inside the youtubedl-android Kotlin plugin,
-        // not as a spawnable binary — query its version directly so the
-        // Tools card never reports a stale/missing value.
+        // On Android yt-dlp / ffmpeg / ffprobe run via the youtubedl-android
+        // Kotlin plugin — query that path directly (shell sidecar probing fails).
         #[cfg(target_os = "android")]
-        let ytdlp = crate::mobile::ytdlp_bridge::version(self.site_ctx.app()).ok();
+        {
+            let app = self.site_ctx.app().clone();
+            let ytdlp = crate::mobile::ytdlp_bridge::version(&app).ok();
+            let (ffmpeg, ffprobe) = match tokio::task::spawn_blocking(move || {
+                crate::mobile::ytdlp_bridge::ensure_media_tools(&app)
+            })
+            .await
+            {
+                Ok(Ok(status)) => {
+                    let ff = (!status.ffmpeg_version.is_empty()).then_some(status.ffmpeg_version);
+                    let fp = (!status.ffprobe_version.is_empty()).then_some(status.ffprobe_version);
+                    (ff, fp)
+                }
+                _ => (None, None),
+            };
+            return Ok(crate::models::BinaryVersions {
+                ffmpeg_version: ffmpeg,
+                ffprobe_version: ffprobe,
+                ytdlp_version: ytdlp,
+                gallery_dl_version: None,
+            });
+        }
         #[cfg(not(target_os = "android"))]
-        let ytdlp = runner.tool_version("yt-dlp").await;
-        let (ffmpeg, ffprobe, gallery_dl) = tokio::join!(
-            runner.tool_version("ffmpeg"),
-            runner.tool_version("ffprobe"),
-            runner.tool_version("gallery-dl"),
-        );
-        Ok(crate::models::BinaryVersions {
-            ffmpeg_version: ffmpeg,
-            ffprobe_version: ffprobe,
-            ytdlp_version: ytdlp,
-            gallery_dl_version: gallery_dl,
-        })
+        {
+            use crate::sites::yt_dlp::SidecarRunner;
+            let runner = SidecarRunner::new(self.site_ctx.app().clone());
+            let ytdlp = runner.tool_version("yt-dlp").await;
+            let (ffmpeg, ffprobe, gallery_dl) = tokio::join!(
+                runner.tool_version("ffmpeg"),
+                runner.tool_version("ffprobe"),
+                runner.tool_version("gallery-dl"),
+            );
+            Ok(crate::models::BinaryVersions {
+                ffmpeg_version: ffmpeg,
+                ffprobe_version: ffprobe,
+                ytdlp_version: ytdlp,
+                gallery_dl_version: gallery_dl,
+            })
+        }
     }
 
     pub fn get_library_stats(&self) -> AppResult<crate::models::LibraryStats> {

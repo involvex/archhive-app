@@ -29,6 +29,11 @@ export class AppErrorBoundary extends Component<Props, State> {
           <p className="max-w-md text-center text-sm text-[var(--color-muted-foreground)]">
             {this.state.error.message || "Unexpected error"}
           </p>
+          {this.state.error.stack && (
+            <pre className="max-h-40 max-w-md overflow-auto rounded border border-[var(--color-border)] bg-[var(--color-muted)]/30 p-2 text-left text-[10px] text-[var(--color-muted-foreground)]">
+              {this.state.error.stack}
+            </pre>
+          )}
           <Button
             onClick={() => {
               this.setState({ error: null });

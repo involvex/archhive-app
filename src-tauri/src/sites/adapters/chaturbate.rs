@@ -92,49 +92,22 @@ impl SiteAdapter for ChaturbateAdapter {
 impl ChaturbateAdapter {
     async fn browse_listing(&self, ctx: &SiteContext, query: BrowseQuery) -> AppResult<BrowsePage> {
         let url = build_listing_url(&query);
+        let api_url = build_api_url(&query);
 
-        // Primary: HTTP scraping with vault cookies as Cookie header.
-        if let Ok(html) = ctx.fetch_html(&url, &self.id()).await {
-            if let Some(rooms) = parse_listing_html(&html) {
-                let items: Vec<MediaItem> =
-                    rooms.into_iter().map(|r| http_room_to_item(&r)).collect();
-                let has_more = items.len() >= 30;
-                return Ok(BrowsePage {
-                    items,
-                    page: query.page,
-                    has_more,
-                    total: None,
-                });
+        // Primary: JSON API (works on mobile; HTML is often placeholder-only cards).
+        if let Ok(body) = ctx
+            .fetch_json_api(&api_url, self.id(), &format!("{BASE}/"))
+            .await
+        {
+            if let Some(rooms) = parse_api_json(&body) {
+                return Ok(api_rooms_to_page(rooms, query.page));
             }
         }
 
-        // Secondary: try the internal API endpoint with cookies.
-        let api_url = build_api_url(&query);
-        if api_url != url {
-            if let Ok(body) = ctx.fetch_html(&api_url, &self.id()).await {
-                if let Some(rooms) = parse_listing_html(&body) {
-                    let items: Vec<MediaItem> =
-                        rooms.into_iter().map(|r| http_room_to_item(&r)).collect();
-                    let has_more = items.len() >= 30;
-                    return Ok(BrowsePage {
-                        items,
-                        page: query.page,
-                        has_more,
-                        total: None,
-                    });
-                }
-                // If the API returned JSON directly, try parsing that.
-                if let Some(rooms) = parse_api_json(&body) {
-                    let items: Vec<MediaItem> =
-                        rooms.into_iter().map(|r| http_room_to_item(&r)).collect();
-                    let has_more = items.len() >= 30;
-                    return Ok(BrowsePage {
-                        items,
-                        page: query.page,
-                        has_more,
-                        total: None,
-                    });
-                }
+        // Secondary: HTML scraping (legacy server-rendered listings).
+        if let Ok(html) = ctx.fetch_html(&url, &self.id()).await {
+            if let Some(rooms) = parse_listing_html(&html) {
+                return Ok(api_rooms_to_page(rooms, query.page));
             }
         }
 
@@ -253,16 +226,34 @@ fn http_room_to_item(room: &HttpRoom) -> MediaItem {
 }
 
 fn build_api_url(query: &BrowseQuery) -> String {
-    match query.kind {
+    let offset = (query.page.saturating_sub(1)) * 90;
+    let mut url = match query.kind {
         BrowseKind::Tag => format!(
-            "{BASE}/api/ts/roomlist/room-list/?tag={}",
+            "{BASE}/api/ts/roomlist/room-list/?enable_recommendations=false&limit=90&tag={}",
             path_slug(&query.slug)
         ),
         BrowseKind::Search => format!(
-            "{BASE}/api/ts/roomlist/room-list/?q={}",
+            "{BASE}/api/ts/roomlist/room-list/?enable_recommendations=false&limit=90&q={}",
             url_slug(&query.slug)
         ),
-        _ => format!("{BASE}/api/ts/roomlist/room-list/"),
+        _ => format!(
+            "{BASE}/api/ts/roomlist/room-list/?enable_recommendations=false&limit=90"
+        ),
+    };
+    if offset > 0 {
+        url.push_str(&format!("&offset={offset}"));
+    }
+    url
+}
+
+fn api_rooms_to_page(rooms: Vec<HttpRoom>, page: u32) -> BrowsePage {
+    let items: Vec<MediaItem> = rooms.iter().map(http_room_to_item).collect();
+    let has_more = items.len() >= 30;
+    BrowsePage {
+        items,
+        page,
+        has_more,
+        total: None,
     }
 }
 
@@ -446,12 +437,15 @@ fn parse_api_json(body: &str) -> Option<Vec<HttpRoom>> {
         .filter_map(|r| {
             let username = r.get("username")?.as_str()?;
             let title = r
-                .get("title")
+                .get("subject")
+                .or_else(|| r.get("title"))
+                .or_else(|| r.get("room_subject"))
                 .and_then(|t| t.as_str())
                 .unwrap_or(username)
                 .to_string();
             let thumbnail = r
-                .get("thumbnail")
+                .get("img")
+                .or_else(|| r.get("thumbnail"))
                 .or_else(|| r.get("image_url"))
                 .and_then(|t| t.as_str())
                 .map(|s| s.to_string());
@@ -460,7 +454,11 @@ fn parse_api_json(body: &str) -> Option<Vec<HttpRoom>> {
                 .or_else(|| r.get("viewers"))
                 .and_then(|v| v.as_u64())
                 .map(|n| n as u32);
-            let age = r.get("age").and_then(|a| a.as_u64()).map(|n| n as u32);
+            let age = r
+                .get("display_age")
+                .or_else(|| r.get("age"))
+                .and_then(|a| a.as_u64())
+                .map(|n| n as u32);
             let gender = r
                 .get("gender")
                 .and_then(|g| g.as_str())
@@ -567,4 +565,33 @@ fn url_slug(slug: &str) -> String {
             _ => format!("%{b:02X}"),
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_api_json_reads_chaturbate_ts_fields() {
+        let body = r#"{
+            "rooms": [{
+                "username": "testuser",
+                "subject": "Room title",
+                "img": "https://thumb.live.mmcdn.com/riw/testuser.jpg",
+                "num_users": 100,
+                "display_age": 22,
+                "gender": "f"
+            }]
+        }"#;
+        let rooms = parse_api_json(body).expect("rooms");
+        assert_eq!(rooms.len(), 1);
+        assert_eq!(rooms[0].username, "testuser");
+        assert_eq!(rooms[0].title, "Room title");
+        assert_eq!(
+            rooms[0].thumbnail.as_deref(),
+            Some("https://thumb.live.mmcdn.com/riw/testuser.jpg")
+        );
+        assert_eq!(rooms[0].viewers, Some(100));
+        assert_eq!(rooms[0].age, Some(22));
+    }
 }
