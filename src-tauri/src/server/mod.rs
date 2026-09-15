@@ -1167,7 +1167,7 @@ async fn diagnostics(State(state): State<ApiState>) -> Result<Json<serde_json::V
 }
 
 async fn list_logs(
-    State(state): State<ApiState>,
+    State(_state): State<ApiState>,
     Query(q): Query<GetLogsQuery>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let limit = q.limit.unwrap_or(200).min(1000) as usize;

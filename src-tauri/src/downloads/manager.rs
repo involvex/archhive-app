@@ -113,7 +113,7 @@ impl DownloadManager {
     }
 
     pub fn queue_plan(&self, plan: DownloadPlan) -> AppResult<DownloadJob> {
-        let mut job = self.db.insert_download_job(
+        let job = self.db.insert_download_job(
             &plan.url,
             &plan.adapter_id,
             plan.title.as_deref(),

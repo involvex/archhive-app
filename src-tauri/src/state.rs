@@ -2,7 +2,7 @@ use crate::db::Database;
 use crate::downloads::{DownloadManager, NetworkMonitor};
 use crate::error::AppResult;
 use crate::models::{
-    AppSettings, BrowseKind, BrowseOrientation, BrowseQuery, Collection, CollectionType,
+    AppSettings, BrowseKind, BrowseOrientation, BrowseQuery, Collection,
     CreateCollectionRequest, DownloadJob, DuplicateGroup, HealthResponse, MediaItem, Performer,
     ScanResult, Scene, SiteInfo, Tag, UpdateCollectionRequest,
 };
@@ -445,7 +445,7 @@ impl AppState {
             let _ = self.stop_lan_server();
         }
 
-        let settings = self.get_settings()?;
+        let _settings = self.get_settings()?;
         let static_dir = self.static_ui_path();
         let server =
             crate::server::LanServer::start_loopback(self.clone(), port, static_dir).await?;

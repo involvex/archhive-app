@@ -241,6 +241,7 @@ impl SiteAdapter for PornhubAdapter {
                     duration: item.duration,
                     channel: channel.clone(),
                     referer: Some(item.url.clone()),
+                    initial_status: None,
                 });
             }
             // HLS-only pages: download the playlist via ffmpeg stream-copy
@@ -260,6 +261,7 @@ impl SiteAdapter for PornhubAdapter {
                     duration: item.duration,
                     channel,
                     referer: Some(item.url.clone()),
+                    initial_status: None,
                 });
             }
         }
