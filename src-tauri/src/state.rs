@@ -2,9 +2,9 @@ use crate::db::Database;
 use crate::downloads::{DownloadManager, NetworkMonitor};
 use crate::error::AppResult;
 use crate::models::{
-    AppSettings, BrowseKind, BrowseOrientation, BrowseQuery, Collection,
-    CreateCollectionRequest, DownloadJob, DuplicateGroup, HealthResponse, MediaItem, Performer,
-    ScanResult, Scene, SiteInfo, Tag, UpdateCollectionRequest,
+    AppSettings, BrowseKind, BrowseOrientation, BrowseQuery, Collection, CreateCollectionRequest,
+    DownloadJob, DuplicateGroup, HealthResponse, MediaItem, Performer, ScanResult, Scene, SiteInfo,
+    Tag, UpdateCollectionRequest,
 };
 use crate::server::LanServer;
 use crate::sites::registry::SiteRegistry;
@@ -13,9 +13,9 @@ use crate::vault::{CookieSiteInfo, CookieVault};
 use parking_lot::Mutex;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tracing;
 use tauri::Emitter;
 use tauri_plugin_shell::ShellExt;
+use tracing;
 
 pub struct AppState {
     pub db: Arc<Database>,
@@ -40,10 +40,7 @@ impl AppState {
     ) -> AppResult<Self> {
         let vault = Arc::new(CookieVault::new(data_dir.clone(), db.connection())?);
         let sites = Arc::new(SiteRegistry::new());
-        let lan_port = db
-            .get_settings()
-            .map(|s| s.lan_port)
-            .unwrap_or(8787);
+        let lan_port = db.get_settings().map(|s| s.lan_port).unwrap_or(8787);
         let site_ctx = Arc::new(SiteContext::with_lan_port(
             vault.clone(),
             app.clone(),
@@ -51,7 +48,7 @@ impl AppState {
         )?);
         let downloads = Arc::new(DownloadManager::new(db.clone(), app.clone(), vault.clone()));
         let network_monitor = Arc::new(NetworkMonitor::new(db.clone(), app.clone()));
-        
+
         // Start network/battery monitoring task
         let monitor = network_monitor.clone();
         tauri::async_runtime::spawn(async move {
@@ -63,7 +60,7 @@ impl AppState {
                 }
             }
         });
-        
+
         Ok(Self {
             db,
             data_dir,
@@ -147,11 +144,14 @@ impl AppState {
         let can_start = match self.network_monitor.can_start_download().await {
             Ok(v) => v,
             Err(e) => {
-                tracing::warn!("[network] can_start_download failed, allowing download: {}", e);
+                tracing::warn!(
+                    "[network] can_start_download failed, allowing download: {}",
+                    e
+                );
                 true
             }
         };
-        
+
         let adapter_id = adapter
             .map(|s| s.to_string())
             .or_else(|| self.sites.detect(url))
@@ -186,7 +186,7 @@ impl AppState {
                 embed_url: None,
             };
             let mut plan = site_adapter.resolve_download(&self.site_ctx, &item).await?;
-            
+
             // Set initial status based on network/battery conditions
             if !can_start {
                 plan.initial_status = Some(crate::models::DownloadStatus::WaitingForWifi);
@@ -835,8 +835,12 @@ impl AppState {
     }
 
     pub fn create_collection(&self, req: CreateCollectionRequest) -> AppResult<String> {
-        self.db
-            .create_collection(&req.name, req.collection_type, req.description.as_deref(), req.filter.as_ref())
+        self.db.create_collection(
+            &req.name,
+            req.collection_type,
+            req.description.as_deref(),
+            req.filter.as_ref(),
+        )
     }
 
     pub fn delete_collection(&self, id: &str) -> AppResult<()> {
@@ -844,8 +848,12 @@ impl AppState {
     }
 
     pub fn update_collection(&self, id: &str, req: UpdateCollectionRequest) -> AppResult<()> {
-        self.db
-            .update_collection(id, req.name.as_deref(), req.description.as_deref(), req.filter.as_ref())
+        self.db.update_collection(
+            id,
+            req.name.as_deref(),
+            req.description.as_deref(),
+            req.filter.as_ref(),
+        )
     }
 
     pub fn add_scene_to_collection(&self, scene_id: &str, collection_id: &str) -> AppResult<()> {
@@ -898,7 +906,10 @@ impl AppState {
             m3u.push('\n');
         }
 
-        let filename = format!("{}.m3u", collection.name.replace('/', "_").replace('\\', "_"));
+        let filename = format!(
+            "{}.m3u",
+            collection.name.replace('/', "_").replace('\\', "_")
+        );
 
         Ok(crate::models::ExportCollectionResult {
             content: m3u,
@@ -914,6 +925,49 @@ impl AppState {
         let settings = self.get_settings()?;
         let path = Self::validate_library_path(&settings.library_path, &self.data_dir)?;
         self.db.list_orphan_sidecars(&path)
+    }
+
+    /// #4: confine a requested file path under the library root.
+    /// Both sides are canonicalized so `..` segments and symlink escapes are
+    /// rejected. Relative paths are anchored at the library root.
+    pub fn resolve_under_library(
+        library_root: &str,
+        requested: &str,
+    ) -> AppResult<std::path::PathBuf> {
+        use crate::error::AppError;
+
+        let root = std::path::Path::new(library_root)
+            .canonicalize()
+            .map_err(|e| AppError::InvalidInput(format!("library root unreadable: {e}")))?;
+        let target = std::path::Path::new(requested);
+        let joined = if target.is_absolute() {
+            target.to_path_buf()
+        } else {
+            root.join(target)
+        };
+        let canonical = joined
+            .canonicalize()
+            .map_err(|_| AppError::NotFound(format!("File not found: {requested}")))?;
+        if !canonical.starts_with(&root) {
+            return Err(AppError::InvalidInput(
+                "Path is outside the library folder".into(),
+            ));
+        }
+        Ok(canonical)
+    }
+
+    /// #4: delete a single orphan sidecar, confined to the library root.
+    pub fn delete_orphan_sidecar(&self, path: &str) -> AppResult<()> {
+        use crate::error::AppError;
+
+        let settings = self.get_settings()?;
+        let lib = Self::validate_library_path(&settings.library_path, &self.data_dir)?;
+        let target = Self::resolve_under_library(&lib, path)?;
+        if !target.is_file() {
+            return Err(AppError::NotFound(format!("File not found: {path}")));
+        }
+        std::fs::remove_file(&target)?;
+        Ok(())
     }
 
     /// Q43: thumbnail sidecar cache totals for the Settings storage row.

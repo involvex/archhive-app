@@ -110,7 +110,10 @@ pub fn update_network_state(
     let monitor = state.network_monitor.clone();
     tauri::async_runtime::spawn(async move {
         if let Err(e) = monitor.check_and_update_downloads().await {
-            tracing::warn!("[network] failed to update downloads after network change: {}", e);
+            tracing::warn!(
+                "[network] failed to update downloads after network change: {}",
+                e
+            );
         }
     });
     Ok(())
@@ -482,12 +485,8 @@ pub fn thumb_cache_stats(
 }
 
 #[tauri::command]
-pub fn delete_orphan_sidecar(path: String) -> CmdResult<()> {
-    let p = std::path::Path::new(&path);
-    if !p.is_file() {
-        return Err(format!("File not found: {path}"));
-    }
-    std::fs::remove_file(p).map_err(|e| e.to_string())
+pub fn delete_orphan_sidecar(state: State<'_, Arc<AppState>>, path: String) -> CmdResult<()> {
+    map_err(state.delete_orphan_sidecar(&path))
 }
 
 #[tauri::command]
@@ -743,20 +742,13 @@ pub async fn probe_sidecar(
                 return Ok(crate::models::SidecarProbe {
                     name: tool,
                     bundled: false,
-                    detail: format!(
-                        "not found after FFmpeg.init — {}",
-                        status.message
-                    ),
+                    detail: format!("not found after FFmpeg.init — {}", status.message),
                 });
             }
             Ok(crate::models::SidecarProbe {
                 name: tool,
                 bundled: true,
-                detail: if version.is_empty() {
-                    path
-                } else {
-                    version
-                },
+                detail: if version.is_empty() { path } else { version },
             })
         })
         .await
@@ -921,7 +913,9 @@ pub fn export_collection(
     collection_id: String,
     req: ExportCollectionRequest,
 ) -> CmdResult<ExportCollectionResult> {
-    let scenes = state.list_collection_scenes(&collection_id).map_err(|e| e.to_string())?;
+    let scenes = state
+        .list_collection_scenes(&collection_id)
+        .map_err(|e| e.to_string())?;
     let collection = state
         .list_collections()
         .map_err(|e| e.to_string())?
@@ -947,7 +941,10 @@ pub fn export_collection(
         m3u.push('\n');
     }
 
-    let filename = format!("{}.m3u", collection.name.replace('/', "_").replace('\\', "_"));
+    let filename = format!(
+        "{}.m3u",
+        collection.name.replace('/', "_").replace('\\', "_")
+    );
 
     Ok(ExportCollectionResult {
         content: m3u,

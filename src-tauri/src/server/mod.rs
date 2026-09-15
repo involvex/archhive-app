@@ -172,7 +172,10 @@ impl LanServer {
             .route("/api/diagnostics", get(diagnostics))
             .route("/api/logs", get(list_logs))
             .route("/api/logs/clear", post(clear_logs_route))
-            .route("/api/library/orphans", get(list_orphan_sidecars))
+            .route(
+                "/api/library/orphans",
+                get(list_orphan_sidecars).delete(delete_orphan_sidecar),
+            )
             .route("/api/library/thumb-cache", get(thumb_cache_stats))
             .route("/api/library/filter", post(list_scenes_with_filter))
             .route("/api/library/ffmpeg-status", get(ffmpeg_status))
@@ -216,10 +219,7 @@ impl LanServer {
                 "/api/collections/{id}/scenes",
                 get(list_collection_scenes_lan),
             )
-            .route(
-                "/api/collections/{id}/export",
-                get(export_collection_lan),
-            )
+            .route("/api/collections/{id}/export", get(export_collection_lan))
             .route(
                 "/api/collections/{id}/scenes/{scene_id}",
                 post(add_scene_to_collection_lan).delete(remove_scene_from_collection_lan),
@@ -919,9 +919,9 @@ async fn proxy_remote_media(
         return Ok(response);
     }
 
-    let stream = upstream.bytes_stream().map(|r| {
-        r.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))
-    });
+    let stream = upstream
+        .bytes_stream()
+        .map(|r| r.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string())));
     let mut response = Body::from_stream(stream).into_response();
     *response.status_mut() = status;
     if let Ok(v) = HeaderValue::from_str(&content_type) {
@@ -977,9 +977,7 @@ fn rewrite_m3u8_for_proxy(body: &str, playlist_url: &str, referer: &str, port: u
         .map(|line| {
             let trimmed = line.trim();
             if trimmed.is_empty() || trimmed.starts_with('#') {
-                if let Some(rewritten) =
-                    rewrite_m3u8_tag_uris(line, base.as_ref(), referer, port)
-                {
+                if let Some(rewritten) = rewrite_m3u8_tag_uris(line, base.as_ref(), referer, port) {
                     return rewritten;
                 }
                 return line.to_string();
@@ -1140,13 +1138,44 @@ async fn thumb_cache_stats(
     Ok(Json(serde_json::json!(stats)))
 }
 
+/// #4: delete a single orphan sidecar (confined to library root).
+async fn delete_orphan_sidecar(
+    State(state): State<ApiState>,
+    Query(params): Query<DeleteOrphanQuery>,
+) -> Result<StatusCode, StatusCode> {
+    state
+        .app
+        .delete_orphan_sidecar(&params.path)
+        .map_err(|e| match e {
+            crate::error::AppError::NotFound(_) => StatusCode::NOT_FOUND,
+            crate::error::AppError::InvalidInput(_) => StatusCode::BAD_REQUEST,
+            _ => StatusCode::INTERNAL_SERVER_ERROR,
+        })?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+struct DeleteOrphanQuery {
+    path: String,
+}
+
 async fn network_state(
     State(state): State<ApiState>,
     Json(body): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
-    let connection_type = body.get("connection_type").and_then(|v| v.as_str()).unwrap_or("unknown").to_string();
-    let metered = body.get("metered").and_then(|v| v.as_bool()).unwrap_or(false);
-    state.app.network_monitor.set_connection_type(&connection_type);
+    let connection_type = body
+        .get("connection_type")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown")
+        .to_string();
+    let metered = body
+        .get("metered")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    state
+        .app
+        .network_monitor
+        .set_connection_type(&connection_type);
     state.app.network_monitor.set_metered(metered);
     let monitor = state.app.network_monitor.clone();
     tauri::async_runtime::spawn(async move {
@@ -1171,8 +1200,8 @@ async fn list_scenes_with_filter(
     State(state): State<ApiState>,
     Json(body): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
-    let filter: crate::models::SceneFilter = serde_json::from_value(body.clone())
-        .map_err(|_| StatusCode::BAD_REQUEST)?;
+    let filter: crate::models::SceneFilter =
+        serde_json::from_value(body.clone()).map_err(|_| StatusCode::BAD_REQUEST)?;
     let limit = body.get("limit").and_then(|v| v.as_i64());
     let offset = body.get("offset").and_then(|v| v.as_i64());
     let scenes = state
