@@ -1,5 +1,6 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { $ } from "bun";
 
 const ROOT = path.resolve(import.meta.dir, "..");
 const SEMVER = /^\d+\.\d+\.\d+(-[\w.-]+)?$/;
@@ -35,6 +36,9 @@ async function main(): Promise<void> {
     `$1"${version}"`,
   );
   await writeFile(lockPath, lock, "utf8");
+
+  // JSON.stringify expands short arrays; Prettier collapses them — keep CI format:check green.
+  await $`bunx prettier --write ${packagePath} ${tauriPath}`;
 
   console.log(
     `Bumped version to ${version} in package.json, tauri.conf.json, Cargo.toml, Cargo.lock`,

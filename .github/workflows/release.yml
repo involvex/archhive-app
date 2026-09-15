@@ -77,7 +77,10 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@v4
+        with:
+          # Default still requests obsolete `tools` package which sdkmanager no longer ships.
+          packages: platform-tools
 
       - name: Setup NDK
         id: setup-ndk
