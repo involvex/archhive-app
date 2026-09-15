@@ -273,6 +273,9 @@ pub struct AppSettings {
     /// Auto-advance to the next scene in the playlist when playback ends (#24).
     #[serde(default = "default_auto_advance_next")]
     pub auto_advance_next: bool,
+    /// Hold a screen wake lock while the player is open (Q33).
+    #[serde(default = "default_keep_screen_on")]
+    pub keep_screen_on: bool,
     /// Schedule-based theme: when dark mode starts (HH:MM, e.g. "19:00"). (#29)
     #[serde(default = "default_theme_schedule_from")]
     pub theme_schedule_from: String,
@@ -352,6 +355,10 @@ fn default_auto_advance_next() -> bool {
     false
 }
 
+fn default_keep_screen_on() -> bool {
+    false
+}
+
 fn default_theme_schedule_from() -> String {
     "19:00".to_string()
 }
@@ -402,6 +409,7 @@ impl Default for AppSettings {
             watched_threshold: default_watched_threshold(),
             watch_poll_interval_mins: default_watch_poll_interval_mins(),
             auto_advance_next: default_auto_advance_next(),
+            keep_screen_on: default_keep_screen_on(),
             theme_schedule_from: default_theme_schedule_from(),
             theme_schedule_to: default_theme_schedule_to(),
         }

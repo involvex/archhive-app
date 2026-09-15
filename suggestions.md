@@ -459,14 +459,13 @@ Add "Quiet hours" window (e.g., 22:00–08:00) to suppress non-critical toasts; 
 
 ### 44. Mobile Player Ergonomics (Gestures, Landscape, PiP, Wake-Lock)
 
-**Status:** ⚪ Not started  
+**Status:** 🔵 Partial  
 **Area:** Mobile / Player  
-**Currently:** `ScenePlayerDialog` plays with resume/watch-history (#26 ✅) and auto-advance toast (Q24); `playsInline` set; no swipe-seek, double-tap ±10s, PiP, or wake-lock.  
-**Suggestion:**
+**Currently:** `ScenePlayerDialog` plays with resume/watch-history (#26 ✅) and auto-advance toast (Q24); `playsInline` set.  
+**Done:** Keep-screen-on Zap toggle in the player action bar + Settings → Library default (`useWakeLock`, `keep_screen_on` setting, Q33 ✅); swipe-to-scrub (full-width = full duration, live time readout) and double-tap left/right third for −10s/+10s skips with overlay hints (`src/lib/playerGestures.ts`, `touch-action: pan-y` wrapper — native controls and vertical scroll untouched).  
+**Suggestion (remaining):**
 
-- Swipe horizontal to seek, double-tap sides for ±10s (mobile-only gesture layer over `HlsVideoPlayer`).
 - Auto-suggest landscape fullscreen on rotate; Picture-in-Picture button where the WebView supports it.
-- `navigator.wakeLock` "keep screen on" toggle in player + Settings default (see Q33 below).
 - Larger touch targets for Prev/Next on small screens.
 
 ### 45. Wi-Fi-Only + Metered / Battery-Aware Downloads
@@ -617,7 +616,7 @@ Add "Quiet hours" window (e.g., 22:00–08:00) to suppress non-critical toasts; 
 | Q30 | **Keyboard: `W` toggles watched**   | In the Library → Scenes page, `W` toggles the watched state on the currently focused scene (desktop only).                                                      | ✅ Done (registered shortcut with refs pattern for latest state access)                                                                                |
 | Q31 | **Bottom-nav badges (mobile)**      | Surface scene count + active-download count on the mobile bottom nav (parity with desktop sidebar Q1/Q14).                                                      | ⚪ Not started (pairs with #50)                                                                                                                        |
 | Q32 | **Hide CommandPalette on mobile**   | Don't mount the `Ctrl+K` palette when `isMobileDevice()`; replace with bottom-sheet search entry.                                                               | ⚪ Not started (pairs with #50)                                                                                                                        |
-| Q33 | **Keep-screen-on toggle in player** | `navigator.wakeLock` toggle in `ScenePlayerDialog` + Settings default; graceful fallback where unsupported.                                                     | ⚪ Not started (pairs with #44)                                                                                                                        |
+| Q33 | **Keep-screen-on toggle in player** | `navigator.wakeLock` toggle in `ScenePlayerDialog` + Settings default; graceful fallback where unsupported.                                                     | ✅ Done (`useWakeLock` + `keep_screen_on` setting, Zap toggle in player action bar, switch in Settings → Library)                                      |
 | Q34 | **Wi-Fi-only download guard**       | Warn/block queueing downloads on mobile data; "Wi-Fi only" setting in Downloads (default ON on mobile).                                                         | ⚪ Not started (pairs with #45)                                                                                                                        |
 | Q35 | **LAN host history**                | Remember last 3 `remote_host` values + token-present dot; one-tap reconnect in Settings → Engine.                                                               | ✅ Done (`src/lib/lanHistory.ts`: dedupe, cap 3, URLs only; recorded on discovery-tap + Test Connection success)                                       |
 | Q36 | **LAN address as QR**               | Render QR of `http://<lan-ip>:<port>/?token=…` next to "Copy web link" so the phone can scan to pair.                                                           | ✅ Done ("Show QR" toggle in Settings → LAN, `react-qr-code`, shares `resolveLanWebUrl` with copy path)                                                |
@@ -653,4 +652,4 @@ Add "Quiet hours" window (e.g., 22:00–08:00) to suppress non-critical toasts; 
 
 ---
 
-_Last updated: 2026-09-15 (#46 pairing: recent-hosts history + one-tap reconnect, desktop LAN QR, auto-reconnect attempt/last-ok surfacing; Q35/Q36 done)_
+_Last updated: 2026-09-15 (Q33 wake-lock + #44 gestures: `useWakeLock`/`keep_screen_on`, swipe-scrub + double-tap skip; player overlay hints)_

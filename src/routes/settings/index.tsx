@@ -1178,6 +1178,21 @@ function SettingsPage() {
                   <Switch.Thumb className="block h-4 w-4 translate-x-0.5 rounded-full bg-white transition data-[state=checked]:translate-x-[18px]" />
                 </Switch.Root>
               </div>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium">Keep screen on while playing</p>
+                  <p className="text-xs text-[var(--color-muted-foreground)]">
+                    Hold a screen wake lock in the player by default (toggleable per session).
+                  </p>
+                </div>
+                <Switch.Root
+                  checked={hostSettings?.keep_screen_on ?? false}
+                  onCheckedChange={(checked) => patchHostSettings({ keep_screen_on: checked })}
+                  className="h-5 w-9 shrink-0 rounded-full bg-[var(--color-secondary)] data-[state=checked]:bg-[var(--color-primary)]"
+                >
+                  <Switch.Thumb className="block h-4 w-4 translate-x-0.5 rounded-full bg-white transition data-[state=checked]:translate-x-[18px]" />
+                </Switch.Root>
+              </div>
               <div>
                 <label className="text-xs text-[var(--color-muted-foreground)]">
                   Auto-tag rules (one regex per line)

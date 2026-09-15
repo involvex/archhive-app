@@ -23,6 +23,7 @@ const defaultSettings: AppSettings = {
   download_quality: "1080",
   prefer_mp4: true,
   auto_advance_next: false,
+  keep_screen_on: false,
   theme_schedule_from: "19:00",
   theme_schedule_to: "07:00",
 };

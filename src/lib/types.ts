@@ -163,6 +163,8 @@ export interface AppSettings {
   watch_poll_interval_mins?: number;
   /** Auto-advance to next scene in playlist when playback ends (#24). */
   auto_advance_next?: boolean;
+  /** Hold a screen wake lock while the player is open (Q33). */
+  keep_screen_on?: boolean;
   /** Dark schedule start time HH:MM (e.g. "19:00"). (#29) */
   theme_schedule_from?: string;
   /** Light schedule start time HH:MM (e.g. "07:00"). (#29) */

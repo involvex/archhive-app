@@ -2,6 +2,16 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "react-hot-toast";
 import { sceneMediaUrl, isWebPlayableScene, isHttpMediaSrc, isVideoScene } from "@/lib/mediaUrl";
 import { getAutoAdvanceTarget } from "@/lib/autoAdvance";
+import { useWakeLock } from "@/lib/hooks/useWakeLock";
+import {
+  SKIP_SECONDS,
+  formatSkipLabel,
+  isDoubleTap,
+  isScrub,
+  swipeSeekTarget,
+  tapZone,
+  type TouchPoint,
+} from "@/lib/playerGestures";
 import { getCapabilities, hasLocalBackend } from "@/lib/runtime";
 import { useRecentlyViewedStore } from "@/lib/stores/recentlyViewed";
 import { api } from "@/lib/api/client";
@@ -9,7 +19,17 @@ import { HlsVideoPlayer } from "@/components/HlsVideoPlayer";
 import type { Scene, WatchProgress } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { formatDuration } from "@/components/SceneCard";
-import { ChevronLeft, ChevronRight, Check, Clock, Pencil, Play, RotateCcw, X } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Check,
+  Clock,
+  Pencil,
+  Play,
+  RotateCcw,
+  X,
+  Zap,
+} from "lucide-react";
 
 interface ScenePlayerDialogProps {
   scene: Scene | null;
@@ -56,6 +76,98 @@ function ScenePlayerBody({
   const [autoAdvanceNext, setAutoAdvanceNext] = useState(false);
   // #28 mark watched toggle in player.
   const [isWatched, setIsWatched] = useState(false);
+  // Q33: session screen-on toggle, initialized from the Settings default.
+  const [keepScreenOn, setKeepScreenOn] = useState(false);
+  const { supported: wakeLockSupported, held: wakeLockHeld } = useWakeLock(keepScreenOn);
+  // #44: touch-gesture state (swipe-to-scrub, double-tap ±10s). Refs only —
+  // gestures never preventDefault, so native controls keep working.
+  const touchStartRef = useRef<TouchPoint | null>(null);
+  const scrubStartTimeRef = useRef(0);
+  const scrubbingRef = useRef(false);
+  const lastTapRef = useRef<TouchPoint | null>(null);
+  const [gestureHint, setGestureHint] = useState<string | null>(null);
+  const hintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function flashGestureHint(label: string) {
+    setGestureHint(label);
+    if (hintTimerRef.current) clearTimeout(hintTimerRef.current);
+    hintTimerRef.current = setTimeout(() => setGestureHint(null), 700);
+  }
+
+  useEffect(() => {
+    return () => {
+      if (hintTimerRef.current) clearTimeout(hintTimerRef.current);
+    };
+  }, []);
+
+  function handleVideoTouchStart(e: React.TouchEvent) {
+    if (e.touches.length !== 1) {
+      touchStartRef.current = null;
+      return;
+    }
+    const t = e.touches[0];
+    touchStartRef.current = { x: t.clientX, y: t.clientY, t: Date.now() };
+    const video = videoRef.current;
+    scrubStartTimeRef.current = video ? video.currentTime : 0;
+    scrubbingRef.current = false;
+  }
+
+  function handleVideoTouchMove(e: React.TouchEvent) {
+    const start = touchStartRef.current;
+    const video = videoRef.current;
+    if (!start || !video || e.touches.length !== 1) return;
+    const t = e.touches[0];
+    const dx = t.clientX - start.x;
+    const dy = t.clientY - start.y;
+    if (!scrubbingRef.current && !isScrub(dx, dy)) return;
+    scrubbingRef.current = true;
+    const width = e.currentTarget.clientWidth;
+    const target = swipeSeekTarget(scrubStartTimeRef.current, dx, width, video.duration);
+    try {
+      video.currentTime = target;
+    } catch {
+      /* seek before metadata — ignore */
+    }
+    const delta = Math.round(target - scrubStartTimeRef.current);
+    flashGestureHint(
+      `${formatDuration(Math.floor(target))} (${delta >= 0 ? "+" : "−"}${Math.abs(delta)}s)`,
+    );
+  }
+
+  function handleVideoTouchEnd(e: React.TouchEvent) {
+    const start = touchStartRef.current;
+    touchStartRef.current = null;
+    if (scrubbingRef.current) {
+      scrubbingRef.current = false;
+      return;
+    }
+    const video = videoRef.current;
+    if (!start || !video || e.changedTouches.length !== 1) return;
+    const t = e.changedTouches[0];
+    const end: TouchPoint = { x: t.clientX, y: t.clientY, t: Date.now() };
+    const moved = Math.hypot(end.x - start.x, end.y - start.y);
+    if (moved > 12 || end.t - start.t > 500) {
+      lastTapRef.current = null;
+      return;
+    }
+    if (isDoubleTap(lastTapRef.current, end)) {
+      lastTapRef.current = null;
+      const zone = tapZone(end.x, e.currentTarget.clientWidth);
+      if (zone === "middle") return;
+      const delta = zone === "left" ? -SKIP_SECONDS : SKIP_SECONDS;
+      try {
+        video.currentTime = Math.min(
+          Number.isFinite(video.duration) ? video.duration : Infinity,
+          Math.max(0, video.currentTime + delta),
+        );
+      } catch {
+        /* ignore */
+      }
+      flashGestureHint(formatSkipLabel(delta));
+    } else {
+      lastTapRef.current = end;
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -69,10 +181,13 @@ function ScenePlayerBody({
     // the watched threshold so "resume" and "watched" stay consistent.
     void Promise.all([
       api.getWatchProgress(scene.id).catch(() => null),
-      api.getSettings().catch(() => ({ watched_threshold: 0.9, auto_advance_next: false })),
+      api
+        .getSettings()
+        .catch(() => ({ watched_threshold: 0.9, auto_advance_next: false, keep_screen_on: false })),
     ]).then(([p, settings]) => {
       if (cancelled) return;
       setAutoAdvanceNext(settings.auto_advance_next ?? false);
+      setKeepScreenOn(settings.keep_screen_on ?? false);
       if (!p) return;
       const threshold = settings.watched_threshold ?? 0.9;
       if (p.watched) setIsWatched(true);
@@ -182,6 +297,40 @@ function ScenePlayerBody({
           </button>
           <button
             type="button"
+            onClick={() => setKeepScreenOn((v) => !v)}
+            disabled={!wakeLockSupported}
+            className="rounded p-2 hover:bg-[var(--color-muted)] disabled:cursor-not-allowed disabled:opacity-40"
+            aria-label={keepScreenOn ? "Allow screen to sleep" : "Keep screen on"}
+            aria-pressed={keepScreenOn}
+            title={
+              wakeLockSupported
+                ? keepScreenOn
+                  ? `Keep screen on (lock held: ${wakeLockHeld ? "yes" : "requesting…"})`
+                  : "Keep screen on while playing"
+                : "Screen wake lock not supported on this device"
+            }
+          >
+            <Zap className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setKeepScreenOn((v) => !v)}
+            disabled={!wakeLockSupported}
+            className="rounded p-2 hover:bg-[var(--color-muted)] disabled:cursor-not-allowed disabled:opacity-40"
+            aria-label={keepScreenOn ? "Allow screen to sleep" : "Keep screen on"}
+            aria-pressed={keepScreenOn}
+            title={
+              wakeLockSupported
+                ? keepScreenOn
+                  ? `Keep screen on (lock held: ${wakeLockHeld ? "yes" : "requesting…"})`
+                  : "Keep screen on while playing"
+                : "Screen wake lock not supported on this device"
+            }
+          >
+            <Zap className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
             onClick={onClose}
             className="rounded p-2 hover:bg-[var(--color-muted)]"
             aria-label="Close"
@@ -210,30 +359,44 @@ function ScenePlayerBody({
       )}
 
       {webPlayable ? (
-        <HlsVideoPlayer
-          ref={videoRef}
-          src={mediaSrc}
-          key={mediaSrc}
-          controls
-          playsInline
-          preload="metadata"
-          crossOrigin={useCors ? "anonymous" : undefined}
-          className="aspect-video w-full rounded-md bg-black"
-          onTimeUpdate={handleTimeUpdate}
-          onPause={handlePause}
-          onEnded={() => {
-            const target = getAutoAdvanceTarget(scenes, currentIndex, autoAdvanceNext);
-            if (target && onNavigate) {
-              toast.success(`Up next: ${target.scene.title}`, { duration: 3000 });
-              onNavigate(target.scene, target.index);
-            }
-          }}
-          onError={(mediaError: MediaError | null) => {
-            if (mediaError) {
-              console.error("Video playback failed", mediaSrc, mediaError);
-            }
-          }}
-        />
+        <div
+          className="relative touch-pan-y select-none"
+          onTouchStart={handleVideoTouchStart}
+          onTouchMove={handleVideoTouchMove}
+          onTouchEnd={handleVideoTouchEnd}
+        >
+          <HlsVideoPlayer
+            ref={videoRef}
+            src={mediaSrc}
+            key={mediaSrc}
+            controls
+            playsInline
+            preload="metadata"
+            crossOrigin={useCors ? "anonymous" : undefined}
+            className="aspect-video w-full rounded-md bg-black"
+            onTimeUpdate={handleTimeUpdate}
+            onPause={handlePause}
+            onEnded={() => {
+              const target = getAutoAdvanceTarget(scenes, currentIndex, autoAdvanceNext);
+              if (target && onNavigate) {
+                toast.success(`Up next: ${target.scene.title}`, { duration: 3000 });
+                onNavigate(target.scene, target.index);
+              }
+            }}
+            onError={(mediaError: MediaError | null) => {
+              if (mediaError) {
+                console.error("Video playback failed", mediaSrc, mediaError);
+              }
+            }}
+          />
+          {gestureHint && (
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+              <span className="rounded-md bg-black/70 px-3 py-1.5 text-sm font-medium text-white">
+                {gestureHint}
+              </span>
+            </div>
+          )}
+        </div>
       ) : (
         <div className="space-y-3 rounded-md border border-[var(--color-border)] bg-[var(--color-muted)] p-3">
           <p className="text-sm text-[var(--color-muted-foreground)]">
