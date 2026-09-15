@@ -16,6 +16,13 @@ import { useSettingsStore } from "@/lib/stores/settings";
 import { hasLocalBackend } from "@/lib/runtime";
 import { open } from "@tauri-apps/plugin-dialog";
 import { mergeDiscoveredHosts } from "@/lib/lan-discovery";
+import {
+  clearLanHistory,
+  loadLanHistory,
+  recordLanHost,
+  type LanHistoryEntry,
+} from "@/lib/lanHistory";
+import QRCode from "react-qr-code";
 import { getPluginSettingsPanels } from "@/lib/plugins/loader";
 import { visibleSettingsTabs } from "@/lib/settings/capabilities";
 import type {
@@ -178,6 +185,11 @@ function SettingsPage() {
   const [discoveredHosts, setDiscoveredHosts] = useState<LanHost[]>([]);
   const [discovering, setDiscovering] = useState(false);
   const [discoverStatus, setDiscoverStatus] = useState("");
+  // Q35: recent LAN hosts (last successfully-used remote_host values).
+  const [recentHosts, setRecentHosts] = useState<LanHistoryEntry[]>(() => loadLanHistory());
+  // Q36: QR payload for the desktop LAN web link (computed on demand).
+  const [webQrUrl, setWebQrUrl] = useState<string | null>(null);
+  const [webQrLoading, setWebQrLoading] = useState(false);
   const [appVersion, setAppVersion] = useState("…");
   const { open: showChangelog, setOpen: setShowChangelog } = useChangelogDialog(appVersion);
   const [installingBinary, setInstallingBinary] = useState<string | null>(null);
@@ -279,7 +291,8 @@ function SettingsPage() {
     setTestStatus("LAN token copied — paste into mobile Settings → Engine → Remote token.");
   }
 
-  async function copyWebLink() {
+  /** Shared by "Copy web link" and the QR code (Q36): same URL, one code path. */
+  async function resolveLanWebUrl(): Promise<string> {
     const port = settings.lan_port;
     const token = displayLanToken?.trim();
     let base = `http://127.0.0.1:${port}`;
@@ -295,9 +308,28 @@ function SettingsPage() {
         // fall back to localhost
       }
     }
-    const url = token ? `${base}/?token=${encodeURIComponent(token)}` : `${base}/`;
+    return token ? `${base}/?token=${encodeURIComponent(token)}` : `${base}/`;
+  }
+
+  async function copyWebLink() {
+    const url = await resolveLanWebUrl();
+    const base = url.split("/?")[0];
     await navigator.clipboard.writeText(url);
     setTestStatus(`Web UI link copied. Open on phone: ${base}/ — folder browser at ${base}/files`);
+  }
+
+  async function showWebQr() {
+    if (webQrLoading) return;
+    if (webQrUrl) {
+      setWebQrUrl(null);
+      return;
+    }
+    setWebQrLoading(true);
+    try {
+      setWebQrUrl(await resolveLanWebUrl());
+    } finally {
+      setWebQrLoading(false);
+    }
   }
 
   async function regenerateLanToken() {
@@ -315,6 +347,7 @@ function SettingsPage() {
 
   function selectDiscoveredHost(host: LanHost) {
     updateSettings({ remote_host: host.url, remote_token: undefined });
+    setRecentHosts(recordLanHost(host.url, { name: host.name, hasToken: false }));
     setDiscoverStatus(`Selected ${host.url} (no token)`);
     if (hostSettings) {
       void persistBackendSettings({
@@ -323,6 +356,31 @@ function SettingsPage() {
         engine_mode: "remote_lan",
       }).catch(() => {});
     }
+  }
+
+  /** Q35: one-tap reconnect to a previously-used host. */
+  function connectRecentHost(entry: LanHistoryEntry) {
+    updateSettings({ remote_host: entry.url, engine_mode: "remote_lan" });
+    setRecentHosts(
+      recordLanHost(entry.url, {
+        name: entry.name,
+        hasToken: Boolean(useSettingsStore.getState().settings.remote_token?.trim()),
+      }),
+    );
+    if (hostSettings) {
+      const s = useSettingsStore.getState().settings;
+      void persistBackendSettings({
+        remote_host: entry.url,
+        remote_token: s.remote_token?.trim() || undefined,
+        engine_mode: "remote_lan",
+      }).catch(() => {});
+    }
+    setTestStatus(`Reconnecting to ${entry.url}…`);
+  }
+
+  function forgetRecentHosts() {
+    clearLanHistory();
+    setRecentHosts([]);
   }
 
   async function testRemote() {
@@ -334,6 +392,11 @@ function SettingsPage() {
       const authNote =
         health.auth_required === false ? " — no token required" : " — token required";
       setTestStatus(`Connected to ArcHive v${health.version}${authNote}`);
+      // Q35: only successful connections earn a history entry.
+      const host = (settings.remote_host || "").trim();
+      if (host) {
+        setRecentHosts(recordLanHost(host, { hasToken: Boolean(settings.remote_token?.trim()) }));
+      }
     } catch {
       setTestStatus("Connection failed");
     }
@@ -943,6 +1006,47 @@ function SettingsPage() {
                   <Button variant="outline" onClick={() => void testRemote()}>
                     Test Connection
                   </Button>
+                  {recentHosts.length > 0 && (
+                    <div className="space-y-1 rounded-md border border-[var(--color-border)] p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-xs font-medium">Recent hosts</p>
+                        <button
+                          type="button"
+                          onClick={forgetRecentHosts}
+                          className="text-xs text-[var(--color-muted-foreground)] underline hover:text-[var(--color-foreground)]"
+                        >
+                          Clear
+                        </button>
+                      </div>
+                      <ul className="space-y-1">
+                        {recentHosts.map((entry) => (
+                          <li key={entry.url}>
+                            <button
+                              type="button"
+                              className="flex w-full items-center gap-2 rounded-md border border-[var(--color-border)] px-3 py-2 text-left text-xs hover:bg-[var(--color-muted)]"
+                              onClick={() => connectRecentHost(entry)}
+                              title={`Reconnect to ${entry.url}`}
+                            >
+                              <span
+                                className={`h-2 w-2 shrink-0 rounded-full ${entry.hasToken ? "bg-green-500" : "bg-[var(--color-muted-foreground)]"}`}
+                                title={entry.hasToken ? "Token configured" : "No token"}
+                              />
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate font-medium">
+                                  {entry.name ?? entry.url}
+                                </span>
+                                {entry.name && (
+                                  <span className="block truncate text-[var(--color-muted-foreground)]">
+                                    {entry.url}
+                                  </span>
+                                )}
+                              </span>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                   {testStatus && (
                     <p className="text-xs text-[var(--color-muted-foreground)]">{testStatus}</p>
                   )}
@@ -1727,6 +1831,9 @@ function SettingsPage() {
                         <Button variant="outline" size="sm" onClick={() => void copyWebLink()}>
                           Copy web link
                         </Button>
+                        <Button variant="outline" size="sm" onClick={() => void showWebQr()}>
+                          {webQrLoading ? "Loading…" : webQrUrl ? "Hide QR" : "Show QR"}
+                        </Button>
                         <Button
                           variant="outline"
                           size="sm"
@@ -1735,6 +1842,17 @@ function SettingsPage() {
                           Regenerate
                         </Button>
                       </div>
+                      {webQrUrl && (
+                        <div className="space-y-1">
+                          <div className="inline-block rounded-md bg-white p-3">
+                            <QRCode value={webQrUrl} size={160} />
+                          </div>
+                          <p className="text-xs text-[var(--color-muted-foreground)] break-all">
+                            Scan with your phone camera to open {webQrUrl.split("/?")[0]}/ (token
+                            included when required).
+                          </p>
+                        </div>
+                      )}
                       <p className="text-xs text-[var(--color-muted-foreground)]">
                         Mobile app: Settings → Engine → paste token. Phone browser: use Copy web
                         link (includes token in URL when required).

@@ -482,14 +482,14 @@ Add "Quiet hours" window (e.g., 22:00–08:00) to suppress non-critical toasts; 
 
 ### 46. LAN Pairing That Survives Real Networks
 
-**Status:** ⚪ Not started  
+**Status:** 🔵 Partial  
 **Area:** Mobile / LAN  
-**Currently:** mDNS discovery + manual host entry + Test Connection (`docs/mobile-android.md`); `10.0.2.2` emulator-only vs PC-LAN-IP confusion; no host history or QR.  
-**Suggestion:**
+**Currently:** mDNS discovery + manual host entry + Test Connection (`docs/mobile-android.md`); `useLanConnection` polls health every 15s with last-ok time + retry-attempt count in the chip message.  
+**Done:** Recent-hosts history (last 3, URLs only — never tokens) with token-present dot + one-tap reconnect in Settings → Engine (`src/lib/lanHistory.ts`, recorded on discovery-tap and successful Test Connection); desktop "Show QR" renders the LAN web link (`?token=` included) next to Copy web link (`react-qr-code`).  
+**Suggestion (remaining):**
 
-- Remember last 3 `remote_host` values + token-present indicator; one-tap reconnect (see Q35).
-- Desktop shows QR of `http://<ip>:8787/?token=…`; phone scans it to fill host+token (see Q36).
-- Auto-reconnect with backoff when the desktop host drops; persistent connection-health chip (reuse `ConnectionStatusChip`).
+- Auto-reconnect backoff tuning (currently fixed 15s poll); "Wake desktop" (WoL) is out of scope.
+- Phone-side QR _scanning_ needs a native camera/barcode plugin — manual entry + history covers pairing for now.
 
 ### 47. Share-Sheet → ArcHive Intent (Queue from Any App)
 
@@ -619,8 +619,8 @@ Add "Quiet hours" window (e.g., 22:00–08:00) to suppress non-critical toasts; 
 | Q32 | **Hide CommandPalette on mobile**   | Don't mount the `Ctrl+K` palette when `isMobileDevice()`; replace with bottom-sheet search entry.                                                               | ⚪ Not started (pairs with #50)                                                                                                                        |
 | Q33 | **Keep-screen-on toggle in player** | `navigator.wakeLock` toggle in `ScenePlayerDialog` + Settings default; graceful fallback where unsupported.                                                     | ⚪ Not started (pairs with #44)                                                                                                                        |
 | Q34 | **Wi-Fi-only download guard**       | Warn/block queueing downloads on mobile data; "Wi-Fi only" setting in Downloads (default ON on mobile).                                                         | ⚪ Not started (pairs with #45)                                                                                                                        |
-| Q35 | **LAN host history**                | Remember last 3 `remote_host` values + token-present dot; one-tap reconnect in Settings → Engine.                                                               | ⚪ Not started (pairs with #46)                                                                                                                        |
-| Q36 | **LAN address as QR**               | Render QR of `http://<lan-ip>:<port>/?token=…` next to "Copy web link" so the phone can scan to pair.                                                           | ⚪ Not started (pairs with #46/#47)                                                                                                                    |
+| Q35 | **LAN host history**                | Remember last 3 `remote_host` values + token-present dot; one-tap reconnect in Settings → Engine.                                                               | ✅ Done (`src/lib/lanHistory.ts`: dedupe, cap 3, URLs only; recorded on discovery-tap + Test Connection success)                                       |
+| Q36 | **LAN address as QR**               | Render QR of `http://<lan-ip>:<port>/?token=…` next to "Copy web link" so the phone can scan to pair.                                                           | ✅ Done ("Show QR" toggle in Settings → LAN, `react-qr-code`, shares `resolveLanWebUrl` with copy path)                                                |
 | Q37 | **Thumb quality toggle (mobile)**   | Low/Med/High sidecar JPEG quality setting to save on-device storage + LAN bytes.                                                                                | ⚪ Not started (pairs with #49)                                                                                                                        |
 | Q38 | **Haptic on queue-add**             | `navigator.vibrate(10)` after successful `queue_download` on Android.                                                                                           | ⚪ Not started (pairs with #47)                                                                                                                        |
 
@@ -653,4 +653,4 @@ Add "Quiet hours" window (e.g., 22:00–08:00) to suppress non-critical toasts; 
 
 ---
 
-_Last updated: 2026-09-15 (Q2/Q8/Q15/Q24 hardening: LAN `downloaded` accept, duration min>max guard + filter+search+sort composition, performer sort `localStorage` persistence, auto-advance "Up next" toast; new Android-first section #44–#54 + Q31–Q38)_
+_Last updated: 2026-09-15 (#46 pairing: recent-hosts history + one-tap reconnect, desktop LAN QR, auto-reconnect attempt/last-ok surfacing; Q35/Q36 done)_
