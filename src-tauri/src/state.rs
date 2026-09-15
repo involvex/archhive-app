@@ -13,6 +13,7 @@ use crate::vault::{CookieSiteInfo, CookieVault};
 use parking_lot::Mutex;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use tracing;
 use tauri::Emitter;
 use tauri_plugin_shell::ShellExt;
 
@@ -143,7 +144,13 @@ impl AppState {
         title: Option<&str>,
     ) -> AppResult<DownloadJob> {
         // Check network/battery conditions before queuing
-        let can_start = self.network_monitor.can_start_download().await.unwrap_or(true);
+        let can_start = match self.network_monitor.can_start_download().await {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::warn!("[network] can_start_download failed, allowing download: {}", e);
+                true
+            }
+        };
         
         let adapter_id = adapter
             .map(|s| s.to_string())

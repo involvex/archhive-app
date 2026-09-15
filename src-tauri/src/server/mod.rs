@@ -1148,6 +1148,7 @@ async fn network_state(
 async fn network_info(
     State(_state): State<ApiState>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
+    // TODO: Replace with actual network detection once tauri::api::network is available
     Ok(Json(serde_json::json!({
         "connection_type": "unknown",
         "metered": false,

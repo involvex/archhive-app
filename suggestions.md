@@ -524,6 +524,7 @@ Add "Quiet hours" window (e.g., 22:00–08:00) to suppress non-critical toasts; 
 **Suggestion:**
 
 - Phase 2 (stretch): virtualize the scenes grid (windowed rendering) for very large on-device libraries — needs a virtualization dep, evaluate `virtua` vs TanStack Virtual.
+
 ### 50. Bottom-Nav & One-Handed UX Polish
 
 **Status:** ✅ Done  
