@@ -522,12 +522,12 @@ Add "Quiet hours" window (e.g., 22:00–08:00) to suppress non-critical toasts; 
 
 ### 50. Bottom-Nav & One-Handed UX Polish
 
-**Status:** ⚪ Not started  
+**Status:** 🔵 Partial  
 **Area:** Mobile / UX  
-**Currently:** Bottom nav exists (Home/Browse/Library/Live/Downloads/Settings, `AppShell.tsx`) but has no badge counts (desktop sidebar has scene + duplicate badges), `CommandPalette`/`ShortcutHelp` still mount on mobile where `Ctrl+K` is useless.  
-**Suggestion:**
+**Currently:** Bottom nav exists (Home/Browse/Library/Live/Downloads/Settings, `AppShell.tsx`) with safe-area padding; `CommandPalette`/`ShortcutHelp` still mount on mobile where `Ctrl+K` is useless.  
+**Done:** Badge counts on Library (scene count, Q1 parity) and Downloads (pending+active, 5s poll, 99+ cap, `aria-label` counts) — Q31 ✅.  
+**Suggestion (remaining):**
 
-- Badge counts on Library/Downloads nav items (parity with Q1/Q14, see Q31).
 - Don't mount `CommandPalette` on `isMobileDevice()`; replace with a bottom-sheet search (see Q32).
 - Safe-area + thumb-reach audit: primary actions (queue, play) within thumb zone; 44px+ touch targets.
 
@@ -611,7 +611,7 @@ Add "Quiet hours" window (e.g., 22:00–08:00) to suppress non-critical toasts; 
 | Q28 | **Mark watched toggle in player**   | Add a "Mark watched / unwatched" button in `ScenePlayerDialog` action bar (uses existing `markWatched` API).                                                    | ✅ Done (action bar button with try/catch error handling)                                                                                              |
 | Q29 | **Dark mode schedule**              | Add a "Schedule theme" setting (sunrise-to-sunset or custom hours) that auto-switches between Light/Dark; reuses the existing `AppTheme` plumbing.              | ✅ Done (`AppTheme::Scheduled` + `theme_schedule_from`/`to` settings, `useTheme` re-checks every 60s, Settings UI)                                     |
 | Q30 | **Keyboard: `W` toggles watched**   | In the Library → Scenes page, `W` toggles the watched state on the currently focused scene (desktop only).                                                      | ✅ Done (registered shortcut with refs pattern for latest state access)                                                                                |
-| Q31 | **Bottom-nav badges (mobile)**      | Surface scene count + active-download count on the mobile bottom nav (parity with desktop sidebar Q1/Q14).                                                      | ⚪ Not started (pairs with #50)                                                                                                                        |
+| Q31 | **Bottom-nav badges (mobile)**      | Surface scene count + active-download count on the mobile bottom nav (parity with desktop sidebar Q1/Q14).                                                      | ✅ Done (Library scene-count + Downloads in-flight badges in `AppShell`, 5s poll, 99+ cap, `aria-label` counts)                                        |
 | Q32 | **Hide CommandPalette on mobile**   | Don't mount the `Ctrl+K` palette when `isMobileDevice()`; replace with bottom-sheet search entry.                                                               | ⚪ Not started (pairs with #50)                                                                                                                        |
 | Q33 | **Keep-screen-on toggle in player** | `navigator.wakeLock` toggle in `ScenePlayerDialog` + Settings default; graceful fallback where unsupported.                                                     | ✅ Done (`useWakeLock` + `keep_screen_on` setting, Zap toggle in player action bar, switch in Settings → Library)                                      |
 | Q34 | **Wi-Fi-only download guard**       | Warn/block queueing downloads on mobile data; "Wi-Fi only" setting in Downloads (default ON on mobile).                                                         | ⚪ Not started (pairs with #45)                                                                                                                        |
@@ -649,4 +649,4 @@ Add "Quiet hours" window (e.g., 22:00–08:00) to suppress non-critical toasts; 
 
 ---
 
-_Last updated: 2026-09-15 (#48 engine health: plugin status row + missing-overlay guidance; `engineHealth.ts`)_
+_Last updated: 2026-09-15 (Q31 bottom-nav badges: Library scene count + Downloads in-flight count; #50 partial)_

@@ -59,6 +59,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [sceneCount, setSceneCount] = useState<number | null>(null);
   // Q14: duplicate-group badge (null = unknown/failed, hidden).
   const [duplicateCount, setDuplicateCount] = useState<number | null>(null);
+  // Q31: in-flight downloads for the mobile nav badge (pending + active only —
+  // paused is user-held, terminal states need no attention).
+  const [activeDownloads, setActiveDownloads] = useState(0);
   const { theme, setTheme } = useTheme();
 
   const themeOptions: { value: AppTheme; icon: typeof Sun; label: string }[] = [
@@ -113,6 +116,27 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     registerDefaultShortcuts((path: string) => navigate({ to: path }));
   }, [navigate]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const fetchActive = () => {
+      void api
+        .listDownloads()
+        .then((jobs) => {
+          if (cancelled) return;
+          setActiveDownloads(
+            jobs.filter((j) => j.status === "pending" || j.status === "active").length,
+          );
+        })
+        .catch(() => {});
+    };
+    fetchActive();
+    const id = window.setInterval(fetchActive, 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, []);
 
   useKeyboardShortcuts();
 
@@ -194,10 +218,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <div className="flex justify-around pt-2 pb-1">
             {mobileNav.map(({ to, label, icon: Icon }) => {
               const isActive = location.pathname === to || location.pathname.startsWith(to + "/");
+              // Q31: parity with the desktop sidebar badges (Q1 scene count).
+              const badge =
+                to === "/library" && sceneCount != null && sceneCount > 0
+                  ? sceneCount > 99
+                    ? "99+"
+                    : sceneCount
+                  : to === "/downloads" && activeDownloads > 0
+                    ? activeDownloads > 99
+                      ? "99+"
+                      : activeDownloads
+                    : null;
               return (
                 <Link
                   key={to}
                   to={to}
+                  aria-label={badge != null ? `${label}, ${badge}` : label}
                   className={cn(
                     "flex min-w-0 flex-1 flex-col items-center gap-1 px-2 py-2 text-[11px] font-medium transition-colors",
                     isActive
@@ -207,6 +243,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 >
                   <div className="relative">
                     <Icon className="h-6 w-6 shrink-0" />
+                    {badge != null && (
+                      <span className="absolute -top-1.5 -right-2.5 min-w-[18px] rounded-full bg-[var(--color-primary)] px-1 py-px text-center text-[10px] font-semibold leading-tight text-[var(--color-primary-foreground)]">
+                        {badge}
+                      </span>
+                    )}
                     <span
                       className={cn(
                         "absolute -bottom-1.5 left-1/2 -translate-x-1/2 h-0.5 w-4 rounded-full transition-colors",
