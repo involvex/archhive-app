@@ -483,7 +483,7 @@ async fn list_scenes(
     };
     let scenes = state
         .app
-        .list_scenes(q.q.as_deref(), sort)
+        .list_scenes(q.q.as_deref(), sort, None, None)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(serde_json::json!(scenes)))
 }
@@ -1130,7 +1130,7 @@ async fn list_scenes_with_filter(
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let scenes = state
         .app
-        .list_scenes_with_filter(&filter)
+        .list_scenes_with_filter(&filter, None, None)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(serde_json::json!(scenes)))
 }

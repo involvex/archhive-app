@@ -306,8 +306,10 @@ impl AppState {
         &self,
         query: Option<&str>,
         sort: crate::models::SceneSort,
+        limit: Option<i64>,
+        offset: Option<i64>,
     ) -> AppResult<Vec<Scene>> {
-        self.db.list_scenes(query, sort)
+        self.db.list_scenes(query, sort, limit, offset)
     }
 
     pub fn delete_scene(&self, id: &str, delete_files: bool) -> AppResult<()> {
@@ -779,8 +781,10 @@ impl AppState {
     pub fn list_scenes_with_filter(
         &self,
         filter: &crate::models::SceneFilter,
+        limit: Option<i64>,
+        offset: Option<i64>,
     ) -> AppResult<Vec<crate::models::Scene>> {
-        self.db.list_scenes_with_filter(filter)
+        self.db.list_scenes_with_filter(filter, limit, offset)
     }
 
     pub async fn get_diagnostics(&self) -> AppResult<crate::models::DiagnosticsData> {
@@ -1249,7 +1253,7 @@ impl AppState {
     pub fn get_library_stats(&self) -> AppResult<crate::models::LibraryStats> {
         let scenes = self
             .db
-            .list_scenes(None, crate::models::SceneSort::Newest)?;
+            .list_scenes(None, crate::models::SceneSort::Newest, None, None)?;
         let performers = self.db.list_performers(None)?;
         let tags = self.db.list_tags()?;
 

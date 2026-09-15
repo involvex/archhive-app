@@ -1120,6 +1120,8 @@ impl Database {
     pub fn list_scenes_with_filter(
         &self,
         filter: &crate::models::SceneFilter,
+        limit: Option<i64>,
+        offset: Option<i64>,
     ) -> AppResult<Vec<Scene>> {
         let conn = self
             .conn
@@ -1208,12 +1210,15 @@ impl Database {
             group_by = format!(" GROUP BY scenes.id HAVING {}", conditions.join(" AND "));
         }
 
+        let limit_val = limit.unwrap_or(200);
+        let offset_val = offset.unwrap_or(0);
+
         let sql = format!(
             "SELECT scenes.id, scenes.title, scenes.path, scenes.thumb, scenes.source_url, scenes.duration, scenes.channel, scenes.file_size, scenes.width, scenes.height, scenes.rating
              FROM scenes{joins_sql}
              {where_clause}{group_by}
              ORDER BY scenes.created_at DESC
-             LIMIT 200"
+             LIMIT {limit_val} OFFSET {offset_val}"
         );
 
         let mut stmt = conn.prepare(&sql)?;
@@ -1379,6 +1384,8 @@ impl Database {
         &self,
         query: Option<&str>,
         sort: crate::models::SceneSort,
+        limit: Option<i64>,
+        offset: Option<i64>,
     ) -> AppResult<Vec<Scene>> {
         let conn = self
             .conn
@@ -1392,6 +1399,8 @@ impl Database {
             // download-completion sort would need a migration — see WS4-B.
             crate::models::SceneSort::Downloaded => "created_at DESC",
         };
+        let limit_val = limit.unwrap_or(100);
+        let offset_val = offset.unwrap_or(0);
         let scenes: Vec<SceneRow> = if let Some(q) = query.filter(|s| !s.is_empty()) {
             let fts_q = format!("\"{}*\"", q.replace('"', ""));
             let like_q = format!("%{}%", q.replace('\'', "''"));
@@ -1425,7 +1434,7 @@ impl Database {
                      ORDER BY s.created_at DESC LIMIT 100
                  )
                  ORDER BY created_at {order_direction}
-                 LIMIT 100"
+                 LIMIT {limit_val} OFFSET {offset_val}"
             );
             let mut stmt = conn.prepare(&sql)?;
             let rows = stmt.query_map(params![fts_q, like_q], |row| {
@@ -1446,7 +1455,7 @@ impl Database {
             rows.collect::<Result<Vec<_>, _>>()?
         } else {
             let sql = format!(
-                "SELECT id, title, path, thumb, source_url, duration, channel, file_size, width, height, rating FROM scenes ORDER BY {order_by_plain} LIMIT 100"
+                "SELECT id, title, path, thumb, source_url, duration, channel, file_size, width, height, rating FROM scenes ORDER BY {order_by_plain} LIMIT {limit_val} OFFSET {offset_val}"
             );
             let mut stmt = conn.prepare(&sql)?;
             let rows = stmt.query_map([], |row| {
@@ -1817,7 +1826,7 @@ impl Database {
             if coll_type == "smart" {
                 if let Some(json) = filter_json {
                     if let Ok(filter) = serde_json::from_str::<SceneFilter>(&json) {
-                        return self.list_scenes_with_filter(&filter);
+                        return self.list_scenes_with_filter(&filter, None, None);
                     }
                 }
             }
@@ -2515,7 +2524,12 @@ mod tests {
         .unwrap();
 
         let results = db
-            .list_scenes(Some("custom notes"), crate::models::SceneSort::Newest)
+            .list_scenes(
+                Some("custom notes"),
+                crate::models::SceneSort::Newest,
+                None,
+                None,
+            )
             .unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].title, "Scene A");
@@ -2524,6 +2538,8 @@ mod tests {
             .list_scenes(
                 Some("nonexistent_term_xyz"),
                 crate::models::SceneSort::Newest,
+                None,
+                None,
             )
             .unwrap();
         assert!(missing.is_empty());
@@ -2539,7 +2555,7 @@ mod tests {
             .unwrap();
 
         let found = db
-            .list_scenes(Some("alpha"), crate::models::SceneSort::Newest)
+            .list_scenes(Some("alpha"), crate::models::SceneSort::Newest, None, None)
             .unwrap();
         assert_eq!(found.len(), 1);
 
@@ -2547,12 +2563,12 @@ mod tests {
             .unwrap();
 
         let found = db
-            .list_scenes(Some("alpha"), crate::models::SceneSort::Newest)
+            .list_scenes(Some("alpha"), crate::models::SceneSort::Newest, None, None)
             .unwrap();
         assert!(found.is_empty());
 
         let found = db
-            .list_scenes(Some("beta"), crate::models::SceneSort::Newest)
+            .list_scenes(Some("beta"), crate::models::SceneSort::Newest, None, None)
             .unwrap();
         assert_eq!(found.len(), 1);
     }

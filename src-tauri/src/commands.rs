@@ -135,8 +135,10 @@ pub fn list_scenes(
     state: State<'_, Arc<AppState>>,
     query: Option<String>,
     sort: Option<SceneSort>,
+    limit: Option<i64>,
+    offset: Option<i64>,
 ) -> CmdResult<Vec<Scene>> {
-    map_err(state.list_scenes(query.as_deref(), sort.unwrap_or_default()))
+    map_err(state.list_scenes(query.as_deref(), sort.unwrap_or_default(), limit, offset))
 }
 
 #[tauri::command]
@@ -446,8 +448,10 @@ pub async fn ffmpeg_status(state: State<'_, Arc<AppState>>) -> CmdResult<FfmpegS
 pub fn list_scenes_with_filter(
     state: State<'_, Arc<AppState>>,
     filter: SceneFilter,
+    limit: Option<i64>,
+    offset: Option<i64>,
 ) -> CmdResult<Vec<Scene>> {
-    map_err(state.list_scenes_with_filter(&filter))
+    map_err(state.list_scenes_with_filter(&filter, limit, offset))
 }
 
 #[tauri::command]
