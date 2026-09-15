@@ -504,14 +504,11 @@ Add "Quiet hours" window (e.g., 22:00–08:00) to suppress non-critical toasts; 
 
 ### 48. Android Engine Health (youtubedl-android + FFmpeg AAR)
 
-**Status:** ⚪ Not started  
+**Status:** 🔵 Partial  
 **Area:** Mobile / Downloads / Settings  
-**Currently:** Desktop has a "Media tools" card (Q13, `binary_versions`); Android relies on the `YtDlpPlugin` + FFmpeg AAR with soft-fail `PLUGIN_UNAVAILABLE` (`ytdlp_bridge.rs`) and no in-app status.  
-**Suggestion:**
-
-- Mobile "Media tools" card: embedded yt-dlp version, FFmpeg/FFprobe status via `ensure_media_tools`, plugin-registered dot.
-- One-tap yt-dlp update via plugin `update`; clear guidance when the overlay is missing (rebuild / `android:regen`).
-- Desktop counterpart already exists in #34 — keep the two cards in parity.
+**Currently:** Desktop has a "Media tools" card (Q13, `binary_versions`); Android `binary_versions`/`update_yt_dlp`/`probe_sidecar` backend commands already query the `YtDlpPlugin` + FFmpeg AAR (`ytdlp_bridge.rs`), and the mobile Media tools card shows versions + update button.  
+**Done:** Engine-plugin status row on mobile (ready/degraded/missing dot derived from `binary_versions` via `src/lib/engineHealth.ts` — no new IPC; missing state points at the `android:regen` + rebuild fix).  
+**Suggestion (remaining):** Surface the plugin `update` result version inline after one-tap update (currently only a status string); desktop #34 version-check parity.
 
 ### 49. Mobile Library Performance (Virtualized Grid, Thumb Cache, Pull-to-Refresh)
 
@@ -652,4 +649,4 @@ Add "Quiet hours" window (e.g., 22:00–08:00) to suppress non-critical toasts; 
 
 ---
 
-_Last updated: 2026-09-15 (Q33 wake-lock + #44 gestures: `useWakeLock`/`keep_screen_on`, swipe-scrub + double-tap skip; player overlay hints)_
+_Last updated: 2026-09-15 (#48 engine health: plugin status row + missing-overlay guidance; `engineHealth.ts`)_

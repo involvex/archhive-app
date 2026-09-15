@@ -16,6 +16,7 @@ import { useSettingsStore } from "@/lib/stores/settings";
 import { hasLocalBackend } from "@/lib/runtime";
 import { open } from "@tauri-apps/plugin-dialog";
 import { mergeDiscoveredHosts } from "@/lib/lan-discovery";
+import { enginePluginStatus } from "@/lib/engineHealth";
 import {
   clearLanHistory,
   loadLanHistory,
@@ -829,6 +830,9 @@ function SettingsPage() {
   }
 
   const cookieSitesList = sites.filter((s) => s.requires_cookies);
+  // #48: Android engine-plugin signal for the Media tools card.
+  const engineStatus =
+    runtime === "mobile-tauri" && !versionsLoading ? enginePluginStatus(binaryVersions) : null;
   const canScan = caps.libraryScanLocal || caps.libraryScanRemote;
   const pluginPanels = getPluginSettingsPanels();
   const pluginPanelsByTab = (tab: string) => pluginPanels.filter((p) => p.tab === tab);
@@ -1288,6 +1292,25 @@ function SettingsPage() {
                   ? "Bundled media tools. yt-dlp runs via the embedded Android engine."
                   : "Versions of the bundled sidecars (desktop) or PATH tools. Missing entries mean the tool was not found."}
               </p>
+              {engineStatus && (
+                <p className="flex items-center gap-2 text-xs">
+                  <span
+                    className={`h-2 w-2 shrink-0 rounded-full ${
+                      engineStatus === "ready"
+                        ? "bg-green-500"
+                        : engineStatus === "degraded"
+                          ? "bg-yellow-500"
+                          : "bg-red-500"
+                    }`}
+                  />
+                  {engineStatus === "ready" &&
+                    "Engine plugin registered — yt-dlp + media tools ready."}
+                  {engineStatus === "degraded" &&
+                    "Engine plugin registered — media tools not ready yet."}
+                  {engineStatus === "missing" &&
+                    "Engine plugin not registered — no versions reported."}
+                </p>
+              )}
               <dl className="grid grid-cols-2 gap-2 text-sm">
                 {(runtime === "mobile-tauri"
                   ? ([
@@ -1320,6 +1343,14 @@ function SettingsPage() {
                 (!binaryVersions?.ffmpeg_version || !binaryVersions?.ffprobe_version) &&
                 !versionsLoading && (
                   <>
+                    {engineStatus === "missing" && (
+                      <p className="text-xs text-red-400">
+                        No versions reported at all — the YtDlpPlugin overlay is likely missing from
+                        this APK (stale <code>gen/android</code> or skipped overlay). Run{" "}
+                        <code>bun run android:regen</code>, then rebuild with{" "}
+                        <code>bun run build:apk</code>. See docs/mobile-android.md.
+                      </p>
+                    )}
                     <p className="text-xs text-yellow-400">
                       ffmpeg/ffprobe are not ready yet — thumbnails, duration probes, and HLS
                       downloads need them. They ship inside the APK via youtubedl-android; try
