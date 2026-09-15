@@ -1530,6 +1530,7 @@ fn mime_from_path(path: &Path) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::AppState;
+    use std::fs;
 
     #[test]
     fn search_due_logic() {
@@ -1549,5 +1550,55 @@ mod tests {
             interval,
             &now
         ));
+    }
+
+    #[test]
+    fn resolve_under_library_confines_to_root() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("library");
+        fs::create_dir_all(&root).unwrap();
+        let root_str = root.to_str().unwrap();
+
+        // Valid relative path inside library
+        let sub = root.join("subdir");
+        fs::create_dir_all(&sub).unwrap();
+        let file = sub.join("thumb.jpg");
+        fs::write(&file, b"x").unwrap();
+        let rel = "subdir/thumb.jpg";
+        let resolved = AppState::resolve_under_library(root_str, rel).unwrap();
+        assert_eq!(resolved, file.canonicalize().unwrap());
+
+        // Valid absolute path inside library
+        let abs = file.to_str().unwrap();
+        let resolved = AppState::resolve_under_library(root_str, abs).unwrap();
+        assert_eq!(resolved, file.canonicalize().unwrap());
+
+        // Path with .. traversal that stays inside root
+        let resolved = AppState::resolve_under_library(root_str, "subdir/../subdir/thumb.jpg").unwrap();
+        assert_eq!(resolved, file.canonicalize().unwrap());
+
+        // Absolute path outside library → InvalidInput
+        let outside = tmp.path().join("outside.jpg");
+        fs::write(&outside, b"y").unwrap();
+        let err = AppState::resolve_under_library(root_str, outside.to_str().unwrap()).unwrap_err();
+        assert!(matches!(err, crate::error::AppError::InvalidInput(_)));
+
+        // Relative traversal escaping root → InvalidInput
+        let err = AppState::resolve_under_library(root_str, "../outside.jpg").unwrap_err();
+        assert!(matches!(err, crate::error::AppError::InvalidInput(_)));
+
+        // Non-existent file → NotFound
+        let err = AppState::resolve_under_library(root_str, "missing.jpg").unwrap_err();
+        assert!(matches!(err, crate::error::AppError::NotFound(_)));
+
+        // Symlink escape — create a symlink inside library pointing outside
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::symlink;
+            let link = root.join("escape.jpg");
+            symlink(&outside, &link).unwrap();
+            let err = AppState::resolve_under_library(root_str, "escape.jpg").unwrap_err();
+            assert!(matches!(err, crate::error::AppError::InvalidInput(_)));
+        }
     }
 }
