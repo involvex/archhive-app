@@ -23,6 +23,7 @@ import { CommandPalette } from "@/components/CommandPalette";
 import { ShortcutHelp } from "@/components/ShortcutHelp";
 import { api } from "@/lib/api/client";
 import { useTheme } from "@/lib/hooks/useTheme";
+import { isMobileDevice } from "@/lib/tauri";
 import type { AppTheme } from "@/lib/types";
 
 const desktopNavItems = [
@@ -139,6 +140,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, []);
 
   useKeyboardShortcuts();
+
+  // Q32: the palette + shortcut help open only via keyboard events (Ctrl+K,
+  // "?") — dead UI on touch devices. Bottom nav + per-page search cover
+  // mobile; key listeners stay mounted for Bluetooth keyboards.
+  const showKeyboardUi = !isMobileDevice();
 
   return (
     <div className="flex min-h-screen max-w-[100vw] overflow-x-hidden">
@@ -263,8 +269,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </nav>
       </div>
 
-      <CommandPalette />
-      <ShortcutHelp />
+      {showKeyboardUi && <CommandPalette />}
+      {showKeyboardUi && <ShortcutHelp />}
     </div>
   );
 }
