@@ -365,7 +365,8 @@ impl SidecarRunner {
             {
                 AppError::Other(format!(
                     "Failed to resolve stream: {e}. \
-                     Streaming requires Remote LAN mode — connect to a desktop host in Settings → Engine."
+                     This site isn't supported for on-device streaming. \
+                     Connect Remote LAN to a desktop host, or download first."
                 ))
             }
             #[cfg(not(mobile))]

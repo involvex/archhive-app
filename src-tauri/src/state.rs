@@ -635,10 +635,12 @@ impl AppState {
             .detect(url)
             .unwrap_or_else(|| "custom".to_string());
 
+        // Prefer the site adapter and surface its error (e.g. ThotHub on mobile
+        // intentionally refuses streaming). Do not swallow Err and fall through
+        // to a second generic yt-dlp call — that produces misleading Unsupported URL
+        // + Remote LAN hints when the adapter already decided.
         if let Some(adapter) = self.sites.get(&site_id) {
-            if let Ok(stream_url) = adapter.resolve_stream_url(&self.site_ctx, url).await {
-                return Ok(stream_url);
-            }
+            return adapter.resolve_stream_url(&self.site_ctx, url).await;
         }
 
         let runner = crate::sites::yt_dlp::SidecarRunner::new(self.site_ctx.app().clone());

@@ -39,6 +39,7 @@ Object.defineProperty(document, "createElement", {
     click: vi.fn(),
   })),
   writable: true,
+  configurable: true,
 });
 
 Object.defineProperty(URL, "createObjectURL", {

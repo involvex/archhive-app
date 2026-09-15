@@ -19,6 +19,15 @@ export interface HlsVideoPlayerProps {
   onEnded?: () => void;
 }
 
+function assignRef<T>(ref: Ref<T> | undefined, value: T | null) {
+  if (!ref) return;
+  if (typeof ref === "function") {
+    ref(value);
+  } else {
+    ref.current = value;
+  }
+}
+
 export const HlsVideoPlayer = forwardRef<HTMLVideoElement, HlsVideoPlayerProps>(
   (
     {
@@ -38,8 +47,16 @@ export const HlsVideoPlayer = forwardRef<HTMLVideoElement, HlsVideoPlayerProps>(
     }: HlsVideoPlayerProps,
     ref: Ref<HTMLVideoElement>,
   ) => {
-    const videoRef = useRef<HTMLVideoElement>(null);
+    const videoRef = useRef<HTMLVideoElement | null>(null);
     const hlsRef = useRef<import("hls.js").default | null>(null);
+
+    const setVideoRef = useCallback(
+      (node: HTMLVideoElement | null) => {
+        videoRef.current = node;
+        assignRef(ref, node);
+      },
+      [ref],
+    );
 
     const isHls = (() => {
       const lower = src.toLowerCase();
@@ -76,6 +93,7 @@ export const HlsVideoPlayer = forwardRef<HTMLVideoElement, HlsVideoPlayerProps>(
             void video.play().catch(() => {});
           });
         } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+          // Safari native HLS fallback
           video.src = url;
         } else {
           video.src = url;
@@ -113,8 +131,11 @@ export const HlsVideoPlayer = forwardRef<HTMLVideoElement, HlsVideoPlayerProps>(
 
     return (
       <video
-        ref={ref}
+        ref={setVideoRef}
         key={src}
+        // Progressive sources: set src on the element so playback works even if
+        // the effect races. HLS must stay unset so hls.js owns attachment.
+        src={isHls ? undefined : src}
         controls={controls}
         autoPlay={autoPlay}
         playsInline={playsInline}
@@ -128,9 +149,10 @@ export const HlsVideoPlayer = forwardRef<HTMLVideoElement, HlsVideoPlayerProps>(
         onPlay={onPlay}
         onEnded={onEnded}
       >
-        {isHls && <source src={src} type="application/x-mpegURL" />}
         <track kind="captions" />
       </video>
     );
   },
 );
+
+HlsVideoPlayer.displayName = "HlsVideoPlayer";
