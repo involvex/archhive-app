@@ -47,6 +47,7 @@ import type {
   LogEntry,
 } from "../types";
 import { getAppRuntime, shouldUseRemoteApi } from "../runtime";
+import { vibrateTick } from "../haptics";
 import { useSettingsStore } from "../stores/settings";
 import { isDesktopTauri } from "../tauri";
 
@@ -138,7 +139,7 @@ async function localInvoke<T>(command: string, args?: Record<string, unknown>): 
   if (getAppRuntime() === "browser") {
     throw new Error("This action requires the app runtime.");
   }
-  return invoke<T>(command, args);
+  return invoke(command, args) as Promise<T>;
 }
 
 async function localOrRemote<T>(
@@ -184,15 +185,26 @@ export const api = {
   },
 
   async queueDownload(url: string, adapter?: string, title?: string): Promise<DownloadJob> {
-    return localOrRemote("queue_download", { url, adapter, title }, "/api/downloads", {
-      method: "POST",
-      body: JSON.stringify({ url, adapter, title }),
-    });
+    const job = await localOrRemote<DownloadJob>(
+      "queue_download",
+      { url, adapter, title },
+      "/api/downloads",
+      {
+        method: "POST",
+        body: JSON.stringify({ url, adapter, title }),
+      },
+    );
+    // Centralized haptic feedback for all queue-download paths (Q38/Q39).
+    vibrateTick(10);
+    return job;
   },
 
   async queueDownloads(urls: string[]): Promise<DownloadJob[]> {
     if (isDesktopTauri() && !shouldUseRemoteApi()) {
-      return invoke<DownloadJob[]>("queue_downloads", { urls });
+      const jobs = await invoke<DownloadJob[]>("queue_downloads", { urls });
+      // Single vibrate per batch call (not per URL).
+      vibrateTick(10);
+      return jobs;
     }
     const jobs: DownloadJob[] = [];
     for (const url of urls) {
@@ -202,6 +214,8 @@ export const api = {
         console.error("queue failed", url, e);
       }
     }
+    // Vibrate once for the whole batch (non-desktop path).
+    if (jobs.length > 0) vibrateTick(10);
     return jobs;
   },
 
