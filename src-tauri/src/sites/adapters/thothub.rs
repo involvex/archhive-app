@@ -80,12 +80,19 @@ impl SiteAdapter for ThotHubAdapter {
         })
     }
     async fn resolve_stream_url(&self, ctx: &SiteContext, url: &str) -> AppResult<String> {
+        // Prefer HTTP KVS extraction (works on Android without yt-dlp ThotHub support).
+        if let Ok(Some(stream_url)) =
+            crate::sites::extractors::thothub::extract_stream_url(ctx, url).await
+        {
+            return Ok(maybe_loopback_proxy(ctx, &stream_url, BASE));
+        }
+
         #[cfg(mobile)]
         {
-            let _ = (&ctx, &url);
             return Err(crate::error::AppError::Other(
-                "ThotHub streaming is not available in standalone mode. \
-                 Use Remote LAN mode (connect to a desktop host)."
+                "Could not extract a ThotHub stream from the page. \
+                 Import cookies for thothub in Settings, connect Remote LAN to a desktop host, \
+                 or download the video first."
                     .to_string(),
             ));
         }
@@ -111,9 +118,46 @@ impl SiteAdapter for ThotHubAdapter {
                 .find(|line| !line.is_empty())
                 .ok_or_else(|| crate::error::AppError::Other("No stream URL resolved".to_string()))?
                 .to_string();
-            Ok(stream_url)
+            Ok(maybe_loopback_proxy(ctx, &stream_url, BASE))
         }
     }
+}
+
+/// Rewrite CDN URLs through the local LAN proxy so the WebView can play them
+/// with a proper Referer (HTML5 `<video>` cannot set Referer itself).
+fn maybe_loopback_proxy(ctx: &SiteContext, stream_url: &str, referer: &str) -> String {
+    #[cfg(mobile)]
+    {
+        if !(stream_url.starts_with("http://") || stream_url.starts_with("https://")) {
+            return stream_url.to_string();
+        }
+        if stream_url.contains("127.0.0.1") || stream_url.contains("localhost") {
+            return stream_url.to_string();
+        }
+        let port = ctx.lan_port();
+        return format!(
+            "http://127.0.0.1:{port}/api/media/proxy?url={}&referer={}",
+            urlencoding_encode(stream_url),
+            urlencoding_encode(referer)
+        );
+    }
+    #[cfg(not(mobile))]
+    {
+        let _ = (ctx, referer);
+        stream_url.to_string()
+    }
+}
+
+#[cfg_attr(not(mobile), allow(dead_code))]
+fn urlencoding_encode(s: &str) -> String {
+    s.bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                (b as char).to_string()
+            }
+            _ => format!("%{b:02X}"),
+        })
+        .collect()
 }
 
 fn build_browse_url(query: &BrowseQuery) -> AppResult<String> {
