@@ -517,11 +517,13 @@ Add "Quiet hours" window (e.g., 22:00–08:00) to suppress non-critical toasts; 
 **Status:** ✅ Phase 1 Done · 🔵 Partial  
 **Area:** Mobile / Library  
 **Currently:** Scenes grid renders all rows (`scenes/index.tsx`); pull-to-refresh shipped; no virtualization or thumb-quality control; `requestIdleCallback`-deferred duplicate badge exists in `AppShell`.  
-**Done:** Phase 1 — paginated/filter server-side over Remote LAN (builds on #25) + thumb quality toggle in Settings (Q37); `limit`/`offset` params wired through `list_scenes` and `list_scenes_with_filter` commands and API client; "Load more" button in library grid.  
+**Done:** Phase 1 — paginated/filter server-side over Remote LAN (builds on #25) + thumb quality toggle in Settings (Q37); `limit`/`offset` params wired through `list_scenes` and `list_scenes_with_filter` commands and API client; "Load more" button in library grid; parameterized SQL LIMIT/OFFSET; bounded query limits; Tauri-based network detection replacing navigator.connection; server routes for network state/info.
+
+**Fixes applied (code review):** Parameterized SQL prevents injection; max 200 results prevents DoS; `useNetworkMonitor` uses `api.getNetworkInfo()` instead of non-existent `navigator.connection` on Tauri; `thumb_quality` added to `defaultSettings`.
+
 **Suggestion:**
 
 - Phase 2 (stretch): virtualize the scenes grid (windowed rendering) for very large on-device libraries — needs a virtualization dep, evaluate `virtua` vs TanStack Virtual.
-
 ### 50. Bottom-Nav & One-Handed UX Polish
 
 **Status:** ✅ Done  
