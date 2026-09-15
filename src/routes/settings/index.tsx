@@ -1232,6 +1232,29 @@ function SettingsPage() {
                   <Switch.Thumb className="block h-4 w-4 translate-x-0.5 rounded-full bg-white transition data-[state=checked]:translate-x-[18px]" />
                 </Switch.Root>
               </div>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium">Thumb quality</p>
+                  <p className="text-xs text-[var(--color-muted-foreground)]">
+                    Thumbnail resolution for the library grid. Lower values save bandwidth.
+                  </p>
+                </div>
+                <select
+                  className="h-8 rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-2 text-xs"
+                  value={hostSettings?.thumb_quality ?? "original"}
+                  onChange={(e) =>
+                    patchHostSettings({
+                      thumb_quality: e.target.value as "original" | "low" | "medium" | "high",
+                    })
+                  }
+                  aria-label="Thumbnail quality"
+                >
+                  <option value="original">Original</option>
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                </select>
+              </div>
               <div>
                 <label className="text-xs text-[var(--color-muted-foreground)]">
                   Auto-tag rules (one regex per line)

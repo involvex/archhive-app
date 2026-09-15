@@ -268,12 +268,19 @@ export const api = {
     });
   },
 
-  async listScenes(query?: string, sort: SceneSort = "newest"): Promise<Scene[]> {
+  async listScenes(
+    query?: string,
+    sort: SceneSort = "newest",
+    limit?: number,
+    offset?: number,
+  ): Promise<Scene[]> {
     const params = new URLSearchParams();
     if (query) params.set("q", query);
     if (sort && sort !== "newest") params.set("sort", sort);
+    if (limit != null) params.set("limit", String(limit));
+    if (offset != null) params.set("offset", String(offset));
     const qs = params.toString() ? `?${params}` : "";
-    return localOrRemote("list_scenes", { query, sort }, `/api/scenes${qs}`);
+    return localOrRemote("list_scenes", { query, sort, limit, offset }, `/api/scenes${qs}`);
   },
 
   async deleteScene(id: string, deleteFiles = false): Promise<void> {
@@ -460,14 +467,18 @@ export const api = {
     return localInvoke<boolean>("dismiss_saved_search_news", { id });
   },
 
-  async listScenesWithFilter(filter: SceneFilter): Promise<Scene[]> {
+  async listScenesWithFilter(
+    filter: SceneFilter,
+    limit?: number,
+    offset?: number,
+  ): Promise<Scene[]> {
     if (shouldUseRemoteApi()) {
       return remoteFetch<Scene[]>("/api/library/filter", {
         method: "POST",
-        body: JSON.stringify(filter),
+        body: JSON.stringify({ ...filter, limit, offset }),
       });
     }
-    return localInvoke<Scene[]>("list_scenes_with_filter", { filter });
+    return localInvoke<Scene[]>("list_scenes_with_filter", { filter, limit, offset });
   },
 
   async listCollections(): Promise<Collection[]> {

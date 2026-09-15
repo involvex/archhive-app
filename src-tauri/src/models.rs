@@ -223,6 +223,16 @@ pub enum SceneSort {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
+pub enum ThumbnailQuality {
+    #[default]
+    Original,
+    Low,
+    Medium,
+    High,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
 pub enum DownloadQuality {
     Best,
     #[default]
@@ -292,6 +302,9 @@ pub struct AppSettings {
     /// Pause downloads when battery saver is active (default ON on mobile). (#45)
     #[serde(default = "default_pause_on_battery_saver")]
     pub pause_on_battery_saver: bool,
+    /// Thumbnail quality for library grid (default Original). (#49)
+    #[serde(default)]
+    pub thumb_quality: ThumbnailQuality,
 }
 
 fn default_phash_threshold() -> u8 {
@@ -391,6 +404,10 @@ fn default_pause_on_battery_saver() -> bool {
     return false;
 }
 
+fn default_thumb_quality() -> ThumbnailQuality {
+    ThumbnailQuality::Original
+}
+
 impl Default for AppSettings {
     fn default() -> Self {
         #[cfg(mobile)]
@@ -438,6 +455,7 @@ impl Default for AppSettings {
             theme_schedule_to: default_theme_schedule_to(),
             download_on_wifi_only: default_download_on_wifi_only(),
             pause_on_battery_saver: default_pause_on_battery_saver(),
+            thumb_quality: default_thumb_quality(),
         }
     }
 }

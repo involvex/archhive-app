@@ -107,6 +107,10 @@ function ScenesPage() {
   const [deleteTarget, setDeleteTarget] = useState<Scene | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const PAGE_SIZE = 30;
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressTriggered = useRef(false);
 
@@ -154,13 +158,18 @@ function ScenesPage() {
     }
     setLoading(true);
     setError(null);
-    const promise = hasFilter
-      ? api
-          .listScenesWithFilter(filter)
-          .then((result) => applySceneQueryAndSort(result, query, sort))
-      : api.listScenes(query || undefined, sort);
-    promise
-      .then(setScenes)
+    setPage(1);
+    setHasMore(true);
+    const fetchPromise = hasFilter
+      ? api.listScenesWithFilter(filter, PAGE_SIZE, 0)
+      : api.listScenes(query || undefined, sort, PAGE_SIZE, 0);
+    fetchPromise
+      .then((result) => {
+        setScenes(result);
+        setHasMore(result.length >= PAGE_SIZE);
+        return applySceneQueryAndSort(result, query, sort);
+      })
+      .then((sorted) => setScenes(sorted))
       .catch((e) => {
         console.error(e);
         setError(e instanceof Error ? e.message : "Failed to load scenes");
@@ -168,6 +177,27 @@ function ScenesPage() {
       .finally(() => setLoading(false));
     refreshWatch();
   }, [query, sort, filter, hasFilter, refreshWatch]);
+
+  const loadMore = useCallback(() => {
+    if (loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    const nextPage = page + 1;
+    const offset = nextPage * PAGE_SIZE;
+    const fetchPromise = hasFilter
+      ? api.listScenesWithFilter(filter, PAGE_SIZE, offset)
+      : api.listScenes(query || undefined, sort, PAGE_SIZE, offset);
+    fetchPromise
+      .then((result) => {
+        setScenes((prev) => [...prev, ...result]);
+        setHasMore(result.length >= PAGE_SIZE);
+        setPage(nextPage);
+      })
+      .catch((e) => {
+        console.error(e);
+        setError(e instanceof Error ? e.message : "Failed to load more scenes");
+      })
+      .finally(() => setLoadingMore(false));
+  }, [query, sort, filter, hasFilter, hasMore, page, loadingMore]);
 
   function watchState(id: string) {
     return watchFor(watchMap, id);
@@ -817,6 +847,14 @@ function ScenesPage() {
               </button>
             );
           })}
+        </div>
+      )}
+
+      {hasMore && !loading && (
+        <div className="flex justify-center py-4">
+          <Button variant="outline" onClick={loadMore} disabled={loadingMore}>
+            {loadingMore ? "Loading…" : "Load more"}
+          </Button>
         </div>
       )}
 

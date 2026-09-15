@@ -43,6 +43,8 @@ struct QueueBody {
 struct ScenesQuery {
     q: Option<String>,
     sort: Option<String>,
+    limit: Option<i64>,
+    offset: Option<i64>,
 }
 
 #[derive(Deserialize)]
@@ -483,7 +485,7 @@ async fn list_scenes(
     };
     let scenes = state
         .app
-        .list_scenes(q.q.as_deref(), sort, None, None)
+        .list_scenes(q.q.as_deref(), sort, q.limit, q.offset)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(serde_json::json!(scenes)))
 }
@@ -1126,11 +1128,15 @@ async fn list_orphan_sidecars(
 
 async fn list_scenes_with_filter(
     State(state): State<ApiState>,
-    Json(filter): Json<crate::models::SceneFilter>,
+    Json(body): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
+    let filter: crate::models::SceneFilter = serde_json::from_value(body.clone())
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+    let limit = body.get("limit").and_then(|v| v.as_i64());
+    let offset = body.get("offset").and_then(|v| v.as_i64());
     let scenes = state
         .app
-        .list_scenes_with_filter(&filter, None, None)
+        .list_scenes_with_filter(&filter, limit, offset)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(serde_json::json!(scenes)))
 }
