@@ -1,5 +1,5 @@
 use crate::db::Database;
-use crate::downloads::DownloadManager;
+use crate::downloads::{DownloadManager, NetworkMonitor};
 use crate::error::AppResult;
 use crate::models::{
     AppSettings, BrowseKind, BrowseOrientation, BrowseQuery, Collection, CollectionType,
@@ -13,6 +13,7 @@ use crate::vault::{CookieSiteInfo, CookieVault};
 use parking_lot::Mutex;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use tauri::Emitter;
 use tauri_plugin_shell::ShellExt;
 
 pub struct AppState {
@@ -21,6 +22,7 @@ pub struct AppState {
     pub sites: Arc<SiteRegistry>,
     pub site_ctx: Arc<SiteContext>,
     pub downloads: Arc<DownloadManager>,
+    pub network_monitor: Arc<NetworkMonitor>,
     pub vault: Arc<CookieVault>,
     pub lan_server: Arc<Mutex<Option<LanServer>>>,
     pub static_ui_dir: Arc<Mutex<Option<PathBuf>>>,
@@ -47,12 +49,27 @@ impl AppState {
             lan_port,
         )?);
         let downloads = Arc::new(DownloadManager::new(db.clone(), app.clone(), vault.clone()));
+        let network_monitor = Arc::new(NetworkMonitor::new(db.clone(), app.clone()));
+        
+        // Start network/battery monitoring task
+        let monitor = network_monitor.clone();
+        tauri::async_runtime::spawn(async move {
+            let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(30));
+            loop {
+                interval.tick().await;
+                if let Err(e) = monitor.check_and_update_downloads().await {
+                    tracing::warn!("[network_monitor] failed to check downloads: {}", e);
+                }
+            }
+        });
+        
         Ok(Self {
             db,
             data_dir,
             sites,
             site_ctx,
             downloads,
+            network_monitor,
             vault,
             lan_server: Arc::new(Mutex::new(None)),
             static_ui_dir: Arc::new(Mutex::new(static_ui_dir)),
@@ -125,6 +142,9 @@ impl AppState {
         adapter: Option<&str>,
         title: Option<&str>,
     ) -> AppResult<DownloadJob> {
+        // Check network/battery conditions before queuing
+        let can_start = self.network_monitor.can_start_download().await.unwrap_or(true);
+        
         let adapter_id = adapter
             .map(|s| s.to_string())
             .or_else(|| self.sites.detect(url))
@@ -158,11 +178,24 @@ impl AppState {
                 stream_url: None,
                 embed_url: None,
             };
-            let plan = site_adapter.resolve_download(&self.site_ctx, &item).await?;
+            let mut plan = site_adapter.resolve_download(&self.site_ctx, &item).await?;
+            
+            // Set initial status based on network/battery conditions
+            if !can_start {
+                plan.initial_status = Some(crate::models::DownloadStatus::WaitingForWifi);
+            }
             return self.downloads.queue_plan(plan);
         }
 
-        self.downloads.queue(url, &adapter_id, title)
+        // For direct queue, also check conditions
+        let mut job = self.downloads.queue(url, &adapter_id, title)?;
+        if !can_start {
+            job.status = crate::models::DownloadStatus::WaitingForWifi;
+            job.error = Some("Waiting for Wi-Fi connection".to_string());
+            self.db.update_download_job(&job)?;
+            let _ = self.app.emit("download:progress", &job);
+        }
+        Ok(job)
     }
 
     pub async fn queue_downloads(&self, urls: &[String]) -> AppResult<Vec<DownloadJob>> {

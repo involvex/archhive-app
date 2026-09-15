@@ -90,6 +90,7 @@ macro_rules! ytdlp_tube_adapter {
                     duration: item.duration,
                     channel,
                     referer: None,
+                    initial_status: None,
                 })
             }
 
@@ -274,6 +275,7 @@ impl SiteAdapter for PornhubAdapter {
             duration: item.duration,
             channel,
             referer: None,
+            initial_status: None,
         })
     }
     async fn resolve_stream_url(&self, ctx: &SiteContext, url: &str) -> AppResult<String> {

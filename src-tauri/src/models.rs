@@ -82,6 +82,7 @@ pub enum DownloadStatus {
     Pending,
     Active,
     Paused,
+    WaitingForWifi,
     Completed,
     Failed,
     Cancelled,
@@ -130,6 +131,9 @@ pub struct DownloadPlan {
     /// Needed by Referer-gated CDNs (e.g. PornHub's phncdn).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub referer: Option<String>,
+    /// Initial download status (e.g., WaitingForWifi). If None, defaults to Pending.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub initial_status: Option<DownloadStatus>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -282,6 +286,12 @@ pub struct AppSettings {
     /// Schedule-based theme: when light mode starts (HH:MM, e.g. "07:00"). (#29)
     #[serde(default = "default_theme_schedule_to")]
     pub theme_schedule_to: String,
+    /// Download only on Wi-Fi (default ON on mobile). (#45)
+    #[serde(default = "default_download_on_wifi_only")]
+    pub download_on_wifi_only: bool,
+    /// Pause downloads when battery saver is active (default ON on mobile). (#45)
+    #[serde(default = "default_pause_on_battery_saver")]
+    pub pause_on_battery_saver: bool,
 }
 
 fn default_phash_threshold() -> u8 {
@@ -367,6 +377,20 @@ fn default_theme_schedule_to() -> String {
     "07:00".to_string()
 }
 
+fn default_download_on_wifi_only() -> bool {
+    #[cfg(mobile)]
+    return true;
+    #[cfg(not(mobile))]
+    return false;
+}
+
+fn default_pause_on_battery_saver() -> bool {
+    #[cfg(mobile)]
+    return true;
+    #[cfg(not(mobile))]
+    return false;
+}
+
 impl Default for AppSettings {
     fn default() -> Self {
         #[cfg(mobile)]
@@ -412,6 +436,8 @@ impl Default for AppSettings {
             keep_screen_on: default_keep_screen_on(),
             theme_schedule_from: default_theme_schedule_from(),
             theme_schedule_to: default_theme_schedule_to(),
+            download_on_wifi_only: default_download_on_wifi_only(),
+            pause_on_battery_saver: default_pause_on_battery_saver(),
         }
     }
 }

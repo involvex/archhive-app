@@ -320,6 +320,7 @@ impl SiteAdapter for GenericYtDlpAdapter {
                             duration: duration.or(item.duration),
                             channel,
                             referer: None,
+                            initial_status: None,
                         });
                     }
                     _ => DownloadTool::YtDlp,
@@ -354,6 +355,7 @@ impl SiteAdapter for GenericYtDlpAdapter {
                             duration: item.duration,
                             channel,
                             referer: None,
+                            initial_status: None,
                         });
                     }
                     _ => DownloadTool::YtDlp,
@@ -382,6 +384,7 @@ impl SiteAdapter for GenericYtDlpAdapter {
                             duration: item.duration,
                             channel,
                             referer: None,
+                            initial_status: None,
                         });
                     }
                     _ => DownloadTool::YtDlp,
@@ -402,6 +405,7 @@ impl SiteAdapter for GenericYtDlpAdapter {
             duration: item.duration,
             channel: None,
             referer: None,
+            initial_status: None,
         })
     }
 }

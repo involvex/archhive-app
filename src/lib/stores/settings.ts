@@ -26,6 +26,8 @@ const defaultSettings: AppSettings = {
   keep_screen_on: false,
   theme_schedule_from: "19:00",
   theme_schedule_to: "07:00",
+  download_on_wifi_only: true,
+  pause_on_battery_saver: true,
 };
 
 export const useSettingsStore = create<SettingsState>()(

@@ -85,6 +85,7 @@ impl SiteAdapter for ChaturbateAdapter {
             duration: item.duration,
             channel: None,
             referer: None,
+            initial_status: None,
         })
     }
 }

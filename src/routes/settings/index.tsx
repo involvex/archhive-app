@@ -1197,6 +1197,41 @@ function SettingsPage() {
                   <Switch.Thumb className="block h-4 w-4 translate-x-0.5 rounded-full bg-white transition data-[state=checked]:translate-x-[18px]" />
                 </Switch.Root>
               </div>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium">Download on Wi-Fi only</p>
+                  <p className="text-xs text-[var(--color-muted-foreground)]">
+                    When enabled, downloads are queued but wait for a Wi-Fi connection before
+                    starting.
+                  </p>
+                </div>
+                <Switch.Root
+                  checked={hostSettings?.download_on_wifi_only ?? true}
+                  onCheckedChange={(checked) =>
+                    patchHostSettings({ download_on_wifi_only: checked })
+                  }
+                  className="h-5 w-9 shrink-0 rounded-full bg-[var(--color-secondary)] data-[state=checked]:bg-[var(--color-primary)]"
+                >
+                  <Switch.Thumb className="block h-4 w-4 translate-x-0.5 rounded-full bg-white transition data-[state=checked]:translate-x-[18px]" />
+                </Switch.Root>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium">Pause on battery saver</p>
+                  <p className="text-xs text-[var(--color-muted-foreground)]">
+                    When enabled, active downloads pause when battery saver mode is active.
+                  </p>
+                </div>
+                <Switch.Root
+                  checked={hostSettings?.pause_on_battery_saver ?? true}
+                  onCheckedChange={(checked) =>
+                    patchHostSettings({ pause_on_battery_saver: checked })
+                  }
+                  className="h-5 w-9 shrink-0 rounded-full bg-[var(--color-secondary)] data-[state=checked]:bg-[var(--color-primary)]"
+                >
+                  <Switch.Thumb className="block h-4 w-4 translate-x-0.5 rounded-full bg-white transition data-[state=checked]:translate-x-[18px]" />
+                </Switch.Root>
+              </div>
               <div>
                 <label className="text-xs text-[var(--color-muted-foreground)]">
                   Auto-tag rules (one regex per line)

@@ -99,6 +99,24 @@ pub fn delete_download(state: State<'_, Arc<AppState>>, id: String) -> CmdResult
 }
 
 #[tauri::command]
+pub fn update_network_state(
+    state: State<'_, Arc<AppState>>,
+    connection_type: String,
+    metered: bool,
+) -> CmdResult<()> {
+    state.network_monitor.set_connection_type(&connection_type);
+    state.network_monitor.set_metered(metered);
+    // Immediately check and update downloads
+    let monitor = state.network_monitor.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Err(e) = monitor.check_and_update_downloads().await {
+            tracing::warn!("[network] failed to update downloads after network change: {}", e);
+        }
+    });
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn queue_bulk_import(
     state: State<'_, Arc<AppState>>,
     urls: Vec<String>,

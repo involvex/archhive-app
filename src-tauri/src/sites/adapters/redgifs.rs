@@ -117,6 +117,7 @@ impl SiteAdapter for RedgifsAdapter {
                 duration: duration.or(item.duration),
                 channel,
                 referer: None,
+                initial_status: None,
             });
         }
 
@@ -132,6 +133,7 @@ impl SiteAdapter for RedgifsAdapter {
             duration: item.duration,
             channel: None,
             referer: None,
+            initial_status: None,
         })
     }
 }

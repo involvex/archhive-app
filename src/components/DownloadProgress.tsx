@@ -16,6 +16,7 @@ const statusColors: Record<DownloadJob["status"], string> = {
   pending: "text-yellow-400",
   active: "text-blue-400",
   paused: "text-orange-400",
+  waiting_for_wifi: "text-cyan-400",
   completed: "text-green-400",
   failed: "text-red-400",
   cancelled: "text-[var(--color-muted-foreground)]",
@@ -24,6 +25,9 @@ const statusColors: Record<DownloadJob["status"], string> = {
 function getDisplayStatus(job: DownloadJob): { label: string; color: string } {
   if (job.status === "failed" && (job.retry_count ?? 0) > 0) {
     return { label: "retrying", color: "text-orange-400" };
+  }
+  if (job.status === "waiting_for_wifi") {
+    return { label: "waiting for Wi-Fi", color: statusColors.waiting_for_wifi };
   }
   return { label: job.status, color: statusColors[job.status] };
 }
@@ -45,9 +49,11 @@ export function DownloadProgressRow({
   onCancel,
   onDelete,
 }: DownloadProgressRowProps) {
-  const showProgress = job.status === "active" || job.status === "pending";
+  const showProgress =
+    job.status === "active" || job.status === "pending" || job.status === "waiting_for_wifi";
   const canRetry =
     job.status === "failed" || job.status === "cancelled" || job.status === "completed";
+  const isWaitingForWifi = job.status === "waiting_for_wifi";
   const retryInfo = formatRetryInfo(job);
   const display = getDisplayStatus(job);
 
@@ -65,6 +71,11 @@ export function DownloadProgressRow({
           {job.status === "paused" && onResume && (
             <Button variant="ghost" size="icon" title="Resume" onClick={() => onResume(job.id)}>
               <Play className="h-4 w-4" />
+            </Button>
+          )}
+          {isWaitingForWifi && onResume && (
+            <Button variant="ghost" size="icon" title="Retry now" onClick={() => onResume(job.id)}>
+              <RotateCcw className="h-4 w-4" />
             </Button>
           )}
           {(job.status === "pending" || job.status === "active") && onPause && (

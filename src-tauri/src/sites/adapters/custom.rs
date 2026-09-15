@@ -96,6 +96,7 @@ impl SiteAdapter for CustomUrlAdapter {
             duration: item.duration,
             channel: None,
             referer: None,
+            initial_status: None,
         })
     }
 

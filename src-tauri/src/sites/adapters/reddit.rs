@@ -109,6 +109,7 @@ impl SiteAdapter for RedditAdapter {
                 duration: duration.or(item.duration),
                 channel,
                 referer: None,
+                initial_status: None,
             });
         }
 
@@ -125,6 +126,7 @@ impl SiteAdapter for RedditAdapter {
             duration: item.duration,
             channel: None,
             referer: None,
+            initial_status: None,
         })
     }
 }

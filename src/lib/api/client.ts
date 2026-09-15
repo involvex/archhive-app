@@ -232,6 +232,17 @@ export const api = {
     });
   },
 
+  async updateNetworkState(connectionType: string, metered: boolean): Promise<void> {
+    return localOrRemote(
+      "update_network_state",
+      { connection_type: connectionType, metered },
+      "/api/network/state",
+      {
+        method: "POST",
+      },
+    );
+  },
+
   async deleteDownload(id: string): Promise<void> {
     if (shouldUseRemoteApi()) {
       return remoteFetch<void>(`/api/downloads/${id}`, { method: "DELETE" });

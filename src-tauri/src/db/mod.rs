@@ -136,15 +136,22 @@ impl Database {
         adapter: &str,
         title: Option<&str>,
         metadata: Option<&str>,
+        initial_status: Option<DownloadStatus>,
     ) -> AppResult<DownloadJob> {
+        let initial_status = initial_status.unwrap_or(DownloadStatus::Pending);
+        let is_waiting_for_wifi = initial_status == DownloadStatus::WaitingForWifi;
         let job = DownloadJob {
             id: Uuid::new_v4().to_string(),
             url: url.to_string(),
             adapter: adapter.to_string(),
-            status: DownloadStatus::Pending,
+            status: initial_status,
             progress: 0.0,
             output_path: None,
-            error: None,
+            error: if is_waiting_for_wifi {
+                Some("Waiting for Wi-Fi connection".to_string())
+            } else {
+                None
+            },
             title: title.map(|s| s.to_string()),
             created_at: Utc::now().to_rfc3339(),
             retry_count: 0,
@@ -155,14 +162,16 @@ impl Database {
             .lock()
             .map_err(|e| AppError::Other(e.to_string()))?;
         conn.execute(
-            "INSERT INTO download_jobs (id, url, adapter, status, progress, title, metadata, created_at, retry_count, last_retry_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            "INSERT INTO download_jobs (id, url, adapter, status, progress, output_path, error, title, metadata, created_at, retry_count, last_retry_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
             params![
                 job.id,
                 job.url,
                 job.adapter,
                 format!("{:?}", job.status).to_lowercase(),
                 job.progress,
+                job.output_path,
+                job.error,
                 job.title,
                 metadata,
                 job.created_at,

@@ -262,6 +262,7 @@ pub fn run() {
             commands::resume_download,
             commands::retry_download,
             commands::delete_download,
+            commands::update_network_state,
             commands::queue_bulk_import,
             commands::list_scenes,
             commands::delete_scene,

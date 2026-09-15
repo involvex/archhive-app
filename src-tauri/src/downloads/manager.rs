@@ -107,16 +107,18 @@ impl DownloadManager {
             duration: None,
             channel: None,
             referer: None,
+            initial_status: None,
         };
         self.queue_plan(plan)
     }
 
     pub fn queue_plan(&self, plan: DownloadPlan) -> AppResult<DownloadJob> {
-        let job = self.db.insert_download_job(
+        let mut job = self.db.insert_download_job(
             &plan.url,
             &plan.adapter_id,
             plan.title.as_deref(),
-            None,
+            None, // metadata - will be stored separately via store_download_job_metadata
+            plan.initial_status,
         )?;
         self.db.store_download_job_metadata(
             &job.id,
@@ -238,6 +240,7 @@ fn plan_from_job(db: &Database, job: &DownloadJob) -> AppResult<DownloadPlan> {
         duration,
         channel,
         referer,
+        initial_status: None,
     })
 }
 
@@ -803,7 +806,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let db = Database::new(dir.path().to_path_buf()).unwrap();
         let job = db
-            .insert_download_job("https://example.com/video.mp4", "generic_ytdlp", None, None)
+            .insert_download_job("https://example.com/video.mp4", "generic_ytdlp", None, None, None)
             .unwrap();
 
         let loaded = db.get_download_job(&job.id).unwrap().unwrap();
@@ -835,7 +838,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let db = Database::new(dir.path().to_path_buf()).unwrap();
         let mut job = db
-            .insert_download_job("https://example.com/video.mp4", "generic_ytdlp", None, None)
+            .insert_download_job("https://example.com/video.mp4", "generic_ytdlp", None, None, None)
             .unwrap();
         job.status = DownloadStatus::Failed;
         job.retry_count = 2;

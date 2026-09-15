@@ -20,6 +20,7 @@ import { getPluginNavItems } from "@/lib/plugins/loader";
 import { cn } from "@/lib/utils";
 import { useKeyboardShortcuts } from "@/lib/hooks/useKeyboardShortcuts";
 import { registerDefaultShortcuts } from "@/lib/shortcuts/defaults";
+import { useNetworkMonitor } from "@/lib/hooks/useNetworkMonitor";
 import { ShortcutBadge } from "@/components/ui/shortcut-badge";
 import { CommandPalette } from "@/components/CommandPalette";
 import { ShortcutHelp } from "@/components/ShortcutHelp";
@@ -66,6 +67,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // paused is user-held, terminal states need no attention).
   const [activeDownloads, setActiveDownloads] = useState(0);
   const { theme, setTheme } = useTheme();
+  useNetworkMonitor();
 
   const themeOptions: { value: AppTheme; icon: typeof Sun; label: string }[] = [
     { value: "dark", icon: Moon, label: "Dark" },

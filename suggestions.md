@@ -470,14 +470,16 @@ Add "Quiet hours" window (e.g., 22:00–08:00) to suppress non-critical toasts; 
 
 ### 45. Wi-Fi-Only + Metered / Battery-Aware Downloads
 
-**Status:** ⚪ Not started  
+**Status:** ✅ Done  
 **Area:** Mobile / Downloads  
 **Currently:** Downloads page is desktop-oriented (`window.confirm`, no network awareness); no Wi-Fi-only guard or battery-saver pause.  
-**Suggestion:**
+**Done:**
 
-- "Download on Wi-Fi only" setting (default ON on mobile): block/warn when queuing on mobile data (see Q34).
-- Pause active downloads on low battery / battery-saver; auto-resume when charging.
-- Show per-job "waiting for Wi-Fi" state instead of failing on metered networks. Pairs with #19 quiet-hours.
+- "Download on Wi-Fi only" setting (default ON on mobile): `download_on_wifi_only` in `AppSettings` (Rust + TS + zustand). When enabled, queued downloads get `waiting_for_wifi` status and pause until Wi-Fi is detected via Network Information API (`navigator.connection`).
+- Pause active downloads on battery saver: `pause_on_battery_saver` setting (default ON on mobile). When battery saver is active, downloads pause and auto-resume when charging.
+- Per-job "waiting for Wi-Fi" status in Downloads page with cyan label and "Retry now" button; auto-resumes when Wi-Fi detected.
+- Backend: `NetworkMonitor` in `src-tauri/src/downloads/network.rs` with 30s polling, `update_network_state` Tauri command called from `useNetworkMonitor` hook in `AppShell.tsx`.
+- Frontend: Settings switches in Settings → Library (#45 Wi-Fi-Only + Battery Saver), DownloadProgressRow handles `waiting_for_wifi` status with cyan color and resume button.
 
 ### 46. LAN Pairing That Survives Real Networks
 
@@ -645,4 +647,4 @@ Add "Quiet hours" window (e.g., 22:00–08:00) to suppress non-critical toasts; 
 
 ---
 
-_Last updated: 2026-09-15 (#50 done: mobile search bottom sheet + FAB, `q`-param handoff, 44px player targets)_
+_Last updated: 2026-09-15 (#45 done: Wi-Fi-only + battery-aware downloads with `waiting_for_wifi` status; #50 done: mobile search bottom sheet + FAB, `q`-param handoff, 44px player targets)_

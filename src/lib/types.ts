@@ -37,7 +37,8 @@ export interface SiteInfo {
   requires_cookies: boolean;
 }
 
-export type DownloadStatus = "pending" | "active" | "paused" | "completed" | "failed" | "cancelled";
+export type DownloadStatus =
+  "pending" | "active" | "paused" | "waiting_for_wifi" | "completed" | "failed" | "cancelled";
 
 export interface BulkImportResult {
   queued: number;
@@ -169,6 +170,10 @@ export interface AppSettings {
   theme_schedule_from?: string;
   /** Light schedule start time HH:MM (e.g. "07:00"). (#29) */
   theme_schedule_to?: string;
+  /** Download only on Wi-Fi (default ON on mobile). (#45) */
+  download_on_wifi_only?: boolean;
+  /** Pause downloads when battery saver is active (default ON on mobile). (#45) */
+  pause_on_battery_saver?: boolean;
 }
 
 export interface MergeDuplicatesResult {
