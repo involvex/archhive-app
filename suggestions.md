@@ -453,40 +453,176 @@ Add "Quiet hours" window (e.g., 22:00–08:00) to suppress non-critical toasts; 
 
 ---
 
+## Android-First Improvements (new — 2026-09-15)
+
+> Phone/tablet + APK-specific. Desktop equivalents noted where they exist. Grounded in `docs/mobile-android.md`, `src/lib/runtime.ts`, `src-tauri/src/mobile/standalone.rs`, `src-tauri/src/mobile/ytdlp_bridge.rs`, and `src/components/AppShell.tsx`.
+
+### 44. Mobile Player Ergonomics (Gestures, Landscape, PiP, Wake-Lock)
+
+**Status:** ⚪ Not started  
+**Area:** Mobile / Player  
+**Currently:** `ScenePlayerDialog` plays with resume/watch-history (#26 ✅) and auto-advance toast (Q24); `playsInline` set; no swipe-seek, double-tap ±10s, PiP, or wake-lock.  
+**Suggestion:**
+
+- Swipe horizontal to seek, double-tap sides for ±10s (mobile-only gesture layer over `HlsVideoPlayer`).
+- Auto-suggest landscape fullscreen on rotate; Picture-in-Picture button where the WebView supports it.
+- `navigator.wakeLock` "keep screen on" toggle in player + Settings default (see Q33 below).
+- Larger touch targets for Prev/Next on small screens.
+
+### 45. Wi-Fi-Only + Metered / Battery-Aware Downloads
+
+**Status:** ⚪ Not started  
+**Area:** Mobile / Downloads  
+**Currently:** Downloads page is desktop-oriented (`window.confirm`, no network awareness); no Wi-Fi-only guard or battery-saver pause.  
+**Suggestion:**
+
+- "Download on Wi-Fi only" setting (default ON on mobile): block/warn when queuing on mobile data (see Q34).
+- Pause active downloads on low battery / battery-saver; auto-resume when charging.
+- Show per-job "waiting for Wi-Fi" state instead of failing on metered networks. Pairs with #19 quiet-hours.
+
+### 46. LAN Pairing That Survives Real Networks
+
+**Status:** ⚪ Not started  
+**Area:** Mobile / LAN  
+**Currently:** mDNS discovery + manual host entry + Test Connection (`docs/mobile-android.md`); `10.0.2.2` emulator-only vs PC-LAN-IP confusion; no host history or QR.  
+**Suggestion:**
+
+- Remember last 3 `remote_host` values + token-present indicator; one-tap reconnect (see Q35).
+- Desktop shows QR of `http://<ip>:8787/?token=…`; phone scans it to fill host+token (see Q36).
+- Auto-reconnect with backoff when the desktop host drops; persistent connection-health chip (reuse `ConnectionStatusChip`).
+
+### 47. Share-Sheet → ArcHive Intent (Queue from Any App)
+
+**Status:** ⚪ Not started  
+**Area:** Mobile / LAN  
+**Currently:** No Android `SEND`/`VIEW` intent handling; URLs must be pasted manually (or sit in the #36 outbox design).  
+**Suggestion:**
+
+- Register share-target intent: link shared from browser/YouTube → ArcHive opens at "queue download" with URL prefilled.
+- Offline → lands in the offline outbox (#20/#36); online + Remote LAN → `queue_downloads` directly.
+- Toast + haptic confirmation on queue-add.
+
+### 48. Android Engine Health (youtubedl-android + FFmpeg AAR)
+
+**Status:** ⚪ Not started  
+**Area:** Mobile / Downloads / Settings  
+**Currently:** Desktop has a "Media tools" card (Q13, `binary_versions`); Android relies on the `YtDlpPlugin` + FFmpeg AAR with soft-fail `PLUGIN_UNAVAILABLE` (`ytdlp_bridge.rs`) and no in-app status.  
+**Suggestion:**
+
+- Mobile "Media tools" card: embedded yt-dlp version, FFmpeg/FFprobe status via `ensure_media_tools`, plugin-registered dot.
+- One-tap yt-dlp update via plugin `update`; clear guidance when the overlay is missing (rebuild / `android:regen`).
+- Desktop counterpart already exists in #34 — keep the two cards in parity.
+
+### 49. Mobile Library Performance (Virtualized Grid, Thumb Cache, Pull-to-Refresh)
+
+**Status:** 🔵 Partial  
+**Area:** Mobile / Library  
+**Currently:** Scenes grid renders all rows (`scenes/index.tsx`); pull-to-refresh shipped; no virtualization or thumb-quality control; `requestIdleCallback`-deferred duplicate badge exists in `AppShell`.  
+**Suggestion:**
+
+- Virtualize the scenes grid (windowed rendering) for large libraries on low-RAM phones.
+- Thumb quality toggle (Low/Med/High sidecar JPEG) to save storage + LAN bytes (see Q37).
+- Paginate/filter server-side over Remote LAN (builds on #25); keep pull-to-refresh as the manual path.
+
+### 50. Bottom-Nav & One-Handed UX Polish
+
+**Status:** ⚪ Not started  
+**Area:** Mobile / UX  
+**Currently:** Bottom nav exists (Home/Browse/Library/Live/Downloads/Settings, `AppShell.tsx`) but has no badge counts (desktop sidebar has scene + duplicate badges), `CommandPalette`/`ShortcutHelp` still mount on mobile where `Ctrl+K` is useless.  
+**Suggestion:**
+
+- Badge counts on Library/Downloads nav items (parity with Q1/Q14, see Q31).
+- Don't mount `CommandPalette` on `isMobileDevice()`; replace with a bottom-sheet search (see Q32).
+- Safe-area + thumb-reach audit: primary actions (queue, play) within thumb zone; 44px+ touch targets.
+
+### 51. "Open With" External Player + Save to Gallery/Movies
+
+**Status:** ⚪ Not started  
+**Area:** Mobile / Media  
+**Currently:** Non-web-playable containers (MKV/AVI) show "Open with system player" only when a local backend exists; no Save-to-gallery / public Movies export.  
+**Suggestion:**
+
+- Android `ACTION_VIEW` intent per scene ("Open in VLC/MX Player") for both local and Remote-LAN streams.
+- "Save to Movies" export via MediaStore/SAF for on-device files; share-sheet send for a single scene file.
+- Desktop keeps the existing system-player button — same label, same place.
+
+### 52. Storage Pressure UX (SD-Card Path, Low-Space Guard, Cache Clear)
+
+**Status:** 🔵 Partial  
+**Area:** Mobile / Library / Settings  
+**Currently:** `LibraryStats.free_space_bytes` shown; "Clear thumbnail cache" (Q17) + orphan-sidecar cleaner (Q19) exist; no SD-card path picker or pre-download space check.  
+**Suggestion:**
+
+- Library path picker surfacing SD-card volumes on Android; warn when the library lives on nearly-full storage.
+- Pre-queue free-space check: estimate vs `free_space_bytes`, warn before starting large batches.
+- One-tap "Storage" row in Settings: app data size, thumb cache size, orphan reclaimable bytes.
+
+### 53. App Lock / Private Mode for On-Device Library
+
+**Status:** ⚪ Not started  
+**Area:** Mobile / Security  
+**Currently:** No app lock; content-rating/PIN is still open under #24; LAN has a single bearer token (#37).  
+**Suggestion:**
+
+- Biometric/PIN gate on cold start + when returning from background (configurable timeout).
+- "Private mode" quick toggle: hides thumbnails (blur) without locking the whole app.
+- Per-session content-rating filter default (feeds the #24 parental-controls work).
+
+### 54. AMOLED Black Theme + Data-Saver Browsing Prefs
+
+**Status:** ⚪ Not started  
+**Area:** Mobile / Settings  
+**Currently:** Dark/light/system/scheduled themes shipped (Q5/Q29) with oklch tokens; no pure-black variant; browse loads full thumbs always.  
+**Suggestion:**
+
+- Pure-black AMOLED theme variant (battery + contrast); auto-enable with battery-saver optionally.
+- Data-saver mode: low-res thumbs, no autoplay previews, prefer 480p/720p `download_quality` on mobile.
+- Pairs with #35 transcode presets (server-side low-bandwidth renditions).
+
+---
+
 ## Quick Wins (< 1 day each)
 
-| #   | Feature                            | Description                                                                                                                                                     | Status                                                                                                                                                 |
-| --- | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Q1  | **Scene count badge**              | Show total scene count on the Library nav item.                                                                                                                 | ✅ Done (`AppShell` `scene_count` + `/library` stats)                                                                                                  |
-| Q2  | **Last downloaded sort**           | Add "Recently Downloaded" sort option to scenes.                                                                                                                | ✅ Done (`SceneSort::Downloaded`)                                                                                                                      |
-| Q3  | **File size display**              | Show file size on SceneCard in grid/list view.                                                                                                                  | ✅ Done (`Scene.file_size`, `SceneCard` + details dialogs)                                                                                             |
-| Q4  | **Performer image upload**         | Allow setting performer profile images manually.                                                                                                                | ✅ Done (`set_performer_image`)                                                                                                                        |
-| Q5  | **Dark/light theme toggle**        | Simple toggle button in the header bar.                                                                                                                         | ✅ Done (`AppShell` toggle + Settings selector, `AppTheme`)                                                                                            |
-| Q6  | **Keyboard shortcut hints**        | Show shortcut keys in tooltips and menus.                                                                                                                       | ✅ Done (kbd hints in player dialog for Space/Arrows/W/Esc; ShortcutBadge in SceneContextMenu for `W`; AppShell sidebar nav already had ShortcutBadge) |
-| Q7  | **Export performer list**          | Simple CSV/JSON export of all performers.                                                                                                                       | ✅ Done (`export_performers` JSON + CSV export on Performers page)                                                                                     |
-| Q8  | **Scene duration filter**          | Add min/max duration inputs to the scenes filter bar.                                                                                                           | ✅ Done (`SceneFilter.min/max_duration` + chips)                                                                                                       |
-| Q9  | **Empty state illustrations**      | Add friendly illustrations to empty states.                                                                                                                     | ✅ Done (`EmptyState` + `ErrorState` + skeletons across routes; custom art still open)                                                                 |
-| Q10 | **Changelog in-app**               | Show recent changes on first launch after update.                                                                                                               | ✅ Done (v0.5.0 changelog entries, version-gated auto-show via localStorage, "View Changelog" button in Settings)                                      |
-| Q11 | **Recently played rail**           | "Continue watching" strip on Home (`lib/stores/recentlyViewed.ts` persisted, recorded in `ScenePlayerDialog`, 12-item rail with Clear).                         | ✅ Done                                                                                                                                                |
-| Q12 | **Copy scene debug JSON**          | Copy button in Scene Details (id, path, hashes, source URL, resolution, size) for bug reports.                                                                  | ✅ Done                                                                                                                                                |
-| Q13 | **Binary version card**            | "Media tools" card in Settings → Library (`binary_versions` command + `/api/system/versions`: yt-dlp / gallery-dl / ffmpeg / ffprobe).                          | ✅ Done                                                                                                                                                |
-| Q14 | **Duplicate count badge**          | Duplicates entry in desktop sidebar with group-count badge (99+ cap) + `Ctrl+7` shortcut.                                                                       | ✅ Done                                                                                                                                                |
-| Q15 | **Performer sort by scenes**       | Sort toggle (Name / Scenes) on performers page.                                                                                                                 | ✅ Done                                                                                                                                                |
-| Q16 | **Resolution badge**               | WxH badge on SceneCard (grid + list) from probed data (`scenes.width/height`, `MIGRATION_008`; backfilled by probe flows + details/player rows).                | ✅ Done                                                                                                                                                |
-| Q17 | **Clear thumbnail cache**          | "Clear thumbnail cache" in Settings → Library (`clear_all_thumbs` command + `DELETE /api/library/thumbs`, confirm + rebuild hint).                              | ✅ Done                                                                                                                                                |
-| Q18 | **`?` opens shortcuts**            | Fixed `?`/`Shift+/` never matching in `shortcuts/registry.ts` (Shift-mask exemption for symbol keys); `ShortcutHelp` now opens.                                 | ✅ Done                                                                                                                                                |
-| Q19 | **Orphan cleanup totals**          | "Orphan sidecars" card in Settings → Library: scan, count + reclaimable bytes, per-item and Delete-all.                                                         | ✅ Done                                                                                                                                                |
-| Q20 | **LAN copy-address**               | Already shipped: "Copy web link" in Settings → LAN copies `http://<lan-ip>:<port>/?token=…`.                                                                    | ✅ Done                                                                                                                                                |
-| Q21 | **CSV export for performers**      | Q7 notes CSV format is still open — add CSV download alongside the existing JSON export on the Performers page.                                                 | ✅ Done (added `exportPerformersCsv()` with proper CSV escaping, "Export CSV" button alongside JSON export)                                            |
-| Q22 | **Clear completed downloads**      | "Clear completed" button on the Downloads page to prune finished/cancelled/failed jobs via bulk `delete_download`.                                              | ✅ Done (confirmation dialog + `completedIds` filter, `api.deleteDownload` for each terminal-status job)                                               |
-| Q23 | **Spacebar play/pause in player**  | `ScenePlayerDialog` handles ArrowLeft/Right navigation but not Space — add spacebar to toggle play/pause (respecting the existing input-focus guard).           | ✅ Done                                                                                                                                                |
-| Q24 | **Auto-advance to next scene**     | After a video ends in the player, automatically advance to the next scene in the queue (via `onEnded` on the HTML video element).                               | ✅ Done (`auto_advance_next` setting, default false, `onEnded` handler in player)                                                                      |
-| Q25 | **Watched / unwatched count**      | Show a "3 watched / 12 total" summary on the Library → Scenes filter bar, alongside the existing "Hide watched" chip (uses `list_watch_progress`).              | ✅ Done                                                                                                                                                |
-| Q26 | **Source site badge on SceneCard** | Parse and display the originating site domain from `source_url` as a small badge on library scene cards.                                                        | ✅ Done (`getItemSourceSite()` in `SceneCard`, grid + list views)                                                                                      |
-| Q27 | **Star rating on SceneCard**       | Wire up the existing `Scene.rating` column (DB + `update_scene` backend + `UpdateSceneRequest` TS type); show star rating on cards and in edit/details dialogs. | ✅ Done (backend threads rating through `update_scene`; 5-star input in edit dialog; display on cards + details)                                       |
-| Q28 | **Mark watched toggle in player**  | Add a "Mark watched / unwatched" button in `ScenePlayerDialog` action bar (uses existing `markWatched` API).                                                    | ✅ Done (action bar button with try/catch error handling)                                                                                              |
-| Q29 | **Dark mode schedule**             | Add a "Schedule theme" setting (sunrise-to-sunset or custom hours) that auto-switches between Light/Dark; reuses the existing `AppTheme` plumbing.              | ✅ Done (`AppTheme::Scheduled` + `theme_schedule_from`/`to` settings, `useTheme` re-checks every 60s, Settings UI)                                     |
-| Q30 | **Keyboard: `W` toggles watched**  | In the Library → Scenes page, `W` toggles the watched state on the currently focused scene (desktop only).                                                      | ✅ Done (registered shortcut with refs pattern for latest state access)                                                                                |
+| #   | Feature                             | Description                                                                                                                                                     | Status                                                                                                                                                 |
+| --- | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Q1  | **Scene count badge**               | Show total scene count on the Library nav item.                                                                                                                 | ✅ Done (`AppShell` `scene_count` + `/library` stats)                                                                                                  |
+| Q2  | **Last downloaded sort**            | Add "Recently Downloaded" sort option to scenes.                                                                                                                | ✅ Done (`SceneSort::Downloaded`; LAN accepts `?sort=downloaded` — by design an alias of `created_at DESC`, no `downloaded_at` column)                 |
+| Q3  | **File size display**               | Show file size on SceneCard in grid/list view.                                                                                                                  | ✅ Done (`Scene.file_size`, `SceneCard` + details dialogs)                                                                                             |
+| Q4  | **Performer image upload**          | Allow setting performer profile images manually.                                                                                                                | ✅ Done (`set_performer_image`)                                                                                                                        |
+| Q5  | **Dark/light theme toggle**         | Simple toggle button in the header bar.                                                                                                                         | ✅ Done (`AppShell` toggle + Settings selector, `AppTheme`)                                                                                            |
+| Q6  | **Keyboard shortcut hints**         | Show shortcut keys in tooltips and menus.                                                                                                                       | ✅ Done (kbd hints in player dialog for Space/Arrows/W/Esc; ShortcutBadge in SceneContextMenu for `W`; AppShell sidebar nav already had ShortcutBadge) |
+| Q7  | **Export performer list**           | Simple CSV/JSON export of all performers.                                                                                                                       | ✅ Done (`export_performers` JSON + CSV export on Performers page)                                                                                     |
+| Q8  | **Scene duration filter**           | Add min/max duration inputs to the scenes filter bar.                                                                                                           | ✅ Done (`SceneFilter.min/max_duration` + chips; min>max guard with inline hint; search+sort compose with active filters via `applySceneQueryAndSort`) |
+| Q9  | **Empty state illustrations**       | Add friendly illustrations to empty states.                                                                                                                     | ✅ Done (`EmptyState` + `ErrorState` + skeletons across routes; custom art still open)                                                                 |
+| Q10 | **Changelog in-app**                | Show recent changes on first launch after update.                                                                                                               | ✅ Done (v0.5.0 changelog entries, version-gated auto-show via localStorage, "View Changelog" button in Settings)                                      |
+| Q11 | **Recently played rail**            | "Continue watching" strip on Home (`lib/stores/recentlyViewed.ts` persisted, recorded in `ScenePlayerDialog`, 12-item rail with Clear).                         | ✅ Done                                                                                                                                                |
+| Q12 | **Copy scene debug JSON**           | Copy button in Scene Details (id, path, hashes, source URL, resolution, size) for bug reports.                                                                  | ✅ Done                                                                                                                                                |
+| Q13 | **Binary version card**             | "Media tools" card in Settings → Library (`binary_versions` command + `/api/system/versions`: yt-dlp / gallery-dl / ffmpeg / ffprobe).                          | ✅ Done                                                                                                                                                |
+| Q14 | **Duplicate count badge**           | Duplicates entry in desktop sidebar with group-count badge (99+ cap) + `Ctrl+7` shortcut.                                                                       | ✅ Done                                                                                                                                                |
+| Q15 | **Performer sort by scenes**        | Sort toggle (Name / Scenes) on performers page.                                                                                                                 | ✅ Done (client sort + `localStorage` persistence across restarts, `sortPerformers` in `src/lib/performerSort.ts`)                                     |
+| Q16 | **Resolution badge**                | WxH badge on SceneCard (grid + list) from probed data (`scenes.width/height`, `MIGRATION_008`; backfilled by probe flows + details/player rows).                | ✅ Done                                                                                                                                                |
+| Q17 | **Clear thumbnail cache**           | "Clear thumbnail cache" in Settings → Library (`clear_all_thumbs` command + `DELETE /api/library/thumbs`, confirm + rebuild hint).                              | ✅ Done                                                                                                                                                |
+| Q18 | **`?` opens shortcuts**             | Fixed `?`/`Shift+/` never matching in `shortcuts/registry.ts` (Shift-mask exemption for symbol keys); `ShortcutHelp` now opens.                                 | ✅ Done                                                                                                                                                |
+| Q19 | **Orphan cleanup totals**           | "Orphan sidecars" card in Settings → Library: scan, count + reclaimable bytes, per-item and Delete-all.                                                         | ✅ Done                                                                                                                                                |
+| Q20 | **LAN copy-address**                | Already shipped: "Copy web link" in Settings → LAN copies `http://<lan-ip>:<port>/?token=…`.                                                                    | ✅ Done                                                                                                                                                |
+| Q21 | **CSV export for performers**       | Q7 notes CSV format is still open — add CSV download alongside the existing JSON export on the Performers page.                                                 | ✅ Done (added `exportPerformersCsv()` with proper CSV escaping, "Export CSV" button alongside JSON export)                                            |
+| Q22 | **Clear completed downloads**       | "Clear completed" button on the Downloads page to prune finished/cancelled/failed jobs via bulk `delete_download`.                                              | ✅ Done (confirmation dialog + `completedIds` filter, `api.deleteDownload` for each terminal-status job)                                               |
+| Q23 | **Spacebar play/pause in player**   | `ScenePlayerDialog` handles ArrowLeft/Right navigation but not Space — add spacebar to toggle play/pause (respecting the existing input-focus guard).           | ✅ Done                                                                                                                                                |
+| Q24 | **Auto-advance to next scene**      | After a video ends in the player, automatically advance to the next scene in the queue (via `onEnded` on the HTML video element).                               | ✅ Done (`auto_advance_next` setting, default false, `onEnded` handler + "Up next: {title}" toast via `getAutoAdvanceTarget`)                          |
+| Q25 | **Watched / unwatched count**       | Show a "3 watched / 12 total" summary on the Library → Scenes filter bar, alongside the existing "Hide watched" chip (uses `list_watch_progress`).              | ✅ Done                                                                                                                                                |
+| Q26 | **Source site badge on SceneCard**  | Parse and display the originating site domain from `source_url` as a small badge on library scene cards.                                                        | ✅ Done (`getItemSourceSite()` in `SceneCard`, grid + list views)                                                                                      |
+| Q27 | **Star rating on SceneCard**        | Wire up the existing `Scene.rating` column (DB + `update_scene` backend + `UpdateSceneRequest` TS type); show star rating on cards and in edit/details dialogs. | ✅ Done (backend threads rating through `update_scene`; 5-star input in edit dialog; display on cards + details)                                       |
+| Q28 | **Mark watched toggle in player**   | Add a "Mark watched / unwatched" button in `ScenePlayerDialog` action bar (uses existing `markWatched` API).                                                    | ✅ Done (action bar button with try/catch error handling)                                                                                              |
+| Q29 | **Dark mode schedule**              | Add a "Schedule theme" setting (sunrise-to-sunset or custom hours) that auto-switches between Light/Dark; reuses the existing `AppTheme` plumbing.              | ✅ Done (`AppTheme::Scheduled` + `theme_schedule_from`/`to` settings, `useTheme` re-checks every 60s, Settings UI)                                     |
+| Q30 | **Keyboard: `W` toggles watched**   | In the Library → Scenes page, `W` toggles the watched state on the currently focused scene (desktop only).                                                      | ✅ Done (registered shortcut with refs pattern for latest state access)                                                                                |
+| Q31 | **Bottom-nav badges (mobile)**      | Surface scene count + active-download count on the mobile bottom nav (parity with desktop sidebar Q1/Q14).                                                      | ⚪ Not started (pairs with #50)                                                                                                                        |
+| Q32 | **Hide CommandPalette on mobile**   | Don't mount the `Ctrl+K` palette when `isMobileDevice()`; replace with bottom-sheet search entry.                                                               | ⚪ Not started (pairs with #50)                                                                                                                        |
+| Q33 | **Keep-screen-on toggle in player** | `navigator.wakeLock` toggle in `ScenePlayerDialog` + Settings default; graceful fallback where unsupported.                                                     | ⚪ Not started (pairs with #44)                                                                                                                        |
+| Q34 | **Wi-Fi-only download guard**       | Warn/block queueing downloads on mobile data; "Wi-Fi only" setting in Downloads (default ON on mobile).                                                         | ⚪ Not started (pairs with #45)                                                                                                                        |
+| Q35 | **LAN host history**                | Remember last 3 `remote_host` values + token-present dot; one-tap reconnect in Settings → Engine.                                                               | ⚪ Not started (pairs with #46)                                                                                                                        |
+| Q36 | **LAN address as QR**               | Render QR of `http://<lan-ip>:<port>/?token=…` next to "Copy web link" so the phone can scan to pair.                                                           | ⚪ Not started (pairs with #46/#47)                                                                                                                    |
+| Q37 | **Thumb quality toggle (mobile)**   | Low/Med/High sidecar JPEG quality setting to save on-device storage + LAN bytes.                                                                                | ⚪ Not started (pairs with #49)                                                                                                                        |
+| Q38 | **Haptic on queue-add**             | `navigator.vibrate(10)` after successful `queue_download` on Android.                                                                                           | ⚪ Not started (pairs with #47)                                                                                                                        |
 
 ---
 
@@ -517,4 +653,4 @@ Add "Quiet hours" window (e.g., 22:00–08:00) to suppress non-critical toasts; 
 
 ---
 
-_Last updated: 2026-09-11 (Collections/Watchlists #2/#6 MIGRATION_014, Notifications #11 native+in-app, Diagnostics #33 log viewer+export, CommandPalette #10 nav+actions, Advanced Search #12 rating+file-size, #15 FTS5 notes search, Q21–Q30, #41–43 added)_
+_Last updated: 2026-09-15 (Q2/Q8/Q15/Q24 hardening: LAN `downloaded` accept, duration min>max guard + filter+search+sort composition, performer sort `localStorage` persistence, auto-advance "Up next" toast; new Android-first section #44–#54 + Q31–Q38)_

@@ -1,5 +1,6 @@
 import { Input } from "@/components/ui/input";
 import type { SceneFilter } from "@/lib/types";
+import { isDurationRangeInvalid } from "@/lib/sceneList";
 import { X } from "lucide-react";
 
 interface FilterPillProps {
@@ -145,6 +146,11 @@ export function FilterBuilder({
             className="h-7 w-16 text-xs"
             aria-label="Maximum duration in seconds"
           />
+          {isDurationRangeInvalid(filter.min_duration, filter.max_duration) && (
+            <span className="text-xs text-amber-400" role="alert">
+              Min can&apos;t exceed max
+            </span>
+          )}
         </div>
       )}
 

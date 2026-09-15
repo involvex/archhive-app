@@ -4,6 +4,7 @@ import { api } from "@/lib/api/client";
 import { sceneThumbUrl, isVideoScene } from "@/lib/mediaUrl";
 import type { Scene, SceneFilter, SceneSort } from "@/lib/types";
 import { toWatchMap, watchFor, type WatchMap } from "@/lib/watch";
+import { applySceneQueryAndSort, isDurationRangeInvalid } from "@/lib/sceneList";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { SceneEditDialog } from "@/components/SceneEditDialog";
@@ -136,10 +137,18 @@ function ScenesPage() {
   }, [setWatchMap]);
 
   const refresh = useCallback(() => {
+    // Q8 guard: contradictory range can never match — keep current results
+    // and let the inline hint explain instead of flashing an empty grid.
+    if (isDurationRangeInvalid(filter.min_duration, filter.max_duration)) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     const promise = hasFilter
-      ? api.listScenesWithFilter(filter)
+      ? api
+          .listScenesWithFilter(filter)
+          .then((result) => applySceneQueryAndSort(result, query, sort))
       : api.listScenes(query || undefined, sort);
     promise
       .then(setScenes)
@@ -502,6 +511,11 @@ function ScenesPage() {
             aria-label="Minimum file size in MB"
           />
         </div>
+        {isDurationRangeInvalid(filter.min_duration, filter.max_duration) && (
+          <p className="w-full text-xs text-amber-400" role="alert">
+            Min duration can&apos;t exceed max duration — adjust the range to see results.
+          </p>
+        )}
       </div>
 
       {hasFilter && (

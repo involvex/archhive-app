@@ -475,6 +475,10 @@ async fn list_scenes(
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let sort = match q.sort.as_deref() {
         Some("name") => crate::models::SceneSort::Name,
+        // Q2: `downloaded` is an alias of `newest` (created_at DESC — there is
+        // no separate downloaded_at column). Accept it explicitly so mobile
+        // clients don't silently get a different order than they asked for.
+        Some("downloaded") => crate::models::SceneSort::Downloaded,
         _ => crate::models::SceneSort::Newest,
     };
     let scenes = state

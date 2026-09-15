@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "react-hot-toast";
 import { sceneMediaUrl, isWebPlayableScene, isHttpMediaSrc, isVideoScene } from "@/lib/mediaUrl";
+import { getAutoAdvanceTarget } from "@/lib/autoAdvance";
 import { getCapabilities, hasLocalBackend } from "@/lib/runtime";
 import { useRecentlyViewedStore } from "@/lib/stores/recentlyViewed";
 import { api } from "@/lib/api/client";
@@ -220,14 +222,10 @@ function ScenePlayerBody({
           onTimeUpdate={handleTimeUpdate}
           onPause={handlePause}
           onEnded={() => {
-            if (
-              autoAdvanceNext &&
-              onNavigate &&
-              scenes &&
-              currentIndex != null &&
-              currentIndex < scenes.length - 1
-            ) {
-              onNavigate(scenes[currentIndex + 1], currentIndex + 1);
+            const target = getAutoAdvanceTarget(scenes, currentIndex, autoAdvanceNext);
+            if (target && onNavigate) {
+              toast.success(`Up next: ${target.scene.title}`, { duration: 3000 });
+              onNavigate(target.scene, target.index);
             }
           }}
           onError={(mediaError: MediaError | null) => {

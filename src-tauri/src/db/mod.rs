@@ -1378,6 +1378,9 @@ impl Database {
         let order_by_plain = match sort {
             crate::models::SceneSort::Newest => "created_at DESC",
             crate::models::SceneSort::Name => "title COLLATE NOCASE ASC",
+            // Q2: no separate downloaded_at column exists; `downloaded` is
+            // intentionally an alias of `newest` (import order). A real
+            // download-completion sort would need a migration — see WS4-B.
             crate::models::SceneSort::Downloaded => "created_at DESC",
         };
         let scenes: Vec<SceneRow> = if let Some(q) = query.filter(|s| !s.is_empty()) {
