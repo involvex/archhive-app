@@ -35,7 +35,7 @@ impl NetworkMonitor {
         let settings = self.db.get_settings()?;
         
         let is_wifi = *self.is_wifi.read();
-        let is_metered = *self.is_metered.read();
+        let _is_metered = *self.is_metered.read();
         
         let jobs = self.db.list_download_jobs()?;
         

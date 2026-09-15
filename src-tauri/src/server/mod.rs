@@ -122,6 +122,8 @@ impl LanServer {
         };
         let api_router = Router::new()
             .route("/api/health", get(health))
+            .route("/api/network/state", post(network_state))
+            .route("/api/network/info", get(network_info))
             .route("/api/sites", get(list_sites))
             .route("/api/sites/{id}/browse", get(browse))
             .route("/api/downloads", get(list_downloads).post(queue_download))
@@ -1124,6 +1126,32 @@ async fn list_orphan_sidecars(
         .list_orphan_sidecars()
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(serde_json::json!(orphans)))
+}
+
+async fn network_state(
+    State(state): State<ApiState>,
+    Json(body): Json<serde_json::Value>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let connection_type = body.get("connection_type").and_then(|v| v.as_str()).unwrap_or("unknown").to_string();
+    let metered = body.get("metered").and_then(|v| v.as_bool()).unwrap_or(false);
+    state.app.network_monitor.set_connection_type(&connection_type);
+    state.app.network_monitor.set_metered(metered);
+    let monitor = state.app.network_monitor.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Err(e) = monitor.check_and_update_downloads().await {
+            tracing::warn!("[network] failed to update downloads: {}", e);
+        }
+    });
+    Ok(Json(serde_json::json!({})))
+}
+
+async fn network_info(
+    State(_state): State<ApiState>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    Ok(Json(serde_json::json!({
+        "connection_type": "unknown",
+        "metered": false,
+    })))
 }
 
 async fn list_scenes_with_filter(

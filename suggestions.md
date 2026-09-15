@@ -514,12 +514,12 @@ Add "Quiet hours" window (e.g., 22:00–08:00) to suppress non-critical toasts; 
 
 ### 49. Mobile Library Performance (Virtualized Grid, Thumb Cache, Pull-to-Refresh)
 
-**Status:** 🔵 Partial  
+**Status:** ✅ Phase 1 Done · 🔵 Partial  
 **Area:** Mobile / Library  
 **Currently:** Scenes grid renders all rows (`scenes/index.tsx`); pull-to-refresh shipped; no virtualization or thumb-quality control; `requestIdleCallback`-deferred duplicate badge exists in `AppShell`.  
+**Done:** Phase 1 — paginated/filter server-side over Remote LAN (builds on #25) + thumb quality toggle in Settings (Q37); `limit`/`offset` params wired through `list_scenes` and `list_scenes_with_filter` commands and API client; "Load more" button in library grid.  
 **Suggestion:**
 
-- Phase 1 (no new deps): paginate/filter server-side over Remote LAN (builds on #25) + thumb quality toggle (Q37); keep pull-to-refresh as the manual path.
 - Phase 2 (stretch): virtualize the scenes grid (windowed rendering) for very large on-device libraries — needs a virtualization dep, evaluate `virtua` vs TanStack Virtual.
 
 ### 50. Bottom-Nav & One-Handed UX Polish

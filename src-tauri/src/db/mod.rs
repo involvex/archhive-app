@@ -1210,19 +1210,19 @@ impl Database {
             group_by = format!(" GROUP BY scenes.id HAVING {}", conditions.join(" AND "));
         }
 
-        let limit_val = limit.unwrap_or(200);
-        let offset_val = offset.unwrap_or(0);
+        let limit_val = limit.unwrap_or(200).min(200).max(1);
+        let offset_val = offset.unwrap_or(0).min(limit_val * 100);
 
         let sql = format!(
             "SELECT scenes.id, scenes.title, scenes.path, scenes.thumb, scenes.source_url, scenes.duration, scenes.channel, scenes.file_size, scenes.width, scenes.height, scenes.rating
              FROM scenes{joins_sql}
              {where_clause}{group_by}
              ORDER BY scenes.created_at DESC
-             LIMIT {limit_val} OFFSET {offset_val}"
+             LIMIT ? OFFSET ?"
         );
 
         let mut stmt = conn.prepare(&sql)?;
-        let rows = stmt.query_map([], |row| {
+        let rows = stmt.query_map(params![limit_val, offset_val], |row| {
             Ok((
                 row.get::<_, String>(0)?,
                 row.get::<_, String>(1)?,
@@ -1399,8 +1399,8 @@ impl Database {
             // download-completion sort would need a migration — see WS4-B.
             crate::models::SceneSort::Downloaded => "created_at DESC",
         };
-        let limit_val = limit.unwrap_or(100);
-        let offset_val = offset.unwrap_or(0);
+        let limit_val = limit.unwrap_or(100).min(200).max(1);
+        let offset_val = offset.unwrap_or(0).min(limit_val * 100);
         let scenes: Vec<SceneRow> = if let Some(q) = query.filter(|s| !s.is_empty()) {
             let fts_q = format!("\"{}*\"", q.replace('"', ""));
             let like_q = format!("%{}%", q.replace('\'', "''"));
@@ -1410,34 +1410,34 @@ impl Database {
             };
             let sql = format!(
                 "SELECT * FROM (
-                     SELECT s.id, s.title, s.path, s.thumb, s.source_url, s.duration, s.channel, s.file_size, s.width, s.height, s.rating, s.created_at
-                     FROM scenes s JOIN scenes_fts fts ON s.rowid = fts.rowid
-                     WHERE scenes_fts MATCH ?1
-                     ORDER BY s.created_at DESC LIMIT 100
-                 )
-                 UNION
-                 SELECT * FROM (
-                     SELECT s.id, s.title, s.path, s.thumb, s.source_url, s.duration, s.channel, s.file_size, s.width, s.height, s.rating, s.created_at
-                     FROM scenes s
-                     JOIN scene_performers sp ON s.id = sp.scene_id
-                     JOIN performers p ON sp.performer_id = p.id
-                     WHERE p.name LIKE ?2
-                     ORDER BY s.created_at DESC LIMIT 100
-                 )
-                 UNION
+                      SELECT s.id, s.title, s.path, s.thumb, s.source_url, s.duration, s.channel, s.file_size, s.width, s.height, s.rating, s.created_at
+                      FROM scenes s JOIN scenes_fts fts ON s.rowid = fts.rowid
+                      WHERE scenes_fts MATCH ?1
+                      ORDER BY s.created_at DESC LIMIT 100
+                  )
+                  UNION
                   SELECT * FROM (
-                     SELECT s.id, s.title, s.path, s.thumb, s.source_url, s.duration, s.channel, s.file_size, s.width, s.height, s.rating, s.created_at
-                     FROM scenes s
-                     JOIN scene_tags st ON s.id = st.scene_id
-                     JOIN tags t ON st.tag_id = t.id
-                     WHERE t.name LIKE ?2
-                     ORDER BY s.created_at DESC LIMIT 100
-                 )
-                 ORDER BY created_at {order_direction}
-                 LIMIT {limit_val} OFFSET {offset_val}"
+                      SELECT s.id, s.title, s.path, s.thumb, s.source_url, s.duration, s.channel, s.file_size, s.width, s.height, s.rating, s.created_at
+                      FROM scenes s
+                      JOIN scene_performers sp ON s.id = sp.scene_id
+                      JOIN performers p ON sp.performer_id = p.id
+                      WHERE p.name LIKE ?2
+                      ORDER BY s.created_at DESC LIMIT 100
+                  )
+                  UNION
+                   SELECT * FROM (
+                      SELECT s.id, s.title, s.path, s.thumb, s.source_url, s.duration, s.channel, s.file_size, s.width, s.height, s.rating, s.created_at
+                      FROM scenes s
+                      JOIN scene_tags st ON s.id = st.scene_id
+                      JOIN tags t ON st.tag_id = t.id
+                      WHERE t.name LIKE ?2
+                      ORDER BY s.created_at DESC LIMIT 100
+                  )
+                  ORDER BY created_at {order_direction}
+                  LIMIT ?3 OFFSET ?4"
             );
             let mut stmt = conn.prepare(&sql)?;
-            let rows = stmt.query_map(params![fts_q, like_q], |row| {
+            let rows = stmt.query_map(params![fts_q, like_q, limit_val, offset_val], |row| {
                 Ok((
                     row.get(0)?,
                     row.get(1)?,
@@ -1455,10 +1455,10 @@ impl Database {
             rows.collect::<Result<Vec<_>, _>>()?
         } else {
             let sql = format!(
-                "SELECT id, title, path, thumb, source_url, duration, channel, file_size, width, height, rating FROM scenes ORDER BY {order_by_plain} LIMIT {limit_val} OFFSET {offset_val}"
+                "SELECT id, title, path, thumb, source_url, duration, channel, file_size, width, height, rating FROM scenes ORDER BY {order_by_plain} LIMIT ? OFFSET ?"
             );
             let mut stmt = conn.prepare(&sql)?;
-            let rows = stmt.query_map([], |row| {
+            let rows = stmt.query_map(params![limit_val, offset_val], |row| {
                 Ok((
                     row.get(0)?,
                     row.get(1)?,

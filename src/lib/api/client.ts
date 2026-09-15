@@ -243,6 +243,10 @@ export const api = {
     );
   },
 
+  async getNetworkInfo(): Promise<{ connection_type: string; metered: boolean }> {
+    return localOrRemote("get_network_info", undefined, "/api/network/info");
+  },
+
   async deleteDownload(id: string): Promise<void> {
     if (shouldUseRemoteApi()) {
       return remoteFetch<void>(`/api/downloads/${id}`, { method: "DELETE" });

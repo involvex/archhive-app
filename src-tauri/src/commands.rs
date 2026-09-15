@@ -116,6 +116,20 @@ pub fn update_network_state(
     Ok(())
 }
 
+#[derive(serde::Serialize)]
+pub struct NetworkInfo {
+    connection_type: String,
+    metered: bool,
+}
+
+#[tauri::command]
+pub async fn get_network_info() -> CmdResult<NetworkInfo> {
+    Ok(NetworkInfo {
+        connection_type: "unknown".to_string(),
+        metered: false,
+    })
+}
+
 #[tauri::command]
 pub async fn queue_bulk_import(
     state: State<'_, Arc<AppState>>,
