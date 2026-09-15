@@ -501,6 +501,7 @@ Add "Quiet hours" window (e.g., 22:00–08:00) to suppress non-critical toasts; 
 - Register share-target intent: link shared from browser/YouTube → ArcHive opens at "queue download" with URL prefilled.
 - Offline → lands in the offline outbox (#20/#36); online + Remote LAN → `queue_downloads` directly.
 - Toast + haptic confirmation on queue-add.
+- **Scope note:** `SEND`/`VIEW` intents need native Kotlin wiring in `gen/android` (outside Tauri IPC) — treat as stretch; ship the #36 outbox first so intents have somewhere to land.
 
 ### 48. Android Engine Health (youtubedl-android + FFmpeg AAR)
 
@@ -520,9 +521,8 @@ Add "Quiet hours" window (e.g., 22:00–08:00) to suppress non-critical toasts; 
 **Currently:** Scenes grid renders all rows (`scenes/index.tsx`); pull-to-refresh shipped; no virtualization or thumb-quality control; `requestIdleCallback`-deferred duplicate badge exists in `AppShell`.  
 **Suggestion:**
 
-- Virtualize the scenes grid (windowed rendering) for large libraries on low-RAM phones.
-- Thumb quality toggle (Low/Med/High sidecar JPEG) to save storage + LAN bytes (see Q37).
-- Paginate/filter server-side over Remote LAN (builds on #25); keep pull-to-refresh as the manual path.
+- Phase 1 (no new deps): paginate/filter server-side over Remote LAN (builds on #25) + thumb quality toggle (Q37); keep pull-to-refresh as the manual path.
+- Phase 2 (stretch): virtualize the scenes grid (windowed rendering) for very large on-device libraries — needs a virtualization dep, evaluate `virtua` vs TanStack Virtual.
 
 ### 50. Bottom-Nav & One-Handed UX Polish
 
@@ -542,8 +542,8 @@ Add "Quiet hours" window (e.g., 22:00–08:00) to suppress non-critical toasts; 
 **Currently:** Non-web-playable containers (MKV/AVI) show "Open with system player" only when a local backend exists; no Save-to-gallery / public Movies export.  
 **Suggestion:**
 
-- Android `ACTION_VIEW` intent per scene ("Open in VLC/MX Player") for both local and Remote-LAN streams.
-- "Save to Movies" export via MediaStore/SAF for on-device files; share-sheet send for a single scene file.
+- Android `ACTION_VIEW` intent per scene ("Open in VLC/MX Player") for on-device files first; Remote-LAN streams need download-then-share (no direct intent target).
+- "Save to Movies" export via MediaStore for on-device files; share-sheet send for a single scene file.
 - Desktop keeps the existing system-player button — same label, same place.
 
 ### 52. Storage Pressure UX (SD-Card Path, Low-Space Guard, Cache Clear)
@@ -553,7 +553,7 @@ Add "Quiet hours" window (e.g., 22:00–08:00) to suppress non-critical toasts; 
 **Currently:** `LibraryStats.free_space_bytes` shown; "Clear thumbnail cache" (Q17) + orphan-sidecar cleaner (Q19) exist; no SD-card path picker or pre-download space check.  
 **Suggestion:**
 
-- Library path picker surfacing SD-card volumes on Android; warn when the library lives on nearly-full storage.
+- Library path picker offering app-specific external storage on Android (scoped storage rules out arbitrary SD-card paths); warn when storage is nearly full.
 - Pre-queue free-space check: estimate vs `free_space_bytes`, warn before starting large batches.
 - One-tap "Storage" row in Settings: app data size, thumb cache size, orphan reclaimable bytes.
 
@@ -564,9 +564,9 @@ Add "Quiet hours" window (e.g., 22:00–08:00) to suppress non-critical toasts; 
 **Currently:** No app lock; content-rating/PIN is still open under #24; LAN has a single bearer token (#37).  
 **Suggestion:**
 
-- Biometric/PIN gate on cold start + when returning from background (configurable timeout).
+- Phase 1 (pure frontend): PIN gate on cold start + return-from-background (configurable timeout); per-session content-rating default (feeds #24).
+- Phase 2 (needs a native biometric plugin — new dep/native code): biometric unlock.
 - "Private mode" quick toggle: hides thumbnails (blur) without locking the whole app.
-- Per-session content-rating filter default (feeds the #24 parental-controls work).
 
 ### 54. AMOLED Black Theme + Data-Saver Browsing Prefs
 
