@@ -299,6 +299,12 @@ export interface ClearThumbsResult {
   cleared: number;
 }
 
+/** Q43: thumbnail sidecar cache totals (mirrors Rust ThumbCacheStats). */
+export interface ThumbCacheStats {
+  file_count: number;
+  total_bytes: number;
+}
+
 export interface SidecarProbe {
   name: string;
   bundled: boolean;

@@ -187,6 +187,8 @@ pub fn run() {
         {
             bootstrap_mobile_settings(&db, &data_dir)?;
             ensure_sidecar_permissions(app.handle());
+            // #55: Android notification channels for downloads.
+            downloads::manager::register_download_channels(app.handle());
         }
 
         let static_ui = resolve_lan_static_ui(app.handle());
@@ -298,6 +300,7 @@ pub fn run() {
             commands::ffmpeg_status,
             commands::list_scenes_with_filter,
             commands::list_orphan_sidecars,
+            commands::thumb_cache_stats,
             commands::delete_orphan_sidecar,
             commands::clear_scene_thumb,
             commands::clear_all_thumbs,

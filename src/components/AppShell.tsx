@@ -12,8 +12,10 @@ import {
   Sun,
   Moon,
   Monitor,
+  Contrast,
   Copy,
 } from "lucide-react";
+import { isAmoled, setAmoled } from "@/lib/amoled";
 import { MobileSearchSheet } from "@/components/MobileSearchSheet";
 import { resolveAppVersion } from "@/lib/appVersion";
 import { getPluginNavItems } from "@/lib/plugins/loader";
@@ -67,6 +69,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // paused is user-held, terminal states need no attention).
   const [activeDownloads, setActiveDownloads] = useState(0);
   const { theme, setTheme } = useTheme();
+  // Q44: AMOLED pure-black overlay (frontend-only, persists in localStorage).
+  const [amoled, setAmoledState] = useState(() => isAmoled());
   useNetworkMonitor();
 
   const themeOptions: { value: AppTheme; icon: typeof Sun; label: string }[] = [
@@ -217,6 +221,26 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <Icon className="h-3.5 w-3.5" />
             </button>
           ))}
+          {/* Q44: AMOLED pure-black quick toggle (dark themes only). */}
+          <button
+            type="button"
+            onClick={() => {
+              const next = !amoled;
+              setAmoled(next);
+              setAmoledState(next);
+            }}
+            title={amoled ? "AMOLED black: on" : "AMOLED black: off"}
+            aria-label="Toggle AMOLED pure-black theme"
+            aria-pressed={amoled}
+            className={cn(
+              "rounded-md p-1.5 transition-colors",
+              amoled
+                ? "bg-[var(--color-primary)] text-[var(--color-primary-foreground)]"
+                : "text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)]",
+            )}
+          >
+            <Contrast className="h-3.5 w-3.5" />
+          </button>
         </div>
         {appVersion && (
           <p className="mt-auto px-2 pt-4 text-[10px] text-[var(--color-muted-foreground)]">

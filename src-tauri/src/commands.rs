@@ -473,6 +473,14 @@ pub fn list_orphan_sidecars(state: State<'_, Arc<AppState>>) -> CmdResult<Vec<Or
     map_err(state.list_orphan_sidecars())
 }
 
+/// Q43: thumbnail sidecar cache totals for the Settings storage row.
+#[tauri::command]
+pub fn thumb_cache_stats(
+    state: State<'_, Arc<AppState>>,
+) -> CmdResult<crate::models::ThumbCacheStats> {
+    map_err(state.thumb_cache_stats())
+}
+
 #[tauri::command]
 pub fn delete_orphan_sidecar(path: String) -> CmdResult<()> {
     let p = std::path::Path::new(&path);

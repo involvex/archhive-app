@@ -38,6 +38,7 @@ import {
   Download,
 } from "lucide-react";
 import { isMobileDevice } from "@/lib/tauri";
+import { usePullToRefresh } from "@/lib/hooks/usePullToRefresh";
 
 const ORIENTATIONS: { value: BrowseOrientation; label: string }[] = [
   { value: "straight", label: "Straight" },
@@ -100,20 +101,24 @@ function BrowsePage() {
     caps.showBrowserBanner ||
     (settings.engine_mode === "remote_lan" && !settings.remote_host?.trim());
 
-  useEffect(() => {
+  // Q41: pull-to-refresh reloads sites + trending + saved searches.
+  const reloadSites = useCallback(async () => {
     if (needsRemoteSetup && caps.showBrowserBanner) return;
-    void api
-      .listSites()
-      .then((apiSites) => {
-        setSites(mergeSiteLists(apiSites, getPluginBrowseSites()));
-        sitesLoadedRef.current = true;
-      })
-      .catch((e) => {
-        setLoadError(e instanceof Error ? e.message : "Failed to load sites");
-        setSites(mergeSiteLists([], getPluginBrowseSites()));
-        sitesLoadedRef.current = true;
-      });
+    try {
+      const apiSites = await api.listSites();
+      setSites(mergeSiteLists(apiSites, getPluginBrowseSites()));
+      sitesLoadedRef.current = true;
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : "Failed to load sites");
+      setSites(mergeSiteLists([], getPluginBrowseSites()));
+      sitesLoadedRef.current = true;
+    }
   }, [needsRemoteSetup, caps.showBrowserBanner]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void reloadSites();
+  }, [reloadSites]);
 
   const handleSearch = useCallback(() => {
     let slug = searchInput.trim();
@@ -195,19 +200,20 @@ function BrowsePage() {
     savedRef.current = saved;
   }, [saved]);
 
-  const refreshSaved = useCallback(() => {
-    void api
-      .listSavedSearches()
-      .then(setSaved)
-      .catch(() => setSaved([]));
-    void api
-      .watchlistStatus()
-      .then(setPollStatus)
-      .catch(() => setPollStatus(null));
+  const refreshSaved = useCallback(async () => {
+    const [savedRes, pollRes] = await Promise.allSettled([
+      api.listSavedSearches(),
+      api.watchlistStatus(),
+    ]);
+    if (savedRes.status === "fulfilled") setSaved(savedRes.value);
+    else setSaved([]);
+    if (pollRes.status === "fulfilled") setPollStatus(pollRes.value);
+    else setPollStatus(null);
   }, []);
 
   useEffect(() => {
-    refreshSaved();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void refreshSaved();
   }, [refreshSaved]);
 
   async function handleCheck(id: string) {
@@ -303,7 +309,7 @@ function BrowsePage() {
       .finally(() => setCatLoading(false));
   }, [selectedSite, catOrientation]);
 
-  useEffect(() => {
+  const loadTrending = useCallback(async () => {
     if (needsRemoteSetup && caps.showBrowserBanner) return;
     if (!sitesLoadedRef.current) return;
     setTrendingLoading(true);
@@ -314,27 +320,56 @@ function BrowsePage() {
       setTrendingLoading(false);
       return;
     }
-    void Promise.allSettled(
+    const results = await Promise.allSettled(
       available.map((s) =>
         api.browse(s.id, "search", "trending", 1).then((page) => ({
           id: s.id,
           items: page.items.slice(0, 10),
         })),
       ),
-    ).then((results) => {
-      const next: Record<string, MediaItem[]> = {};
-      results.forEach((r) => {
-        if (r.status === "fulfilled") {
-          next[r.value.id] = r.value.items;
-        }
-      });
-      setTrending(next);
-      setTrendingLoading(false);
+    );
+    const next: Record<string, MediaItem[]> = {};
+    results.forEach((r) => {
+      if (r.status === "fulfilled") {
+        next[r.value.id] = r.value.items;
+      }
     });
+    setTrending(next);
+    setTrendingLoading(false);
   }, [needsRemoteSetup, caps.showBrowserBanner, settings.trending_sites]);
 
+  useEffect(() => {
+    void loadTrending();
+  }, [loadTrending]);
+
+  // Q41: pull-to-refresh (parity with library scenes + browse detail).
+  const handleRefresh = useCallback(async () => {
+    await Promise.allSettled([reloadSites(), loadTrending(), refreshSaved()]);
+  }, [reloadSites, loadTrending, refreshSaved]);
+
+  const { containerRef, pullDistance, refreshing } = usePullToRefresh({
+    onRefresh: handleRefresh,
+    disabled: false,
+  });
+
   return (
-    <div className="space-y-6">
+    <div ref={containerRef} className="space-y-6">
+      {pullDistance > 0 && (
+        <div
+          className="flex items-center justify-center transition-height overflow-hidden"
+          style={{ height: pullDistance }}
+        >
+          <div
+            className={`text-xs transition-opacity ${pullDistance > 60 ? "text-[var(--color-primary)]" : "text-[var(--color-muted-foreground)]"}`}
+          >
+            {refreshing
+              ? "Refreshing..."
+              : pullDistance > 60
+                ? "Release to refresh"
+                : "Pull to refresh"}
+          </div>
+        </div>
+      )}
       <div>
         <h2 className="text-2xl font-bold">Browse</h2>
         <p className="text-sm text-[var(--color-muted-foreground)]">

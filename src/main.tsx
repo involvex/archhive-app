@@ -13,8 +13,10 @@ import { isDesktopTauri, isTauri } from "./lib/tauri";
 import { getAppRuntime } from "./lib/runtime";
 import { AppErrorBoundary } from "./components/AppErrorBoundary";
 import { useDownloadNotifications } from "@/lib/hooks/useDownloadNotifications";
+import { initAmoled } from "./lib/amoled";
 import "./styles/globals.css";
 
+initAmoled();
 initializePlugins(getRegisteredPlugins());
 
 const router = createRouter({

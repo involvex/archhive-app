@@ -1,9 +1,21 @@
 import { useCallback, useRef, useState } from "react";
 import type { MediaItem, Scene } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { getAppRuntime } from "@/lib/runtime";
+import { useSettingsStore } from "@/lib/stores/settings";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Check, Clock, Download, Info, Play, Pencil, MoreVertical, Star } from "lucide-react";
+import {
+  Check,
+  Clock,
+  Download,
+  Info,
+  Play,
+  Pencil,
+  MoreVertical,
+  Star,
+  WifiOff,
+} from "lucide-react";
 
 export interface CardWatchState {
   position: number;
@@ -29,6 +41,12 @@ interface SceneCardProps {
   listView?: boolean;
   /** #26 watch state — progress bar overlay + watched chip (scenes only). */
   watch?: CardWatchState | null;
+  /**
+   * Q42 offline badge override. When omitted, scenes with an on-device file
+   * (mobile local/standalone backend) show the badge automatically — those
+   * files play without a LAN connection. Explicit `false` hides it.
+   */
+  offline?: boolean | null;
 }
 
 function isMediaItem(item: CardItem): item is MediaItem {
@@ -113,6 +131,7 @@ export function SceneCard({
   onClick,
   listView = false,
   watch,
+  offline = null,
 }: SceneCardProps) {
   const title = getItemTitle(item);
   const performers = getItemPerformers(item);
@@ -129,6 +148,16 @@ export function SceneCard({
       ? Math.min(1, Math.max(0, watch.position / watch.duration))
       : null;
   const showWatched = Boolean(watch?.watched) && !isMediaItem(item);
+  // Q42: offline badge — explicit override wins; otherwise any scene whose
+  // file lives on this device (mobile local/standalone backend, mirroring
+  // hasLocalBackend) is playable without a LAN connection.
+  const onDeviceBackend = useSettingsStore((s) =>
+    getAppRuntime() === "mobile-tauri"
+      ? s.settings.engine_mode === "local" || s.settings.engine_mode === "standalone"
+      : false,
+  );
+  const showOffline =
+    offline ?? (!isMediaItem(item) && Boolean((item as Scene).path) && onDeviceBackend);
   const thumb = getItemThumb(item, thumbSrc);
   const description = getItemDescription(item);
 
@@ -240,6 +269,18 @@ export function SceneCard({
             <span className="absolute top-1 left-1 flex items-center gap-1 rounded bg-green-600/90 px-1.5 py-0.5 text-[10px] font-medium text-white">
               <Check className="h-3 w-3" />
               Watched
+            </span>
+          )}
+          {showOffline && (
+            <span
+              className={cn(
+                "absolute left-1 flex items-center gap-1 rounded bg-sky-600/90 px-1.5 py-0.5 text-[10px] font-medium text-white",
+                showWatched ? "top-6" : "top-1",
+              )}
+              title="Stored on this device — plays offline"
+            >
+              <WifiOff className="h-3 w-3" />
+              Offline
             </span>
           )}
           {watchFraction != null && watchFraction > 0 && (
@@ -452,6 +493,18 @@ export function SceneCard({
           <span className="absolute top-2 left-2 flex items-center gap-1 rounded bg-green-600/90 px-1.5 py-0.5 text-[10px] font-medium text-white">
             <Check className="h-3 w-3" />
             Watched
+          </span>
+        )}
+        {showOffline && !selectionMode && (
+          <span
+            className={cn(
+              "absolute left-2 flex items-center gap-1 rounded bg-sky-600/90 px-1.5 py-0.5 text-[10px] font-medium text-white",
+              showWatched ? "top-7" : "top-2",
+            )}
+            title="Stored on this device — plays offline"
+          >
+            <WifiOff className="h-3 w-3" />
+            Offline
           </span>
         )}
         {watchFraction != null && watchFraction > 0 && (

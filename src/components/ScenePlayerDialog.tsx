@@ -24,6 +24,8 @@ import {
   ChevronRight,
   Check,
   Clock,
+  Maximize,
+  Minimize,
   Pencil,
   Play,
   RotateCcw,
@@ -87,12 +89,47 @@ function ScenePlayerBody({
   const lastTapRef = useRef<TouchPoint | null>(null);
   const [gestureHint, setGestureHint] = useState<string | null>(null);
   const hintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Q40: fullscreen container (double-tap middle zone + action-bar button).
+  const playerContainerRef = useRef<HTMLDivElement | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   function flashGestureHint(label: string) {
     setGestureHint(label);
     if (hintTimerRef.current) clearTimeout(hintTimerRef.current);
     hintTimerRef.current = setTimeout(() => setGestureHint(null), 700);
   }
+
+  // Q40: double-tap the middle third (or the action-bar button) toggles
+  // fullscreen. Desktop Fullscreen API with an iOS-Safari video fallback.
+  function toggleFullscreen() {
+    const el = playerContainerRef.current;
+    const video = videoRef.current as
+      | (HTMLVideoElement & {
+          webkitEnterFullscreen?: () => void;
+        })
+      | null;
+    try {
+      if (document.fullscreenElement) {
+        void document.exitFullscreen().catch(() => {});
+        flashGestureHint("Exited fullscreen");
+      } else if (el?.requestFullscreen) {
+        void el.requestFullscreen().catch(() => {});
+        flashGestureHint("Fullscreen");
+      } else {
+        video?.webkitEnterFullscreen?.();
+      }
+    } catch {
+      /* fullscreen unsupported — ignore */
+    }
+  }
+
+  useEffect(() => {
+    function onFullscreenChange() {
+      setIsFullscreen(document.fullscreenElement != null);
+    }
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -153,7 +190,11 @@ function ScenePlayerBody({
     if (isDoubleTap(lastTapRef.current, end)) {
       lastTapRef.current = null;
       const zone = tapZone(end.x, e.currentTarget.clientWidth);
-      if (zone === "middle") return;
+      // Q40: middle-third double-tap toggles fullscreen; sides skip ±10s.
+      if (zone === "middle") {
+        toggleFullscreen();
+        return;
+      }
       const delta = zone === "left" ? -SKIP_SECONDS : SKIP_SECONDS;
       try {
         video.currentTime = Math.min(
@@ -331,6 +372,16 @@ function ScenePlayerBody({
           </button>
           <button
             type="button"
+            onClick={toggleFullscreen}
+            className="flex min-h-11 min-w-11 items-center justify-center rounded hover:bg-[var(--color-muted)]"
+            aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+            aria-pressed={isFullscreen}
+            title="Toggle fullscreen (or double-tap the video)"
+          >
+            {isFullscreen ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
+          </button>
+          <button
+            type="button"
             onClick={onClose}
             className="flex min-h-11 min-w-11 items-center justify-center rounded hover:bg-[var(--color-muted)]"
             aria-label="Close"
@@ -360,6 +411,7 @@ function ScenePlayerBody({
 
       {webPlayable ? (
         <div
+          ref={playerContainerRef}
           className="relative touch-pan-y select-none"
           onTouchStart={handleVideoTouchStart}
           onTouchMove={handleVideoTouchMove}

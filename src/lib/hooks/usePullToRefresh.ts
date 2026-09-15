@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { vibrateTick } from "@/lib/haptics";
 
 interface PullToRefreshOptions {
   onRefresh: () => Promise<void>;
@@ -42,6 +43,8 @@ export function usePullToRefresh({
     pulling.current = false;
     if (pullDistance >= threshold && !refreshing) {
       setRefreshing(true);
+      // Q39: haptic tick as the refresh engages.
+      vibrateTick(10);
       void onRefresh().finally(() => {
         setRefreshing(false);
         setPullDistance(0);

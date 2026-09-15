@@ -38,6 +38,7 @@ import type {
   OrphanSidecar,
   SiteInfo,
   SidecarProbe,
+  ThumbCacheStats,
   AppSettings,
   AppTheme,
 } from "@/lib/types";
@@ -49,7 +50,8 @@ import { Button } from "@/components/ui/button";
 import * as Tabs from "@radix-ui/react-tabs";
 import * as Switch from "@radix-ui/react-switch";
 import { useTheme } from "@/lib/hooks/useTheme";
-import { Sun, Moon, Monitor, Clock, Book } from "lucide-react";
+import { isAmoled, setAmoled } from "@/lib/amoled";
+import { Sun, Moon, Monitor, Clock, Book, Contrast } from "lucide-react";
 import { ChangelogDialog, useChangelogDialog } from "@/components/ChangelogDialog";
 
 export const Route = createFileRoute("/settings/")({
@@ -93,10 +95,12 @@ const THEME_OPTIONS: { value: AppTheme; icon: typeof Sun; label: string }[] = [
 function AppearanceSection() {
   const { theme, setTheme } = useTheme();
   const { settings, updateSettings } = useUnifiedSettings();
+  // Q44: local AMOLED overlay state (persisted in localStorage, see lib/amoled).
+  const [amoled, setAmoledState] = useState(() => isAmoled());
   return (
     <div className="space-y-2">
       <p className="text-sm font-medium">Theme</p>
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         {THEME_OPTIONS.map(({ value, icon: Icon, label }) => (
           <Button
             key={value}
@@ -108,6 +112,20 @@ function AppearanceSection() {
             {label}
           </Button>
         ))}
+        <Button
+          size="sm"
+          variant={amoled ? "default" : "outline"}
+          onClick={() => {
+            const next = !amoled;
+            setAmoled(next);
+            setAmoledState(next);
+          }}
+          title="Pure-black backgrounds for AMOLED screens (dark themes only)"
+          aria-pressed={amoled}
+        >
+          <Contrast className="mr-1 h-3.5 w-3.5" />
+          AMOLED
+        </Button>
       </div>
       {theme === "scheduled" && (
         <div className="flex flex-col gap-3 pt-1">
@@ -183,6 +201,9 @@ function SettingsPage() {
   const [orphans, setOrphans] = useState<OrphanSidecar[] | null>(null);
   const [orphansLoading, setOrphansLoading] = useState(false);
   const [orphanStatus, setOrphanStatus] = useState("");
+  // Q43: thumbnail cache totals for the storage summary row.
+  const [thumbStats, setThumbStats] = useState<ThumbCacheStats | null>(null);
+  const [thumbStatsLoading, setThumbStatsLoading] = useState(false);
   const [discoveredHosts, setDiscoveredHosts] = useState<LanHost[]>([]);
   const [discovering, setDiscovering] = useState(false);
   const [discoverStatus, setDiscoverStatus] = useState("");
@@ -595,6 +616,27 @@ function SettingsPage() {
       setOrphansLoading(false);
     }
   }
+
+  // Q43: thumbnail cache totals for the storage summary row.
+  const loadThumbStats = useCallback(async () => {
+    setThumbStatsLoading(true);
+    try {
+      setThumbStats(await api.thumbCacheStats());
+    } catch {
+      setThumbStats(null);
+    } finally {
+      setThumbStatsLoading(false);
+    }
+  }, []);
+
+  // Q43: pre-load orphan + thumb totals so the storage row shows numbers
+  // without a manual scan. Best-effort; failures stay hidden.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadOrphans();
+    void loadThumbStats();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function saveCookies() {
     if (!selectedSite || !cookieText.trim()) return;
@@ -1522,6 +1564,65 @@ function SettingsPage() {
                   {binaryInstallStatus}
                 </p>
               )}
+            </CardContent>
+          </Card>
+          {/* Q43: storage summary — library size, thumb cache, reclaimable orphans. */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Storage</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
+                <div>
+                  <p className="text-xs text-[var(--color-muted-foreground)]">Library</p>
+                  <p className="font-medium tabular-nums">
+                    {diagnostics?.library_stats
+                      ? formatBytesShort(diagnostics.library_stats.total_size_bytes)
+                      : "—"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-[var(--color-muted-foreground)]">Free space</p>
+                  <p className="font-medium tabular-nums">
+                    {diagnostics?.library_stats
+                      ? formatBytesShort(diagnostics.library_stats.free_space_bytes)
+                      : "—"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-[var(--color-muted-foreground)]">Thumb cache</p>
+                  <p className="font-medium tabular-nums">
+                    {thumbStatsLoading
+                      ? "…"
+                      : thumbStats
+                        ? `${formatBytesShort(thumbStats.total_bytes)} (${thumbStats.file_count})`
+                        : "—"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-[var(--color-muted-foreground)]">Reclaimable</p>
+                  <p className="font-medium tabular-nums">
+                    {orphansLoading
+                      ? "…"
+                      : orphans != null
+                        ? formatBytesShort(orphans.reduce((sum, o) => sum + o.size, 0))
+                        : "—"}
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    void loadThumbStats();
+                    void loadOrphans();
+                  }}
+                  disabled={thumbStatsLoading || orphansLoading}
+                >
+                  {thumbStatsLoading || orphansLoading ? "Refreshing…" : "Refresh sizes"}
+                </Button>
+              </div>
             </CardContent>
           </Card>
           <Card>

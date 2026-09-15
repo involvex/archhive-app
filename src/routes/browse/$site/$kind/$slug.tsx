@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useInfiniteScroll } from "@/lib/hooks/useInfiniteScroll";
 import { usePullToRefresh } from "@/lib/hooks/usePullToRefresh";
+import { vibrateTick } from "@/lib/haptics";
 import { browseCacheKey, useBrowseStore } from "@/lib/stores/browse";
 import { PORNHUB_CATEGORIES } from "@/lib/sites/pornhub-categories";
 
@@ -133,7 +134,9 @@ function BrowseDetailPage() {
   });
 
   async function handleDownload(item: MediaItem) {
+    // Q38/Q39: haptic confirmation once the URL is queued.
     await api.queueDownload(item.url, site, item.title);
+    vibrateTick(10);
   }
 
   // #28: detect whether this exact search is already saved.

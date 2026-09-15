@@ -19,6 +19,41 @@ use tokio::sync::{mpsc, Semaphore};
 
 const MAX_CONCURRENT_DOWNLOADS: usize = 2;
 
+/// #55 notification channel ids (Android; created at startup, ignored on desktop).
+/// The progress id is only referenced by the mobile-only channel
+/// registration, hence the cfg'd allow on desktop builds.
+#[cfg_attr(not(mobile), allow(dead_code))]
+pub const NOTIF_CHANNEL_PROGRESS: &str = "archhive-downloads-progress";
+pub const NOTIF_CHANNEL_DONE: &str = "archhive-downloads-done";
+pub const NOTIF_CHANNEL_ERROR: &str = "archhive-downloads-error";
+
+/// #55: register the Android notification channels. Best-effort — failures
+/// only mean notifications fall back to the default channel.
+#[cfg(mobile)]
+pub fn register_download_channels(app: &AppHandle) {
+    use tauri_plugin_notification::{Channel, Importance};
+
+    let channels = [
+        Channel::builder(NOTIF_CHANNEL_PROGRESS, "Download progress")
+            .description("Ongoing download status")
+            .importance(Importance::Low)
+            .build(),
+        Channel::builder(NOTIF_CHANNEL_DONE, "Downloads finished")
+            .description("Download completed")
+            .importance(Importance::Default)
+            .build(),
+        Channel::builder(NOTIF_CHANNEL_ERROR, "Download errors")
+            .description("Download failed")
+            .importance(Importance::High)
+            .build(),
+    ];
+    for channel in channels {
+        if let Err(e) = app.notification().create_channel(channel) {
+            tracing::warn!("notification channel setup failed: {e}");
+        }
+    }
+}
+
 pub struct DownloadManager {
     db: Arc<Database>,
     app: AppHandle,
@@ -298,6 +333,7 @@ pub(crate) fn mark_job_failed(
         let _ = app
             .notification()
             .builder()
+            .channel_id(NOTIF_CHANNEL_ERROR)
             .title("Download failed")
             .body(title)
             .show();
@@ -625,6 +661,7 @@ async fn run_job_with_plan(
             let _ = app
                 .notification()
                 .builder()
+                .channel_id(NOTIF_CHANNEL_DONE)
                 .title("Download complete")
                 .body(title)
                 .show();

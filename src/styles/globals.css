@@ -41,6 +41,24 @@
   --color-ring: oklch(0.55 0.2 280);
 }
 
+/* Q44: AMOLED pure-black overlay. Only applies on dark themes
+   (`html.dark.amoled`) so light mode is never affected. */
+.dark.amoled {
+  --color-background: #000;
+  --color-card: #000;
+  --color-card-foreground: oklch(0.95 0.01 260);
+  --color-secondary: oklch(0.14 0.01 260);
+  --color-muted: oklch(0.14 0.01 260);
+  --color-accent: oklch(0.16 0.03 280);
+  --color-border: oklch(0.2 0.01 260);
+  --color-input: oklch(0.2 0.01 260);
+}
+
+.dark.amoled body,
+.dark.amoled #root {
+  background-color: #000;
+}
+
 * {
   border-color: var(--color-border);
 }

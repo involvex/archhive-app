@@ -1358,6 +1358,50 @@ impl Database {
         Ok(orphans)
     }
 
+    /// Q43: total sidecar thumbnail cache (all jpg/jpeg under the library
+    /// root, orphan or not). Same walk bounds as `list_orphan_sidecars`.
+    pub fn thumb_cache_stats(
+        &self,
+        library_path: &str,
+    ) -> AppResult<crate::models::ThumbCacheStats> {
+        use walkdir::WalkDir;
+
+        let lib = std::path::Path::new(library_path);
+        if !lib.exists() {
+            return Ok(crate::models::ThumbCacheStats {
+                file_count: 0,
+                total_bytes: 0,
+            });
+        }
+
+        let mut file_count: u64 = 0;
+        let mut total_bytes: u64 = 0;
+        for entry in WalkDir::new(lib)
+            .max_depth(5)
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
+            let p = entry.path();
+            if !p.is_file() {
+                continue;
+            }
+            let ext = p
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("")
+                .to_lowercase();
+            if ext != "jpg" && ext != "jpeg" {
+                continue;
+            }
+            file_count += 1;
+            total_bytes += std::fs::metadata(p).map(|m| m.len()).unwrap_or(0);
+        }
+        Ok(crate::models::ThumbCacheStats {
+            file_count,
+            total_bytes,
+        })
+    }
+
     /// Clear a scene's thumb reference (set to NULL) — used when cleaning orphan thumbs.
     pub fn clear_scene_thumb(&self, id: &str) -> AppResult<()> {
         let conn = self
@@ -2597,5 +2641,28 @@ mod tests {
             db.list_watched_source_urls().unwrap(),
             vec!["https://example.com/v/1".to_string()]
         );
+    }
+
+    #[test]
+    fn thumb_cache_stats_counts_sidecars() {
+        let dir = tempdir().unwrap();
+        let db = Database::new(dir.path().to_path_buf()).unwrap();
+        let lib = dir.path().join("library");
+        std::fs::create_dir_all(&lib).unwrap();
+
+        // Missing library dir → zeros, no error.
+        let empty = db
+            .thumb_cache_stats(lib.join("nope").to_str().unwrap())
+            .unwrap();
+        assert_eq!(empty.file_count, 0);
+        assert_eq!(empty.total_bytes, 0);
+
+        std::fs::write(lib.join("a.jpg"), vec![0u8; 100]).unwrap();
+        std::fs::write(lib.join("b.jpeg"), vec![0u8; 50]).unwrap();
+        std::fs::write(lib.join("c.mp4"), vec![0u8; 1000]).unwrap();
+
+        let stats = db.thumb_cache_stats(lib.to_str().unwrap()).unwrap();
+        assert_eq!(stats.file_count, 2);
+        assert_eq!(stats.total_bytes, 150);
     }
 }

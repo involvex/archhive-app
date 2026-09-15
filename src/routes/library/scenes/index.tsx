@@ -17,6 +17,7 @@ import { SkeletonGrid } from "@/components/SkeletonGrid";
 import { ErrorState } from "@/components/ErrorState";
 import { EmptyState } from "@/components/EmptyState";
 import { usePullToRefresh } from "@/lib/hooks/usePullToRefresh";
+import { vibrateTick } from "@/lib/haptics";
 import { registerShortcut, unregisterShortcut } from "@/lib/shortcuts/registry";
 import { Film, LayoutGrid, List, RefreshCw, X, Zap } from "lucide-react";
 
@@ -291,6 +292,8 @@ function ScenesPage() {
     const { clientX, clientY } = e;
     longPressTimer.current = setTimeout(() => {
       longPressTriggered.current = true;
+      // Q39: haptic tick as the long-press context menu engages.
+      vibrateTick(15);
       openMenuAt(scene, clientX, clientY);
     }, LONG_PRESS_MS);
   }

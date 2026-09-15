@@ -788,6 +788,13 @@ pub struct OrphanSidecar {
     pub size: u64,
 }
 
+/// Q43: total sidecar thumbnail cache size under the library root.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ThumbCacheStats {
+    pub file_count: u64,
+    pub total_bytes: u64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LibraryStats {
     pub scene_count: u64,

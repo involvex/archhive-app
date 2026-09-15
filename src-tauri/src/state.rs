@@ -916,6 +916,13 @@ impl AppState {
         self.db.list_orphan_sidecars(&path)
     }
 
+    /// Q43: thumbnail sidecar cache totals for the Settings storage row.
+    pub fn thumb_cache_stats(&self) -> AppResult<crate::models::ThumbCacheStats> {
+        let settings = self.get_settings()?;
+        let path = Self::validate_library_path(&settings.library_path, &self.data_dir)?;
+        self.db.thumb_cache_stats(&path)
+    }
+
     pub fn clear_scene_thumb(&self, scene_id: &str) -> AppResult<()> {
         self.db.clear_scene_thumb(scene_id)
     }

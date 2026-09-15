@@ -173,6 +173,7 @@ impl LanServer {
             .route("/api/logs", get(list_logs))
             .route("/api/logs/clear", post(clear_logs_route))
             .route("/api/library/orphans", get(list_orphan_sidecars))
+            .route("/api/library/thumb-cache", get(thumb_cache_stats))
             .route("/api/library/filter", post(list_scenes_with_filter))
             .route("/api/library/ffmpeg-status", get(ffmpeg_status))
             .route("/api/scenes/{id}/probe", post(probe_scene_metadata))
@@ -1126,6 +1127,17 @@ async fn list_orphan_sidecars(
         .list_orphan_sidecars()
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(serde_json::json!(orphans)))
+}
+
+/// Q43: thumbnail sidecar cache totals for the Settings storage row.
+async fn thumb_cache_stats(
+    State(state): State<ApiState>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let stats = state
+        .app
+        .thumb_cache_stats()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(serde_json::json!(stats)))
 }
 
 async fn network_state(
