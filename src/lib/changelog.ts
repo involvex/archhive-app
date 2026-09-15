@@ -6,6 +6,24 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.5.1",
+    date: "2026-09-15",
+    changes: [
+      {
+        type: "fixed",
+        text: "In-app video player loads media again (library, live, and browse) with working volume controls",
+      },
+      {
+        type: "fixed",
+        text: "ThotHub Watch works on Android via on-device KVS stream extraction (no Remote LAN required)",
+      },
+      {
+        type: "changed",
+        text: "Clearer stream-resolve errors when a site cannot play on-device",
+      },
+    ],
+  },
+  {
     version: "0.5.0",
     date: "2026-09-11",
     changes: [
