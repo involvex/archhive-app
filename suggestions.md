@@ -522,14 +522,10 @@ Add "Quiet hours" window (e.g., 22:00–08:00) to suppress non-critical toasts; 
 
 ### 50. Bottom-Nav & One-Handed UX Polish
 
-**Status:** 🔵 Partial  
+**Status:** ✅ Done  
 **Area:** Mobile / UX  
-**Currently:** Bottom nav exists (Home/Browse/Library/Live/Downloads/Settings, `AppShell.tsx`) with safe-area padding; `CommandPalette`/`ShortcutHelp` still mount on mobile where `Ctrl+K` is useless.  
-**Done:** Badge counts on Library (scene count, Q1 parity) and Downloads (pending+active, 5s poll, 99+ cap, `aria-label` counts) — Q31 ✅; keyboard-only palette/help no longer mount on touch devices (Q32 ✅).  
-**Suggestion (remaining):**
-
-- Bottom-sheet global search (scenes/performers/tags + nav actions) as the mobile palette replacement.
-- Safe-area + thumb-reach audit: primary actions (queue, play) within thumb zone; 44px+ touch targets.
+**Currently:** Bottom nav (Home/Browse/Library/Live/Downloads/Settings, `AppShell.tsx`) with safe-area padding, Library/Download badges (Q31), keyboard-only palette gated on touch (Q32).  
+**Done:** Mobile global-search bottom sheet (`MobileSearchSheet`: Go-to destinations + New download/Scan actions idle, debounced live scenes/performers results, `q`-param handoff consumed by the scenes/performers filter boxes) opened via thumb-zone FAB; player action buttons bumped to 44px targets; sheet rows 48px, nav items ~58px tall.
 
 ### 51. "Open With" External Player + Save to Gallery/Movies
 
@@ -649,4 +645,4 @@ Add "Quiet hours" window (e.g., 22:00–08:00) to suppress non-critical toasts; 
 
 ---
 
-_Last updated: 2026-09-15 (Q32 keyboard palette gated on mobile; #50 remainder is bottom-sheet search + touch-target audit)_
+_Last updated: 2026-09-15 (#50 done: mobile search bottom sheet + FAB, `q`-param handoff, 44px player targets)_

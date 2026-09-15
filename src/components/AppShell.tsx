@@ -8,11 +8,13 @@ import {
   Settings,
   Puzzle,
   Radio,
+  Search,
   Sun,
   Moon,
   Monitor,
   Copy,
 } from "lucide-react";
+import { MobileSearchSheet } from "@/components/MobileSearchSheet";
 import { resolveAppVersion } from "@/lib/appVersion";
 import { getPluginNavItems } from "@/lib/plugins/loader";
 import { cn } from "@/lib/utils";
@@ -144,7 +146,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // Q32: the palette + shortcut help open only via keyboard events (Ctrl+K,
   // "?") — dead UI on touch devices. Bottom nav + per-page search cover
   // mobile; key listeners stay mounted for Bluetooth keyboards.
-  const showKeyboardUi = !isMobileDevice();
+  const isMobile = isMobileDevice();
+  const showKeyboardUi = !isMobile;
+  // #50: mobile global-search sheet (Q32 replacement), opened via FAB.
+  const [searchOpen, setSearchOpen] = useState(false);
 
   return (
     <div className="flex min-h-screen max-w-[100vw] overflow-x-hidden">
@@ -268,6 +273,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </nav>
       </div>
+
+      {isMobile && (
+        <>
+          <button
+            type="button"
+            onClick={() => setSearchOpen(true)}
+            aria-label="Search"
+            className="md:hidden fixed right-4 bottom-20 z-40 rounded-full bg-[var(--color-primary)] p-3.5 text-[var(--color-primary-foreground)] shadow-lg transition-transform active:scale-95"
+          >
+            <Search className="h-5 w-5" />
+          </button>
+          {searchOpen && <MobileSearchSheet onClose={() => setSearchOpen(false)} />}
+        </>
+      )}
 
       {showKeyboardUi && <CommandPalette />}
       {showKeyboardUi && <ShortcutHelp />}

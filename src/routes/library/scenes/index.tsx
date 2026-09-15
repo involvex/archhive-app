@@ -21,16 +21,20 @@ import { registerShortcut, unregisterShortcut } from "@/lib/shortcuts/registry";
 import { Film, LayoutGrid, List, RefreshCw, X, Zap } from "lucide-react";
 
 export const Route = createFileRoute("/library/scenes/")({
-  validateSearch: (search: Record<string, unknown>): { performers?: string[]; tags?: string[] } => {
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { performers?: string[]; tags?: string[]; q?: string } => {
     const parseArray = (key: string): string[] | undefined => {
       const v = search[key];
       if (Array.isArray(v)) return v.filter((x): x is string => typeof x === "string");
       if (typeof v === "string") return [v];
       return undefined;
     };
+    const q = search.q;
     return {
       performers: parseArray("performers"),
       tags: parseArray("tags"),
+      q: typeof q === "string" && q.trim() ? q : undefined,
     };
   },
   component: ScenesPage,
@@ -58,7 +62,12 @@ function ScenesPage() {
   const navigate = useNavigate();
   const urlSearch = Route.useSearch();
   const [scenes, setScenes] = useState<Scene[]>([]);
-  const [query, setQuery] = useState("");
+  // `q` search param (e.g. from the mobile search sheet) seeds the filter box.
+  const [query, setQuery] = useState(urlSearch.q ?? "");
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (urlSearch.q) setQuery(urlSearch.q);
+  }, [urlSearch.q]);
   const [sort, setSort] = useState<SceneSort>("newest");
   const [filter, setFilter] = useState<SceneFilter>({});
   const [performerInput, setPerformerInput] = useState("");

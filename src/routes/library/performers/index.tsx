@@ -14,13 +14,22 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Filter, Users, Download, Camera, Table2 } from "lucide-react";
 
 export const Route = createFileRoute("/library/performers/")({
+  validateSearch: (search: Record<string, unknown>): { q?: string } => ({
+    q: typeof search.q === "string" && search.q.trim() ? search.q : undefined,
+  }),
   component: PerformersPage,
 });
 
 function PerformersPage() {
   const navigate = useNavigate();
+  const urlSearch = Route.useSearch();
   const [performers, setPerformers] = useState<Performer[]>([]);
-  const [query, setQuery] = useState("");
+  // `q` search param (e.g. from the mobile search sheet) seeds the filter box.
+  const [query, setQuery] = useState(urlSearch.q ?? "");
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (urlSearch.q) setQuery(urlSearch.q);
+  }, [urlSearch.q]);
   const [sort, setSort] = useState<PerformerSort>(() => loadPerformerSort());
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);

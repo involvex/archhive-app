@@ -269,7 +269,7 @@ function ScenePlayerBody({
             <button
               type="button"
               onClick={() => onEdit(data)}
-              className="rounded p-2 hover:bg-[var(--color-muted)]"
+              className="flex min-h-11 min-w-11 items-center justify-center rounded hover:bg-[var(--color-muted)]"
               aria-label="Edit scene"
             >
               <Pencil className="h-4 w-4" />
@@ -286,7 +286,7 @@ function ScenePlayerBody({
                 console.error("markWatched failed:", e);
               }
             }}
-            className="rounded p-2 hover:bg-[var(--color-muted)]"
+            className="flex min-h-11 min-w-11 items-center justify-center rounded hover:bg-[var(--color-muted)]"
             aria-label={isWatched ? "Mark as unwatched" : "Mark as watched"}
             title={isWatched ? "Mark as unwatched" : "Mark as watched"}
           >
@@ -299,7 +299,7 @@ function ScenePlayerBody({
             type="button"
             onClick={() => setKeepScreenOn((v) => !v)}
             disabled={!wakeLockSupported}
-            className="rounded p-2 hover:bg-[var(--color-muted)] disabled:cursor-not-allowed disabled:opacity-40"
+            className="flex min-h-11 min-w-11 items-center justify-center rounded hover:bg-[var(--color-muted)] disabled:cursor-not-allowed disabled:opacity-40"
             aria-label={keepScreenOn ? "Allow screen to sleep" : "Keep screen on"}
             aria-pressed={keepScreenOn}
             title={
@@ -316,7 +316,7 @@ function ScenePlayerBody({
             type="button"
             onClick={() => setKeepScreenOn((v) => !v)}
             disabled={!wakeLockSupported}
-            className="rounded p-2 hover:bg-[var(--color-muted)] disabled:cursor-not-allowed disabled:opacity-40"
+            className="flex min-h-11 min-w-11 items-center justify-center rounded hover:bg-[var(--color-muted)] disabled:cursor-not-allowed disabled:opacity-40"
             aria-label={keepScreenOn ? "Allow screen to sleep" : "Keep screen on"}
             aria-pressed={keepScreenOn}
             title={
@@ -332,7 +332,7 @@ function ScenePlayerBody({
           <button
             type="button"
             onClick={onClose}
-            className="rounded p-2 hover:bg-[var(--color-muted)]"
+            className="flex min-h-11 min-w-11 items-center justify-center rounded hover:bg-[var(--color-muted)]"
             aria-label="Close"
           >
             <X className="h-4 w-4" />
