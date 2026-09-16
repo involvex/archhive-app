@@ -322,6 +322,31 @@ pub fn delete_site_cookies(state: State<'_, Arc<AppState>>, site_id: String) -> 
 }
 
 #[tauri::command]
+pub fn export_settings_backup(
+    state: State<'_, Arc<AppState>>,
+) -> CmdResult<crate::models::SettingsBackup> {
+    map_err(state.export_settings_backup())
+}
+
+#[tauri::command]
+pub fn import_settings_backup(
+    _app: tauri::AppHandle,
+    state: State<'_, Arc<AppState>>,
+    backup: crate::models::SettingsBackup,
+    options: Option<crate::models::SettingsBackupImportOptions>,
+) -> CmdResult<crate::models::SettingsBackupImportResult> {
+    let opts = options.unwrap_or(crate::models::SettingsBackupImportOptions {
+        include_remote_credentials: false,
+    });
+    let result = map_err(state.import_settings_backup(&backup, &opts))?;
+    #[cfg(not(mobile))]
+    if let Ok(settings) = state.get_settings() {
+        crate::desktop::sync_from_settings(&_app, &settings);
+    }
+    Ok(result)
+}
+
+#[tauri::command]
 pub async fn resolve_standalone(
     state: State<'_, Arc<AppState>>,
     url: String,

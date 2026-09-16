@@ -86,6 +86,9 @@ use serde::Deserialize;
 pub struct LanServer {
     shutdown: Option<oneshot::Sender<()>>,
     _mdns: Option<ServiceDaemon>,
+    /// Snapshot of auth config used at start (for restart decisions).
+    pub lan_auth_enabled: bool,
+    pub token_empty: bool,
 }
 
 impl LanServer {
@@ -163,6 +166,7 @@ impl LanServer {
                 post(save_cookies).delete(delete_cookies),
             )
             .route("/api/settings", get(get_settings).put(put_settings))
+            .route("/api/settings/backup", get(export_settings_backup).post(import_settings_backup))
             .route("/api/library/scan", post(scan_library))
             .route(
                 "/api/library/thumbs",
@@ -268,6 +272,8 @@ impl LanServer {
         Ok(Self {
             shutdown: Some(tx),
             _mdns: mdns,
+            lan_auth_enabled,
+            token_empty: token.is_empty(),
         })
     }
 
@@ -337,7 +343,7 @@ async fn health(State(state): State<ApiState>) -> Json<serde_json::Value> {
         "status": h.status,
         "version": h.version,
         "lan": true,
-        "auth_required": !state.token.is_empty(),
+        "auth_required": state.lan_auth_enabled && !state.token.is_empty(),
         "library_path": library_path,
         "lan_url": lan_url,
     }))
@@ -744,6 +750,37 @@ async fn put_settings(
         .save_settings(&body)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+async fn export_settings_backup(
+    State(state): State<ApiState>,
+) -> Result<Json<crate::models::SettingsBackup>, StatusCode> {
+    let backup = state
+        .app
+        .export_settings_backup()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(backup))
+}
+
+#[derive(Deserialize)]
+struct ImportBackupBody {
+    backup: crate::models::SettingsBackup,
+    #[serde(default)]
+    options: Option<crate::models::SettingsBackupImportOptions>,
+}
+
+async fn import_settings_backup(
+    State(state): State<ApiState>,
+    Json(body): Json<ImportBackupBody>,
+) -> Result<Json<crate::models::SettingsBackupImportResult>, StatusCode> {
+    let opts = body.options.unwrap_or(crate::models::SettingsBackupImportOptions {
+        include_remote_credentials: false,
+    });
+    let result = state
+        .app
+        .import_settings_backup(&body.backup, &opts)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(result))
 }
 
 async fn scan_library(

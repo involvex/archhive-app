@@ -35,18 +35,20 @@ function BootstrapSettings() {
     void bootstrapLanBrowser().then(() => {
       // Sync backend settings on desktop and mobile-tauri (not browser-only LAN UI).
       if (!isTauri()) return;
-      void api
-        .getSettings()
+      const runtime = getAppRuntime();
+      // Mobile: always read device SQLite so engine mode / cookies don't flip from LAN.
+      const load = runtime === "mobile-tauri" ? api.getDeviceSettings() : api.getSettings();
+      void load
         .then((backend) => {
-          const runtime = getAppRuntime();
           const next = { ...backend };
-          // Migrate stale persisted remote_lan on mobile when backend is local/standalone.
+          // Migrate stale persisted remote_lan on mobile when no host is configured.
           if (
             runtime === "mobile-tauri" &&
             next.engine_mode === "remote_lan" &&
             !next.remote_host?.trim()
           ) {
             next.engine_mode = "local";
+            void api.saveDeviceSettings(next).catch(() => {});
           }
           useSettingsStore.getState().updateSettings(next);
         })

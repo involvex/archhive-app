@@ -97,3 +97,6 @@ if (Test-Path $staleBinaries) {
     Remove-Item -Recurse -Force $staleBinaries
     Write-Host "Removed stale assets/binaries (Linux ffmpeg sidecars)."
 }
+
+# Also apply LAN cleartext + PiP manifest patches when gen/android exists.
+& (Join-Path $PSScriptRoot "patch-android-lan.ps1")

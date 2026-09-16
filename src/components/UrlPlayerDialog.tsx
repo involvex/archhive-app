@@ -43,7 +43,17 @@ export function UrlPlayerDialog({
     setError(null);
     setStreamUrl(null);
     try {
-      // Prefer an already-resolved HLS URL from live listings (e.g. Stripchat).
+      // Live rooms: always resolve a full stream (listing HLS is often preview/video-only).
+      if (item.is_live) {
+        const live = await api.resolveLivestream(item.url);
+        if (live.stream_url?.trim()) {
+          setStreamUrl(live.stream_url.trim());
+          return;
+        }
+        setStreamUrl(await api.resolveStreamUrl(item.url));
+        return;
+      }
+      // Prefer an already-resolved HLS URL from listings when not live.
       if (item.stream_url?.trim()) {
         setStreamUrl(item.stream_url.trim());
         return;

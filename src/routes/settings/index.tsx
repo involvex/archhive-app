@@ -164,6 +164,7 @@ function SettingsPage() {
     settings,
     updateSettings,
     hostSettings,
+    setHostSettings,
     patchHostSettings,
     saveHostSettings,
     loading,
@@ -218,6 +219,9 @@ function SettingsPage() {
   const [binaryInstallStatus, setBinaryInstallStatus] = useState<string>("");
   const [updatingYtDlp, setUpdatingYtDlp] = useState(false);
   const [diagnosticsCopyStatus, setDiagnosticsCopyStatus] = useState<string | null>(null);
+  const [backupStatus, setBackupStatus] = useState<string | null>(null);
+  const [backupBusy, setBackupBusy] = useState(false);
+  const [includeRemoteCreds, setIncludeRemoteCreds] = useState(false);
   const [pickingFolder, setPickingFolder] = useState(false);
   const [folderPickerOpen, setFolderPickerOpen] = useState(false);
   const [libraryPickerStatus, setLibraryPickerStatus] = useState("");
@@ -640,10 +644,21 @@ function SettingsPage() {
 
   async function saveCookies() {
     if (!selectedSite || !cookieText.trim()) return;
-    await api.saveSiteCookies(selectedSite, cookieText);
-    setCookieText("");
-    setCookieStatus("Cookies saved.");
-    await refreshCookies();
+    try {
+      await api.saveSiteCookies(selectedSite, cookieText);
+      setCookieText("");
+      const where =
+        runtime === "mobile-tauri" &&
+        (settings.engine_mode === "local" || settings.engine_mode === "standalone")
+          ? "on this device"
+          : settings.engine_mode === "remote_lan"
+            ? "on the LAN host"
+            : "";
+      setCookieStatus(where ? `Cookies saved ${where}.` : "Cookies saved.");
+      await refreshCookies();
+    } catch (e) {
+      setCookieStatus(e instanceof Error ? e.message : "Failed to save cookies");
+    }
   }
 
   async function importDevToolsCookies() {
@@ -844,6 +859,115 @@ function SettingsPage() {
     }
   }
 
+  async function handleExportSettingsBackup() {
+    setBackupStatus(null);
+    setBackupBusy(true);
+    try {
+      const backup = await api.exportSettingsBackup();
+      const text = JSON.stringify(backup, null, 2);
+      const filename = `archhive-settings-backup-${Date.now()}.json`;
+      const file = new File([text], filename, { type: "application/json" });
+
+      // Android WebView: <a download> often does nothing useful — use Share sheet.
+      const nav = navigator as Navigator & {
+        canShare?: (data: ShareData) => boolean;
+        share?: (data: ShareData) => Promise<void>;
+      };
+      if (typeof nav.share === "function") {
+        const shareData: ShareData = { files: [file], title: "ArcHive settings backup" };
+        if (!nav.canShare || nav.canShare(shareData)) {
+          await nav.share(shareData);
+          setBackupStatus(
+            `Shared ${backup.cookies.length} cookie site(s). Save the file to Drive/Files from the share sheet.`,
+          );
+          return;
+        }
+      }
+
+      const blob = new Blob([text], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setBackupStatus(
+        runtime === "mobile-tauri"
+          ? `Export started as ${filename}. Check Downloads / Files if the share sheet did not open.`
+          : `Exported settings + ${backup.cookies.length} cookie site(s). Keep this file private — it contains secrets.`,
+      );
+    } catch (e) {
+      if (e instanceof Error && e.name === "AbortError") {
+        setBackupStatus("Share cancelled.");
+        return;
+      }
+      setBackupStatus(e instanceof Error ? e.message : "Export failed");
+    } finally {
+      setBackupBusy(false);
+    }
+  }
+
+  async function handleImportSettingsBackup() {
+    setBackupStatus(null);
+    setBackupBusy(true);
+    try {
+      const text = await new Promise<string | null>((resolve) => {
+        const input = document.createElement("input");
+        input.type = "file";
+        input.accept = "application/json,.json";
+        input.onchange = () => {
+          const file = input.files?.[0];
+          if (!file) {
+            resolve(null);
+            return;
+          }
+          const reader = new FileReader();
+          reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : null);
+          reader.onerror = () => resolve(null);
+          reader.readAsText(file);
+        };
+        // User cancelled without picking
+        input.oncancel = () => resolve(null);
+        input.click();
+      });
+      if (!text) {
+        setBackupStatus("Import cancelled.");
+        return;
+      }
+      const backup = JSON.parse(text) as import("@/lib/types").SettingsBackup;
+      if (!backup || backup.schema_version !== 1 || !backup.settings) {
+        throw new Error("Invalid backup file (expected schema_version 1).");
+      }
+      if (
+        !window.confirm(
+          `Import settings and ${backup.cookies?.length ?? 0} cookie site(s)? This overwrites local settings and cookies on this device.`,
+        )
+      ) {
+        setBackupStatus("Import cancelled.");
+        return;
+      }
+      const result = await api.importSettingsBackup(backup, {
+        include_remote_credentials: includeRemoteCreds,
+      });
+      const device = await api.getDeviceSettings();
+      updateSettings(device);
+      setHostSettings(device);
+      await refreshCookies();
+      void loadDiagnostics();
+      setBackupStatus(
+        `Imported ${result.cookies_imported} cookie site(s)${
+          result.library_path_skipped ? " (library path kept — backup path invalid here)" : ""
+        }.`,
+      );
+    } catch (e) {
+      setBackupStatus(e instanceof Error ? e.message : "Import failed");
+    } finally {
+      setBackupBusy(false);
+    }
+  }
+
   async function scanDuplicates() {
     const groups = await api.findDuplicates();
     setDuplicates(groups);
@@ -882,10 +1006,52 @@ function SettingsPage() {
 
   async function persistBackendSettings(partial: Partial<AppSettings>) {
     if (!hostSettings) return;
+
+    // Update Zustand first so shouldUseRemoteApi / cookie vault routing match intent.
+    updateSettings(partial);
+
+    if (runtime === "mobile-tauri") {
+      const device = await api.getDeviceSettings();
+      // Never adopt a desktop library_path when only changing engine/remote fields.
+      const mergedDevice: AppSettings = {
+        ...device,
+        ...partial,
+        library_path: partial.library_path ?? device.library_path,
+      };
+      await api.saveDeviceSettings(mergedDevice);
+
+      const mode = useSettingsStore.getState().settings.engine_mode;
+      const deviceOnlyKeys = new Set(["engine_mode", "remote_host", "remote_token"]);
+      const hasHostFields = Object.keys(partial).some((k) => !deviceOnlyKeys.has(k));
+
+      if (mode === "local" || mode === "standalone") {
+        setHostSettings(mergedDevice);
+        return;
+      }
+
+      if (mode === "remote_lan" && hasHostFields && settings.remote_host?.trim()) {
+        try {
+          const remote = await api.getHostSettings();
+          const mergedHost = { ...remote, ...partial };
+          // Do not push device library_path to the desktop host unless explicit.
+          if (!partial.library_path) {
+            mergedHost.library_path = remote.library_path;
+          }
+          await api.saveHostSettings(mergedHost);
+          patchHostSettings(partial);
+        } catch {
+          patchHostSettings(partial);
+        }
+        return;
+      }
+
+      patchHostSettings(partial);
+      return;
+    }
+
     const merged = { ...hostSettings, ...partial };
     patchHostSettings(partial);
     await api.saveSettings(merged);
-    updateSettings(partial);
   }
 
   /** @deprecated Use persistBackendSettings — kept for call-site clarity on Desktop tab. */
@@ -2004,8 +2170,26 @@ function SettingsPage() {
                       <Switch.Root
                         checked={settings.lan_auth_enabled !== false}
                         onCheckedChange={(checked) => {
-                          updateSettings({ lan_auth_enabled: checked });
-                          if (settings.lan_enabled) void regenerateLanToken();
+                          void (async () => {
+                            try {
+                              await persistBackendSettings({
+                                lan_auth_enabled: checked,
+                                ...(checked ? {} : { lan_token: undefined }),
+                              });
+                              if (settings.lan_enabled) {
+                                await regenerateLanToken();
+                              }
+                              setTestStatus(
+                                checked
+                                  ? "LAN authentication enabled. Clients need a token."
+                                  : "LAN authentication disabled. Clients can connect without a token.",
+                              );
+                            } catch (e) {
+                              setTestStatus(
+                                e instanceof Error ? e.message : "Failed to update LAN auth",
+                              );
+                            }
+                          })();
                         }}
                         className="h-5 w-9 rounded-full bg-[var(--color-secondary)] data-[state=checked]:bg-[var(--color-primary)]"
                       >
@@ -2224,6 +2408,49 @@ function SettingsPage() {
         <Tabs.Content value="diagnostics" className="mt-4 space-y-4">
           <Card>
             <CardHeader>
+              <CardTitle className="text-base">Backup &amp; Restore</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              <p className="text-[var(--color-muted-foreground)]">
+                Export settings and site cookies to move them between desktop and Android. On
+                Android, Export opens the system Share sheet — save to Files, Drive, or send to
+                another device. The file contains secrets — do not share it publicly.
+              </p>
+              <label className="flex items-center gap-2 text-xs">
+                <input
+                  type="checkbox"
+                  checked={includeRemoteCreds}
+                  onChange={(e) => setIncludeRemoteCreds(e.target.checked)}
+                  className="rounded"
+                />
+                On import, also restore Remote LAN host / token
+              </label>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={backupBusy || runtime === "browser"}
+                  onClick={() => void handleExportSettingsBackup()}
+                >
+                  Export backup
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={backupBusy || runtime === "browser"}
+                  onClick={() => void handleImportSettingsBackup()}
+                >
+                  Import backup
+                </Button>
+              </div>
+              {backupStatus && (
+                <p className="text-xs text-[var(--color-muted-foreground)]">{backupStatus}</p>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
               <CardTitle className="text-base">System Info</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2 text-sm">
@@ -2234,11 +2461,17 @@ function SettingsPage() {
                   <span className="text-[var(--color-muted-foreground)]">App version</span>
                   <span>{diagnostics.app_version}</span>
                   <span className="text-[var(--color-muted-foreground)]">Engine mode</span>
-                  <span>{diagnostics.engine_mode}</span>
+                  <span>
+                    {diagnostics.engine_mode}
+                    {runtime === "mobile-tauri" ? " (device)" : ""}
+                  </span>
                   <span className="text-[var(--color-muted-foreground)]">Library configured</span>
                   <span>{diagnostics.library_path_set ? "Yes" : "No"}</span>
                   <span className="text-[var(--color-muted-foreground)]">Cookies configured</span>
-                  <span>{diagnostics.cookies_configured ? "Yes" : "No"}</span>
+                  <span>
+                    {diagnostics.cookies_configured ? "Yes" : "No"}
+                    {runtime === "mobile-tauri" ? " (device vault)" : ""}
+                  </span>
                   <span className="text-[var(--color-muted-foreground)]">LAN enabled</span>
                   <span>
                     {diagnostics.lan_enabled ? `Yes (port ${diagnostics.lan_port})` : "No"}

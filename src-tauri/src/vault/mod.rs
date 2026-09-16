@@ -132,6 +132,49 @@ impl CookieVault {
         Ok(Some(netscape_to_header(&text)))
     }
 
+    /// Decrypt and return Netscape cookie file contents for one site.
+    pub fn export_netscape(&self, site_id: &str) -> AppResult<Option<String>> {
+        let site_id = validate_site_id(site_id)?;
+        // Prefer plaintext sidecar (already normalized for yt-dlp).
+        let path = self.cookie_file_path(site_id)?;
+        if path.exists() {
+            let text = std::fs::read_to_string(&path)?;
+            return Ok(Some(normalize_netscape(&text)));
+        }
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let blob: Option<Vec<u8>> = conn
+            .query_row(
+                "SELECT encrypted_data FROM site_cookies WHERE site_id = ?1",
+                params![site_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        let Some(blob) = blob else {
+            return Ok(None);
+        };
+        let plain = self.decrypt(&blob)?;
+        let text = String::from_utf8(plain).map_err(|e| AppError::Other(e.to_string()))?;
+        Ok(Some(normalize_netscape(&text)))
+    }
+
+    /// Export all vault sites as Netscape text (portable across devices).
+    pub fn export_all_netscape(&self) -> AppResult<Vec<crate::models::CookieBackupEntry>> {
+        let sites = self.list_sites()?;
+        let mut out = Vec::with_capacity(sites.len());
+        for site in sites {
+            if let Some(netscape) = self.export_netscape(&site.site_id)? {
+                out.push(crate::models::CookieBackupEntry {
+                    site_id: site.site_id,
+                    netscape,
+                });
+            }
+        }
+        Ok(out)
+    }
+
     fn encrypt(&self, plain: &[u8]) -> AppResult<Vec<u8>> {
         let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
         let ciphertext = self

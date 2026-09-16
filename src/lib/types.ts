@@ -405,3 +405,26 @@ export interface DiagnosticsData {
   cookies_configured: boolean;
   recent_logs: LogEntry[];
 }
+
+export interface CookieBackupEntry {
+  site_id: string;
+  netscape: string;
+}
+
+export interface SettingsBackup {
+  schema_version: number;
+  app_version: string;
+  exported_at: string;
+  settings: AppSettings;
+  cookies: CookieBackupEntry[];
+}
+
+export interface SettingsBackupImportOptions {
+  include_remote_credentials?: boolean;
+}
+
+export interface SettingsBackupImportResult {
+  settings_applied: boolean;
+  cookies_imported: number;
+  library_path_skipped: boolean;
+}

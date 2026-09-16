@@ -281,6 +281,8 @@ pub fn run() {
             commands::list_cookie_sites,
             commands::save_site_cookies,
             commands::delete_site_cookies,
+            commands::export_settings_backup,
+            commands::import_settings_backup,
             commands::resolve_standalone,
             commands::resolve_media_details,
             commands::resolve_stream_url,

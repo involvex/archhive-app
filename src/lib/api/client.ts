@@ -45,6 +45,9 @@ import type {
   WatchProgress,
   DiagnosticsData,
   LogEntry,
+  SettingsBackup,
+  SettingsBackupImportOptions,
+  SettingsBackupImportResult,
 } from "../types";
 import { getAppRuntime, shouldUseRemoteApi } from "../runtime";
 import { vibrateTick } from "../haptics";
@@ -140,6 +143,15 @@ async function localInvoke<T>(command: string, args?: Record<string, unknown>): 
     throw new Error("This action requires the app runtime.");
   }
   return invoke(command, args) as Promise<T>;
+}
+
+function shouldUseDeviceCookieVault(): boolean {
+  const runtime = getAppRuntime();
+  const { settings } = useSettingsStore.getState();
+  if (runtime === "mobile-tauri") {
+    return settings.engine_mode === "local" || settings.engine_mode === "standalone";
+  }
+  return !shouldUseRemoteApi();
 }
 
 async function localOrRemote<T>(
@@ -678,6 +690,23 @@ export const api = {
     return localOrRemote("list_tags", undefined, "/api/tags");
   },
 
+  /** Always reads on-device SQLite (ignores Remote LAN routing). */
+  async getDeviceSettings(): Promise<AppSettings> {
+    if (getAppRuntime() === "browser") {
+      return useSettingsStore.getState().settings;
+    }
+    return localInvoke<AppSettings>("get_settings");
+  },
+
+  /** Always writes on-device SQLite (ignores Remote LAN routing). */
+  async saveDeviceSettings(settings: AppSettings): Promise<void> {
+    if (getAppRuntime() === "browser") {
+      useSettingsStore.getState().updateSettings(settings);
+      return;
+    }
+    await localInvoke("save_settings", { settings });
+  },
+
   async getSettings(): Promise<AppSettings> {
     if (shouldUseRemoteApi()) {
       return remoteFetch<AppSettings>("/api/settings");
@@ -851,20 +880,30 @@ export const api = {
   },
 
   async listCookieSites(): Promise<CookieSiteInfo[]> {
-    return localOrRemote("list_cookie_sites", undefined, "/api/cookies");
+    // Local/Standalone on mobile always use the on-device vault.
+    if (shouldUseDeviceCookieVault()) {
+      return localInvoke<CookieSiteInfo[]>("list_cookie_sites");
+    }
+    return remoteFetch<CookieSiteInfo[]>("/api/cookies");
   },
 
   async saveSiteCookies(siteId: string, cookies: string): Promise<void> {
-    return localOrRemote("save_site_cookies", { siteId, cookies }, `/api/cookies/${siteId}`, {
+    if (shouldUseDeviceCookieVault()) {
+      await localInvoke("save_site_cookies", { siteId, cookies });
+      return;
+    }
+    await remoteFetch<void>(`/api/cookies/${siteId}`, {
       method: "POST",
       body: JSON.stringify({ cookies }),
     });
   },
 
   async deleteSiteCookies(siteId: string): Promise<void> {
-    return localOrRemote("delete_site_cookies", { siteId }, `/api/cookies/${siteId}`, {
-      method: "DELETE",
-    });
+    if (shouldUseDeviceCookieVault()) {
+      await localInvoke("delete_site_cookies", { siteId });
+      return;
+    }
+    await remoteFetch<void>(`/api/cookies/${siteId}`, { method: "DELETE" });
   },
 
   async resolveStandalone(url: string): Promise<MediaItem> {
@@ -902,10 +941,39 @@ export const api = {
   },
 
   async getDiagnostics(): Promise<DiagnosticsData> {
+    // Mobile always reports the device (engine mode + on-device cookie vault).
+    if (getAppRuntime() === "mobile-tauri") {
+      return localInvoke<DiagnosticsData>("get_diagnostics");
+    }
     if (shouldUseRemoteApi()) {
       return remoteFetch<DiagnosticsData>("/api/diagnostics");
     }
+    if (getAppRuntime() === "browser") {
+      throw new Error("Diagnostics require the app runtime.");
+    }
     return localInvoke<DiagnosticsData>("get_diagnostics");
+  },
+
+  /** Export settings + cookies from the on-device vault (cross-device portable). */
+  async exportSettingsBackup(): Promise<SettingsBackup> {
+    if (getAppRuntime() === "browser") {
+      throw new Error("Backup export requires the app runtime.");
+    }
+    // Always export from this device (not the remote host).
+    return localInvoke<SettingsBackup>("export_settings_backup");
+  },
+
+  async importSettingsBackup(
+    backup: SettingsBackup,
+    options?: SettingsBackupImportOptions,
+  ): Promise<SettingsBackupImportResult> {
+    if (getAppRuntime() === "browser") {
+      throw new Error("Backup import requires the app runtime.");
+    }
+    return localInvoke<SettingsBackupImportResult>("import_settings_backup", {
+      backup,
+      options: options ?? { include_remote_credentials: false },
+    });
   },
 
   async getRecentLogs(limit?: number): Promise<LogEntry[]> {

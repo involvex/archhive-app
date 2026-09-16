@@ -40,4 +40,17 @@ $1
     } else {
         Write-Host "Android storage permissions already present."
     }
+
+    # Enable Activity PiP so HTML video.requestPictureInPicture can float.
+    if ($manifest -notmatch 'supportsPictureInPicture') {
+        if ($manifest -match 'android:configChanges="[^"]*"') {
+            $manifest = $manifest -replace '(android:configChanges="[^"]*")', '$1 android:supportsPictureInPicture="true" android:resizeableActivity="true"'
+        } else {
+            $manifest = $manifest -replace '(<activity\b[^>]*)(>)', '$1 android:supportsPictureInPicture="true" android:resizeableActivity="true"$2'
+        }
+        Set-Content -Path $ManifestPath -Value $manifest -NoNewline
+        Write-Host "Patched $ManifestPath for Picture-in-Picture."
+    } else {
+        Write-Host "Android Picture-in-Picture already enabled."
+    }
 }

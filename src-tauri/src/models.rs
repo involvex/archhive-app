@@ -818,3 +818,33 @@ pub struct FilesListResponse {
     pub path: String,
     pub entries: Vec<FileEntry>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CookieBackupEntry {
+    pub site_id: String,
+    pub netscape: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SettingsBackup {
+    pub schema_version: u32,
+    pub app_version: String,
+    pub exported_at: String,
+    pub settings: AppSettings,
+    pub cookies: Vec<CookieBackupEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SettingsBackupImportOptions {
+    /// When true, apply `remote_host` / `remote_token` from the backup.
+    #[serde(default)]
+    pub include_remote_credentials: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SettingsBackupImportResult {
+    pub settings_applied: bool,
+    pub cookies_imported: u32,
+    pub library_path_skipped: bool,
+}
+

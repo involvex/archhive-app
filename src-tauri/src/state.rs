@@ -406,13 +406,26 @@ impl AppState {
     pub async fn ensure_lan_server(self: &Arc<Self>, port: u16) -> AppResult<String> {
         let open_dev = std::env::var("ARCHIVE_AUTO_LAN").ok().as_deref() == Some("1");
 
-        if self.lan_server.lock().is_some() {
-            let current = self.get_settings()?.lan_token.unwrap_or_default();
-            if open_dev && !current.is_empty() {
-                self.stop_lan_server()?;
+        {
+            let guard = self.lan_server.lock();
+            if let Some(server) = guard.as_ref() {
+                let settings = self.get_settings()?;
+                let current = settings.lan_token.clone().unwrap_or_default();
+                let want_auth = !open_dev && settings.lan_auth_enabled;
+                let want_token_empty = !want_auth;
+                let running_mismatch = server.lan_auth_enabled != want_auth
+                    || server.token_empty != want_token_empty
+                    || (open_dev && !current.is_empty());
+                if !running_mismatch {
+                    return Ok(current);
+                }
             } else {
-                return Ok(current);
+                // no server running
             }
+        }
+        // Restart if a server was running with mismatched auth, or start fresh.
+        if self.lan_server.lock().is_some() {
+            self.stop_lan_server()?;
         }
 
         let mut settings = self.get_settings()?;
@@ -444,7 +457,7 @@ impl AppState {
         self.save_settings(&settings)?;
         tracing::info!(
             "[lan] server started on port {port} auth_required={}",
-            !token.is_empty()
+            settings.lan_auth_enabled && !token.is_empty()
         );
         Ok(token)
     }
@@ -544,6 +557,80 @@ impl AppState {
 
     pub fn delete_site_cookies(&self, site_id: &str) -> AppResult<()> {
         self.vault.delete_cookies(site_id)
+    }
+
+    pub fn export_settings_backup(&self) -> AppResult<crate::models::SettingsBackup> {
+        let settings = self.get_settings()?;
+        let cookies = self.vault.export_all_netscape()?;
+        Ok(crate::models::SettingsBackup {
+            schema_version: 1,
+            app_version: env!("CARGO_PKG_VERSION").to_string(),
+            exported_at: chrono::Utc::now().to_rfc3339(),
+            settings,
+            cookies,
+        })
+    }
+
+    pub fn import_settings_backup(
+        &self,
+        backup: &crate::models::SettingsBackup,
+        options: &crate::models::SettingsBackupImportOptions,
+    ) -> AppResult<crate::models::SettingsBackupImportResult> {
+        if backup.schema_version != 1 {
+            return Err(crate::error::AppError::InvalidInput(format!(
+                "Unsupported backup schema_version {}",
+                backup.schema_version
+            )));
+        }
+
+        let current = self.get_settings().unwrap_or_default();
+        let mut next = backup.settings.clone();
+
+        // Always regenerate LAN token on import (avoid sharing host secrets blindly).
+        next.lan_token = None;
+
+        if !options.include_remote_credentials {
+            next.remote_host = current.remote_host.clone();
+            next.remote_token = current.remote_token.clone();
+        }
+
+        let mut library_path_skipped = false;
+        match Self::validate_library_path(&next.library_path, &self.data_dir) {
+            Ok(canonical) => {
+                next.library_path = canonical;
+            }
+            Err(_) => {
+                next.library_path = current.library_path.clone();
+                library_path_skipped = true;
+            }
+        }
+
+        // Mobile: ignore desktop-only tray fields from a desktop backup.
+        #[cfg(mobile)]
+        {
+            next.close_to_tray = current.close_to_tray;
+            next.minimize_to_tray = current.minimize_to_tray;
+            next.tray_hotkey = current.tray_hotkey.clone();
+            next.lan_enabled = false;
+        }
+
+        self.save_settings(&next)?;
+
+        let mut cookies_imported = 0u32;
+        for entry in &backup.cookies {
+            if entry.netscape.trim().is_empty() {
+                continue;
+            }
+            self.vault
+                .save_cookies(&entry.site_id, &entry.netscape)?;
+            cookies_imported += 1;
+        }
+
+        Ok(crate::models::SettingsBackupImportResult {
+            settings_applied: true,
+            cookies_imported,
+            library_path_skipped,
+        })
     }
 
     pub async fn resolve_standalone(&self, url: &str) -> AppResult<MediaItem> {
