@@ -207,6 +207,8 @@ export const HlsVideoPlayer = forwardRef<HTMLVideoElement, HlsVideoPlayerProps>(
           crossOrigin={crossOrigin}
           className={className}
           disablePictureInPicture={false}
+          // Keep native controls tappable on Android (avoid overlay stealing hits).
+          style={{ touchAction: "manipulation" }}
           onError={handleVideoError}
           onTimeUpdate={onTimeUpdate}
           onPause={onPause}
@@ -225,8 +227,11 @@ export const HlsVideoPlayer = forwardRef<HTMLVideoElement, HlsVideoPlayerProps>(
         {needsUnmute && (
           <button
             type="button"
-            onClick={handleUnmute}
-            className="absolute bottom-14 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full bg-black/80 px-4 py-2 text-sm text-white"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleUnmute();
+            }}
+            className="pointer-events-auto absolute bottom-14 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full bg-black/80 px-4 py-2 text-sm text-white"
           >
             <VolumeX className="h-4 w-4" />
             Tap to unmute
@@ -236,10 +241,13 @@ export const HlsVideoPlayer = forwardRef<HTMLVideoElement, HlsVideoPlayerProps>(
         {showPip && pipAvailable && (
           <button
             type="button"
-            onClick={() => void handlePip()}
+            onClick={(e) => {
+              e.stopPropagation();
+              void handlePip();
+            }}
             title="Picture in picture"
             aria-label="Picture in picture"
-            className="absolute right-2 top-2 z-10 rounded-md bg-black/70 p-2 text-white hover:bg-black/90"
+            className="pointer-events-auto absolute right-2 top-2 z-10 rounded-md bg-black/70 p-2 text-white hover:bg-black/90"
           >
             <PictureInPicture2 className="h-4 w-4" />
           </button>

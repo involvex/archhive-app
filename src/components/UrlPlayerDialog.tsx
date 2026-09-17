@@ -22,6 +22,7 @@ export function UrlPlayerDialog({
   onSelectItem,
 }: UrlPlayerDialogProps) {
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
+  const [embedUrl, setEmbedUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [queued, setQueued] = useState(false);
@@ -42,12 +43,20 @@ export function UrlPlayerDialog({
     setLoading(true);
     setError(null);
     setStreamUrl(null);
+    setEmbedUrl(null);
     try {
-      // Live rooms: always resolve a full stream (listing HLS is often preview/video-only).
+      // Live rooms: same path as /live — prefer direct HLS, fall back to embed.
       if (item.is_live) {
         const live = await api.resolveLivestream(item.url);
+        if (live.embed_url?.trim()) {
+          setEmbedUrl(live.embed_url.trim());
+        }
         if (live.stream_url?.trim()) {
           setStreamUrl(live.stream_url.trim());
+          return;
+        }
+        // Stream failed but embed may still work (Chaturbate iframe).
+        if (live.embed_url?.trim()) {
           return;
         }
         setStreamUrl(await api.resolveStreamUrl(item.url));
@@ -103,15 +112,18 @@ export function UrlPlayerDialog({
   if (!open || !item) return null;
 
   return (
-    <button
-      type="button"
-      aria-label="Close player"
+    <div
+      role="presentation"
       className="fixed inset-0 z-[100] flex cursor-default items-stretch justify-center bg-black/80 p-0 sm:items-center sm:p-4"
       onClick={onClose}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") onClose();
+      }}
     >
       <div
         role="dialog"
         aria-modal="true"
+        aria-label={item.title}
         className="flex h-full max-h-[100dvh] w-full max-w-4xl cursor-default flex-col overflow-hidden border border-[var(--color-border)] bg-[var(--color-card)] shadow-xl sm:max-h-[92dvh] sm:rounded-lg"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => e.stopPropagation()}
@@ -135,7 +147,7 @@ export function UrlPlayerDialog({
             </div>
           )}
 
-          {error && (
+          {error && !embedUrl && (
             <div className="flex aspect-video flex-col items-center justify-center gap-2 rounded-md bg-[var(--color-muted)]">
               <AlertCircle className="h-8 w-8 text-red-400" />
               <p className="px-4 text-center text-sm text-[var(--color-muted-foreground)]">
@@ -164,6 +176,23 @@ export function UrlPlayerDialog({
                 }
               }}
             />
+          )}
+
+          {!streamUrl && !loading && embedUrl && (
+            <iframe
+              src={embedUrl}
+              className="aspect-video w-full rounded-md border-0 bg-black"
+              title={`${item.title} live stream`}
+              allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
+              allowFullScreen
+            />
+          )}
+
+          {!streamUrl && !loading && embedUrl && (
+            <p className="mt-2 text-xs text-[var(--color-muted-foreground)]">
+              Playing embedded player (direct stream URL unavailable). Tap Retry for HLS if cookies
+              are configured.
+            </p>
           )}
 
           {(prevItem || nextItem) && onSelectItem && (
@@ -239,7 +268,7 @@ export function UrlPlayerDialog({
           </dl>
 
           <div className="mt-4 flex justify-end gap-2">
-            {error && (
+            {(error || (!streamUrl && embedUrl)) && (
               <Button
                 variant="outline"
                 onClick={() => void resolveStream()}
@@ -270,6 +299,6 @@ export function UrlPlayerDialog({
           </div>
         </div>
       </div>
-    </button>
+    </div>
   );
 }

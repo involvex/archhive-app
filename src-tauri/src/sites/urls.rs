@@ -28,6 +28,63 @@ pub fn derive_embed_url(url: &str) -> String {
     url.to_string()
 }
 
+/// Resolve a cam HLS URL via yt-dlp without a brittle `-f best` selector.
+///
+/// Chaturbate often has no literal `best` format id (especially on Android
+/// youtubedl-android), so `-f best/b` fails with "Requested format is not
+/// available". Default format selection + optional audio-preferring retry.
+pub async fn resolve_cam_stream_url(
+    ctx: &crate::sites::SiteContext,
+    site_id: &str,
+    url: &str,
+) -> crate::error::AppResult<String> {
+    let runner = crate::sites::yt_dlp::SidecarRunner::new(ctx.app().clone());
+    let cookies = ctx.cookie_file_for_site(site_id);
+
+    // 1) No -f (yt-dlp default) — most reliable for Chaturbate HLS.
+    // 2) Prefer a format that has audio if default somehow picks video-only.
+    let format_attempts: &[Option<&str>] = &[None, Some("bestaudio*+bestvideo/best/b")];
+
+    let mut last_err = None;
+    for fmt in format_attempts {
+        let mut args = vec![
+            url.to_string(),
+            "--get-url".to_string(),
+            "--no-warnings".to_string(),
+            "--no-playlist".to_string(),
+        ];
+        if let Some(f) = fmt {
+            args.push("-f".to_string());
+            args.push(f.to_string());
+        }
+        if let Some(cookies) = cookies.as_ref() {
+            args.push("--cookies".to_string());
+            args.push(cookies.to_string_lossy().to_string());
+        }
+        match runner.run_capture_for_stream_url("yt-dlp", &args).await {
+            Ok(raw) => match pick_stream_url_from_ytdlp(&raw) {
+                Ok(u) => return Ok(u),
+                Err(e) => last_err = Some(e),
+            },
+            Err(e) => {
+                let msg = e.to_string();
+                // Format selector rejected — try next attempt.
+                if msg.contains("Requested format is not available")
+                    || msg.contains("format is not available")
+                {
+                    last_err = Some(e);
+                    continue;
+                }
+                return Err(e);
+            }
+        }
+    }
+
+    Err(last_err.unwrap_or_else(|| {
+        crate::error::AppError::Other("No stream URL resolved".to_string())
+    }))
+}
+
 /// Pick a playable stream URL from yt-dlp `--get-url` output.
 ///
 /// Live cams must resolve to a **single muxed** HLS URL. When yt-dlp emits
