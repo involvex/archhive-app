@@ -256,6 +256,8 @@ pub fn run() {
             commands::health,
             commands::list_sites,
             commands::browse,
+            commands::put_browse_cache,
+            commands::get_browse_cache,
             commands::queue_download,
             commands::queue_downloads,
             commands::list_downloads,

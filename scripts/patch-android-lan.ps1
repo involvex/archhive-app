@@ -53,4 +53,30 @@ $1
     } else {
         Write-Host "Android Picture-in-Picture already enabled."
     }
+
+    # Foreground service + WorkManager resume for background downloads
+    if ($manifest -notmatch 'FOREGROUND_SERVICE_DATA_SYNC') {
+        $manifest = $manifest -replace '(<uses-permission android:name="android.permission.INTERNET" />)', @'
+$1
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+'@
+        Set-Content -Path $ManifestPath -Value $manifest -NoNewline
+        Write-Host "Patched $ManifestPath with foreground service permissions."
+    }
+
+    if ($manifest -notmatch 'DownloadForegroundService') {
+        if ($manifest -match '</application>') {
+            $serviceBlock = @'
+    <service
+        android:name="com.archhive.app.DownloadForegroundService"
+        android:exported="false"
+        android:foregroundServiceType="dataSync" />
+'@
+            $manifest = $manifest -replace '</application>', "$serviceBlock`r`n  </application>"
+            Set-Content -Path $ManifestPath -Value $manifest -NoNewline
+            Write-Host "Registered DownloadForegroundService in AndroidManifest."
+        }
+    }
 }

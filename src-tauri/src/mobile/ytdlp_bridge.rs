@@ -279,3 +279,92 @@ pub fn execute_media(app: &AppHandle, tool: &str, args: &[String]) -> AppResult<
         ))
     }
 }
+
+/// Best-effort Android keep-alive / WorkManager helpers (no-op off Android).
+pub fn start_keep_alive(app: &AppHandle, title: &str, text: &str, progress: i32) {
+    #[cfg(target_os = "android")]
+    {
+        use serde_json::json;
+        let _ = with_plugin_state(app, |state| {
+            let _ = state.handle()?.run_mobile_plugin::<PluginResponse>(
+                "startKeepAlive",
+                json!({ "title": title, "text": text, "progress": progress }),
+            );
+            Ok(())
+        });
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = (app, title, text, progress);
+    }
+}
+
+pub fn update_keep_alive(app: &AppHandle, title: &str, text: &str, progress: i32) {
+    #[cfg(target_os = "android")]
+    {
+        use serde_json::json;
+        let _ = with_plugin_state(app, |state| {
+            let _ = state.handle()?.run_mobile_plugin::<PluginResponse>(
+                "updateKeepAlive",
+                json!({ "title": title, "text": text, "progress": progress }),
+            );
+            Ok(())
+        });
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = (app, title, text, progress);
+    }
+}
+
+pub fn stop_keep_alive(app: &AppHandle) {
+    #[cfg(target_os = "android")]
+    {
+        use serde_json::json;
+        let _ = with_plugin_state(app, |state| {
+            let _ = state
+                .handle()?
+                .run_mobile_plugin::<PluginResponse>("stopKeepAlive", json!({}));
+            Ok(())
+        });
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = app;
+    }
+}
+
+pub fn schedule_pending_resume(app: &AppHandle, require_unmetered: bool) {
+    #[cfg(target_os = "android")]
+    {
+        use serde_json::json;
+        let _ = with_plugin_state(app, |state| {
+            let _ = state.handle()?.run_mobile_plugin::<PluginResponse>(
+                "schedulePendingResume",
+                json!({ "requireUnmetered": require_unmetered }),
+            );
+            Ok(())
+        });
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = (app, require_unmetered);
+    }
+}
+
+pub fn cancel_pending_resume(app: &AppHandle) {
+    #[cfg(target_os = "android")]
+    {
+        use serde_json::json;
+        let _ = with_plugin_state(app, |state| {
+            let _ = state
+                .handle()?
+                .run_mobile_plugin::<PluginResponse>("cancelPendingResume", json!({}));
+            Ok(())
+        });
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = app;
+    }
+}

@@ -134,6 +134,7 @@ impl StripchatAdapter {
                 page: query.page,
                 has_more: false,
                 total: None,
+            ..Default::default()
             });
         }
         let (room_url, username) = if slug_raw.starts_with("http") {
@@ -149,6 +150,7 @@ impl StripchatAdapter {
                 page: query.page,
                 has_more: false,
                 total: None,
+            ..Default::default()
             });
         }
         Ok(BrowsePage {
@@ -173,6 +175,7 @@ impl StripchatAdapter {
             page: query.page,
             has_more: false,
             total: Some(1),
+        ..Default::default()
         })
     }
 }
@@ -219,6 +222,7 @@ fn build_browse_page(rooms: Vec<HttpRoom>, page: u32) -> BrowsePage {
         page,
         has_more,
         total: None,
+    ..Default::default()
     }
 }
 
@@ -234,6 +238,7 @@ fn build_webview_browse_page(
         page,
         has_more,
         total: None,
+    ..Default::default()
     }
 }
 

@@ -27,6 +27,8 @@ export interface BrowsePage {
   page: number;
   has_more: boolean;
   total?: number;
+  from_cache?: boolean;
+  cache_age_secs?: number;
 }
 
 export interface SiteInfo {
@@ -136,6 +138,8 @@ export type EngineMode = "local" | "remote_lan" | "standalone";
 export type SceneSort = "newest" | "name" | "downloaded";
 
 export type DownloadQuality = "best" | "1080" | "720" | "480";
+
+export type DataSaverMode = "off" | "on_metered" | "always";
 export type ThumbnailQuality = "original" | "low" | "medium" | "high";
 
 export type AppTheme = "dark" | "light" | "system" | "scheduled";
@@ -175,6 +179,8 @@ export interface AppSettings {
   download_on_wifi_only?: boolean;
   /** Pause downloads when battery saver is active (default ON on mobile). (#45) */
   pause_on_battery_saver?: boolean;
+  /** Cap download height on metered / always. */
+  data_saver?: DataSaverMode;
   /** Thumbnail quality for library grid (default original). (#49) */
   thumb_quality?: ThumbnailQuality;
 }

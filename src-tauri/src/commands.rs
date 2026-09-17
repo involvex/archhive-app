@@ -47,6 +47,48 @@ pub async fn browse(
 }
 
 #[tauri::command]
+pub fn put_browse_cache(
+    state: State<'_, Arc<AppState>>,
+    site_id: String,
+    kind: String,
+    slug: String,
+    page: u32,
+    orientation: Option<String>,
+    payload: crate::models::BrowsePage,
+    ttl_secs: Option<i64>,
+) -> CmdResult<()> {
+    map_err(state.db.put_browse_cache(
+        &site_id,
+        &kind,
+        &slug,
+        page,
+        orientation.as_deref(),
+        &payload,
+        ttl_secs.unwrap_or(86_400),
+    ))
+}
+
+#[tauri::command]
+pub fn get_browse_cache(
+    state: State<'_, Arc<AppState>>,
+    site_id: String,
+    kind: String,
+    slug: String,
+    page: u32,
+    orientation: Option<String>,
+    allow_stale: Option<bool>,
+) -> CmdResult<Option<crate::models::BrowsePage>> {
+    map_err(state.db.get_browse_cache(
+        &site_id,
+        &kind,
+        &slug,
+        page,
+        orientation.as_deref(),
+        allow_stale.unwrap_or(true),
+    ))
+}
+
+#[tauri::command]
 pub async fn queue_download(
     state: State<'_, Arc<AppState>>,
     url: String,
@@ -126,10 +168,10 @@ pub struct NetworkInfo {
 }
 
 #[tauri::command]
-pub async fn get_network_info() -> CmdResult<NetworkInfo> {
+pub fn get_network_info(state: State<'_, Arc<AppState>>) -> CmdResult<NetworkInfo> {
     Ok(NetworkInfo {
-        connection_type: "unknown".to_string(),
-        metered: false,
+        connection_type: state.network_monitor.connection_type(),
+        metered: state.network_monitor.is_metered(),
     })
 }
 

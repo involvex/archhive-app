@@ -68,6 +68,8 @@ function BrowseDetailPage() {
   const [loading, setLoading] = useState(false);
   const [initial, setInitial] = useState(!cached?.items?.length);
   const [error, setError] = useState("");
+  const [fromCache, setFromCache] = useState(false);
+  const [cacheAgeSecs, setCacheAgeSecs] = useState<number | null>(null);
   const [infoItem, setInfoItem] = useState<MediaItem | null>(null);
   const [watchItem, setWatchItem] = useState<MediaItem | null>(null);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
@@ -102,6 +104,8 @@ function BrowseDetailPage() {
         setItems((prev) => (append ? [...prev, ...result.items] : result.items));
         setHasMore(result.has_more);
         setPage(p);
+        setFromCache(Boolean(result.from_cache));
+        setCacheAgeSecs(result.cache_age_secs ?? null);
         setInitial(false);
       } catch (e) {
         const msg = e instanceof Error ? e.message : "Browse failed";
@@ -216,6 +220,19 @@ function BrowseDetailPage() {
                 ? "Release to refresh"
                 : "Pull to refresh"}
           </div>
+        </div>
+      )}
+
+      {fromCache && (
+        <div
+          className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200"
+          role="status"
+        >
+          Cached
+          {cacheAgeSecs != null
+            ? ` · ${cacheAgeSecs < 60 ? `${cacheAgeSecs}s` : `${Math.round(cacheAgeSecs / 60)}m`} ago`
+            : ""}{" "}
+          — pull to refresh
         </div>
       )}
 

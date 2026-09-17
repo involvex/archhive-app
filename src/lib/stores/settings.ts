@@ -28,6 +28,7 @@ const defaultSettings: AppSettings = {
   theme_schedule_to: "07:00",
   download_on_wifi_only: true,
   pause_on_battery_saver: true,
+  data_saver: "on_metered",
   thumb_quality: "original",
 };
 

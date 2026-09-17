@@ -207,6 +207,7 @@ impl SiteAdapter for GenericYtDlpAdapter {
                 page: query.page,
                 has_more,
                 total: None,
+            ..Default::default()
             });
         }
 
@@ -232,6 +233,7 @@ impl SiteAdapter for GenericYtDlpAdapter {
             page: query.page,
             has_more: false,
             total: Some(1),
+        ..Default::default()
         })
     }
 

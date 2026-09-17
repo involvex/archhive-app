@@ -56,6 +56,7 @@ impl SiteAdapter for ThotHubAdapter {
             page: query.page,
             has_more,
             total: None,
+        ..Default::default()
         })
     }
 

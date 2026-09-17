@@ -48,6 +48,7 @@ impl AppState {
         )?);
         let downloads = Arc::new(DownloadManager::new(db.clone(), app.clone(), vault.clone()));
         let network_monitor = Arc::new(NetworkMonitor::new(db.clone(), app.clone()));
+        network_monitor.bind_downloads(downloads.clone());
 
         // Start network/battery monitoring task
         let monitor = network_monitor.clone();
@@ -121,7 +122,17 @@ impl AppState {
             .sites
             .get(site_id)
             .ok_or_else(|| crate::error::AppError::NotFound(format!("site {site_id}")))?;
-        adapter
+        let kind_str = serde_json::to_value(kind)
+            .ok()
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .unwrap_or_else(|| format!("{:?}", kind).to_lowercase());
+        let orient_str = orientation.and_then(|o| {
+            serde_json::to_value(o)
+                .ok()
+                .and_then(|v| v.as_str().map(|s| s.to_string()))
+        });
+
+        match adapter
             .browse(
                 &self.site_ctx,
                 BrowseQuery {
@@ -132,6 +143,36 @@ impl AppState {
                 },
             )
             .await
+        {
+            Ok(page_data) => {
+                let _ = self.db.put_browse_cache(
+                    site_id,
+                    &kind_str,
+                    slug,
+                    page,
+                    orient_str.as_deref(),
+                    &page_data,
+                    86_400,
+                );
+                Ok(page_data)
+            }
+            Err(e) => {
+                if let Ok(Some(cached)) = self.db.get_browse_cache(
+                    site_id,
+                    &kind_str,
+                    slug,
+                    page,
+                    orient_str.as_deref(),
+                    true,
+                ) {
+                    tracing::warn!(
+                        "[browse] live fetch failed ({e}); serving cached page for {site_id}"
+                    );
+                    return Ok(cached);
+                }
+                Err(e)
+            }
+        }
     }
 
     pub async fn queue_download(

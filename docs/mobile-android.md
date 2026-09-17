@@ -13,9 +13,14 @@ Android standalone builds ship an embedded yt-dlp engine (youtubedl-android Kotl
 plus Android-native ffmpeg/ffprobe from the same AAR (`FFmpeg.init` unpacks
 `libffmpeg.zip.so` at runtime). You do **not** need `setup:binaries:android` for
 media tools — they are included with the APK via Gradle dependencies applied by
-`scripts/patch-android-ytdlp.ps1` / `bun run android:regen`. APK scripts
-(`build:apk`, `build:apk:fast`, `build:apk:release`) re-apply that overlay
-automatically before packaging.
+`scripts/apply-android-patches.ps1` (LAN + yt-dlp) / `bun run android:regen`.
+APK scripts (`build:apk`, `build:apk:fast`, `build:apk:release`) re-apply
+patches and run `scripts/validate-android-build.ps1` before packaging.
+
+**youtubedl-android version pin:** `0.18.1` (library + ffmpeg AARs) is set once at the top of
+[`scripts/patch-android-ytdlp.ps1`](../scripts/patch-android-ytdlp.ps1) /
+[`scripts/patch-android-ytdlp.sh`](../scripts/patch-android-ytdlp.sh). To upgrade: bump the
+constant, run `bun run android:patches`, smoke `YtDlpPlugin` execute + `FFmpeg.init` on device.
 
 Remote LAN mode offloads downloads to the desktop host and needs no on-device engines.
 
@@ -32,18 +37,25 @@ If you changed `identifier` in `tauri.conf.json` (e.g. `com.scrawler` → `com.a
 bun run android:regen
 ```
 
-`android:regen` also applies:
+`android:regen` also applies [`scripts/apply-android-patches.ps1`](../scripts/apply-android-patches.ps1), which runs:
 
-- [`scripts/patch-android-lan.ps1`](../scripts/patch-android-lan.ps1) — cleartext HTTP + media permissions
-- [`scripts/patch-android-ytdlp.ps1`](../scripts/patch-android-ytdlp.ps1) — restores `YtDlpPlugin.kt`, youtubedl-android Gradle deps, and ProGuard keep rules from [`src-tauri/android-overlays/`](../src-tauri/android-overlays/)
+- [`scripts/patch-android-lan.ps1`](../scripts/patch-android-lan.ps1) — cleartext HTTP + media permissions + PiP + FG service
+- [`scripts/patch-android-ytdlp.ps1`](../scripts/patch-android-ytdlp.ps1) — restores `YtDlpPlugin.kt`, `DownloadForegroundService.kt`, `PendingResumeWorker.kt`, youtubedl-android **0.18.1** Gradle deps, WorkManager, and ProGuard keep rules from [`src-tauri/android-overlays/`](../src-tauri/android-overlays/)
+
+Then it runs [`scripts/validate-android-build.ps1`](../scripts/validate-android-build.ps1) (`-Strict`) so a broken overlay fails the regen.
 
 **Do not skip the YtDlp overlay.** Without it, release R8 minify or a fresh `tauri android init` can leave `register_android_plugin("YtDlpPlugin")` failing at boot.
 
-On Windows, you can also re-apply patches without a full regen:
+SDK / `minSdk` / permissions live in the patched Gradle + Manifest after overlays — [`src-tauri/tauri.android.conf.json`](../src-tauri/tauri.android.conf.json) is only a merge overlay for `lan-ui` resources.
+
+On Windows, re-apply + validate without a full regen:
 
 ```powershell
-.\scripts\patch-android-lan.ps1
-.\scripts\patch-android-ytdlp.ps1
+bun run android:patches
+bun run android:validate
+# or:
+.\scripts\apply-android-patches.ps1
+.\scripts\validate-android-build.ps1
 ```
 
 Debug builds already allow cleartext; the LAN patch is mainly for release APKs.
@@ -181,13 +193,17 @@ Video playback uses `GET /api/scenes/{id}/media` and `GET /api/files/stream` wit
 
 ## Scripts
 
-| Command                           | Description                                            |
-| --------------------------------- | ------------------------------------------------------ |
-| `bun run android:regen`           | Regenerate `gen/android` after identifier change       |
-| `bun run android:dev`             | AVD + Android dev (LAN IP host, separate cargo target) |
-| `bun run android:dev:lan`         | Same + auto-start desktop LAN on :8787                 |
-| `bun run tauri:android:dev`       | Alias of `android:dev`                                 |
-| `bun run tauri android build`     | Release APK/AAB                                        |
-| `bun run build:apk`               | Debug APK, aarch64 only (faster)                       |
-| `bun run build:apk:fast`          | Skip lint/format; vite build + aarch64 APK             |
-| `.\scripts\patch-android-lan.ps1` | Allow HTTP + mDNS multicast on Android                 |
+| Command                                | Description                                            |
+| -------------------------------------- | ------------------------------------------------------ |
+| `bun run android:regen`                | Regenerate `gen/android` + apply patches + validate    |
+| `bun run android:patches`              | Re-apply LAN + yt-dlp overlays without full regen      |
+| `bun run android:validate`             | Preflight check for patched `gen/android`              |
+| `bun run android:dev`                  | AVD + Android dev (LAN IP host, separate cargo target) |
+| `bun run android:dev:lan`              | Same + auto-start desktop LAN on :8787                 |
+| `bun run tauri:android:dev`            | Alias of `android:dev`                                 |
+| `bun run tauri android build`          | Release APK/AAB                                        |
+| `bun run build:apk`                    | Debug APK, aarch64 only (patches + validate)           |
+| `bun run build:apk:fast`               | Skip lint/format; vite build + aarch64 APK             |
+| `.\scripts\apply-android-patches.ps1`  | Atomic LAN + yt-dlp patch apply                        |
+| `.\scripts\validate-android-build.ps1` | Fail if overlays / cleartext / YtDlpPlugin incomplete  |
+| `.\scripts\patch-android-lan.ps1`      | Allow HTTP + mDNS multicast on Android                 |

@@ -1425,6 +1425,28 @@ function SettingsPage() {
               </div>
               <div className="flex items-center justify-between gap-3">
                 <div>
+                  <p className="text-sm font-medium">Data saver</p>
+                  <p className="text-xs text-[var(--color-muted-foreground)]">
+                    Cap download quality to 480p on metered connections (or always).
+                  </p>
+                </div>
+                <select
+                  className="h-8 rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-2 text-xs"
+                  value={hostSettings?.data_saver ?? "off"}
+                  onChange={(e) =>
+                    patchHostSettings({
+                      data_saver: e.target.value as "off" | "on_metered" | "always",
+                    })
+                  }
+                  aria-label="Data saver mode"
+                >
+                  <option value="off">Off</option>
+                  <option value="on_metered">On metered</option>
+                  <option value="always">Always</option>
+                </select>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <div>
                   <p className="text-sm font-medium">Pause on battery saver</p>
                   <p className="text-xs text-[var(--color-muted-foreground)]">
                     When enabled, active downloads pause when battery saver mode is active.

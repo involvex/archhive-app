@@ -50,12 +50,18 @@ pub struct MediaItem {
     pub embed_url: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct BrowsePage {
     pub items: Vec<MediaItem>,
     pub page: u32,
     pub has_more: bool,
     pub total: Option<u32>,
+    /// True when this page was served from the local browse_cache table.
+    #[serde(default)]
+    pub from_cache: bool,
+    /// Age of the cached payload in seconds when `from_cache` is true.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_age_secs: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -244,6 +250,36 @@ pub enum DownloadQuality {
     Height480,
 }
 
+impl DownloadQuality {
+    /// Numeric rank for min() capping (higher = better / larger).
+    pub fn rank(self) -> u8 {
+        match self {
+            Self::Best => 4,
+            Self::Height1080 => 3,
+            Self::Height720 => 2,
+            Self::Height480 => 1,
+        }
+    }
+
+    pub fn min_quality(self, other: Self) -> Self {
+        if self.rank() <= other.rank() {
+            self
+        } else {
+            other
+        }
+    }
+}
+
+/// Cap download height on metered networks (distinct from Wi‑Fi-only pause).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum DataSaverMode {
+    #[default]
+    Off,
+    OnMetered,
+    Always,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppSettings {
     pub engine_mode: EngineMode,
@@ -302,6 +338,9 @@ pub struct AppSettings {
     /// Pause downloads when battery saver is active (default ON on mobile). (#45)
     #[serde(default = "default_pause_on_battery_saver")]
     pub pause_on_battery_saver: bool,
+    /// Cap yt-dlp height on metered / always (default OnMetered on mobile).
+    #[serde(default = "default_data_saver")]
+    pub data_saver: DataSaverMode,
     /// Thumbnail quality for library grid (default Original). (#49)
     #[serde(default)]
     pub thumb_quality: ThumbnailQuality,
@@ -404,6 +443,13 @@ fn default_pause_on_battery_saver() -> bool {
     return false;
 }
 
+fn default_data_saver() -> DataSaverMode {
+    #[cfg(mobile)]
+    return DataSaverMode::OnMetered;
+    #[cfg(not(mobile))]
+    return DataSaverMode::Off;
+}
+
 fn default_thumb_quality() -> ThumbnailQuality {
     ThumbnailQuality::Original
 }
@@ -455,6 +501,7 @@ impl Default for AppSettings {
             theme_schedule_to: default_theme_schedule_to(),
             download_on_wifi_only: default_download_on_wifi_only(),
             pause_on_battery_saver: default_pause_on_battery_saver(),
+            data_saver: default_data_saver(),
             thumb_quality: default_thumb_quality(),
         }
     }

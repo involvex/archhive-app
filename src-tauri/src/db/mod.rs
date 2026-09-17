@@ -3,7 +3,7 @@ mod migrations;
 use crate::db::migrations::{
     MIGRATION_001, MIGRATION_002, MIGRATION_003, MIGRATION_004, MIGRATION_005, MIGRATION_006,
     MIGRATION_007, MIGRATION_008, MIGRATION_009, MIGRATION_010, MIGRATION_011, MIGRATION_012,
-    MIGRATION_013, MIGRATION_014, MIGRATION_015,
+    MIGRATION_013, MIGRATION_014, MIGRATION_015, MIGRATION_016,
 };
 use crate::error::{AppError, AppResult};
 use crate::models::{
@@ -87,6 +87,7 @@ impl Database {
         if !column_exists(&conn, "collections", "filter_json") {
             conn.execute_batch(MIGRATION_015)?;
         }
+        conn.execute_batch(MIGRATION_016)?;
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
         })
@@ -128,6 +129,115 @@ impl Database {
             params![json],
         )?;
         Ok(())
+    }
+
+    pub fn browse_cache_key(
+        site_id: &str,
+        kind: &str,
+        slug: &str,
+        page: u32,
+        orientation: Option<&str>,
+    ) -> String {
+        format!(
+            "{}|{}|{}|{}|{}",
+            site_id,
+            kind,
+            slug,
+            page,
+            orientation.unwrap_or("")
+        )
+    }
+
+    pub fn put_browse_cache(
+        &self,
+        site_id: &str,
+        kind: &str,
+        slug: &str,
+        page: u32,
+        orientation: Option<&str>,
+        page_payload: &crate::models::BrowsePage,
+        ttl_secs: i64,
+    ) -> AppResult<()> {
+        let mut to_store = page_payload.clone();
+        to_store.from_cache = false;
+        to_store.cache_age_secs = None;
+        let payload = serde_json::to_string(&to_store)
+            .map_err(|e| AppError::Other(format!("browse cache serialize: {e}")))?;
+        let key = Self::browse_cache_key(site_id, kind, slug, page, orientation);
+        let fetched_at = Utc::now().to_rfc3339();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        conn.execute(
+            "INSERT INTO browse_cache (cache_key, site_id, kind, slug, page, orientation, payload, fetched_at, ttl_secs)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+             ON CONFLICT(cache_key) DO UPDATE SET
+               payload = excluded.payload,
+               fetched_at = excluded.fetched_at,
+               ttl_secs = excluded.ttl_secs,
+               orientation = excluded.orientation",
+            params![
+                key,
+                site_id,
+                kind,
+                slug,
+                page as i64,
+                orientation,
+                payload,
+                fetched_at,
+                ttl_secs,
+            ],
+        )?;
+        // Prune rows older than 7 days
+        let _ = conn.execute(
+            "DELETE FROM browse_cache WHERE fetched_at < datetime('now', '-7 days')",
+            [],
+        );
+        Ok(())
+    }
+
+    /// Load a cached browse page. When `allow_stale` is true, return past TTL with age set.
+    pub fn get_browse_cache(
+        &self,
+        site_id: &str,
+        kind: &str,
+        slug: &str,
+        page: u32,
+        orientation: Option<&str>,
+        allow_stale: bool,
+    ) -> AppResult<Option<crate::models::BrowsePage>> {
+        let key = Self::browse_cache_key(site_id, kind, slug, page, orientation);
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let row: Option<(String, String, i64)> = conn
+            .query_row(
+                "SELECT payload, fetched_at, ttl_secs FROM browse_cache WHERE cache_key = ?1",
+                params![key],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .optional()?;
+        let Some((payload, fetched_at, ttl_secs)) = row else {
+            return Ok(None);
+        };
+        let fetched = chrono::DateTime::parse_from_rfc3339(&fetched_at)
+            .map(|d| d.with_timezone(&Utc))
+            .ok();
+        let age_secs = match fetched {
+            Some(dt) => (Utc::now() - dt).num_seconds().max(0) as u64,
+            None => u64::MAX, // unparseable → treat as stale
+        };
+        let fresh = age_secs <= ttl_secs.max(0) as u64;
+        if !fresh && !allow_stale {
+            return Ok(None);
+        }
+        let mut page: crate::models::BrowsePage = serde_json::from_str(&payload)
+            .map_err(|e| AppError::Other(format!("browse cache parse: {e}")))?;
+        page.from_cache = true;
+        page.cache_age_secs = Some(age_secs);
+        Ok(Some(page))
     }
 
     pub fn insert_download_job(

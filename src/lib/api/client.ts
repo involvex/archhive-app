@@ -52,7 +52,7 @@ import type {
 import { getAppRuntime, shouldUseRemoteApi } from "../runtime";
 import { vibrateTick } from "../haptics";
 import { useSettingsStore } from "../stores/settings";
-import { isDesktopTauri } from "../tauri";
+import { isDesktopTauri, isTauri } from "../tauri";
 
 function getRemoteBase(): string | null {
   const { settings } = useSettingsStore.getState();
@@ -189,11 +189,47 @@ export const api = {
     orientation?: BrowseOrientation,
   ): Promise<BrowsePage> {
     const orientParam = orientation ? `&orientation=${orientation}` : "";
-    return localOrRemote(
-      "browse",
-      { siteId, kind, slug, page, orientation },
-      `/api/sites/${siteId}/browse?kind=${kind}&slug=${encodeURIComponent(slug)}&page=${page}${orientParam}`,
-    );
+    const cacheArgs = {
+      siteId,
+      kind,
+      slug,
+      page,
+      orientation: orientation ?? null,
+    };
+
+    try {
+      const result = await localOrRemote<BrowsePage>(
+        "browse",
+        { siteId, kind, slug, page, orientation },
+        `/api/sites/${siteId}/browse?kind=${kind}&slug=${encodeURIComponent(slug)}&page=${page}${orientParam}`,
+      );
+      // Dual-write to device SQLite so Remote LAN listings survive going offline.
+      if (isTauri() && !result.from_cache) {
+        void invoke("put_browse_cache", {
+          ...cacheArgs,
+          payload: result,
+          ttlSecs: 86_400,
+        }).catch(() => {
+          /* best-effort */
+        });
+      }
+      return result;
+    } catch (err) {
+      if (isTauri()) {
+        try {
+          const cached = await invoke<BrowsePage | null>("get_browse_cache", {
+            ...cacheArgs,
+            allowStale: true,
+          });
+          if (cached?.items?.length) {
+            return cached;
+          }
+        } catch {
+          /* fall through */
+        }
+      }
+      throw err;
+    }
   },
 
   async queueDownload(url: string, adapter?: string, title?: string): Promise<DownloadJob> {

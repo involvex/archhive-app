@@ -210,3 +210,19 @@ ALTER TABLE collections ADD COLUMN filter_json TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_collections_type ON collections(type);
 "#;
+
+pub const MIGRATION_016: &str = r#"
+CREATE TABLE IF NOT EXISTS browse_cache (
+    cache_key TEXT PRIMARY KEY,
+    site_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    slug TEXT NOT NULL,
+    page INTEGER NOT NULL,
+    orientation TEXT,
+    payload TEXT NOT NULL,
+    fetched_at TEXT NOT NULL,
+    ttl_secs INTEGER NOT NULL DEFAULT 86400
+);
+
+CREATE INDEX IF NOT EXISTS idx_browse_cache_fetched ON browse_cache(fetched_at);
+"#;

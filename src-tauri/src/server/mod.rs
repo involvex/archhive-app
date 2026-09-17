@@ -1224,12 +1224,11 @@ async fn network_state(
 }
 
 async fn network_info(
-    State(_state): State<ApiState>,
+    State(state): State<ApiState>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
-    // TODO: Replace with actual network detection once tauri::api::network is available
     Ok(Json(serde_json::json!({
-        "connection_type": "unknown",
-        "metered": false,
+        "connection_type": state.app.network_monitor.connection_type(),
+        "metered": state.app.network_monitor.is_metered(),
     })))
 }
 

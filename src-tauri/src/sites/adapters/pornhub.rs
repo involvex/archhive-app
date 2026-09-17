@@ -65,6 +65,7 @@ macro_rules! ytdlp_tube_adapter {
                     page: query.page,
                     has_more,
                     total: None,
+                ..Default::default()
                 })
             }
 
@@ -196,6 +197,7 @@ impl SiteAdapter for PornhubAdapter {
             page: query.page,
             has_more,
             total: None,
+        ..Default::default()
         })
     }
 

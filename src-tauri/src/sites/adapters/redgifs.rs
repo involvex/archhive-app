@@ -51,6 +51,7 @@ impl SiteAdapter for RedgifsAdapter {
             page: query.page,
             has_more,
             total: None,
+        ..Default::default()
         })
     }
 

@@ -125,6 +125,12 @@ impl DownloadManager {
         Ok(())
     }
 
+    /// Re-queue a job id (e.g. after WaitingForWifi → Pending). Ensures cancel flag exists.
+    pub fn enqueue_job_id(&self, job_id: &str) -> AppResult<()> {
+        self.register_cancel(job_id);
+        self.enqueue(job_id)
+    }
+
     pub fn queue(&self, url: &str, adapter: &str, title: Option<&str>) -> AppResult<DownloadJob> {
         let settings = self.db.get_settings()?;
         let tool = crate::downloads::image::resolve_download_tool(url, adapter);
@@ -166,7 +172,13 @@ impl DownloadManager {
             &plan.tool,
         )?;
         self.register_cancel(&job.id);
-        self.enqueue(&job.id)?;
+        // Do not start yt-dlp until Wi-Fi (or user resume) allows it.
+        if !matches!(job.status, DownloadStatus::WaitingForWifi) {
+            self.enqueue(&job.id)?;
+        } else {
+            let _ = self.app.emit("download:progress", &job);
+            sync_android_download_lifecycle(&self.db, &self.app);
+        }
         Ok(job)
     }
 
@@ -188,7 +200,10 @@ impl DownloadManager {
         let Some(mut job) = self.db.get_download_job(id)? else {
             return Ok(());
         };
-        if job.status != DownloadStatus::Paused {
+        if !matches!(
+            job.status,
+            DownloadStatus::Paused | DownloadStatus::WaitingForWifi
+        ) {
             return Ok(());
         }
         self.register_cancel(id);
@@ -317,6 +332,7 @@ pub(crate) fn mark_job_failed(
     job.error = Some(error.to_string());
     let _ = db.update_download_job(&job);
     let _ = app.emit("download:progress", &job);
+    sync_android_download_lifecycle(&db, app);
 
     let settings = db.get_settings().ok();
     let max_retries = settings
@@ -396,7 +412,10 @@ async fn worker_loop(
             };
             if matches!(
                 job.status,
-                DownloadStatus::Paused | DownloadStatus::Cancelled | DownloadStatus::Completed
+                DownloadStatus::Paused
+                    | DownloadStatus::WaitingForWifi
+                    | DownloadStatus::Cancelled
+                    | DownloadStatus::Completed
             ) {
                 return;
             }
@@ -485,6 +504,7 @@ async fn run_job_with_plan(
     job.error = None;
     db.update_download_job(&job)?;
     let _ = app.emit("download:progress", &job);
+    sync_android_download_lifecycle(&db, &app);
 
     std::fs::create_dir_all(library_path)?;
 
@@ -608,10 +628,12 @@ async fn run_job_with_plan(
         DownloadTool::YtDlp => {
             let cancel_clone = cancel.clone();
             let settings = db.get_settings().unwrap_or_default();
-            let format_args = SidecarRunner::format_selection_args(
-                settings.download_quality,
-                settings.prefer_mp4,
-            );
+            let is_metered = app
+                .try_state::<Arc<crate::state::AppState>>()
+                .map(|s| s.network_monitor.is_metered())
+                .unwrap_or(false);
+            let quality = crate::downloads::network::effective_download_quality(&settings, is_metered);
+            let format_args = SidecarRunner::format_selection_args(quality, settings.prefer_mp4);
             let path_result = runner
                 .run_yt_dlp(
                     &plan.url,
@@ -657,6 +679,7 @@ async fn run_job_with_plan(
             job.output_path = Some(existing.last().cloned().unwrap_or_default());
             db.update_download_job(&job)?;
             let _ = app.emit("download:progress", &job);
+            sync_android_download_lifecycle(&db, &app);
             let title = job.title.as_deref().unwrap_or("Download complete");
             let _ = app
                 .notification()
@@ -829,6 +852,57 @@ fn update_progress(
         job.status = DownloadStatus::Active;
         let _ = db.update_download_job(&job);
         let _ = app.emit("download:progress", &job);
+        let pct = job.progress.round() as i32;
+        crate::mobile::ytdlp_bridge::update_keep_alive(
+            app,
+            "ArcHive downloads",
+            &format!("{}% — {}", pct, job.title.as_deref().unwrap_or("Downloading")),
+            pct.clamp(0, 100),
+        );
+    }
+}
+
+/// Keep Android foreground service / WorkManager in sync with the download queue.
+fn sync_android_download_lifecycle(db: &Database, app: &AppHandle) {
+    let Ok(jobs) = db.list_download_jobs() else {
+        return;
+    };
+    let active: Vec<_> = jobs
+        .iter()
+        .filter(|j| matches!(j.status, DownloadStatus::Active))
+        .collect();
+    let waiting = jobs.iter().any(|j| {
+        matches!(
+            j.status,
+            DownloadStatus::Pending | DownloadStatus::WaitingForWifi
+        )
+    });
+
+    if !active.is_empty() {
+        let title = active
+            .first()
+            .and_then(|j| j.title.clone())
+            .unwrap_or_else(|| "ArcHive downloads".into());
+        let text = if active.len() == 1 {
+            format!("{:.0}%", active[0].progress)
+        } else {
+            format!("{} active", active.len())
+        };
+        let progress = active[0].progress.round() as i32;
+        crate::mobile::ytdlp_bridge::start_keep_alive(app, "ArcHive downloads", &text, progress);
+        let _ = title;
+    } else {
+        crate::mobile::ytdlp_bridge::stop_keep_alive(app);
+    }
+
+    if waiting {
+        let require_unmetered = db
+            .get_settings()
+            .map(|s| s.download_on_wifi_only)
+            .unwrap_or(false);
+        crate::mobile::ytdlp_bridge::schedule_pending_resume(app, require_unmetered);
+    } else if active.is_empty() {
+        crate::mobile::ytdlp_bridge::cancel_pending_resume(app);
     }
 }
 

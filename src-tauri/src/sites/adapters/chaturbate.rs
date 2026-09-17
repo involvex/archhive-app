@@ -110,6 +110,7 @@ impl ChaturbateAdapter {
                     page: query.page,
                     has_more,
                     total: None,
+                ..Default::default()
                 });
             }
         }
@@ -131,6 +132,7 @@ impl ChaturbateAdapter {
                 page: query.page,
                 has_more: false,
                 total: None,
+            ..Default::default()
             });
         }
         let (room_url, username) = if slug_raw.starts_with("http") {
@@ -146,6 +148,7 @@ impl ChaturbateAdapter {
                 page: query.page,
                 has_more: false,
                 total: None,
+            ..Default::default()
             });
         }
         Ok(BrowsePage {
@@ -170,6 +173,7 @@ impl ChaturbateAdapter {
             page: query.page,
             has_more: false,
             total: Some(1),
+        ..Default::default()
         })
     }
 }
@@ -236,6 +240,7 @@ fn api_rooms_to_page(rooms: Vec<HttpRoom>, page: u32) -> BrowsePage {
         page,
         has_more,
         total: None,
+    ..Default::default()
     }
 }
 

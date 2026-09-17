@@ -41,8 +41,11 @@ if (Test-Path $gradlew) {
     & $gradlew --stop 2>$null | Out-Null
 }
 
-& (Join-Path $PSScriptRoot "patch-android-lan.ps1")
-& (Join-Path $PSScriptRoot "patch-android-ytdlp.ps1")
+& (Join-Path $PSScriptRoot "apply-android-patches.ps1") -GenAndroid $genAndroid
+& (Join-Path $PSScriptRoot "validate-android-build.ps1") -GenAndroid $genAndroid -Strict
+if ($LASTEXITCODE -ne 0 -and $null -ne $LASTEXITCODE) {
+    throw "validate-android-build.ps1 failed with exit code $LASTEXITCODE"
+}
 
 $iconSource = Join-Path $root "assets\branding\icon-source.png"
 $iconSquare = Join-Path $root "assets\branding\icon-square.png"

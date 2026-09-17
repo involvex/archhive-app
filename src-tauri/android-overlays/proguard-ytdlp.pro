@@ -7,6 +7,11 @@
     <init>(android.app.Activity);
     *;
 }
+-keep class com.archhive.app.DownloadForegroundService { *; }
+-keep class com.archhive.app.PendingResumeWorker { *; }
+-keepclassmembers class com.archhive.app.PendingResumeWorker {
+    <init>(android.content.Context, androidx.work.WorkerParameters);
+}
 
 # Tauri plugin framework (annotations + Plugin base used by register_android_plugin)
 -keep class app.tauri.** { *; }

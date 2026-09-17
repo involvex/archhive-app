@@ -384,6 +384,96 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
         }
     }
 
+    /** Start / refresh foreground keep-alive while downloads are Active. */
+    @Command
+    fun startKeepAlive(invoke: Invoke) {
+        val args = invoke.parseArgs(KeepAliveArgs::class.java)
+        try {
+            DownloadForegroundService.start(
+                activity.applicationContext,
+                args.title.ifBlank { "ArcHive downloads" },
+                args.text.ifBlank { "Downloading…" },
+                args.progress,
+            )
+            val ret = JSObject()
+            ret.put("ok", true)
+            invoke.resolve(ret)
+        } catch (e: Exception) {
+            val ret = JSObject()
+            ret.put("ok", false)
+            ret.put("message", e.message ?: "startKeepAlive failed")
+            invoke.resolve(ret)
+        }
+    }
+
+    @Command
+    fun updateKeepAlive(invoke: Invoke) {
+        val args = invoke.parseArgs(KeepAliveArgs::class.java)
+        try {
+            DownloadForegroundService.update(
+                activity.applicationContext,
+                args.title.ifBlank { "ArcHive downloads" },
+                args.text.ifBlank { "Downloading…" },
+                args.progress,
+            )
+            val ret = JSObject()
+            ret.put("ok", true)
+            invoke.resolve(ret)
+        } catch (e: Exception) {
+            val ret = JSObject()
+            ret.put("ok", false)
+            ret.put("message", e.message ?: "updateKeepAlive failed")
+            invoke.resolve(ret)
+        }
+    }
+
+    @Command
+    fun stopKeepAlive(invoke: Invoke) {
+        try {
+            DownloadForegroundService.stop(activity.applicationContext)
+            val ret = JSObject()
+            ret.put("ok", true)
+            invoke.resolve(ret)
+        } catch (e: Exception) {
+            val ret = JSObject()
+            ret.put("ok", false)
+            ret.put("message", e.message ?: "stopKeepAlive failed")
+            invoke.resolve(ret)
+        }
+    }
+
+    /** Schedule WorkManager to wake the app when network is available. */
+    @Command
+    fun schedulePendingResume(invoke: Invoke) {
+        val args = invoke.parseArgs(ResumeArgs::class.java)
+        try {
+            PendingResumeWorker.schedule(activity.applicationContext, args.requireUnmetered)
+            val ret = JSObject()
+            ret.put("ok", true)
+            invoke.resolve(ret)
+        } catch (e: Exception) {
+            val ret = JSObject()
+            ret.put("ok", false)
+            ret.put("message", e.message ?: "schedulePendingResume failed")
+            invoke.resolve(ret)
+        }
+    }
+
+    @Command
+    fun cancelPendingResume(invoke: Invoke) {
+        try {
+            PendingResumeWorker.cancel(activity.applicationContext)
+            val ret = JSObject()
+            ret.put("ok", true)
+            invoke.resolve(ret)
+        } catch (e: Exception) {
+            val ret = JSObject()
+            ret.put("ok", false)
+            ret.put("message", e.message ?: "cancelPendingResume failed")
+            invoke.resolve(ret)
+        }
+    }
+
     /**
      * Command payload. Plain class with a JVM no-arg constructor + setter so
      * Jackson (no Kotlin module on the Tauri side) can bind {"args": [...]}.
@@ -393,5 +483,15 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
     class MediaArgs @JvmOverloads constructor(
         var tool: String = "ffmpeg",
         var args: Array<String> = emptyArray(),
+    )
+
+    class KeepAliveArgs @JvmOverloads constructor(
+        var title: String = "ArcHive downloads",
+        var text: String = "Downloading…",
+        var progress: Int = -1,
+    )
+
+    class ResumeArgs @JvmOverloads constructor(
+        var requireUnmetered: Boolean = false,
     )
 }
