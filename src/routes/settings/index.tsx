@@ -205,6 +205,8 @@ function SettingsPage() {
   // Q43: thumbnail cache totals for the storage summary row.
   const [thumbStats, setThumbStats] = useState<ThumbCacheStats | null>(null);
   const [thumbStatsLoading, setThumbStatsLoading] = useState(false);
+  // Issue #2: gate library walks on the Library tab (default Engine = no walk).
+  const [settingsTab, setSettingsTab] = useState("engine");
   const [discoveredHosts, setDiscoveredHosts] = useState<LanHost[]>([]);
   const [discovering, setDiscovering] = useState(false);
   const [discoverStatus, setDiscoverStatus] = useState("");
@@ -621,26 +623,31 @@ function SettingsPage() {
     }
   }
 
-  // Q43: thumbnail cache totals for the storage summary row.
-  const loadThumbStats = useCallback(async () => {
+  // Issue #2: single-pass orphan + thumb totals for the Library storage card.
+  const loadStorageStats = useCallback(async () => {
+    setOrphansLoading(true);
     setThumbStatsLoading(true);
+    setOrphanStatus("");
     try {
-      setThumbStats(await api.thumbCacheStats());
-    } catch {
+      const stats = await api.libraryStorageStats();
+      setOrphans(stats.orphans);
+      setThumbStats(stats.thumb_cache);
+    } catch (e) {
+      setOrphanStatus(e instanceof Error ? e.message : "Storage scan failed");
+      setOrphans(null);
       setThumbStats(null);
     } finally {
+      setOrphansLoading(false);
       setThumbStatsLoading(false);
     }
   }, []);
 
-  // Q43: pre-load orphan + thumb totals so the storage row shows numbers
-  // without a manual scan. Best-effort; failures stay hidden.
+  // Issue #2: pre-load only when Library tab is active (not on every Settings mount).
   useEffect(() => {
+    if (settingsTab !== "library") return;
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    void loadOrphans();
-    void loadThumbStats();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    void loadStorageStats();
+  }, [settingsTab, loadStorageStats]);
 
   async function saveCookies() {
     if (!selectedSite || !cookieText.trim()) return;
@@ -1077,7 +1084,7 @@ function SettingsPage() {
 
       {loading && <p className="text-sm text-[var(--color-muted-foreground)]">Loading settings…</p>}
 
-      <Tabs.Root defaultValue="engine">
+      <Tabs.Root value={settingsTab} onValueChange={setSettingsTab}>
         <Tabs.List className="flex flex-wrap gap-2 border-b border-[var(--color-border)] pb-2">
           {settingsTabs.map((tab) => (
             <Tabs.Trigger
@@ -1803,8 +1810,7 @@ function SettingsPage() {
                   variant="outline"
                   size="sm"
                   onClick={() => {
-                    void loadThumbStats();
-                    void loadOrphans();
+                    void loadStorageStats();
                   }}
                   disabled={thumbStatsLoading || orphansLoading}
                 >

@@ -311,6 +311,12 @@ export interface ThumbCacheStats {
   total_bytes: number;
 }
 
+/** Single-pass orphan + thumb-cache scan (mirrors Rust LibraryStorageStats). */
+export interface LibraryStorageStats {
+  orphans: OrphanSidecar[];
+  thumb_cache: ThumbCacheStats;
+}
+
 export interface SidecarProbe {
   name: string;
   bundled: boolean;

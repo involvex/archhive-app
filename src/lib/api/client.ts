@@ -9,6 +9,7 @@ import type {
   BulkImportResult,
   ClearThumbsResult,
   ThumbCacheStats,
+  LibraryStorageStats,
   DownloadJob,
   DuplicateGroup,
   CookieSiteInfo,
@@ -662,6 +663,14 @@ export const api = {
       return remoteFetch<ThumbCacheStats>("/api/library/thumb-cache");
     }
     return localInvoke<ThumbCacheStats>("thumb_cache_stats");
+  },
+
+  /** Single-pass orphan + thumb-cache scan for Settings → Library. */
+  async libraryStorageStats(): Promise<LibraryStorageStats> {
+    if (shouldUseRemoteApi()) {
+      return remoteFetch<LibraryStorageStats>("/api/library/storage-stats");
+    }
+    return localInvoke<LibraryStorageStats>("library_storage_stats");
   },
 
   async deleteOrphanSidecar(path: string): Promise<void> {

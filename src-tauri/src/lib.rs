@@ -305,6 +305,7 @@ pub fn run() {
             commands::list_scenes_with_filter,
             commands::list_orphan_sidecars,
             commands::thumb_cache_stats,
+            commands::library_storage_stats,
             commands::delete_orphan_sidecar,
             commands::clear_scene_thumb,
             commands::clear_all_thumbs,

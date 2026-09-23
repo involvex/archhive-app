@@ -1107,6 +1107,13 @@ impl AppState {
         self.db.thumb_cache_stats(&path)
     }
 
+    /// Single-pass orphan + thumb-cache scan for Settings → Library.
+    pub fn library_storage_stats(&self) -> AppResult<crate::models::LibraryStorageStats> {
+        let settings = self.get_settings()?;
+        let path = Self::validate_library_path(&settings.library_path, &self.data_dir)?;
+        self.db.library_storage_stats(&path)
+    }
+
     pub fn clear_scene_thumb(&self, scene_id: &str) -> AppResult<()> {
         self.db.clear_scene_thumb(scene_id)
     }

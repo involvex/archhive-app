@@ -181,6 +181,7 @@ impl LanServer {
                 get(list_orphan_sidecars).delete(delete_orphan_sidecar),
             )
             .route("/api/library/thumb-cache", get(thumb_cache_stats))
+            .route("/api/library/storage-stats", get(library_storage_stats))
             .route("/api/library/filter", post(list_scenes_with_filter))
             .route("/api/library/ffmpeg-status", get(ffmpeg_status))
             .route("/api/scenes/{id}/probe", post(probe_scene_metadata))
@@ -1171,6 +1172,17 @@ async fn thumb_cache_stats(
     let stats = state
         .app
         .thumb_cache_stats()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(serde_json::json!(stats)))
+}
+
+/// Single-pass orphan + thumb-cache scan for Settings → Library.
+async fn library_storage_stats(
+    State(state): State<ApiState>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let stats = state
+        .app
+        .library_storage_stats()
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(serde_json::json!(stats)))
 }

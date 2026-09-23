@@ -551,6 +551,14 @@ pub fn thumb_cache_stats(
     map_err(state.thumb_cache_stats())
 }
 
+/// Single-pass orphan + thumb-cache scan for Settings → Library.
+#[tauri::command]
+pub fn library_storage_stats(
+    state: State<'_, Arc<AppState>>,
+) -> CmdResult<crate::models::LibraryStorageStats> {
+    map_err(state.library_storage_stats())
+}
+
 #[tauri::command]
 pub fn delete_orphan_sidecar(state: State<'_, Arc<AppState>>, path: String) -> CmdResult<()> {
     map_err(state.delete_orphan_sidecar(&path))

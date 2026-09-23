@@ -6,6 +6,20 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.5.2",
+    date: "2026-09-23",
+    changes: [
+      {
+        type: "fixed",
+        text: "Settings no longer walks the library on every open — storage/orphan scans run only on the Library tab",
+      },
+      {
+        type: "changed",
+        text: "Orphan and thumb-cache totals share one filesystem walk via library_storage_stats",
+      },
+    ],
+  },
+  {
     version: "0.5.1",
     date: "2026-09-15",
     changes: [

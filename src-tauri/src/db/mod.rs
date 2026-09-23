@@ -1414,13 +1414,44 @@ impl Database {
         Ok(result)
     }
 
+    /// Shared library image walk (jpg/jpeg, max_depth 5) used by orphan scan
+    /// and thumb-cache totals so the WalkDir scaffolding lives in one place.
+    fn walk_library_images(library_path: &std::path::Path) -> Vec<(std::path::PathBuf, u64, String)> {
+        use walkdir::WalkDir;
+
+        if !library_path.exists() {
+            return Vec::new();
+        }
+
+        let mut out = Vec::new();
+        for entry in WalkDir::new(library_path)
+            .max_depth(5)
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
+            let p = entry.path();
+            if !p.is_file() {
+                continue;
+            }
+            let ext = p
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("")
+                .to_lowercase();
+            if ext != "jpg" && ext != "jpeg" {
+                continue;
+            }
+            let size = std::fs::metadata(p).map(|m| m.len()).unwrap_or(0);
+            out.push((p.to_path_buf(), size, ext));
+        }
+        out
+    }
+
     /// Find jpg files in the library directory that have no matching video in the DB.
     pub fn list_orphan_sidecars(
         &self,
         library_path: &str,
     ) -> AppResult<Vec<crate::models::OrphanSidecar>> {
-        use walkdir::WalkDir;
-
         let lib = std::path::Path::new(library_path);
         if !lib.exists() {
             return Ok(Vec::new());
@@ -1442,27 +1473,13 @@ impl Database {
         };
 
         let mut orphans = Vec::new();
-        for entry in WalkDir::new(lib)
-            .max_depth(5)
-            .into_iter()
-            .filter_map(|e| e.ok())
-        {
-            let p = entry.path();
-            if !p.is_file() {
-                continue;
-            }
-            let ext = p
-                .extension()
-                .and_then(|e| e.to_str())
-                .unwrap_or("")
-                .to_lowercase();
-            if ext != "jpg" && ext != "jpeg" {
-                continue;
-            }
-            let p_str = p.to_string_lossy().to_string();
+        for (path, size, _) in Self::walk_library_images(lib) {
+            let p_str = path.to_string_lossy().to_string();
             if !db_paths.contains(&p_str) {
-                let size = std::fs::metadata(p).map(|m| m.len()).unwrap_or(0);
-                orphans.push(crate::models::OrphanSidecar { path: p_str, size });
+                orphans.push(crate::models::OrphanSidecar {
+                    path: p_str,
+                    size,
+                });
             }
         }
         Ok(orphans)
@@ -1474,41 +1491,62 @@ impl Database {
         &self,
         library_path: &str,
     ) -> AppResult<crate::models::ThumbCacheStats> {
-        use walkdir::WalkDir;
+        let images = Self::walk_library_images(std::path::Path::new(library_path));
+        Ok(crate::models::ThumbCacheStats {
+            file_count: images.len() as u64,
+            total_bytes: images.iter().map(|(_, size, _)| *size).sum(),
+        })
+    }
 
+    /// Single-pass orphan list + thumb-cache totals (Settings → Library storage card).
+    pub fn library_storage_stats(
+        &self,
+        library_path: &str,
+    ) -> AppResult<crate::models::LibraryStorageStats> {
         let lib = std::path::Path::new(library_path);
         if !lib.exists() {
-            return Ok(crate::models::ThumbCacheStats {
-                file_count: 0,
-                total_bytes: 0,
+            return Ok(crate::models::LibraryStorageStats {
+                orphans: Vec::new(),
+                thumb_cache: crate::models::ThumbCacheStats {
+                    file_count: 0,
+                    total_bytes: 0,
+                },
             });
         }
 
-        let mut file_count: u64 = 0;
+        let db_paths = {
+            let conn = self
+                .conn
+                .lock()
+                .map_err(|e| AppError::Other(e.to_string()))?;
+            let mut stmt =
+                conn.prepare("SELECT path FROM scenes WHERE path IS NOT NULL AND path != ''")?;
+            let set: std::collections::HashSet<String> = stmt
+                .query_map([], |row| row.get::<_, String>(0))?
+                .filter_map(|r| r.ok())
+                .collect();
+            set
+        };
+
+        let images = Self::walk_library_images(lib);
+        let mut orphans = Vec::new();
         let mut total_bytes: u64 = 0;
-        for entry in WalkDir::new(lib)
-            .max_depth(5)
-            .into_iter()
-            .filter_map(|e| e.ok())
-        {
-            let p = entry.path();
-            if !p.is_file() {
-                continue;
+        for (path, size, _) in &images {
+            total_bytes += size;
+            let p_str = path.to_string_lossy().to_string();
+            if !db_paths.contains(&p_str) {
+                orphans.push(crate::models::OrphanSidecar {
+                    path: p_str,
+                    size: *size,
+                });
             }
-            let ext = p
-                .extension()
-                .and_then(|e| e.to_str())
-                .unwrap_or("")
-                .to_lowercase();
-            if ext != "jpg" && ext != "jpeg" {
-                continue;
-            }
-            file_count += 1;
-            total_bytes += std::fs::metadata(p).map(|m| m.len()).unwrap_or(0);
         }
-        Ok(crate::models::ThumbCacheStats {
-            file_count,
-            total_bytes,
+        Ok(crate::models::LibraryStorageStats {
+            orphans,
+            thumb_cache: crate::models::ThumbCacheStats {
+                file_count: images.len() as u64,
+                total_bytes,
+            },
         })
     }
 
@@ -2774,5 +2812,10 @@ mod tests {
         let stats = db.thumb_cache_stats(lib.to_str().unwrap()).unwrap();
         assert_eq!(stats.file_count, 2);
         assert_eq!(stats.total_bytes, 150);
+
+        let combined = db.library_storage_stats(lib.to_str().unwrap()).unwrap();
+        assert_eq!(combined.thumb_cache.file_count, 2);
+        assert_eq!(combined.thumb_cache.total_bytes, 150);
+        assert_eq!(combined.orphans.len(), 2);
     }
 }

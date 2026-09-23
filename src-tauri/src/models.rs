@@ -842,6 +842,13 @@ pub struct ThumbCacheStats {
     pub total_bytes: u64,
 }
 
+/// Single-pass orphan list + thumb-cache totals for Settings → Library.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LibraryStorageStats {
+    pub orphans: Vec<OrphanSidecar>,
+    pub thumb_cache: ThumbCacheStats,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LibraryStats {
     pub scene_count: u64,
