@@ -208,10 +208,10 @@ impl BinaryInstaller {
     pub async fn update_binary(&self, name: &str) -> AppResult<BinaryUpdateResult> {
         #[cfg(target_os = "android")]
         {
-            return Err(AppError::Download(
-                "Binary updates are not available on Android. Use the embedded youtubedl-android engine."
-                    .into(),
-            ));
+            return Err(AppError::Download(format!(
+                "Binary updates are not available on Android for {name}. Use the embedded \
+                 youtubedl-android engine (Settings → Library → Download engine)."
+            )));
         }
 
         #[cfg(not(target_os = "android"))]
@@ -301,9 +301,9 @@ impl BinaryInstaller {
     pub async fn rollback_binary(&self, name: &str) -> AppResult<BinaryUpdateResult> {
         #[cfg(target_os = "android")]
         {
-            return Err(AppError::Download(
-                "Rollback is not available on Android.".into(),
-            ));
+            return Err(AppError::Download(format!(
+                "Rollback is not available on Android for {name}."
+            )));
         }
 
         #[cfg(not(target_os = "android"))]
