@@ -50,11 +50,17 @@ id = "RUSTSEC-2025-0098"
 ignored = true
 reason = "Transitive dependency via Tauri framework (tauri-utils -> urlpattern)"
 
-# RUSTSEC-2024-0429: glib unsoundness in VariantStrIter.
-# Only affects Linux GTK builds via Tauri's tray-icon GTK backend.
-# ArcHive is primarily Windows/Android; the fix requires Tauri to upgrade
-# glib 0.18 to 0.19+, which is a breaking change upstream.
+# RUSTSEC-2024-0429 / GHSA-wrw7-89jp-8q8g: glib 0.18.5 unsoundness in
+# VariantStrIter (NULL deref crashes). Fixed upstream in glib 0.20.0.
+#
+# Cannot be patched by version bump: glib 0.18.5 is pulled transitively by
+# gtk 0.18.2, which tauri 2.11.5 pins as `^0.18`. Verified 2026-09-24 that
+# NO tauri 2.x release pins gtk >= 0.19 (all 2.11.2–2.11.6 are `^0.18`),
+# so `cargo update -p glib --precise 0.20.0` and `-p gtk --precise 0.19.0`
+# both fail with "candidate versions found which didn't match: 0.20.0".
+# The fix requires an upstream tauri bump (gtk 0.19+), which is out of scope
+# for this advisory. Revisit when tauri releases a gtk 0.19+ pin.
 [[advisories]]
 id = "RUSTSEC-2024-0429"
 ignored = true
-reason = "Affects only Linux GTK builds (Tauri tray-icon); not a concern for Windows/Android targets"
+reason = "glib 0.18.5 is transitive via tauri 2.11.5 -> gtk 0.18.2; no tauri 2.x release pins gtk >= 0.19, so the 0.20.0 fix is unreachable by version bump. Requires upstream tauri bump."
