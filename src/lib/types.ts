@@ -183,6 +183,12 @@ export interface AppSettings {
   data_saver?: DataSaverMode;
   /** Thumbnail quality for library grid (default original). (#49) */
   thumb_quality?: ThumbnailQuality;
+  /** Has the first-run wizard been completed? (#73) */
+  wizard_completed?: boolean;
+  /** Last binary update check (seconds since epoch). (#69) */
+  last_binary_check?: number;
+  /** Auto-check binary updates on app launch. (#69) */
+  auto_check_binaries?: boolean;
 }
 
 export interface MergeDuplicatesResult {
@@ -286,6 +292,22 @@ export interface BinaryVersions {
   ffprobe_version?: string;
   ytdlp_version?: string;
   gallery_dl_version?: string;
+}
+
+export interface BinaryLatestVersions {
+  ytdlp_latest?: string;
+  gallery_dl_latest?: string;
+  ffmpeg_latest?: string;
+  ffprobe_latest?: string;
+}
+
+export interface BinaryUpdateResult {
+  updated: boolean;
+  tool: string;
+  previous_version?: string;
+  new_version?: string;
+  backup_path?: string;
+  message: string;
 }
 
 export interface DirEntry {

@@ -344,6 +344,18 @@ pub struct AppSettings {
     /// Thumbnail quality for library grid (default Original). (#49)
     #[serde(default)]
     pub thumb_quality: ThumbnailQuality,
+    /// Has the first-run wizard been completed? (#73)
+    #[serde(default)]
+    pub wizard_completed: bool,
+    /// Last timestamp of binary update check (seconds since epoch). (#69)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_binary_check: Option<i64>,
+    /// Auto-check binary updates on app launch. (#69)
+    #[serde(default = "default_auto_check_binaries")]
+    pub auto_check_binaries: bool,
+    /// Backup path for last-known-good binary rollback. (#69)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub binary_backup_path: Option<String>,
 }
 
 fn default_phash_threshold() -> u8 {
@@ -386,6 +398,10 @@ fn default_trending_sites() -> Vec<String> {
 
 fn default_download_max_retries() -> u32 {
     2
+}
+
+fn default_auto_check_binaries() -> bool {
+    true
 }
 
 fn default_download_retry_delay_seconds() -> u32 {
@@ -503,6 +519,10 @@ impl Default for AppSettings {
             pause_on_battery_saver: default_pause_on_battery_saver(),
             data_saver: default_data_saver(),
             thumb_quality: default_thumb_quality(),
+            wizard_completed: false,
+            last_binary_check: None,
+            auto_check_binaries: default_auto_check_binaries(),
+            binary_backup_path: None,
         }
     }
 }
@@ -678,6 +698,43 @@ pub struct BinaryVersions {
     pub ytdlp_version: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gallery_dl_version: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BinaryLatestVersions {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ytdlp_latest: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gallery_dl_latest: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ffmpeg_latest: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ffprobe_latest: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BinaryUpdateInfo {
+    pub current: BinaryVersions,
+    pub latest: BinaryLatestVersions,
+    pub update_available: BinaryUpdateFlags,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct BinaryUpdateFlags {
+    pub ytdlp: bool,
+    pub gallery_dl: bool,
+    pub ffmpeg: bool,
+    pub ffprobe: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BinaryUpdateResult {
+    pub updated: bool,
+    pub tool: String,
+    pub previous_version: Option<String>,
+    pub new_version: Option<String>,
+    pub backup_path: Option<String>,
+    pub message: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -901,4 +958,3 @@ pub struct SettingsBackupImportResult {
     pub cookies_imported: u32,
     pub library_path_skipped: bool,
 }
-

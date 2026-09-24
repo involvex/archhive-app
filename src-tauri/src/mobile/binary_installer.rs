@@ -1,6 +1,7 @@
 use crate::error::{AppError, AppResult};
-use crate::models::BinaryVersions;
+use crate::models::{BinaryLatestVersions, BinaryUpdateResult, BinaryVersions};
 use reqwest::Client;
+use serde::Deserialize;
 use std::path::{Path, PathBuf};
 use tauri::AppHandle;
 
@@ -189,4 +190,181 @@ impl BinaryInstaller {
 
         Ok(first_line.chars().take(64).collect())
     }
+
+    /// Query GitHub releases API for the latest version tag.
+    /// Returns `None` on any error (network, parse, etc.) — caller falls back gracefully.
+    pub async fn check_latest_version(&self, repo: &str) -> Option<String> {
+        let url = format!("https://api.github.com/repos/{}/releases/latest", repo);
+        let resp = self.client.get(&url).send().await.ok()?;
+        if !resp.status().is_success() {
+            return None;
+        }
+        let body = resp.text().await.ok()?;
+        let parsed: GhRelease = serde_json::from_str(&body).ok()?;
+        Some(parsed.tag_name.trim_start_matches('v').to_string())
+    }
+
+    /// Update a desktop binary with rollback support. On Android, returns an error.
+    pub async fn update_binary(&self, name: &str) -> AppResult<BinaryUpdateResult> {
+        #[cfg(target_os = "android")]
+        {
+            return Err(AppError::Download(
+                "Binary updates are not available on Android. Use the embedded youtubedl-android engine."
+                    .into(),
+            ));
+        }
+
+        #[cfg(not(target_os = "android"))]
+        {
+            let repo = match name {
+                "yt-dlp" => "yt-dlp/yt-dlp",
+                "gallery-dl" => "mikf/gallery-dl",
+                _ => return Err(AppError::Other(format!("Unknown binary: {name}"))),
+            };
+
+            let latest = self.check_latest_version(repo).await.ok_or_else(|| {
+                AppError::Download(format!("Failed to fetch latest version for {name}"))
+            })?;
+
+            let current = match name {
+                "yt-dlp" => self.check_installed("yt-dlp").await,
+                "gallery-dl" => self.check_installed("gallery-dl").await,
+                _ => None,
+            };
+
+            let current_version = if let Some(path) = &current {
+                self.run_version_check(path, name).await.ok()
+            } else {
+                None
+            };
+
+            if current_version.as_deref() == Some(&latest) {
+                return Ok(BinaryUpdateResult {
+                    updated: false,
+                    tool: name.to_string(),
+                    previous_version: current_version,
+                    new_version: Some(latest.clone()),
+                    backup_path: None,
+                    message: format!("{} is already up to date (v{})", name, latest),
+                });
+            }
+
+            let dest = self.install_dir.join(name);
+            let backup = self.install_dir.join(format!("{}.bak", name));
+            let tmp = self.install_dir.join(format!("{}.tmp", name));
+
+            // Backup current binary if it exists
+            if dest.exists() {
+                if backup.exists() {
+                    let _ = std::fs::remove_file(&backup);
+                }
+                std::fs::copy(&dest, &backup)
+                    .map_err(|e| AppError::Other(format!("Failed to backup {name}: {e}")))?;
+            }
+
+            let download_url = match name {
+                "yt-dlp" => yt_dlp_download_url(),
+                "gallery-dl" => gallery_dl_download_url(),
+                _ => return Err(AppError::Other(format!("Unknown binary: {name}"))),
+            };
+
+            self.download_file(download_url, &tmp).await?;
+            std::fs::rename(&tmp, &dest)
+                .map_err(|e| AppError::Other(format!("Failed to install {name}: {e}")))?;
+
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let mut perms = std::fs::metadata(&dest)?.permissions();
+                perms.set_mode(0o755);
+                std::fs::set_permissions(&dest, perms)?;
+            }
+
+            let backup_path = if backup.exists() {
+                Some(backup.to_string_lossy().to_string())
+            } else {
+                None
+            };
+
+            Ok(BinaryUpdateResult {
+                updated: true,
+                tool: name.to_string(),
+                previous_version: current_version.clone(),
+                new_version: Some(latest.clone()),
+                backup_path,
+                message: format!("{} updated from {:?} to v{}", name, current_version, latest),
+            })
+        }
+    }
+
+    /// Rollback a binary to its `.bak` backup, if one exists.
+    pub async fn rollback_binary(&self, name: &str) -> AppResult<BinaryUpdateResult> {
+        #[cfg(target_os = "android")]
+        {
+            return Err(AppError::Download(
+                "Rollback is not available on Android.".into(),
+            ));
+        }
+
+        #[cfg(not(target_os = "android"))]
+        {
+            let dest = self.install_dir.join(name);
+            let backup = self.install_dir.join(format!("{}.bak", name));
+
+            if !backup.exists() {
+                return Ok(BinaryUpdateResult {
+                    updated: false,
+                    tool: name.to_string(),
+                    previous_version: None,
+                    new_version: None,
+                    backup_path: None,
+                    message: format!("No backup found for {}", name),
+                });
+            }
+
+            let backup_version = self.run_version_check(&backup, name).await.ok();
+
+            std::fs::copy(&backup, &dest).map_err(|e| {
+                AppError::Other(format!("Failed to restore {name} from backup: {e}"))
+            })?;
+
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let mut perms = std::fs::metadata(&dest)?.permissions();
+                perms.set_mode(0o755);
+                std::fs::set_permissions(&dest, perms)?;
+            }
+
+            let _ = std::fs::remove_file(&backup);
+
+            Ok(BinaryUpdateResult {
+                updated: true,
+                tool: name.to_string(),
+                previous_version: None,
+                new_version: backup_version,
+                backup_path: None,
+                message: format!("{} rolled back to previous version", name),
+            })
+        }
+    }
+
+    /// Fetch latest GitHub release versions for all desktop binaries.
+    pub async fn check_latest_versions(&self) -> BinaryLatestVersions {
+        let (yt, gd) = tokio::join!(
+            self.check_latest_version("yt-dlp/yt-dlp"),
+            self.check_latest_version("mikf/gallery-dl"),
+        );
+        BinaryLatestVersions {
+            ytdlp_latest: yt,
+            gallery_dl_latest: gd,
+            ffmpeg_latest: None,
+            ffprobe_latest: None,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct GhRelease {
+    tag_name: String,
 }

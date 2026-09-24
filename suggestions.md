@@ -346,13 +346,10 @@
 
 ### 34. Binary Update Manager (yt-dlp / gallery-dl / ffmpeg)
 
-**Status:** ⚪ Not started  
+**Status:** ✅ Done  
 **Area:** Downloads / Settings  
-**Currently:** `setup:binaries` script + `src-tauri/binaries/` sidecars; `ffmpeg_status` probes availability; no version check or in-app update.  
-**Suggestion:**
-
-- Version check (yt-dlp `--version` vs GitHub releases) on launch/weekly; one-click update (re-run setup flow elevated if needed); per-tool status dots + changelog link.
-- Pin/rollback to last-known-good binary; Android note (no sidecars — desktop only).
+**Currently:** GitHub release version check (`check_binary_updates` → `BinaryInstaller::check_latest_versions`, `BinaryLatestVersions`); one-click desktop update with `.bak` rollback (`update_binary` / `rollback_binary` commands + `BinaryUpdateResult`); Media tools card in Settings → Library shows current vs latest per tool with Update/Rollback buttons + "Check for updates"; weekly auto-check on launch (`auto_check_binaries`, `last_binary_check` in `AppSettings`) with toast when updates found; Android keeps the embedded-engine `update_yt_dlp` flow.  
+**Suggestion (remaining):** Per-tool changelog links; ffmpeg/ffprobe updates (still bundled as sidecars — app update covers them).
 
 ### 35. Transcode / Optimize for Mobile & LAN
 
@@ -406,13 +403,10 @@
 
 ### 40. First-Run Wizard + Sample Library
 
-**Status:** ⚪ Not started  
+**Status:** ✅ Done  
 **Area:** Onboarding / UX  
-**Currently:** No wizard; engine mode/LAN/library path/cookies all configured deep in Settings; `docs/*` carry the onboarding burden.  
-**Suggestion:**
-
-- 5-step wizard: library path → engine mode (Local/Remote/Standalone) → LAN pairing (QR/discovery) → cookie import (`docs/cookie-import.md` flow) → binary check (`ffmpeg_status`).
-- "Load demo scene" for empty-state testing; post-wizard checklist with deep links; changelog dialog (#Q20) on first launch per version.
+**Currently:** `FirstRunWizard` modal (`src/components/FirstRunWizard.tsx` + `WizardLayout`) gated on `AppSettings.wizard_completed` via a `hydrated` flag in the settings store (`main.tsx` `FirstRunWizardGate`); 5 steps — welcome → library folder (with `default_library_dir` resolve) → engine mode (Local/Remote/Standalone cards) → device pairing (LAN/cookie deep links into Settings) → media tools check (`ffmpeg_status` + `binaryVersions`) with "Load demo scene" (`load_demo_scene` command queues a Big Buck Bunny test video through the normal download → import pipeline). Choices persist runtime-aware (`saveSettings` / `saveDeviceSettings`); skip marks the wizard complete.  
+**Suggestion (remaining):** Post-wizard Home checklist with deep links; per-site cookie import embedded in the wizard instead of linking out.
 
 ---
 
@@ -488,7 +482,7 @@ Add "Quiet hours" window (e.g., 22:00–08:00) to suppress non-critical toasts; 
 **Status:** 🔵 Partial  
 **Area:** Mobile / LAN  
 **Currently:** mDNS discovery + manual host entry + Test Connection (`docs/mobile-android.md`); `useLanConnection` polls health every 15s with last-ok time + retry-attempt count in the chip message.  
-**Done:** Recent-hosts history (last 3, URLs only — never tokens) with token-present dot + one-tap reconnect in Settings → Engine (`src/lib/lanHistory.ts`, recorded on discovery-tap and successful Test Connection); desktop "Show QR" renders the LAN web link (`?token=` included) next to Copy web link (`react-qr-code`).  
+**Done:** Recent-hosts history (last 3, URLs only — never tokens) with token-present dot + one-tap reconnect in Settings → Engine (`src/lib/lanHistory.ts`, recorded on discovery-tap and successful Test Connection); desktop "Show QR" renders the LAN web link (`?token=` included) next to Copy web link (`react-qr-code`); "Test server" button probes `/api/health` with latency readout + resolved server address display; Copy token button; wizard step 3 deep-links Engine/LAN settings for pairing.  
 **Suggestion (remaining):**
 
 - Auto-reconnect backoff tuning (currently fixed 15s poll); "Wake desktop" (WoL) is out of scope.
@@ -671,4 +665,4 @@ Add "Quiet hours" window (e.g., 22:00–08:00) to suppress non-critical toasts; 
 
 ---
 
-_Last updated: 2026-09-15 (implemented Q39–Q44: haptics, player fullscreen, browse pull-refresh, offline badge, storage row, AMOLED toggle; #55 partial with Android channels)_
+_Last updated: 2026-09-24 (implemented #34 Binary Update Manager: GitHub check + one-click update/rollback + weekly auto-check; #40 First-Run Wizard: 5-step modal + demo scene loader; #46 QR pairing: Test server health/latency + server address display; #48 Android engine-stale check: "Check for engine update" badge + behind-upstream warning on the embedded yt-dlp engine)_

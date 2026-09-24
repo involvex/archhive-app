@@ -41,6 +41,8 @@ const baseSettings = {
 
 const baseStoreState = {
   settings: baseSettings,
+  hydrated: true,
+  setHydrated: vi.fn(),
   setEngineMode: vi.fn(),
   setRemoteHost: vi.fn(),
   setRemoteToken: vi.fn(),

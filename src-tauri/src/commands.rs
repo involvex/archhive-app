@@ -913,6 +913,53 @@ pub async fn update_yt_dlp(state: State<'_, Arc<AppState>>) -> CmdResult<String>
     }
 }
 
+/// Check GitHub for the latest release versions of yt-dlp and gallery-dl. (#69)
+#[tauri::command]
+pub async fn check_binary_updates(
+    state: State<'_, Arc<AppState>>,
+) -> CmdResult<crate::models::BinaryLatestVersions> {
+    let installer = crate::mobile::binary_installer::BinaryInstaller::new(
+        state.app_handle().clone(),
+        state.data_dir.clone(),
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(installer.check_latest_versions().await)
+}
+
+/// Update a desktop binary (yt-dlp or gallery-dl) with rollback support. (#69)
+#[tauri::command]
+pub async fn update_binary(
+    state: State<'_, Arc<AppState>>,
+    name: String,
+) -> CmdResult<crate::models::BinaryUpdateResult> {
+    let installer = crate::mobile::binary_installer::BinaryInstaller::new(
+        state.app_handle().clone(),
+        state.data_dir.clone(),
+    )
+    .map_err(|e| e.to_string())?;
+    installer
+        .update_binary(&name)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Rollback a binary to its `.bak` backup, if one exists. (#69)
+#[tauri::command]
+pub async fn rollback_binary(
+    state: State<'_, Arc<AppState>>,
+    name: String,
+) -> CmdResult<crate::models::BinaryUpdateResult> {
+    let installer = crate::mobile::binary_installer::BinaryInstaller::new(
+        state.app_handle().clone(),
+        state.data_dir.clone(),
+    )
+    .map_err(|e| e.to_string())?;
+    installer
+        .rollback_binary(&name)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub fn list_collections(state: State<'_, AppState>) -> CmdResult<Vec<Collection>> {
     state.list_collections().map_err(|e| e.to_string())
@@ -1025,4 +1072,25 @@ pub fn export_collection(
         content: m3u,
         filename,
     })
+}
+
+/// #73: Load a demo scene for empty-state testing in the first-run wizard.
+/// Downloads a small, known-good test video and imports it via the normal pipeline.
+#[tauri::command]
+pub async fn load_demo_scene(state: State<'_, Arc<AppState>>) -> CmdResult<String> {
+    // Use a small, reliable public-domain test video (Big Buck Bunny, 720p).
+    // This exercises the full download → import → thumbnail pipeline.
+    const DEMO_URL: &str =
+        "https://download.blender.org/mirror/BigBuckBunny_Bbik-sequence_720p_24fps_1537KB.mp4";
+    const DEMO_TITLE: &str = "Big Buck Bunny (Demo Scene)";
+
+    let job = state
+        .queue_download(DEMO_URL, Some("generic_ytdlp"), Some(DEMO_TITLE))
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(format!(
+        "Demo scene queued (job {}). It will download and appear in your library shortly.",
+        job.id
+    ))
 }

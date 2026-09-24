@@ -3,6 +3,8 @@ import { listen } from "@tauri-apps/api/event";
 import type {
   AppSettings,
   BinaryVersions,
+  BinaryLatestVersions,
+  BinaryUpdateResult,
   BrowseKind,
   BrowseOrientation,
   BrowsePage,
@@ -1110,5 +1112,33 @@ export const api = {
       throw new Error("Sidecar probing requires the app runtime.");
     }
     return localInvoke("probe_sidecar", { name });
+  },
+
+  async checkBinaryUpdates(): Promise<BinaryLatestVersions> {
+    if (getAppRuntime() === "browser") {
+      throw new Error("Binary update checks require the app runtime.");
+    }
+    return localInvoke("check_binary_updates", {});
+  },
+
+  async updateBinary(name: string): Promise<BinaryUpdateResult> {
+    if (getAppRuntime() === "browser") {
+      throw new Error("Binary updates require the app runtime.");
+    }
+    return localInvoke("update_binary", { name });
+  },
+
+  async rollbackBinary(name: string): Promise<BinaryUpdateResult> {
+    if (getAppRuntime() === "browser") {
+      throw new Error("Binary rollback requires the app runtime.");
+    }
+    return localInvoke("rollback_binary", { name });
+  },
+
+  async loadDemoScene(): Promise<string> {
+    if (shouldUseRemoteApi()) {
+      throw new Error("Load the demo scene on the local device, not via Remote LAN.");
+    }
+    return localInvoke<string>("load_demo_scene");
   },
 };

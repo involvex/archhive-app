@@ -4,6 +4,9 @@ import type { AppSettings, EngineMode } from "../types";
 
 interface SettingsState {
   settings: AppSettings;
+  /** True once backend settings have been loaded this session (#73 wizard gate). */
+  hydrated: boolean;
+  setHydrated: (v: boolean) => void;
   setEngineMode: (mode: EngineMode) => void;
   setRemoteHost: (host: string) => void;
   setRemoteToken: (token: string) => void;
@@ -36,6 +39,8 @@ export const useSettingsStore = create<SettingsState>()(
   persist(
     (set) => ({
       settings: defaultSettings,
+      hydrated: false,
+      setHydrated: (v) => set({ hydrated: v }),
       setEngineMode: (mode) => set((s) => ({ settings: { ...s.settings, engine_mode: mode } })),
       setRemoteHost: (host) => set((s) => ({ settings: { ...s.settings, remote_host: host } })),
       setRemoteToken: (token) => set((s) => ({ settings: { ...s.settings, remote_token: token } })),
@@ -47,6 +52,8 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: "archhive-settings",
+      // Never persist the session-only hydration flag.
+      partialize: (s) => ({ settings: s.settings }) as SettingsState,
       onRehydrateStorage: () => (state) => {
         if (!state) return;
         if (state.settings.remote_token?.trim() === "") {

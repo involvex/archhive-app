@@ -27,6 +27,7 @@ import QRCode from "react-qr-code";
 import { getPluginSettingsPanels } from "@/lib/plugins/loader";
 import { visibleSettingsTabs } from "@/lib/settings/capabilities";
 import type {
+  BinaryLatestVersions,
   BinaryVersions,
   CookieSiteInfo,
   DiagnosticsData,
@@ -215,11 +216,27 @@ function SettingsPage() {
   // Q36: QR payload for the desktop LAN web link (computed on demand).
   const [webQrUrl, setWebQrUrl] = useState<string | null>(null);
   const [webQrLoading, setWebQrLoading] = useState(false);
+  // QR pairing health check: resolved LAN base URL + last health/latency probe.
+  const [lanBaseUrl, setLanBaseUrl] = useState<string | null>(null);
+  const [lanHealth, setLanHealth] = useState("");
+  const [checkingLanHealth, setCheckingLanHealth] = useState(false);
   const [appVersion, setAppVersion] = useState("…");
   const { open: showChangelog, setOpen: setShowChangelog } = useChangelogDialog(appVersion);
   const [installingBinary, setInstallingBinary] = useState<string | null>(null);
   const [binaryInstallStatus, setBinaryInstallStatus] = useState<string>("");
   const [updatingYtDlp, setUpdatingYtDlp] = useState(false);
+  // #69: Binary update manager state.
+  const [latestVersions, setLatestVersions] = useState<BinaryLatestVersions | null>(null);
+  const [checkingUpdates, setCheckingUpdates] = useState(false);
+  const [updatingBinary, setUpdatingBinary] = useState<string | null>(null);
+  const [updateStatus, setUpdateStatus] = useState<string>("");
+  const [rollbackBinary, setRollbackBinary] = useState<string | null>(null);
+  // Android: GitHub latest yt-dlp tag vs the embedded engine version. The
+  // embedded engine can't self-update to an arbitrary tag, but it *can* be
+  // stale relative to upstream — surface that as a hint next to Update.
+  const [mobileLatestYtDlp, setMobileLatestYtDlp] = useState<string | null>(null);
+  const [checkingEngineUpdate, setCheckingEngineUpdate] = useState(false);
+  const [engineUpdateStatus, setEngineUpdateStatus] = useState<string>("");
   const [diagnosticsCopyStatus, setDiagnosticsCopyStatus] = useState<string | null>(null);
   const [backupStatus, setBackupStatus] = useState<string | null>(null);
   const [backupBusy, setBackupBusy] = useState(false);
@@ -357,6 +374,35 @@ function SettingsPage() {
       setWebQrUrl(await resolveLanWebUrl());
     } finally {
       setWebQrLoading(false);
+    }
+  }
+
+  /** Probe the local LAN server health endpoint and report latency. */
+  async function testLanServer() {
+    if (checkingLanHealth) return;
+    setCheckingLanHealth(true);
+    setLanHealth("Probing LAN server…");
+    try {
+      const token = displayLanToken?.trim();
+      const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {};
+      const started = performance.now();
+      const res = await fetch(`http://127.0.0.1:${settings.lan_port}/api/health`, {
+        headers,
+      });
+      const ms = Math.round(performance.now() - started);
+      if (!res.ok) {
+        setLanHealth(`LAN server responded with HTTP ${res.status} (${ms} ms).`);
+        return;
+      }
+      const health = (await res.json()) as { lan_url?: string; version?: string };
+      if (health.lan_url) setLanBaseUrl(health.lan_url);
+      setLanHealth(`LAN server OK (${ms} ms)${health.version ? ` — v${health.version}` : ""}.`);
+    } catch (e) {
+      setLanHealth(
+        e instanceof Error ? `LAN server unreachable: ${e.message}` : "LAN server unreachable",
+      );
+    } finally {
+      setCheckingLanHealth(false);
     }
   }
 
@@ -770,6 +816,97 @@ function SettingsPage() {
       clearTimeout(nudge);
       setUpdatingYtDlp(false);
       void refreshVersions();
+    }
+  }
+
+  // Android: check whether the embedded yt-dlp engine is behind upstream.
+  // The engine can't update to an arbitrary GitHub tag, but a stale engine
+  // gets blocked by sites — so compare and nudge the user to Update.
+  async function checkEngineUpdate() {
+    if (checkingEngineUpdate) return;
+    setCheckingEngineUpdate(true);
+    setEngineUpdateStatus("");
+    try {
+      const latest = await api.checkBinaryUpdates();
+      setMobileLatestYtDlp(latest.ytdlp_latest ?? null);
+      const current = binaryVersions?.ytdlp_version;
+      if (latest.ytdlp_latest && current && latest.ytdlp_latest !== current) {
+        setEngineUpdateStatus(
+          `Embedded yt-dlp v${current} is behind upstream v${latest.ytdlp_latest} — tap Update below.`,
+        );
+      } else if (latest.ytdlp_latest && !current) {
+        setEngineUpdateStatus("Could not read the embedded yt-dlp version.");
+      } else {
+        setEngineUpdateStatus("Embedded yt-dlp engine is up to date.");
+      }
+    } catch (e) {
+      setEngineUpdateStatus(e instanceof Error ? e.message : "Failed to check for engine updates");
+    } finally {
+      setCheckingEngineUpdate(false);
+    }
+  }
+
+  // #69: Check GitHub for the latest release versions of yt-dlp and gallery-dl.
+  async function checkForBinaryUpdates() {
+    if (checkingUpdates) return;
+    setCheckingUpdates(true);
+    setUpdateStatus("");
+    try {
+      const latest = await api.checkBinaryUpdates();
+      setLatestVersions(latest);
+      const available: string[] = [];
+      if (latest.ytdlp_latest && latest.ytdlp_latest !== binaryVersions?.ytdlp_version) {
+        available.push(`yt-dlp v${latest.ytdlp_latest}`);
+      }
+      if (
+        latest.gallery_dl_latest &&
+        latest.gallery_dl_latest !== binaryVersions?.gallery_dl_version
+      ) {
+        available.push(`gallery-dl v${latest.gallery_dl_latest}`);
+      }
+      if (available.length > 0) {
+        setUpdateStatus(`Updates available: ${available.join(", ")}`);
+      } else {
+        setUpdateStatus("All binaries are up to date.");
+      }
+    } catch (e) {
+      setUpdateStatus(e instanceof Error ? e.message : "Failed to check for updates");
+    } finally {
+      setCheckingUpdates(false);
+    }
+  }
+
+  // #69: Update a desktop binary with rollback support.
+  async function updateDesktopBinary(name: "yt-dlp" | "gallery-dl") {
+    if (updatingBinary) return;
+    setUpdatingBinary(name);
+    setUpdateStatus(`Updating ${name}…`);
+    try {
+      const result = await api.updateBinary(name);
+      setUpdateStatus(result.message);
+      if (result.updated) {
+        void refreshVersions();
+      }
+    } catch (e) {
+      setUpdateStatus(e instanceof Error ? e.message : `Failed to update ${name}`);
+    } finally {
+      setUpdatingBinary(null);
+    }
+  }
+
+  // #69: Rollback a binary to its .bak backup, if one exists.
+  async function rollbackDesktopBinary(name: "yt-dlp" | "gallery-dl") {
+    if (rollbackBinary) return;
+    setRollbackBinary(name);
+    setUpdateStatus(`Rolling back ${name}…`);
+    try {
+      const result = await api.rollbackBinary(name);
+      setUpdateStatus(result.message);
+      void refreshVersions();
+    } catch (e) {
+      setUpdateStatus(e instanceof Error ? e.message : `Failed to rollback ${name}`);
+    } finally {
+      setRollbackBinary(null);
     }
   }
 
@@ -1634,6 +1771,100 @@ function SettingsPage() {
               <Button variant="outline" size="sm" onClick={() => void refreshVersions()}>
                 Refresh versions
               </Button>
+              {/* #69: Binary update manager — desktop only. */}
+              {runtime === "desktop-tauri" && (
+                <div className="mt-2 space-y-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void checkForBinaryUpdates()}
+                      disabled={checkingUpdates}
+                    >
+                      {checkingUpdates ? "Checking…" : "Check for updates"}
+                    </Button>
+                    {latestVersions && (
+                      <p className="text-xs text-[var(--color-muted-foreground)]">
+                        Latest: yt-dlp {latestVersions.ytdlp_latest ?? "—"} · gallery-dl{" "}
+                        {latestVersions.gallery_dl_latest ?? "—"}
+                      </p>
+                    )}
+                  </div>
+                  {updateStatus && (
+                    <p className="text-xs text-[var(--color-muted-foreground)]">{updateStatus}</p>
+                  )}
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-medium">Auto-check on launch</p>
+                      <p className="text-xs text-[var(--color-muted-foreground)]">
+                        Check GitHub for new yt-dlp / gallery-dl releases weekly.
+                      </p>
+                    </div>
+                    <Switch.Root
+                      checked={hostSettings?.auto_check_binaries ?? true}
+                      onCheckedChange={(checked) =>
+                        patchHostSettings({ auto_check_binaries: checked })
+                      }
+                      className="h-5 w-9 shrink-0 rounded-full bg-[var(--color-secondary)] data-[state=checked]:bg-[var(--color-primary)]"
+                    >
+                      <Switch.Thumb className="block h-4 w-4 translate-x-0.5 rounded-full bg-white transition data-[state=checked]:translate-x-[18px]" />
+                    </Switch.Root>
+                  </div>
+                  <div className="space-y-2">
+                    {(["yt-dlp", "gallery-dl"] as const).map((name) => {
+                      const currentVersion =
+                        name === "yt-dlp"
+                          ? binaryVersions?.ytdlp_version
+                          : binaryVersions?.gallery_dl_version;
+                      const latestVersion =
+                        name === "yt-dlp"
+                          ? latestVersions?.ytdlp_latest
+                          : latestVersions?.gallery_dl_latest;
+                      const isUpToDate = latestVersion && currentVersion === latestVersion;
+                      const isUpdating = updatingBinary === name;
+                      const isRolling = rollbackBinary === name;
+                      return (
+                        <div
+                          key={name}
+                          className="flex items-center justify-between gap-3 rounded-md border border-[var(--color-border)] px-3 py-2"
+                        >
+                          <div>
+                            <p className="text-sm font-medium">{name}</p>
+                            <p className="text-xs text-[var(--color-muted-foreground)]">
+                              {isUpToDate
+                                ? `Up to date (v${currentVersion})`
+                                : `Current: ${currentVersion ?? "not installed"} · Latest: ${latestVersion ?? "—"}`}
+                            </p>
+                          </div>
+                          <div className="flex gap-2">
+                            {isUpToDate ? (
+                              <span className="text-xs text-green-500 self-center">✓</span>
+                            ) : (
+                              <Button
+                                variant="default"
+                                size="sm"
+                                onClick={() => void updateDesktopBinary(name)}
+                                disabled={isUpdating || isRolling}
+                              >
+                                {isUpdating ? "Updating…" : "Update"}
+                              </Button>
+                            )}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => void rollbackDesktopBinary(name)}
+                              disabled={isUpdating || isRolling}
+                              title="Rollback to previous version"
+                            >
+                              {isRolling ? "Rolling…" : "Rollback"}
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
               {runtime === "mobile-tauri" &&
                 (!binaryVersions?.ffmpeg_version || !binaryVersions?.ffprobe_version) &&
                 !versionsLoading && (
@@ -1686,9 +1917,25 @@ function SettingsPage() {
                       it. Tap Update below.
                     </p>
                   )}
-                  <div>
+                  {mobileLatestYtDlp &&
+                    binaryVersions?.ytdlp_version &&
+                    mobileLatestYtDlp !== binaryVersions.ytdlp_version && (
+                      <p className="text-xs text-yellow-400">
+                        Embedded yt-dlp v{binaryVersions.ytdlp_version} is behind upstream v
+                        {mobileLatestYtDlp} — tap Update below.
+                      </p>
+                    )}
+                  <div className="flex flex-wrap items-center gap-2">
                     <Button
                       variant="outline"
+                      size="sm"
+                      onClick={() => void checkEngineUpdate()}
+                      disabled={checkingEngineUpdate}
+                    >
+                      {checkingEngineUpdate ? "Checking…" : "Check for engine update"}
+                    </Button>
+                    <Button
+                      variant="default"
                       size="sm"
                       onClick={() => void updateYtDlpEngine()}
                       disabled={updatingYtDlp}
@@ -1696,6 +1943,11 @@ function SettingsPage() {
                       {updatingYtDlp ? "Updating…" : "Update yt-dlp engine"}
                     </Button>
                   </div>
+                  {engineUpdateStatus && (
+                    <p className="text-xs text-[var(--color-muted-foreground)]">
+                      {engineUpdateStatus}
+                    </p>
+                  )}
                   <p className="text-xs text-[var(--color-muted-foreground)]">
                     For sites without native support (e.g. Chaturbate live streams), use{" "}
                     <strong>Remote LAN</strong> mode to connect to your desktop host.
@@ -2258,7 +2510,23 @@ function SettingsPage() {
                         >
                           Regenerate
                         </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => void testLanServer()}
+                          disabled={checkingLanHealth}
+                        >
+                          {checkingLanHealth ? "Probing…" : "Test server"}
+                        </Button>
                       </div>
+                      {lanBaseUrl && (
+                        <p className="text-xs break-all">
+                          Server address: <code>{lanBaseUrl}/</code>
+                        </p>
+                      )}
+                      {lanHealth && (
+                        <p className="text-xs text-[var(--color-muted-foreground)]">{lanHealth}</p>
+                      )}
                       {webQrUrl && (
                         <div className="space-y-1">
                           <div className="inline-block rounded-md bg-white p-3">
