@@ -262,7 +262,36 @@ impl AppState {
     }
 
     pub fn list_downloads(&self) -> AppResult<Vec<DownloadJob>> {
-        self.db.list_download_jobs()
+        let mut jobs = self.db.list_download_jobs()?;
+        // Transient queue position for in-flight jobs so mobile can show
+        // "#N in queue". Derived from queue order at read time — no schema
+        // change, no persistence. `None` for terminal states.
+        let mut queued_ids: Vec<String> = jobs
+            .iter()
+            .filter(|j| {
+                matches!(
+                    j.status,
+                    crate::models::DownloadStatus::Pending
+                        | crate::models::DownloadStatus::Active
+                        | crate::models::DownloadStatus::WaitingForWifi
+                )
+            })
+            .map(|j| j.id.clone())
+            .collect();
+        // Oldest first = front of the queue. `list_download_jobs` returns
+        // newest-first, so reverse for position assignment.
+        queued_ids.reverse();
+        if !queued_ids.is_empty() {
+            let by_id: std::collections::HashMap<String, u32> = queued_ids
+                .into_iter()
+                .enumerate()
+                .map(|(i, id)| (id, (i + 1) as u32))
+                .collect();
+            for job in jobs.iter_mut() {
+                job.queue_position = by_id.get(&job.id).copied();
+            }
+        }
+        Ok(jobs)
     }
 
     pub fn cancel_download(&self, id: &str) -> AppResult<()> {

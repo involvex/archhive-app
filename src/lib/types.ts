@@ -60,6 +60,13 @@ export interface DownloadJob {
   created_at: string;
   retry_count?: number;
   last_retry_at?: string;
+  /**
+   * 1-based position in the active queue (pending + active jobs ahead of this
+   * one, plus one). `null` when the backend hasn't computed it yet — e.g. the
+   * job was just created and the queue snapshot hasn't arrived. Mobile shows
+   * this as "#N in queue" so users know how long they'll wait.
+   */
+  queue_position?: number | null;
 }
 
 export interface Scene {

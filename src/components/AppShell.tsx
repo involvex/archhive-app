@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Home,
   Compass,
@@ -8,21 +8,24 @@ import {
   Settings,
   Puzzle,
   Radio,
-  Search,
   Sun,
   Moon,
   Monitor,
   Contrast,
   Copy,
+  Plus,
 } from "lucide-react";
 import { isAmoled, setAmoled } from "@/lib/amoled";
 import { MobileSearchSheet } from "@/components/MobileSearchSheet";
+import { MobileQuickActionsSheet } from "@/components/MobileQuickActionsSheet";
+import { OfflineBanner } from "@/components/OfflineBanner";
 import { resolveAppVersion } from "@/lib/appVersion";
 import { getPluginNavItems } from "@/lib/plugins/loader";
 import { cn } from "@/lib/utils";
 import { useKeyboardShortcuts } from "@/lib/hooks/useKeyboardShortcuts";
 import { registerDefaultShortcuts } from "@/lib/shortcuts/defaults";
 import { useNetworkMonitor } from "@/lib/hooks/useNetworkMonitor";
+import { vibrateTick } from "@/lib/haptics";
 import { ShortcutBadge } from "@/components/ui/shortcut-badge";
 import { CommandPalette } from "@/components/CommandPalette";
 import { ShortcutHelp } from "@/components/ShortcutHelp";
@@ -60,7 +63,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
   const location = useLocation();
   const desktopNav = [...desktopNavItems, ...pluginNavItems];
-  const mobileNav = [...mobileNavItems, ...pluginNavItems];
+  // Memoised so swipe-navigation callbacks don't re-bind every frame — the
+  // array contents never change (plugin nav is module-scoped).
+  const mobileNav = useMemo(() => [...mobileNavItems, ...pluginNavItems], []);
   const [appVersion, setAppVersion] = useState("");
   const [sceneCount, setSceneCount] = useState<number | null>(null);
   // Q14: duplicate-group badge (null = unknown/failed, hidden).
@@ -156,6 +161,109 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const showKeyboardUi = !isMobile;
   // #50: mobile global-search sheet (Q32 replacement), opened via FAB.
   const [searchOpen, setSearchOpen] = useState(false);
+  // Mobile FAB: long-press opens a quick-actions sheet (paste URL, scan QR,
+  // new download). Short tap keeps opening the search sheet for parity with
+  // the old behaviour — the sheet is reachable from the long-press menu too.
+  const [quickActionsOpen, setQuickActionsOpen] = useState(false);
+  const fabDownAt = useRef(0);
+  const fabTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fabSwiping = useRef(false);
+  const fabLongFired = useRef(false);
+  // Bottom-nav swipe navigation: track horizontal drag across the tab bar to
+  // switch tabs without lifting the thumb.
+  const navDownIndex = useRef<number | null>(null);
+  const navDownX = useRef(0);
+  const navSwipeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Active-tab double-tap → scroll to top.
+  const tapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const navigateTab = useCallback(
+    (to: string) => {
+      if (to === location.pathname || location.pathname.startsWith(to + "/")) return;
+      vibrateTick(15);
+      navigate({ to });
+    },
+    [location.pathname, navigate],
+  );
+
+  const onNavPointerDown = useCallback((e: React.PointerEvent) => {
+    if (e.pointerType !== "touch") return;
+    const target = e.target as HTMLElement;
+    const tab = target.closest("[data-nav-tab]") as HTMLElement | null;
+    if (!tab) return;
+    const idx = Array.from(tab.parentElement?.children ?? []).indexOf(tab);
+    if (idx < 0) return;
+    navDownIndex.current = idx;
+    navDownX.current = e.clientX;
+    navSwipeTimer.current = window.setTimeout(() => {
+      // Long-press on a tab is a no-op here (tabs are single-tap targets);
+      // we only arm the swipe so a quick flick switches tabs.
+    }, 120);
+  }, []);
+
+  const onNavPointerMove = useCallback(
+    (e: React.PointerEvent) => {
+      if (navDownIndex.current == null || e.pointerType !== "touch") return;
+      const dx = e.clientX - navDownX.current;
+      if (Math.abs(dx) < 24) return;
+      const tabs = navDownIndex.current;
+      const dir = dx > 0 ? 1 : -1;
+      const next = Math.max(0, Math.min(mobileNav.length - 1, tabs + dir));
+      if (next !== tabs) {
+        if (navSwipeTimer.current) window.clearTimeout(navSwipeTimer.current);
+        navDownIndex.current = next;
+        navDownX.current = e.clientX;
+        navigateTab(mobileNav[next].to);
+      }
+    },
+    [mobileNav, navigateTab],
+  );
+
+  const onNavPointerUp = useCallback(() => {
+    navDownIndex.current = null;
+    if (navSwipeTimer.current) {
+      window.clearTimeout(navSwipeTimer.current);
+      navSwipeTimer.current = null;
+    }
+  }, []);
+
+  const onNavPointerCancel = onNavPointerUp;
+
+  const onFabPointerDown = useCallback((e: React.PointerEvent) => {
+    if (e.pointerType !== "touch") return;
+    fabDownAt.current = e.clientX;
+    fabLongFired.current = false;
+    fabSwiping.current = false;
+    fabTimer.current = window.setTimeout(() => {
+      fabLongFired.current = true;
+      fabSwiping.current = true;
+      vibrateTick(25);
+      setQuickActionsOpen(true);
+    }, 320);
+  }, []);
+
+  const onFabPointerUp = useCallback(() => {
+    if (fabTimer.current) {
+      window.clearTimeout(fabTimer.current);
+      fabTimer.current = null;
+    }
+    if (!fabLongFired.current) {
+      // Short tap: search sheet (original behaviour).
+      vibrateTick(10);
+      setSearchOpen(true);
+    }
+    fabDownAt.current = 0;
+    fabSwiping.current = false;
+  }, []);
+
+  const fabReset = useCallback(() => {
+    if (fabTimer.current) {
+      window.clearTimeout(fabTimer.current);
+      fabTimer.current = null;
+    }
+    fabDownAt.current = 0;
+    fabSwiping.current = false;
+  }, []);
 
   return (
     <div className="flex min-h-screen max-w-[100vw] overflow-x-hidden">
@@ -250,8 +358,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <main className="flex-1 overflow-x-hidden p-4 pb-24 md:p-6 md:pb-6">{children}</main>
-        <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-[var(--color-border)] bg-[var(--color-card)] pb-[env(safe-area-inset-bottom)]">
+        <main className="flex-1 overflow-x-hidden p-4 pb-24 pt-safe-top landscape-side-pad md:p-6 md:pb-6">
+          <OfflineBanner />
+          {children}
+        </main>
+        <nav
+          className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-[var(--color-border)] bg-[var(--color-card)] pb-[env(safe-area-inset-bottom)]"
+          onPointerDown={onNavPointerDown}
+          onPointerMove={onNavPointerMove}
+          onPointerUp={onNavPointerUp}
+          onPointerCancel={onNavPointerCancel}
+          onPointerLeave={onNavPointerCancel}
+        >
           <div className="flex justify-around pt-2 pb-1">
             {mobileNav.map(({ to, label, icon: Icon }) => {
               const isActive = location.pathname === to || location.pathname.startsWith(to + "/");
@@ -270,7 +388,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <Link
                   key={to}
                   to={to}
+                  data-nav-tab
                   aria-label={badge != null ? `${label}, ${badge}` : label}
+                  onPointerDown={() => {
+                    // Tapping an already-active tab scrolls the view to top —
+                    // the standard mobile expectation, and cheap to gate.
+                    if (isActive) {
+                      if (tapTimer.current) window.clearTimeout(tapTimer.current);
+                      tapTimer.current = window.setTimeout(() => {
+                        window.scrollTo({ top: 0, behavior: "smooth" });
+                      }, 220);
+                    }
+                  }}
                   className={cn(
                     "flex min-w-0 flex-1 flex-col items-center gap-1 px-2 py-2 text-[11px] font-medium transition-colors",
                     isActive
@@ -304,12 +433,42 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <>
           <button
             type="button"
-            onClick={() => setSearchOpen(true)}
-            aria-label="Search"
-            className="md:hidden fixed right-4 bottom-20 z-40 rounded-full bg-[var(--color-primary)] p-3.5 text-[var(--color-primary-foreground)] shadow-lg transition-transform active:scale-95"
+            onPointerDown={onFabPointerDown}
+            onPointerUp={onFabPointerUp}
+            onPointerCancel={fabReset}
+            onPointerLeave={fabReset}
+            aria-label="Quick actions"
+            aria-expanded={quickActionsOpen}
+            aria-haspopup="dialog"
+            className={cn(
+              "md:hidden fixed right-4 z-40 rounded-full bg-[var(--color-primary)] text-[var(--color-primary-foreground)] shadow-lg transition-transform",
+              quickActionsOpen ? "scale-95" : "active:scale-95",
+              fabSwiping ? "scale-90" : "",
+            )}
+            style={{
+              bottom: "calc(5.5rem + env(safe-area-inset-bottom))",
+              // Lift the FAB above the open quick-actions sheet; slide down
+              // while the sheet is open so it stays reachable.
+              transform: `translateY(${quickActionsOpen ? 8 : 0}px)`,
+            }}
           >
-            <Search className="h-5 w-5" />
+            <div className="relative p-3.5">
+              <Plus
+                className={cn(
+                  "h-5 w-5 transition-transform duration-200",
+                  quickActionsOpen ? "rotate-45" : "rotate-0",
+                )}
+              />
+            </div>
           </button>
+          {quickActionsOpen && (
+            <MobileQuickActionsSheet
+              onClose={() => {
+                setQuickActionsOpen(false);
+                fabReset();
+              }}
+            />
+          )}
           {searchOpen && <MobileSearchSheet onClose={() => setSearchOpen(false)} />}
         </>
       )}

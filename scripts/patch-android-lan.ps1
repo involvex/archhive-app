@@ -1,4 +1,7 @@
 # Patches generated Android project: cleartext HTTP + media storage permissions.
+# NOTE: WebView userAgent + bundle.android.minSdkVersion now live declaratively
+# in src-tauri/tauri.android.conf.json (auto-merged by the Tauri CLI). Only
+# manifest/gradle entries with no config equivalent are patched here.
 param(
     [string]$GradlePath = (Join-Path $PSScriptRoot "..\src-tauri\gen\android\app\build.gradle.kts"),
     [string]$ManifestPath = (Join-Path $PSScriptRoot "..\src-tauri\gen\android\app\src\main\AndroidManifest.xml")

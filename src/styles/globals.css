@@ -140,3 +140,79 @@ body {
 .scrollbar-hide::-webkit-scrollbar {
   display: none;
 }
+
+/* ---- Mobile / touch-first ergonomics ---- */
+
+/* Never show the default Android WebView tap highlight (it fights our
+   active:scale press feedback and looks dated). */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Let the OS handle scroll momentum on touch; prevents "stuck" scrollbars. */
+html,
+body {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+/* Touch targets: enforce a 44px minimum hit area on interactive controls.
+   Tailwind's default touch-action is auto (which allows zoom); we want
+   plain pan so buttons don't accidentally pinch-zoom the UI. */
+button,
+a,
+[role="button"],
+input[type="button"],
+input[type="submit"],
+input[type="reset"] {
+  touch-action: manipulation;
+  min-height: 44px;
+  min-width: 44px;
+}
+
+/* Icon-only buttons are exempt from min-width (they get min-height + padding). */
+button:is(:has(> svg:only-child):not(:has(> span))),
+[role="button"]:is(:has(> svg:only-child):not(:has(> span))) {
+  min-width: 0;
+  padding: 0.5rem;
+}
+
+/* Top safe area — notch / status bar. Only meaningful on mobile, but harmless
+   on desktop (inset is 0). */
+.pt-safe-top {
+  padding-top: max(0.75rem, env(safe-area-inset-top));
+}
+
+/* Landscape phones get more breathing room on the sides. */
+@media (orientation: landscape) and (max-width: 767px) and (min-height: 360px) {
+  .landscape-side-pad {
+    padding-left: max(1rem, env(safe-area-inset-left));
+    padding-right: max(1rem, env(safe-area-inset-right));
+  }
+}
+
+/* Coarse-pointer (touch) devices: reveal hover-only overlays on tap. */
+@media (pointer: coarse) {
+  /* SceneCard overlay buttons (Play/More) — hidden via
+     [@media(hover:none)]:hidden on desktop. */
+  .group div[class*="opacity-0"] {
+    opacity: 1 !important;
+  }
+  /* SceneCard watch overlay. */
+  .group .absolute.inset-0 {
+    opacity: 1 !important;
+  }
+}
+
+/* Accessibility: honor "reduce motion" — strip decorative animations. */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+  .animate-fade-in,
+  .animate-fade-in-scale {
+    animation: none;
+  }
+}

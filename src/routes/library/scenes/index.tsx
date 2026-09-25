@@ -17,6 +17,7 @@ import { SkeletonGrid } from "@/components/SkeletonGrid";
 import { ErrorState } from "@/components/ErrorState";
 import { EmptyState } from "@/components/EmptyState";
 import { usePullToRefresh } from "@/lib/hooks/usePullToRefresh";
+import { useIsLandscape } from "@/lib/hooks/useMediaQuery";
 import { vibrateTick } from "@/lib/haptics";
 import { registerShortcut, unregisterShortcut } from "@/lib/shortcuts/registry";
 import { Film, LayoutGrid, List, RefreshCw, X, Zap } from "lucide-react";
@@ -108,6 +109,12 @@ function ScenesPage() {
   const [deleteTarget, setDeleteTarget] = useState<Scene | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  // Landscape phones get an extra column — portrait stays at 3 so thumbs
+  // stay tappable. (useIsLandscape gates on width so tablets are unaffected.)
+  const isLandscape = useIsLandscape();
+  const gridCols = isLandscape
+    ? "grid grid-cols-4 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3"
+    : "grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3";
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -755,7 +762,7 @@ function ScenesPage() {
           description="Try adjusting your search or filter criteria."
         />
       ) : viewMode === "grid" ? (
-        <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+        <div className={gridCols}>
           {scenes.map((scene) => {
             const thumbSrc = sceneThumbUrl(scene);
             const isSelected = selectedIds.has(scene.id);

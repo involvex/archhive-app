@@ -116,6 +116,11 @@ pub struct DownloadJob {
     pub retry_count: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_retry_at: Option<String>,
+    /// 1-based position in the active queue (pending + active jobs ahead,
+    /// plus one). `None` when the backend hasn't computed it yet. Mobile
+    /// surfaces this as "#N in queue" so users know how long they'll wait.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub queue_position: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

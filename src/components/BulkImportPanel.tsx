@@ -5,6 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ClipboardPaste } from "lucide-react";
 import * as Switch from "@radix-ui/react-switch";
+import { useSettingsStore } from "@/lib/stores/settings";
+import { checkDownloadGuards, type GuardBlock } from "@/lib/downloads/guards";
+import { DownloadGuardDialog } from "@/components/DownloadGuardDialog";
 
 interface BulkImportPanelProps {
   onQueued: () => void;
@@ -35,7 +38,10 @@ export function BulkImportPanel({ onQueued }: BulkImportPanelProps) {
     }
   }
 
-  async function queueAll() {
+  const wifiOnly = useSettingsStore((s) => s.settings.download_on_wifi_only ?? true);
+  const [guard, setGuard] = useState<GuardBlock>(null);
+
+  async function doQueueAll() {
     const urls = parseBulkUrlsFromState();
     if (urls.length === 0) return;
     setImporting(true);
@@ -55,6 +61,25 @@ export function BulkImportPanel({ onQueued }: BulkImportPanelProps) {
     } finally {
       setImporting(false);
     }
+  }
+
+  async function queueAll() {
+    const urls = parseBulkUrlsFromState();
+    if (urls.length === 0) return;
+    // Metered/storage guard: check free space once before queueing.
+    let freeBytes: number | null;
+    try {
+      const stats = await api.getLibraryStats();
+      freeBytes = stats.free_space_bytes;
+    } catch {
+      freeBytes = null;
+    }
+    const block = checkDownloadGuards({ wifiOnly, freeBytes });
+    if (block) {
+      setGuard(block);
+      return;
+    }
+    await doQueueAll();
   }
 
   function parseBulkUrlsFromState(): string[] {
@@ -143,6 +168,17 @@ export function BulkImportPanel({ onQueued }: BulkImportPanelProps) {
         )}
         {status && <p className="text-sm">{status}</p>}
       </CardContent>
+      {guard && (
+        <DownloadGuardDialog
+          block={guard}
+          actionLabel={guard.kind === "cellular" ? "Queue anyway" : "Queue anyway"}
+          onConfirm={() => {
+            setGuard(null);
+            void doQueueAll();
+          }}
+          onCancel={() => setGuard(null)}
+        />
+      )}
     </Card>
   );
 }

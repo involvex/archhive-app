@@ -1,8 +1,24 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "ArcHive",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 800,
+        "minHeight": 600,
+        "userAgent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36"
+      }
+    ]
+  },
   "bundle": {
     "resources": {
       "../dist": "lan-ui"
+    },
+    "android": {
+      "minSdkVersion": 24
     }
   }
 }

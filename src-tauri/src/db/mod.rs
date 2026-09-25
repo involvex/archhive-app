@@ -266,6 +266,7 @@ impl Database {
             created_at: Utc::now().to_rfc3339(),
             retry_count: 0,
             last_retry_at: None,
+            queue_position: None,
         };
         let conn = self
             .conn
@@ -451,6 +452,7 @@ impl Database {
                 created_at: row.get(8)?,
                 retry_count: row.get(9)?,
                 last_retry_at: row.get(10)?,
+                queue_position: None,
             })
         })?;
         rows.collect::<Result<Vec<_>, _>>().map_err(AppError::from)
@@ -488,6 +490,7 @@ impl Database {
                     created_at: row.get(8)?,
                     retry_count: row.get(9)?,
                     last_retry_at: row.get(10)?,
+                    queue_position: None,
                 })
             },
         )
@@ -1416,7 +1419,9 @@ impl Database {
 
     /// Shared library image walk (jpg/jpeg, max_depth 5) used by orphan scan
     /// and thumb-cache totals so the WalkDir scaffolding lives in one place.
-    fn walk_library_images(library_path: &std::path::Path) -> Vec<(std::path::PathBuf, u64, String)> {
+    fn walk_library_images(
+        library_path: &std::path::Path,
+    ) -> Vec<(std::path::PathBuf, u64, String)> {
         use walkdir::WalkDir;
 
         if !library_path.exists() {
@@ -1476,10 +1481,7 @@ impl Database {
         for (path, size, _) in Self::walk_library_images(lib) {
             let p_str = path.to_string_lossy().to_string();
             if !db_paths.contains(&p_str) {
-                orphans.push(crate::models::OrphanSidecar {
-                    path: p_str,
-                    size,
-                });
+                orphans.push(crate::models::OrphanSidecar { path: p_str, size });
             }
         }
         Ok(orphans)
