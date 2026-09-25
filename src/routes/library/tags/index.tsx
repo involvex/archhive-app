@@ -1,9 +1,9 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api/client";
 import { Button } from "@/components/ui/button";
 import type { Tag } from "@/lib/types";
-import { Check, Filter } from "lucide-react";
+import { ArrowUpRight, Check, Filter } from "lucide-react";
 
 export const Route = createFileRoute("/library/tags/")({
   component: TagsPage,
@@ -53,24 +53,40 @@ function TagsPage() {
         {tags.map((tag) => {
           const checked = selected.has(tag.name);
           return (
-            <button
+            <span
               key={tag.id}
-              type="button"
-              onClick={() => toggle(tag.name)}
-              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm transition-colors ${
+              className={`inline-flex items-center gap-1 rounded-full border pr-1 pl-3 py-1 text-sm transition-colors ${
                 checked
                   ? "border-[var(--color-primary)] bg-[var(--color-primary)]/10"
                   : "border-[var(--color-border)] bg-[var(--color-card)] hover:border-[var(--color-primary)]"
               }`}
             >
-              {checked ? (
-                <Check className="h-3 w-3 text-[var(--color-primary)]" />
-              ) : (
-                <span className="h-3 w-3 rounded-sm border border-[var(--color-border)]" />
-              )}
-              {tag.name}
-              <span className="ml-0.5 text-[var(--color-muted-foreground)]">{tag.scene_count}</span>
-            </button>
+              <button
+                type="button"
+                onClick={() => toggle(tag.name)}
+                className="inline-flex items-center gap-1.5"
+                aria-pressed={checked}
+              >
+                {checked ? (
+                  <Check className="h-3 w-3 text-[var(--color-primary)]" />
+                ) : (
+                  <span className="h-3 w-3 rounded-sm border border-[var(--color-border)]" />
+                )}
+                {tag.name}
+                <span className="ml-0.5 text-[var(--color-muted-foreground)]">
+                  {tag.scene_count}
+                </span>
+              </button>
+              <Link
+                to="/library/tags/$tagId"
+                params={{ tagId: tag.id }}
+                className="flex min-h-9 min-w-9 items-center justify-center rounded-full text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)] hover:text-[var(--color-foreground)]"
+                title={`Open ${tag.name}`}
+                aria-label={`Open ${tag.name}`}
+              >
+                <ArrowUpRight className="h-3.5 w-3.5" />
+              </Link>
+            </span>
           );
         })}
       </div>

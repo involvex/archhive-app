@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api/client";
 import type { Performer } from "@/lib/types";
@@ -11,7 +11,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Filter, Users, Download, Camera, Table2 } from "lucide-react";
+import { ArrowUpRight, Filter, Users, Download, Camera, Table2 } from "lucide-react";
 
 export const Route = createFileRoute("/library/performers/")({
   validateSearch: (search: Record<string, unknown>): { q?: string } => ({
@@ -214,12 +214,22 @@ function PerformersPage() {
                     <Camera className="h-4 w-4 text-white" />
                   </div>
                 </button>
-                <div>
+                <div className="min-w-0 flex-1">
                   <p className="font-medium">{p.name}</p>
                   <p className="text-xs text-[var(--color-muted-foreground)]">
                     {p.scene_count} scenes
                   </p>
                 </div>
+                <Link
+                  to="/library/performers/$performerId"
+                  params={{ performerId: p.id }}
+                  onClick={(e) => e.stopPropagation()}
+                  className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-md text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)] hover:text-[var(--color-foreground)]"
+                  title={`Open ${p.name}`}
+                  aria-label={`Open ${p.name}`}
+                >
+                  <ArrowUpRight className="h-4 w-4" />
+                </Link>
               </CardContent>
             </Card>
           );

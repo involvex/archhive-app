@@ -1,10 +1,12 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api/client";
-import type { LibraryStats } from "@/lib/types";
+import type { LibraryStats, Scene } from "@/lib/types";
+import { toWatchMap, type WatchMap } from "@/lib/watch";
+import { ContinueWatchingRail } from "@/components/ContinueWatchingRail";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Film, FolderOpen, RefreshCw, Tags, Users, GitMerge, Folder } from "lucide-react";
+import { Film, FolderOpen, RefreshCw, Tags, Users, GitMerge, Folder, Clock } from "lucide-react";
 
 export const Route = createFileRoute("/library/")({
   component: LibraryHubPage,
@@ -25,12 +27,20 @@ function formatBytes(bytes: number): string {
 function LibraryHubPage() {
   const [stats, setStats] = useState<LibraryStats | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [scenes, setScenes] = useState<Scene[]>([]);
+  const [watchMap, setWatchMap] = useState<WatchMap>(new Map());
 
   const refresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      const s = await api.getLibraryStats();
+      const [s, allScenes, progress] = await Promise.all([
+        api.getLibraryStats(),
+        api.listScenes().catch(() => [] as Scene[]),
+        api.listWatchProgress().catch(() => []),
+      ]);
       setStats(s);
+      setScenes(allScenes);
+      setWatchMap(toWatchMap(progress));
     } catch {
       setStats(null);
     } finally {
@@ -118,7 +128,23 @@ function LibraryHubPage() {
         </Card>
       </div>
 
+      <ContinueWatchingRail scenes={scenes} watchMap={watchMap} />
+
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <Link to="/library/history" className="block">
+          <Card className="cursor-pointer hover:border-[var(--color-primary)] hover:bg-[var(--color-accent)]/5 transition-colors h-full">
+            <CardContent className="flex items-center gap-3 p-4 pt-4">
+              <Clock className="h-5 w-5 text-[var(--color-primary)] shrink-0" />
+              <div>
+                <p className="font-semibold">History</p>
+                <p className="text-xs text-[var(--color-muted-foreground)]">
+                  Resume where you left off
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        </Link>
+
         <Link to="/library/scenes" className="block">
           <Card className="cursor-pointer hover:border-[var(--color-primary)] hover:bg-[var(--color-accent)]/5 transition-colors h-full">
             <CardContent className="flex items-center gap-3 p-4 pt-4">
