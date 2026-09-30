@@ -1513,8 +1513,27 @@ impl AppState {
             performer_count: performers.len() as u64,
             tag_count: tags.len() as u64,
             total_size_bytes: total_size,
-            free_space_bytes: 0,
+            free_space_bytes: Self::available_space_bytes(library_dir),
         })
+    }
+
+    /// Free space for the volume containing `path`. Falls back to the app
+    /// data dir when the library path is unreadable (e.g. removable media
+    /// ejected). Returns 0 only when neither can be statted — callers treat
+    /// 0 as critically low, so a real measurement matters on Android where
+    /// the previous hardcoded 0 triggered a false "0 B free" warning.
+    fn available_space_bytes(path: &std::path::Path) -> u64 {
+        if let Ok(free) = fs2::available_space(path) {
+            return free;
+        }
+        // Library path may not exist yet on first run — try its parent, then
+        // the app data dir which always exists.
+        if let Some(parent) = path.parent() {
+            if let Ok(free) = fs2::available_space(parent) {
+                return free;
+            }
+        }
+        0
     }
 
     pub fn static_ui_path(&self) -> Option<PathBuf> {

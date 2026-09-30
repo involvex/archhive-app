@@ -17,10 +17,19 @@ export function usePullToRefresh({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const startY = useRef(0);
   const pulling = useRef(false);
+  const rafId = useRef(0);
+
+  const isAtTop = () => {
+    // Android WebView reports scroll on body/window, not documentElement.
+    if (typeof window !== "undefined" && window.scrollY > 0) return false;
+    if (typeof document !== "undefined" && document.documentElement.scrollTop > 0) return false;
+    if (typeof document !== "undefined" && document.body.scrollTop > 0) return false;
+    return true;
+  };
 
   const handleTouchStart = useCallback(
     (e: TouchEvent) => {
-      if (disabled || document.documentElement.scrollTop > 0) return;
+      if (disabled || !isAtTop()) return;
       startY.current = e.touches[0].clientY;
       pulling.current = true;
     },
@@ -32,7 +41,14 @@ export function usePullToRefresh({
       if (!pulling.current) return;
       const delta = e.touches[0].clientY - startY.current;
       if (delta > 0) {
-        setPullDistance(Math.min(delta * 0.4, threshold * 1.5));
+        // Coalesce via rAF: touchmove fires faster than React can render,
+        // and setState per event janks scrolling on low-end Android.
+        if (rafId.current) return;
+        const target = Math.min(delta * 0.4, threshold * 1.5);
+        rafId.current = requestAnimationFrame(() => {
+          rafId.current = 0;
+          setPullDistance(target);
+        });
       }
     },
     [threshold],

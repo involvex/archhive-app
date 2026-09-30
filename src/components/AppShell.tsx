@@ -266,7 +266,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <div className="flex min-h-screen max-w-[100vw] overflow-x-hidden">
+    <div className="flex min-h-dvh max-w-[100vw] overflow-x-clip">
       <aside className="hidden md:flex w-56 shrink-0 flex-col border-r border-[var(--color-border)] bg-[var(--color-card)] p-4">
         <div className="mb-6 px-2">
           <h1 className="text-lg font-bold tracking-tight">ArcHive</h1>
@@ -358,7 +358,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <main className="flex-1 overflow-x-hidden p-4 pb-24 pt-safe-top landscape-side-pad md:p-6 md:pb-6">
+        <main className="flex-1 overflow-x-clip p-4 pb-24 pt-safe-top landscape-side-pad md:p-6 md:pb-6">
           <OfflineBanner />
           {children}
         </main>
