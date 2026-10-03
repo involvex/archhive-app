@@ -57,6 +57,20 @@ import { vibrateTick } from "../haptics";
 import { useSettingsStore } from "../stores/settings";
 import { isDesktopTauri, isTauri } from "../tauri";
 
+/**
+ * Guard scraped/resolved media URLs before they reach `<video src>` or
+ * `<iframe src>`. Only absolute `http(s)` URLs are allowed; anything else
+ * (`javascript:`, `data:`, `file:`, relative paths, empty) becomes `""` so
+ * callers treat it as "no stream" and fall back to the embed/error path.
+ * Non-web protocols (e.g. `blob:`, `data:media`) are rejected by design.
+ */
+export function safeMediaUrl(value: unknown): string {
+  if (typeof value !== "string") return "";
+  const trimmed = value.trim();
+  if (!/^https?:\/\//i.test(trimmed)) return "";
+  return trimmed;
+}
+
 function getRemoteBase(): string | null {
   const { settings } = useSettingsStore.getState();
   const host = settings.remote_host?.replace(/\/$/, "");
@@ -701,24 +715,28 @@ export const api = {
   },
 
   async resolveStreamUrl(url: string): Promise<string> {
-    if (shouldUseRemoteApi()) {
-      const res = await remoteFetch<{ stream_url: string }>("/api/media/stream-url", {
-        method: "POST",
-        body: JSON.stringify({ url }),
-      });
-      return res.stream_url;
-    }
-    return localInvoke<string>("resolve_stream_url", { url });
+    const raw = shouldUseRemoteApi()
+      ? (
+          await remoteFetch<{ stream_url: string }>("/api/media/stream-url", {
+            method: "POST",
+            body: JSON.stringify({ url }),
+          })
+        ).stream_url
+      : await localInvoke<string>("resolve_stream_url", { url });
+    return safeMediaUrl(raw);
   },
 
   async resolveLivestream(url: string): Promise<{ stream_url: string; embed_url: string }> {
-    if (shouldUseRemoteApi()) {
-      return remoteFetch<{ stream_url: string; embed_url: string }>("/api/media/livestream", {
-        method: "POST",
-        body: JSON.stringify({ url }),
-      });
-    }
-    return localInvoke<{ stream_url: string; embed_url: string }>("resolve_livestream", { url });
+    const raw = shouldUseRemoteApi()
+      ? await remoteFetch<{ stream_url: string; embed_url: string }>("/api/media/livestream", {
+          method: "POST",
+          body: JSON.stringify({ url }),
+        })
+      : await localInvoke<{ stream_url: string; embed_url: string }>("resolve_livestream", {
+          url,
+        });
+    // Security: embed/stream URLs land in <iframe src> / <video src>.
+    return { stream_url: safeMediaUrl(raw.stream_url), embed_url: safeMediaUrl(raw.embed_url) };
   },
 
   async ensurePerformer(name: string): Promise<Performer> {

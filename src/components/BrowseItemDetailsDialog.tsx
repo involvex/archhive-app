@@ -245,7 +245,7 @@ export function BrowseItemDetailsDialog({ item, open, onClose }: BrowseItemDetai
       <div
         role="dialog"
         aria-modal="true"
-        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] p-4 shadow-xl"
+        className="max-h-[92dvh] w-full max-w-lg overflow-y-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] p-4 shadow-xl"
       >
         <BrowseItemDetailsBody key={item.id} item={item} onClose={onClose} />
       </div>

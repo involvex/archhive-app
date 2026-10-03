@@ -8,6 +8,7 @@ import {
   Settings,
   Puzzle,
   Radio,
+  Newspaper,
   Sun,
   Moon,
   Monitor,
@@ -37,6 +38,7 @@ import type { AppTheme } from "@/lib/types";
 const desktopNavItems = [
   { to: "/", label: "Home", icon: Home, shortcut: "Ctrl+1" },
   { to: "/browse", label: "Browse", icon: Compass, shortcut: "Ctrl+2" },
+  { to: "/feed", label: "Feed", icon: Newspaper },
   { to: "/library", label: "Library", icon: Library, shortcut: "Ctrl+3" },
   { to: "/live", label: "Live", icon: Radio, shortcut: "Ctrl+4" },
   { to: "/downloads", label: "Downloads", icon: Download, shortcut: "Ctrl+5" },

@@ -157,9 +157,7 @@ impl SiteAdapter for PornhubAdapter {
     async fn browse(&self, ctx: &SiteContext, query: BrowseQuery) -> AppResult<BrowsePage> {
         let url = match query.kind {
             BrowseKind::Category => build_pornhub_category_url(&query),
-            BrowseKind::Search | BrowseKind::Tag => {
-                format!("{PH_BASE}/video/search?search={}", query_slug(&query.slug))
-            }
+            BrowseKind::Search | BrowseKind::Tag => build_pornhub_search_url(&query),
             BrowseKind::Model => format!("{PH_BASE}/pornstar/{}", path_slug(&query.slug)),
             BrowseKind::Channel => format!("{PH_BASE}/channels/{}", path_slug(&query.slug)),
             BrowseKind::Livestream => {
@@ -178,6 +176,7 @@ impl SiteAdapter for PornhubAdapter {
                 }
             }
         };
+        assert_pornhub_url(&url)?;
         let html = ctx.fetch_html(&url, self.id()).await?;
         let mut items = parse_video_links(&html, PH_BASE, self.id())?;
         if items.is_empty() {
@@ -514,6 +513,43 @@ fn page_amp(page: u32) -> String {
     }
 }
 
+fn orientation_path(orientation: BrowseOrientation) -> &'static str {
+    match orientation {
+        BrowseOrientation::Straight => "",
+        BrowseOrientation::Gay => "gay",
+        BrowseOrientation::Lesbian => "lesbian",
+        BrowseOrientation::Transgender => "transgender",
+    }
+}
+
+fn build_pornhub_search_url(query: &BrowseQuery) -> String {
+    let orientation = query.orientation.unwrap_or(BrowseOrientation::Straight);
+    let prefix = orientation_path(orientation);
+    let slug = query_slug(&query.slug);
+    let page = page_amp(query.page);
+    if prefix.is_empty() {
+        format!("{PH_BASE}/video/search?search={slug}{page}")
+    } else {
+        format!("{PH_BASE}/{prefix}/video/search?search={slug}{page}")
+    }
+}
+
+/// Defense-in-depth: every URL this adapter fetches must stay on
+/// `https://www.pornhub.com`. All browse URLs are constructed internally from
+/// `PH_BASE` + sanitized slugs, so a failure here means a sanitizer regressed
+/// (or a future arm interpolates raw input) — fail closed instead of letting
+/// `fetch_html` follow a crafted URL with the user's cookies attached.
+fn assert_pornhub_url(url: &str) -> AppResult<()> {
+    let parsed = url::Url::parse(url)
+        .map_err(|e| crate::error::AppError::InvalidInput(format!("bad browse url: {e}")))?;
+    if parsed.scheme() != "https" || parsed.host_str() != Some("www.pornhub.com") {
+        return Err(crate::error::AppError::InvalidInput(format!(
+            "browse url left pornhub.com: {url}"
+        )));
+    }
+    Ok(())
+}
+
 fn build_pornhub_category_url(query: &BrowseQuery) -> String {
     let orientation = query.orientation.unwrap_or(BrowseOrientation::Straight);
     let slug = path_slug(&query.slug);
@@ -525,42 +561,26 @@ fn build_pornhub_category_url(query: &BrowseQuery) -> String {
     };
 
     if let Some(id) = category_id {
-        return match orientation {
-            BrowseOrientation::Straight => {
-                format!("{PH_BASE}/video?c={id}{}", page_amp(query.page))
-            }
-            BrowseOrientation::Gay => {
-                format!("{PH_BASE}/gay/video?c={id}{}", page_amp(query.page))
-            }
-            BrowseOrientation::Lesbian => {
-                format!("{PH_BASE}/lesbian/video?c={id}{}", page_amp(query.page))
-            }
-            BrowseOrientation::Transgender => {
-                format!("{PH_BASE}/transgender/video?c={id}{}", page_amp(query.page))
-            }
-        };
+        let prefix = orientation_path(orientation);
+        if prefix.is_empty() {
+            return format!("{PH_BASE}/video?c={id}{}", page_amp(query.page));
+        }
+        return format!("{PH_BASE}/{prefix}/video?c={id}{}", page_amp(query.page));
     }
 
-    match orientation {
-        BrowseOrientation::Straight => {
-            format!("{PH_BASE}/categories/{slug}{}", page_query(query.page))
-        }
-        // Slug-only paths under gay/lesbian/trans category hubs often have no video grid.
-        // Use orientation search instead (hyphens → +).
-        BrowseOrientation::Gay | BrowseOrientation::Lesbian | BrowseOrientation::Transgender => {
-            let orient = match orientation {
-                BrowseOrientation::Gay => "gay",
-                BrowseOrientation::Lesbian => "lesbian",
-                BrowseOrientation::Transgender => "transgender",
-                BrowseOrientation::Straight => unreachable!(),
-            };
-            let search = slug.replace('-', "+");
-            format!(
-                "{PH_BASE}/{orient}/video/search?search={search}{}",
-                page_amp(query.page)
-            )
-        }
+    let prefix = orientation_path(orientation);
+    if prefix.is_empty() {
+        return format!("{PH_BASE}/categories/{slug}{}", page_query(query.page));
     }
+    // Slug-only paths under gay/lesbian/trans category hubs often have no video grid.
+    // Use orientation search instead. Route through query_slug (hyphens → spaces
+    // first) so `&`/unicode in a slug can't break the query string — identical
+    // output to the old `replace('-', "+")` for plain `[a-z0-9-]` slugs.
+    let search = query_slug(&slug.replace('-', " "));
+    format!(
+        "{PH_BASE}/{prefix}/video/search?search={search}{}",
+        page_amp(query.page)
+    )
 }
 
 /// Known PornHub `c=` ids for human-readable category slugs (mirrors frontend catalog).
@@ -1104,6 +1124,129 @@ mod category_tests {
             url,
             format!("{PH_BASE}/lesbian/video/search?search=big+tits")
         );
+    }
+
+    #[test]
+    fn lesbian_search_url() {
+        let url = build_pornhub_search_url(&BrowseQuery {
+            kind: BrowseKind::Search,
+            slug: "big tits".into(),
+            page: 1,
+            orientation: Some(BrowseOrientation::Lesbian),
+        });
+        assert_eq!(
+            url,
+            format!("{PH_BASE}/lesbian/video/search?search=big+tits")
+        );
+    }
+
+    #[test]
+    fn gay_search_url() {
+        let url = build_pornhub_search_url(&BrowseQuery {
+            kind: BrowseKind::Search,
+            slug: "big tits".into(),
+            page: 1,
+            orientation: Some(BrowseOrientation::Gay),
+        });
+        assert_eq!(url, format!("{PH_BASE}/gay/video/search?search=big+tits"));
+    }
+
+    #[test]
+    fn transgender_search_url() {
+        let url = build_pornhub_search_url(&BrowseQuery {
+            kind: BrowseKind::Tag,
+            slug: "big tits".into(),
+            page: 1,
+            orientation: Some(BrowseOrientation::Transgender),
+        });
+        assert_eq!(
+            url,
+            format!("{PH_BASE}/transgender/video/search?search=big+tits")
+        );
+    }
+
+    #[test]
+    fn straight_search_url_has_no_prefix() {
+        let url = build_pornhub_search_url(&BrowseQuery {
+            kind: BrowseKind::Search,
+            slug: "big tits".into(),
+            page: 1,
+            orientation: Some(BrowseOrientation::Straight),
+        });
+        assert_eq!(url, format!("{PH_BASE}/video/search?search=big+tits"));
+    }
+
+    #[test]
+    fn search_page_2_appends_page_param() {
+        let url = build_pornhub_search_url(&BrowseQuery {
+            kind: BrowseKind::Search,
+            slug: "big tits".into(),
+            page: 2,
+            orientation: Some(BrowseOrientation::Lesbian),
+        });
+        assert_eq!(
+            url,
+            format!("{PH_BASE}/lesbian/video/search?search=big+tits&page=2")
+        );
+    }
+
+    #[test]
+    fn search_term_with_ampersand_cannot_inject_param() {
+        // `&` must be percent-encoded so it can't smuggle `&page=` / `&c=`.
+        let url = build_pornhub_search_url(&BrowseQuery {
+            kind: BrowseKind::Search,
+            slug: "big & busty".into(),
+            page: 1,
+            orientation: Some(BrowseOrientation::Lesbian),
+        });
+        assert_eq!(
+            url,
+            format!("{PH_BASE}/lesbian/video/search?search=big+%26+busty")
+        );
+        assert!(!url.contains("&page=") && !url.contains("&c="));
+    }
+
+    #[test]
+    fn search_term_with_unicode_is_encoded() {
+        let url = build_pornhub_search_url(&BrowseQuery {
+            kind: BrowseKind::Search,
+            slug: "amateur €".into(),
+            page: 1,
+            orientation: Some(BrowseOrientation::Straight),
+        });
+        assert!(url.starts_with(&format!("{PH_BASE}/video/search?search=amateur+")));
+        assert!(!url.contains('€'));
+    }
+
+    #[test]
+    fn category_fallback_encodes_specials() {
+        // Same guarantee for the orientation category-fallback branch (M3):
+        // routed through query_slug, so specials can't break the query string.
+        let url = build_pornhub_category_url(&BrowseQuery {
+            kind: BrowseKind::Category,
+            slug: "big-tits".into(),
+            page: 1,
+            orientation: Some(BrowseOrientation::Gay),
+        });
+        assert_eq!(
+            url,
+            format!("{PH_BASE}/gay/video/search?search=big+tits")
+        );
+    }
+
+    #[test]
+    fn assert_pornhub_url_accepts_own_pages() {
+        assert!(assert_pornhub_url(&format!("{PH_BASE}/video/search?search=x")).is_ok());
+        assert!(assert_pornhub_url(&format!("{PH_BASE}/lesbian/video?c=27")).is_ok());
+    }
+
+    #[test]
+    fn assert_pornhub_url_rejects_off_host() {
+        // Wrong host, wrong scheme, and suffix-impersonation all fail closed.
+        assert!(assert_pornhub_url("https://evil.com/video?c=27").is_err());
+        assert!(assert_pornhub_url("http://www.pornhub.com/video?c=27").is_err());
+        assert!(assert_pornhub_url("https://www.pornhub.com.evil.com/video").is_err());
+        assert!(assert_pornhub_url("not a url").is_err());
     }
 
     #[test]

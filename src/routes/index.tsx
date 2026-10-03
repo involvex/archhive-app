@@ -18,7 +18,6 @@ import { EmptyState } from "@/components/EmptyState";
 import { SceneCard } from "@/components/SceneCard";
 import { useRecentlyViewedStore } from "@/lib/stores/recentlyViewed";
 import { Compass, Link2, Radio, Film, History, Newspaper, X } from "lucide-react";
-import { PORNHUB_FEED_SLUG } from "@/lib/sites/catalog";
 
 export const Route = createFileRoute("/")({
   component: HomePage,
@@ -218,17 +217,12 @@ function HomePage() {
             <div>
               <p className="text-sm font-medium">News / Feed</p>
               <p className="text-xs text-[var(--color-muted-foreground)]">
-                Browse promoted and featured content from PornHub
+                Trending, new matches from your saved searches, and live rooms
               </p>
             </div>
           </div>
           <Button asChild size="sm" variant="outline">
-            <Link
-              to="/browse/$site/$kind/$slug"
-              params={{ site: "pornhub", kind: "search", slug: PORNHUB_FEED_SLUG }}
-            >
-              Browse Feed
-            </Link>
+            <Link to="/feed">Browse Feed</Link>
           </Button>
         </CardContent>
       </Card>

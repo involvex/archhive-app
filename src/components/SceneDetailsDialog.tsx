@@ -236,7 +236,7 @@ function SceneDetailsBody({ scene, onClose }: { scene: Scene; onClose: () => voi
         )}
       </dl>
 
-      <div className="mt-4 flex flex-wrap items-center gap-2">
+      <div className="mt-4 flex flex-wrap items-center gap-2 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         {probeResult && (
           <span className="text-xs text-[var(--color-muted-foreground)]">{probeResult}</span>
         )}

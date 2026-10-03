@@ -182,7 +182,7 @@ function SceneEditForm({
           </div>
         </div>
       ) : (
-        <div className="mt-4 flex justify-between gap-2">
+        <div className="mt-4 flex justify-between gap-2 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
           <Button
             variant="outline"
             className="text-red-400"

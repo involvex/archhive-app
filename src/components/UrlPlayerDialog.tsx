@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { api } from "@/lib/api/client";
+import { api, safeMediaUrl } from "@/lib/api/client";
 import { Button } from "@/components/ui/button";
 import { HlsVideoPlayer, STREAM_URL_EXPIRED_ERROR } from "@/components/HlsVideoPlayer";
 import { AlertCircle, ChevronLeft, ChevronRight, Loader2, X } from "lucide-react";
@@ -63,8 +63,10 @@ export function UrlPlayerDialog({
         return;
       }
       // Prefer an already-resolved HLS URL from listings when not live.
-      if (item.stream_url?.trim()) {
-        setStreamUrl(item.stream_url.trim());
+      // Listing payloads are scraped, so validate before feeding <video src>.
+      const listingStream = safeMediaUrl(item.stream_url);
+      if (listingStream) {
+        setStreamUrl(listingStream);
         return;
       }
       setStreamUrl(await api.resolveStreamUrl(item.url));
@@ -114,7 +116,7 @@ export function UrlPlayerDialog({
   return (
     <div
       role="presentation"
-      className="fixed inset-0 z-[100] flex cursor-default items-stretch justify-center bg-black/80 p-0 sm:items-center sm:p-4"
+      className="fixed inset-0 z-[100] flex cursor-default items-end justify-center bg-black/80 p-0 sm:items-center sm:p-4"
       onClick={onClose}
       onKeyDown={(e) => {
         if (e.key === "Escape") onClose();
@@ -124,31 +126,31 @@ export function UrlPlayerDialog({
         role="dialog"
         aria-modal="true"
         aria-label={item.title}
-        className="flex h-full max-h-[100dvh] w-full max-w-4xl cursor-default flex-col overflow-hidden border border-[var(--color-border)] bg-[var(--color-card)] shadow-xl sm:max-h-[92dvh] sm:rounded-lg"
+        className="flex max-h-[92dvh] w-full max-w-4xl cursor-default flex-col overflow-hidden rounded-t-xl border border-[var(--color-border)] bg-[var(--color-card)] shadow-xl sm:max-h-[92dvh] sm:rounded-lg"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => e.stopPropagation()}
       >
-        <div className="overflow-y-auto overscroll-contain p-4">
-          <div className="mb-3 flex items-center justify-between gap-2">
-            <h3 className="text-lg font-semibold leading-snug line-clamp-2">{item.title}</h3>
-            <button
-              type="button"
-              onClick={onClose}
-              className="shrink-0 rounded p-2 hover:bg-[var(--color-muted)]"
-              aria-label="Close"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
+        <div className="flex shrink-0 items-center justify-between gap-2 px-4 pt-safe-top pb-2">
+          <h3 className="text-lg font-semibold leading-snug line-clamp-2">{item.title}</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded hover:bg-[var(--color-muted)]"
+            aria-label="Close"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
 
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 pb-4">
           {loading && (
-            <div className="flex aspect-video items-center justify-center rounded-md bg-[var(--color-muted)]">
+            <div className="flex aspect-video max-h-[min(52dvh,26rem)] w-full items-center justify-center rounded-md bg-[var(--color-muted)]">
               <Loader2 className="h-8 w-8 animate-spin text-[var(--color-muted-foreground)]" />
             </div>
           )}
 
           {error && !embedUrl && (
-            <div className="flex aspect-video flex-col items-center justify-center gap-2 rounded-md bg-[var(--color-muted)]">
+            <div className="flex aspect-video max-h-[min(52dvh,26rem)] w-full flex-col items-center justify-center gap-2 rounded-md bg-[var(--color-muted)]">
               <AlertCircle className="h-8 w-8 text-red-400" />
               <p className="px-4 text-center text-sm text-[var(--color-muted-foreground)]">
                 {error}
@@ -167,7 +169,7 @@ export function UrlPlayerDialog({
             <HlsVideoPlayer
               src={streamUrl}
               autoPlay
-              className="aspect-video w-full rounded-md bg-black"
+              className="aspect-video max-h-[min(52dvh,26rem)] w-full rounded-md bg-black object-contain"
               onError={(mediaError: MediaError | null) => {
                 if (mediaError?.code === 4) {
                   setError(STREAM_URL_EXPIRED_ERROR);
@@ -181,7 +183,7 @@ export function UrlPlayerDialog({
           {!streamUrl && !loading && embedUrl && (
             <iframe
               src={embedUrl}
-              className="aspect-video w-full rounded-md border-0 bg-black"
+              className="aspect-video max-h-[min(52dvh,26rem)] w-full rounded-md border-0 bg-black object-contain"
               title={`${item.title} live stream`}
               allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
               allowFullScreen
@@ -193,34 +195,6 @@ export function UrlPlayerDialog({
               Playing embedded player (direct stream URL unavailable). Tap Retry for HLS if cookies
               are configured.
             </p>
-          )}
-
-          {(prevItem || nextItem) && onSelectItem && (
-            <div className="mt-3 flex items-center justify-between gap-2">
-              <Button
-                variant="outline"
-                disabled={!prevItem}
-                onClick={() => prevItem && onSelectItem(prevItem)}
-                className="min-h-10 gap-1"
-              >
-                <ChevronLeft className="h-4 w-4" />
-                Previous
-              </Button>
-              {index >= 0 && playlist && (
-                <span className="text-xs text-[var(--color-muted-foreground)]">
-                  {index + 1} / {playlist.length}
-                </span>
-              )}
-              <Button
-                variant="outline"
-                disabled={!nextItem}
-                onClick={() => nextItem && onSelectItem(nextItem)}
-                className="min-h-10 gap-1"
-              >
-                Next
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            </div>
           )}
 
           <dl className="mt-4 space-y-2 text-sm">
@@ -266,8 +240,37 @@ export function UrlPlayerDialog({
               </dd>
             </div>
           </dl>
+        </div>
 
-          <div className="mt-4 flex justify-end gap-2">
+        <div className="shrink-0 space-y-2 border-t border-[var(--color-border)] px-4 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+          {(prevItem || nextItem) && onSelectItem && (
+            <div className="flex items-center justify-between gap-2">
+              <Button
+                variant="outline"
+                disabled={!prevItem}
+                onClick={() => prevItem && onSelectItem(prevItem)}
+                className="min-h-10 gap-1"
+              >
+                <ChevronLeft className="h-4 w-4" />
+                Previous
+              </Button>
+              {index >= 0 && playlist && (
+                <span className="text-xs text-[var(--color-muted-foreground)]">
+                  {index + 1} / {playlist.length}
+                </span>
+              )}
+              <Button
+                variant="outline"
+                disabled={!nextItem}
+                onClick={() => nextItem && onSelectItem(nextItem)}
+                className="min-h-10 gap-1"
+              >
+                Next
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
+          <div className="flex flex-wrap justify-end gap-2">
             {(error || (!streamUrl && embedUrl)) && (
               <Button
                 variant="outline"

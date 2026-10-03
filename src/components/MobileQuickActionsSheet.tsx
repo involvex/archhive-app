@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "react-hot-toast";
-import { Compass, Plus, RefreshCw, QrCode, Link as LinkIcon, X } from "lucide-react";
+import { Compass, Newspaper, Plus, RefreshCw, QrCode, Link as LinkIcon, X } from "lucide-react";
 
 interface MobileQuickActionsSheetProps {
   onClose: () => void;
@@ -50,6 +50,11 @@ export function MobileQuickActionsSheet({ onClose }: MobileQuickActionsSheetProp
   function openBrowse() {
     onClose();
     setTimeout(() => navigate({ to: "/browse" }), 10);
+  }
+
+  function openFeed() {
+    onClose();
+    setTimeout(() => navigate({ to: "/feed" }), 10);
   }
 
   function openNewDownload() {
@@ -104,6 +109,13 @@ export function MobileQuickActionsSheet({ onClose }: MobileQuickActionsSheetProp
       description: "Trending, categories, saved searches",
       icon: <Compass className="h-5 w-5" />,
       run: openBrowse,
+    },
+    {
+      id: "feed",
+      label: "Feed",
+      description: "Trending, new matches, live rooms",
+      icon: <Newspaper className="h-5 w-5" />,
+      run: openFeed,
     },
     {
       id: "scan-library",

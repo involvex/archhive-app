@@ -11,6 +11,7 @@ export interface HlsVideoPlayerProps {
   playsInline?: boolean;
   preload?: "none" | "metadata" | "auto";
   className?: string;
+  style?: React.CSSProperties;
   crossOrigin?: "anonymous" | "use-credentials";
   poster?: string;
   /** Show an explicit Picture-in-Picture control (HTML PiP API). */
@@ -40,6 +41,7 @@ export const HlsVideoPlayer = forwardRef<HTMLVideoElement, HlsVideoPlayerProps>(
       playsInline = true,
       preload = "metadata",
       className,
+      style,
       crossOrigin,
       poster,
       showPip = true,
@@ -192,7 +194,7 @@ export const HlsVideoPlayer = forwardRef<HTMLVideoElement, HlsVideoPlayerProps>(
     };
 
     return (
-      <div className="relative h-full w-full">
+      <div className="relative size-full min-h-0">
         <video
           ref={setVideoRef}
           key={src}
@@ -208,7 +210,7 @@ export const HlsVideoPlayer = forwardRef<HTMLVideoElement, HlsVideoPlayerProps>(
           className={className}
           disablePictureInPicture={false}
           // Keep native controls tappable on Android (avoid overlay stealing hits).
-          style={{ touchAction: "manipulation" }}
+          style={{ touchAction: "manipulation", ...style }}
           onError={handleVideoError}
           onTimeUpdate={onTimeUpdate}
           onPause={onPause}

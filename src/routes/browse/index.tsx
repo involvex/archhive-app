@@ -1,18 +1,11 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api/client";
 import { getCapabilities } from "@/lib/runtime";
 import { getPluginBrowseSites } from "@/lib/plugins/loader";
-import { mergeSiteLists, PORNHUB_FEED_SLUG } from "@/lib/sites/catalog";
+import { mergeSiteLists } from "@/lib/sites/catalog";
 import { useSettingsStore } from "@/lib/stores/settings";
-import type {
-  BrowseOrientation,
-  MediaItem,
-  PornhubCategoryEntry,
-  SavedSearch,
-  SiteInfo,
-  WatchlistStatus,
-} from "@/lib/types";
+import type { BrowseOrientation, PornhubCategoryEntry, SiteInfo } from "@/lib/types";
 import { SceneCard } from "@/components/SceneCard";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent } from "@/components/ui/card";
@@ -35,10 +28,13 @@ import {
   Trash2,
   Zap,
   ZapOff,
-  Download,
 } from "lucide-react";
 import { isMobileDevice } from "@/lib/tauri";
 import { usePullToRefresh } from "@/lib/hooks/usePullToRefresh";
+import { useSavedSearches } from "@/lib/hooks/useSavedSearches";
+import { useTrending } from "@/lib/hooks/useTrending";
+import { useRefreshGuard } from "@/lib/hooks/useRefreshGuard";
+import { NewMatchesCard } from "@/components/NewMatchesCard";
 
 const ORIENTATIONS: { value: BrowseOrientation; label: string }[] = [
   { value: "straight", label: "Straight" },
@@ -84,12 +80,6 @@ function BrowsePage() {
   const isMobile = isMobileDevice();
   const { recent, addRecent } = useRecentSearches();
   const [sites, setSites] = useState<SiteInfo[]>(() => mergeSiteLists([], getPluginBrowseSites()));
-  const sitesLoadedRef = useRef(false);
-  const sitesRef = useRef(sites);
-
-  useEffect(() => {
-    sitesRef.current = sites;
-  }, [sites]);
 
   const [selectedSite, setSelectedSite] = useState("auto");
   const [searchInput, setSearchInput] = useState("");
@@ -107,11 +97,9 @@ function BrowsePage() {
     try {
       const apiSites = await api.listSites();
       setSites(mergeSiteLists(apiSites, getPluginBrowseSites()));
-      sitesLoadedRef.current = true;
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : "Failed to load sites");
       setSites(mergeSiteLists([], getPluginBrowseSites()));
-      sitesLoadedRef.current = true;
     }
   }, [needsRemoteSetup, caps.showBrowserBanner]);
 
@@ -177,119 +165,30 @@ function BrowsePage() {
   const [catOrientation, setCatOrientation] = useState<BrowseOrientation>("straight");
   const [catLoading, setCatLoading] = useState(false);
 
-  const [trending, setTrending] = useState<Record<string, MediaItem[]>>({});
-  const [trendingLoading, setTrendingLoading] = useState(false);
-
-  // #28 saved searches (watchlist).
-  // Review: cap rendered/queued new matches so a huge listing can't flood the UI or queue.
-  const MAX_NEW_MATCHES = 25;
-  const [saved, setSaved] = useState<SavedSearch[]>([]);
-  const savedRef = useRef<SavedSearch[]>([]);
-  const [checkingId, setCheckingId] = useState<string | null>(null);
-  const [queueing, setQueueing] = useState(false);
-  const [pollStatus, setPollStatus] = useState<WatchlistStatus | null>(null);
-  // New-matches dialog: items returned by the last manual check.
-  const [newMatches, setNewMatches] = useState<{
-    searchId: string;
-    name: string;
-    items: MediaItem[];
-    total: number;
-  } | null>(null);
+  // #28 saved searches (watchlist). State + handlers live in the shared hook so
+  // /browse and /feed cannot drift.
+  const {
+    saved,
+    checkingId,
+    queueing,
+    pollStatus,
+    newMatches,
+    refresh: refreshSaved,
+    check: handleCheck,
+    dismissNewMatches: closeNewMatches,
+    queueAllNewMatches,
+    pollAll: handlePollAll,
+    toggleAutoQueue: handleToggleAutoQueue,
+  } = useSavedSearches();
 
   useEffect(() => {
-    savedRef.current = saved;
-  }, [saved]);
-
-  const refreshSaved = useCallback(async () => {
-    const [savedRes, pollRes] = await Promise.allSettled([
-      api.listSavedSearches(),
-      api.watchlistStatus(),
-    ]);
-    if (savedRes.status === "fulfilled") setSaved(savedRes.value);
-    else setSaved([]);
-    if (pollRes.status === "fulfilled") setPollStatus(pollRes.value);
-    else setPollStatus(null);
-  }, []);
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     void refreshSaved();
   }, [refreshSaved]);
-
-  async function handleCheck(id: string) {
-    setCheckingId(id);
-    try {
-      const result = await api.checkSavedSearch(id);
-      await refreshSaved();
-      if (result.new_count > 0) {
-        const search = savedRef.current.find((s) => s.id === id);
-        setNewMatches({
-          searchId: id,
-          name: search?.name ?? "Saved search",
-          items: result.new_items.slice(0, MAX_NEW_MATCHES),
-          total: result.new_items.length,
-        });
-      }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setCheckingId(null);
-    }
-  }
-
-  async function closeNewMatches() {
-    if (newMatches) {
-      try {
-        await api.dismissSavedSearchNews(newMatches.searchId);
-      } catch (e) {
-        console.error(e);
-      }
-      setNewMatches(null);
-      refreshSaved();
-    }
-  }
-
-  async function queueAllNewMatches() {
-    if (!newMatches || queueing) return;
-    setQueueing(true);
-    try {
-      await api.queueDownloads(newMatches.items.map((i) => i.url));
-      closeNewMatches();
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setQueueing(false);
-    }
-  }
-
-  // #19: run one poller pass now (checks due auto-queue searches + queues).
-  async function handlePollAll() {
-    setCheckingId("all");
-    try {
-      await api.pollWatchlist();
-      await refreshSaved();
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setCheckingId(null);
-    }
-  }
-
-  async function handleToggleAutoQueue(s: SavedSearch) {
-    try {
-      await api.setSavedSearchAutoQueue(s.id, !s.auto_queue);
-      setSaved((prev) =>
-        prev.map((p) => (p.id === s.id ? { ...p, auto_queue: !p.auto_queue } : p)),
-      );
-    } catch (e) {
-      console.error(e);
-    }
-  }
 
   async function handleDeleteSaved(id: string) {
     try {
       await api.deleteSavedSearch(id);
-      setSaved((prev) => prev.filter((s) => s.id !== id));
+      void refreshSaved();
     } catch (e) {
       console.error(e);
     }
@@ -309,43 +208,21 @@ function BrowsePage() {
       .finally(() => setCatLoading(false));
   }, [selectedSite, catOrientation]);
 
-  const loadTrending = useCallback(async () => {
-    if (needsRemoteSetup && caps.showBrowserBanner) return;
-    if (!sitesLoadedRef.current) return;
-    setTrendingLoading(true);
+  // Trending for enabled+known sites. Passes [] when remote setup is missing so
+  // the hook skips fetching entirely (browser mode with no host configured).
+  const trendingEnabled = useMemo(() => {
+    if (needsRemoteSetup && caps.showBrowserBanner) return [];
     const enabled = new Set(settings.trending_sites ?? []);
-    const available = sitesRef.current.filter((s) => enabled.has(s.id));
-    if (available.length === 0) {
-      setTrending({});
-      setTrendingLoading(false);
-      return;
-    }
-    const results = await Promise.allSettled(
-      available.map((s) =>
-        api.browse(s.id, "search", "trending", 1).then((page) => ({
-          id: s.id,
-          items: page.items.slice(0, 10),
-        })),
-      ),
-    );
-    const next: Record<string, MediaItem[]> = {};
-    results.forEach((r) => {
-      if (r.status === "fulfilled") {
-        next[r.value.id] = r.value.items;
-      }
-    });
-    setTrending(next);
-    setTrendingLoading(false);
-  }, [needsRemoteSetup, caps.showBrowserBanner, settings.trending_sites]);
-
-  useEffect(() => {
-    void loadTrending();
-  }, [loadTrending]);
+    return sites.filter((s) => enabled.has(s.id)).map((s) => s.id);
+  }, [needsRemoteSetup, caps.showBrowserBanner, settings.trending_sites, sites]);
+  const { trending, trendingLoading, load: loadTrending } = useTrending(trendingEnabled);
 
   // Q41: pull-to-refresh (parity with library scenes + browse detail).
-  const handleRefresh = useCallback(async () => {
+  // Guarded so rapid pulls can't stack duplicate scrape waves.
+  const browseRefresh = useCallback(async () => {
     await Promise.allSettled([reloadSites(), loadTrending(), refreshSaved()]);
   }, [reloadSites, loadTrending, refreshSaved]);
+  const { refresh: handleRefresh } = useRefreshGuard(browseRefresh);
 
   const { containerRef, pullDistance, refreshing } = usePullToRefresh({
     onRefresh: handleRefresh,
@@ -473,16 +350,7 @@ function BrowsePage() {
           <Heart className="h-4 w-4 mr-1.5" />
           PornHub Lesbian
         </Button>
-        <Button
-          size="sm"
-          variant="secondary"
-          onClick={() =>
-            navigate({
-              to: "/browse/$site/$kind/$slug",
-              params: { site: "pornhub", kind: "search", slug: PORNHUB_FEED_SLUG },
-            })
-          }
-        >
+        <Button size="sm" variant="secondary" onClick={() => navigate({ to: "/feed" })}>
           <Newspaper className="h-4 w-4 mr-1.5" />
           News / Feed
         </Button>
@@ -796,45 +664,12 @@ function BrowsePage() {
       </Card>
 
       {newMatches && (
-        <Card className="border-[var(--color-primary)]">
-          <CardContent className="p-4 space-y-3">
-            <div className="flex items-center justify-between gap-2">
-              <p className="text-sm font-medium">
-                {newMatches.total} new {newMatches.total === 1 ? "match" : "matches"} in{" "}
-                {newMatches.name}
-                {newMatches.total > newMatches.items.length && (
-                  <span className="text-[var(--color-muted-foreground)]">
-                    {" "}
-                    (showing first {newMatches.items.length})
-                  </span>
-                )}
-              </p>
-              <div className="flex gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => void queueAllNewMatches()}
-                  disabled={queueing}
-                >
-                  <Download className="h-3.5 w-3.5 mr-1.5" />
-                  {queueing ? "Queueing…" : "Queue all"}
-                </Button>
-                <Button size="sm" variant="ghost" onClick={() => void closeNewMatches()}>
-                  Dismiss
-                </Button>
-              </div>
-            </div>
-            <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-3">
-              {newMatches.items.map((item) => (
-                <SceneCard
-                  key={item.id}
-                  item={item}
-                  onDownload={(i) => void api.queueDownload(i.url, item.site_id)}
-                />
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+        <NewMatchesCard
+          matches={newMatches}
+          queueing={queueing}
+          onQueueAll={queueAllNewMatches}
+          onDismiss={closeNewMatches}
+        />
       )}
 
       <div className="flex items-center gap-2 text-sm font-medium">

@@ -1,10 +1,39 @@
-/// Path segment: spaces to hyphens, lowercased (pornstar/model URLs).
+/// Path segment: lowercased, whitespace to hyphens, restricted to
+/// `[a-z0-9-_]` (RFC 3986 unreserved + hyphen).
+///
+/// Everything else (`/ ? # & . %` …) is dropped so a user-supplied slug can
+/// never escape the path segment it is interpolated into (no `../` traversal,
+/// no query/hash smuggling). Runs of hyphens collapse to one and leading /
+/// trailing hyphens are trimmed.
+///
+/// Underscore is kept deliberately: Reddit subreddit names (`r/learn_programming`)
+/// and ThotHub tags legally contain `_`, and `_` cannot break out of a path
+/// segment.
 pub fn path_slug(slug: &str) -> String {
-    slug.trim()
+    let hyphenated: String = slug
+        .trim()
         .to_lowercase()
         .split_whitespace()
         .collect::<Vec<_>>()
         .join("-")
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+        .collect();
+    // Collapse `--` runs and trim edge hyphens left behind by stripped chars.
+    let mut out = String::with_capacity(hyphenated.len());
+    let mut prev_dash = false;
+    for c in hyphenated.chars() {
+        if c == '-' {
+            if prev_dash {
+                continue;
+            }
+            prev_dash = true;
+        } else {
+            prev_dash = false;
+        }
+        out.push(c);
+    }
+    out.trim_matches('-').to_string()
 }
 
 /// Query string value (search terms with spaces).
@@ -153,6 +182,35 @@ fn extract_username_from_url(url: &str, domain: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn path_slug_hardening() {
+        // Basic behaviour preserved.
+        assert_eq!(path_slug("Big Tits"), "big-tits");
+        assert_eq!(path_slug("  Amateur  "), "amateur");
+        // Path-breaking characters are stripped (no traversal / query smuggling).
+        assert_eq!(path_slug("../../etc"), "etc");
+        assert_eq!(path_slug("foo?page=99"), "foopage99");
+        assert_eq!(path_slug("a#b&c.d%e"), "abcde");
+        // Runs collapse, edge hyphens left by stripped chars are trimmed.
+        assert_eq!(path_slug("a -- b"), "a-b");
+        assert_eq!(path_slug("  --Foo__Bar-- "), "foo__bar");
+        // Underscores survive (legal in subreddit / tag names, path-safe).
+        assert_eq!(path_slug("learn_programming"), "learn_programming");
+        // Digits survive (numeric category ids pass through elsewhere).
+        assert_eq!(path_slug("27"), "27");
+    }
+
+    #[test]
+    fn query_slug_encodes_specials() {
+        // `&` must not be able to inject a second query param.
+        assert_eq!(query_slug("big & busty"), "big+%26+busty");
+        // Unicode is percent-encoded, not passed through raw.
+        let encoded = query_slug("amateur €");
+        assert!(encoded.starts_with("amateur+"), "got {encoded}");
+        assert!(!encoded.contains('€'), "got {encoded}");
+        assert!(!encoded.contains('&'), "got {encoded}");
+    }
 
     #[test]
     fn pick_prefers_m3u8() {

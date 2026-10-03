@@ -249,6 +249,9 @@ function ScenePlayerBody({
   // Avoid crossOrigin on Android WebView when possible — it can blank playback on CORS hiccups.
   const useCors = isHttpMediaSrc(mediaSrc) && caps.localIpc;
   const fileSize = formatBytes(data.file_size);
+  const hasDims = data.width != null && data.height != null && data.width > 0 && data.height > 0;
+  // Narrowed inline in the footer below (scenes && ... && currentIndex != null
+  // && onNavigate && ...) so no non-null assertions are needed there.
 
   const persist = useCallback(
     (position: number, duration: number) => {
@@ -303,7 +306,7 @@ function ScenePlayerBody({
 
   return (
     <>
-      <div className="mb-3 flex items-center justify-between gap-2">
+      <div className="flex shrink-0 items-center justify-between gap-2 px-4 pt-safe-top pb-2">
         <h3 className="text-lg font-semibold leading-snug line-clamp-2">{data.title}</h3>
         <div className="flex shrink-0 items-center gap-1">
           {onEdit && (
@@ -355,23 +358,6 @@ function ScenePlayerBody({
           </button>
           <button
             type="button"
-            onClick={() => setKeepScreenOn((v) => !v)}
-            disabled={!wakeLockSupported}
-            className="flex min-h-11 min-w-11 items-center justify-center rounded hover:bg-[var(--color-muted)] disabled:cursor-not-allowed disabled:opacity-40"
-            aria-label={keepScreenOn ? "Allow screen to sleep" : "Keep screen on"}
-            aria-pressed={keepScreenOn}
-            title={
-              wakeLockSupported
-                ? keepScreenOn
-                  ? `Keep screen on (lock held: ${wakeLockHeld ? "yes" : "requesting…"})`
-                  : "Keep screen on while playing"
-                : "Screen wake lock not supported on this device"
-            }
-          >
-            <Zap className="h-4 w-4" />
-          </button>
-          <button
-            type="button"
             onClick={toggleFullscreen}
             className="flex min-h-11 min-w-11 items-center justify-center rounded hover:bg-[var(--color-muted)]"
             aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
@@ -394,215 +380,229 @@ function ScenePlayerBody({
         </div>
       </div>
 
-      {resume && (
-        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-md border border-[var(--color-primary)]/40 bg-[var(--color-primary)]/10 px-3 py-2">
-          <p className="text-sm">Resume from {formatDuration(Math.floor(resume.position_secs))}?</p>
-          <div className="flex-1" />
-          <Button size="sm" onClick={resumePlayback}>
-            <Play className="h-3.5 w-3.5" />
-            Resume
-          </Button>
-          <Button size="sm" variant="outline" onClick={() => setResume(null)}>
-            <RotateCcw className="h-3.5 w-3.5" />
-            Start over
-          </Button>
-        </div>
-      )}
+      {/* Scroll body — the ONLY scroller in the dialog. flex-1 + min-h-0 is
+          load-bearing: without min-h-0 a flex child refuses to shrink below its
+          content size and pushes the pinned footer out of view (the original
+          "hidden buttons" bug on Android edge-to-edge). Do not "simplify". */}
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 pb-4">
+        {resume && (
+          <div className="mb-3 flex flex-wrap items-center gap-2 rounded-md border border-[var(--color-primary)]/40 bg-[var(--color-primary)]/10 px-3 py-2">
+            <p className="text-sm">
+              Resume from {formatDuration(Math.floor(resume.position_secs))}?
+            </p>
+            <div className="flex-1" />
+            <Button size="sm" onClick={resumePlayback}>
+              <Play className="h-3.5 w-3.5" />
+              Resume
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => setResume(null)}>
+              <RotateCcw className="h-3.5 w-3.5" />
+              Start over
+            </Button>
+          </div>
+        )}
 
-      {webPlayable ? (
-        <div
-          ref={playerContainerRef}
-          className="relative touch-pan-y select-none"
-          onTouchStart={handleVideoTouchStart}
-          onTouchMove={handleVideoTouchMove}
-          onTouchEnd={handleVideoTouchEnd}
-        >
-          <HlsVideoPlayer
-            ref={videoRef}
-            src={mediaSrc}
-            key={mediaSrc}
-            controls
-            playsInline
-            preload="metadata"
-            crossOrigin={useCors ? "anonymous" : undefined}
-            className="aspect-video w-full rounded-md bg-black"
-            onTimeUpdate={handleTimeUpdate}
-            onPause={handlePause}
-            onEnded={() => {
-              const target = getAutoAdvanceTarget(scenes, currentIndex, autoAdvanceNext);
-              if (target && onNavigate) {
-                toast.success(`Up next: ${target.scene.title}`, { duration: 3000 });
-                onNavigate(target.scene, target.index);
+        {webPlayable ? (
+          <div
+            ref={playerContainerRef}
+            className="relative touch-pan-y select-none"
+            onTouchStart={handleVideoTouchStart}
+            onTouchMove={handleVideoTouchMove}
+            onTouchEnd={handleVideoTouchEnd}
+          >
+            <HlsVideoPlayer
+              ref={videoRef}
+              src={mediaSrc}
+              key={mediaSrc}
+              controls
+              playsInline
+              preload="metadata"
+              crossOrigin={useCors ? "anonymous" : undefined}
+              className={
+                hasDims
+                  ? "max-h-[min(52dvh,26rem)] w-full rounded-md bg-black object-contain"
+                  : "aspect-video max-h-[min(52dvh,26rem)] w-full rounded-md bg-black object-contain"
               }
-            }}
-            onError={(mediaError: MediaError | null) => {
-              if (mediaError) {
-                console.error("Video playback failed", mediaSrc, mediaError);
-              }
-            }}
-          />
-          {gestureHint && (
-            <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-              <span className="rounded-md bg-black/70 px-3 py-1.5 text-sm font-medium text-white">
-                {gestureHint}
-              </span>
+              style={hasDims ? { aspectRatio: `${data.width} / ${data.height}` } : undefined}
+              onTimeUpdate={handleTimeUpdate}
+              onPause={handlePause}
+              onEnded={() => {
+                const target = getAutoAdvanceTarget(scenes, currentIndex, autoAdvanceNext);
+                if (target && onNavigate) {
+                  toast.success(`Up next: ${target.scene.title}`, { duration: 3000 });
+                  onNavigate(target.scene, target.index);
+                }
+              }}
+              onError={(mediaError: MediaError | null) => {
+                if (mediaError) {
+                  console.error("Video playback failed", mediaSrc, mediaError);
+                }
+              }}
+            />
+            {gestureHint && (
+              <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                <span className="rounded-md bg-black/70 px-3 py-1.5 text-sm font-medium text-white">
+                  {gestureHint}
+                </span>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-3 rounded-md border border-[var(--color-border)] bg-[var(--color-muted)] p-3">
+            <p className="text-sm text-[var(--color-muted-foreground)]">
+              {data.path
+                ? isVideoScene(data)
+                  ? "This container (e.g. MKV/AVI) often cannot play in the in-app player."
+                  : "This file format may not play in the browser."
+                : "No media file path for this scene."}
+            </p>
+            {(caps.localIpc || hasLocalBackend()) && data.path && (
+              <Button
+                variant="default"
+                onClick={() => void api.openSceneWithDefault(data.id).catch(console.error)}
+              >
+                Open with system player
+              </Button>
+            )}
+          </div>
+        )}
+
+        <dl className="mt-4 space-y-2 text-sm">
+          {data.performers.length > 0 && (
+            <div>
+              <dt className="text-xs text-[var(--color-muted-foreground)]">Performers</dt>
+              <dd>{data.performers.join(", ")}</dd>
             </div>
           )}
-        </div>
-      ) : (
-        <div className="space-y-3 rounded-md border border-[var(--color-border)] bg-[var(--color-muted)] p-3">
-          <p className="text-sm text-[var(--color-muted-foreground)]">
-            {data.path
-              ? isVideoScene(data)
-                ? "This container (e.g. MKV/AVI) often cannot play in the in-app player."
-                : "This file format may not play in the browser."
-              : "No media file path for this scene."}
-          </p>
-          {(caps.localIpc || hasLocalBackend()) && data.path && (
+          {data.channel && (
+            <div>
+              <dt className="text-xs text-[var(--color-muted-foreground)]">Channel</dt>
+              <dd>{data.channel}</dd>
+            </div>
+          )}
+          {data.tags.length > 0 && (
+            <div>
+              <dt className="text-xs text-[var(--color-muted-foreground)]">Tags</dt>
+              <dd className="mt-1 flex flex-wrap gap-1">
+                {data.tags.map((tag) => (
+                  <span
+                    key={tag}
+                    className="rounded bg-[var(--color-secondary)] px-1.5 py-0.5 text-xs"
+                  >
+                    {tag}
+                  </span>
+                ))}
+              </dd>
+            </div>
+          )}
+          {data.studio_name && (
+            <div>
+              <dt className="text-xs text-[var(--color-muted-foreground)]">Studio</dt>
+              <dd>{data.studio_name}</dd>
+            </div>
+          )}
+          {data.date && (
+            <div>
+              <dt className="text-xs text-[var(--color-muted-foreground)]">Date</dt>
+              <dd>{data.date}</dd>
+            </div>
+          )}
+          {fileSize && (
+            <div>
+              <dt className="text-xs text-[var(--color-muted-foreground)]">File size</dt>
+              <dd>{fileSize}</dd>
+            </div>
+          )}
+          {data.width != null && data.height != null && (
+            <div>
+              <dt className="text-xs text-[var(--color-muted-foreground)]">Resolution</dt>
+              <dd>
+                {data.width}×{data.height}
+              </dd>
+            </div>
+          )}
+          {data.source_url && (
+            <div>
+              <dt className="text-xs text-[var(--color-muted-foreground)]">Source</dt>
+              <dd className="break-all">
+                <a
+                  href={data.source_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-[var(--color-primary)] hover:underline"
+                >
+                  {data.source_url}
+                </a>
+              </dd>
+            </div>
+          )}
+          {data.path && (
+            <div>
+              <dt className="text-xs text-[var(--color-muted-foreground)]">Path</dt>
+              <dd className="break-all font-mono text-xs text-[var(--color-muted-foreground)]">
+                {data.path}
+              </dd>
+            </div>
+          )}
+        </dl>
+      </div>
+
+      <div className="shrink-0 space-y-2 border-t border-[var(--color-border)] px-4 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+        {scenes && scenes.length > 1 && currentIndex != null && onNavigate && (
+          <div className="flex items-center justify-between gap-2">
             <Button
-              variant="default"
-              onClick={() => void api.openSceneWithDefault(data.id).catch(console.error)}
+              variant="ghost"
+              size="sm"
+              disabled={currentIndex <= 0}
+              onClick={() => onNavigate(scenes[currentIndex - 1], currentIndex - 1)}
+              className="min-h-10"
+              aria-label="Previous scene (ArrowLeft)"
             >
-              Open with system player
+              <ChevronLeft className="h-4 w-4" />
+              Previous
+            </Button>
+            <div className="hidden items-center gap-2 text-xs text-[var(--color-muted-foreground)] sm:flex">
+              <kbd className="inline-flex h-5 min-w-[20px] items-center justify-center rounded border border-[var(--color-border)] bg-[var(--color-muted)] px-1 font-mono text-[10px]">
+                ← →
+              </kbd>
+              <kbd className="inline-flex h-5 min-w-[20px] items-center justify-center rounded border border-[var(--color-border)] bg-[var(--color-muted)] px-1 font-mono text-[10px]">
+                Space
+              </kbd>
+              <kbd className="inline-flex h-5 min-w-[20px] items-center justify-center rounded border border-[var(--color-border)] bg-[var(--color-muted)] px-1 font-mono text-[10px]">
+                W
+              </kbd>
+            </div>
+            <span className="text-xs text-[var(--color-muted-foreground)]">
+              {currentIndex + 1} / {scenes.length}
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={currentIndex >= scenes.length - 1}
+              onClick={() => onNavigate(scenes[currentIndex + 1], currentIndex + 1)}
+              className="min-h-10"
+              aria-label="Next scene (ArrowRight)"
+            >
+              Next
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
+        <div className="flex flex-wrap justify-end gap-2">
+          {onEdit && (
+            <Button
+              variant="outline"
+              onClick={() => onEdit(data)}
+              className="min-h-10 min-w-[5.5rem]"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+              Edit
             </Button>
           )}
-        </div>
-      )}
-
-      {scenes && scenes.length > 1 && currentIndex != null && onNavigate && (
-        <div className="mt-3 flex items-center justify-between gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-muted)] px-3 py-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={currentIndex <= 0}
-            onClick={() => onNavigate(scenes[currentIndex - 1], currentIndex - 1)}
-            className="min-h-10"
-            aria-label="Previous scene (ArrowLeft)"
-          >
-            <ChevronLeft className="h-4 w-4" />
-            Previous
-          </Button>
-          <div className="flex items-center gap-2 text-xs text-[var(--color-muted-foreground)]">
-            <kbd className="inline-flex h-5 min-w-[20px] items-center justify-center rounded border border-[var(--color-border)] bg-[var(--color-muted)] px-1 font-mono text-[10px]">
-              ← →
-            </kbd>
-            <kbd className="inline-flex h-5 min-w-[20px] items-center justify-center rounded border border-[var(--color-border)] bg-[var(--color-muted)] px-1 font-mono text-[10px]">
-              Space
-            </kbd>
-            <kbd className="inline-flex h-5 min-w-[20px] items-center justify-center rounded border border-[var(--color-border)] bg-[var(--color-muted)] px-1 font-mono text-[10px]">
-              W
-            </kbd>
-          </div>
-          <span className="text-xs text-[var(--color-muted-foreground)]">
-            {currentIndex + 1} / {scenes.length}
-          </span>
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={currentIndex >= scenes.length - 1}
-            onClick={() => onNavigate(scenes[currentIndex + 1], currentIndex + 1)}
-            className="min-h-10"
-            aria-label="Next scene (ArrowRight)"
-          >
-            Next
-            <ChevronRight className="h-4 w-4" />
+          <Button variant="outline" onClick={onClose} className="min-h-10 min-w-[5.5rem]">
+            Close
           </Button>
         </div>
-      )}
-
-      <dl className="mt-4 space-y-2 text-sm">
-        {data.performers.length > 0 && (
-          <div>
-            <dt className="text-xs text-[var(--color-muted-foreground)]">Performers</dt>
-            <dd>{data.performers.join(", ")}</dd>
-          </div>
-        )}
-        {data.channel && (
-          <div>
-            <dt className="text-xs text-[var(--color-muted-foreground)]">Channel</dt>
-            <dd>{data.channel}</dd>
-          </div>
-        )}
-        {data.tags.length > 0 && (
-          <div>
-            <dt className="text-xs text-[var(--color-muted-foreground)]">Tags</dt>
-            <dd className="mt-1 flex flex-wrap gap-1">
-              {data.tags.map((tag) => (
-                <span
-                  key={tag}
-                  className="rounded bg-[var(--color-secondary)] px-1.5 py-0.5 text-xs"
-                >
-                  {tag}
-                </span>
-              ))}
-            </dd>
-          </div>
-        )}
-        {data.studio_name && (
-          <div>
-            <dt className="text-xs text-[var(--color-muted-foreground)]">Studio</dt>
-            <dd>{data.studio_name}</dd>
-          </div>
-        )}
-        {data.date && (
-          <div>
-            <dt className="text-xs text-[var(--color-muted-foreground)]">Date</dt>
-            <dd>{data.date}</dd>
-          </div>
-        )}
-        {fileSize && (
-          <div>
-            <dt className="text-xs text-[var(--color-muted-foreground)]">File size</dt>
-            <dd>{fileSize}</dd>
-          </div>
-        )}
-        {data.width != null && data.height != null && (
-          <div>
-            <dt className="text-xs text-[var(--color-muted-foreground)]">Resolution</dt>
-            <dd>
-              {data.width}×{data.height}
-            </dd>
-          </div>
-        )}
-        {data.source_url && (
-          <div>
-            <dt className="text-xs text-[var(--color-muted-foreground)]">Source</dt>
-            <dd className="break-all">
-              <a
-                href={data.source_url}
-                target="_blank"
-                rel="noreferrer"
-                className="text-[var(--color-primary)] hover:underline"
-              >
-                {data.source_url}
-              </a>
-            </dd>
-          </div>
-        )}
-        {data.path && (
-          <div>
-            <dt className="text-xs text-[var(--color-muted-foreground)]">Path</dt>
-            <dd className="break-all font-mono text-xs text-[var(--color-muted-foreground)]">
-              {data.path}
-            </dd>
-          </div>
-        )}
-      </dl>
-
-      <div className="mt-4 flex flex-wrap justify-end gap-2">
-        {onEdit && (
-          <Button
-            variant="outline"
-            onClick={() => onEdit(data)}
-            className="min-h-10 min-w-[5.5rem]"
-          >
-            <Pencil className="h-3.5 w-3.5" />
-            Edit
-          </Button>
-        )}
-        <Button variant="outline" onClick={onClose} className="min-h-10 min-w-[5.5rem]">
-          Close
-        </Button>
       </div>
     </>
   );
@@ -689,18 +689,16 @@ export function ScenePlayerDialog({
         aria-modal="true"
         className="flex max-h-[92dvh] w-full max-w-4xl flex-col overflow-hidden rounded-t-xl border border-[var(--color-border)] bg-[var(--color-card)] shadow-xl sm:rounded-lg"
       >
-        <div className="overflow-y-auto overscroll-contain p-4">
-          <ScenePlayerBody
-            key={scene.id}
-            scene={scene}
-            scenes={scenes}
-            currentIndex={currentIndex}
-            videoRef={videoRef}
-            onClose={onClose}
-            onEdit={onEdit}
-            onNavigate={onNavigate}
-          />
-        </div>
+        <ScenePlayerBody
+          key={scene.id}
+          scene={scene}
+          scenes={scenes}
+          currentIndex={currentIndex}
+          videoRef={videoRef}
+          onClose={onClose}
+          onEdit={onEdit}
+          onNavigate={onNavigate}
+        />
       </div>
     </div>
   );
