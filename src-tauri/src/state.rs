@@ -691,8 +691,7 @@ impl AppState {
             if entry.netscape.trim().is_empty() {
                 continue;
             }
-            self.vault
-                .save_cookies(&entry.site_id, &entry.netscape)?;
+            self.vault.save_cookies(&entry.site_id, &entry.netscape)?;
             cookies_imported += 1;
         }
 
@@ -820,6 +819,24 @@ impl AppState {
             .ok_or_else(|| crate::error::AppError::Other("No stream URL resolved".to_string()))?
             .to_string();
         Ok(stream_url)
+    }
+
+    /// Resolve live HLS URLs, keeping a separate audio URL when the cam serves
+    /// split audio/video chunklists (Chaturbate/Stripchat live). The frontend
+    /// plays `audio_url` in a synced hidden `<audio>` element because browsers
+    /// can't mux two HLS URLs in one `<video>` tag.
+    pub async fn resolve_livestream_urls(&self, url: &str) -> AppResult<(String, Option<String>)> {
+        let site_id = self
+            .sites
+            .detect(url)
+            .unwrap_or_else(|| "custom".to_string());
+
+        if site_id == "chaturbate" || site_id == "stripchat" {
+            return crate::sites::urls::resolve_cam_stream_urls(&self.site_ctx, &site_id, url)
+                .await;
+        }
+
+        Ok((self.resolve_stream_url(url).await?, None))
     }
 
     pub async fn generate_missing_thumbs(&self) -> AppResult<crate::models::ThumbGenResult> {
@@ -1759,7 +1776,8 @@ mod tests {
         assert_eq!(resolved, file.canonicalize().unwrap());
 
         // Path with .. traversal that stays inside root
-        let resolved = AppState::resolve_under_library(root_str, "subdir/../subdir/thumb.jpg").unwrap();
+        let resolved =
+            AppState::resolve_under_library(root_str, "subdir/../subdir/thumb.jpg").unwrap();
         assert_eq!(resolved, file.canonicalize().unwrap());
 
         // Absolute path outside library → InvalidInput

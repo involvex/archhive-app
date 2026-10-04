@@ -313,19 +313,29 @@ pub async fn resolve_livestream(
     let embed_url = crate::sites::urls::derive_embed_url(&url);
     // Try yt-dlp stream URL resolution first. If it fails, fall back to the
     // embed iframe (e.g. Chaturbate affiliate embed with embed_video_only=1).
-    let stream_url = match state.resolve_stream_url(&url).await {
-        Ok(u) => u,
+    // The failure reason is surfaced as `stream_error` so the UI can show why
+    // direct HLS was unavailable (cookies, separate A/V, expired session…).
+    // `audio_url` carries a separate audio chunklist for cams that serve split
+    // audio/video streams; the player syncs it with the video element.
+    let (stream_url, audio_url, stream_error) = match state.resolve_livestream_urls(&url).await {
+        Ok((v, a)) => (v, a, String::new()),
         Err(e) => {
             tracing::warn!(
                 "resolve_stream_url failed for live stream, falling back to embed iframe: {}",
                 e
             );
-            String::new()
+            (
+                String::new(),
+                None,
+                e.to_string().replace("site error:", "").trim().to_string(),
+            )
         }
     };
     Ok(serde_json::json!({
         "stream_url": stream_url,
+        "audio_url": audio_url,
         "embed_url": embed_url,
+        "stream_error": stream_error,
     }))
 }
 

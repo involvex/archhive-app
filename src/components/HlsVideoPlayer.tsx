@@ -6,6 +6,13 @@ export const STREAM_URL_EXPIRED_ERROR =
 
 export interface HlsVideoPlayerProps {
   src: string;
+  /**
+   * Optional separate audio-only HLS URL (Chaturbate/Stripchat live serve
+   * split audio/video chunklists). Played in a hidden `<audio>` element kept
+   * in sync with the video element (play/pause/volume), because browsers
+   * can't mux two HLS URLs in one `<video>` tag.
+   */
+  audioSrc?: string;
   controls?: boolean;
   autoPlay?: boolean;
   playsInline?: boolean;
@@ -36,6 +43,7 @@ export const HlsVideoPlayer = forwardRef<HTMLVideoElement, HlsVideoPlayerProps>(
   (
     {
       src,
+      audioSrc,
       controls = true,
       autoPlay = false,
       playsInline = true,
@@ -54,7 +62,10 @@ export const HlsVideoPlayer = forwardRef<HTMLVideoElement, HlsVideoPlayerProps>(
     ref: Ref<HTMLVideoElement>,
   ) => {
     const videoRef = useRef<HTMLVideoElement | null>(null);
+    const audioRef = useRef<HTMLAudioElement | null>(null);
     const hlsRef = useRef<import("hls.js").default | null>(null);
+    const audioHlsRef = useRef<import("hls.js").default | null>(null);
+    const lastSyncRef = useRef(0);
     const [needsUnmute, setNeedsUnmute] = useState(false);
     const [pipAvailable, setPipAvailable] = useState(false);
 
@@ -86,16 +97,29 @@ export const HlsVideoPlayer = forwardRef<HTMLVideoElement, HlsVideoPlayerProps>(
       }
     })();
 
-    const tryPlayWithAudio = useCallback((video: HTMLVideoElement) => {
-      video.muted = false;
-      video.volume = 1;
-      void video.play().catch(() => {
-        // Autoplay policy: start muted, prompt user to unmute.
-        video.muted = true;
-        setNeedsUnmute(true);
-        void video.play().catch(() => {});
-      });
-    }, []);
+    const tryPlayWithAudio = useCallback(
+      (video: HTMLVideoElement) => {
+        video.muted = false;
+        video.volume = 1;
+        const audio = audioRef.current;
+        if (audio) {
+          audio.muted = false;
+          audio.volume = 1;
+        }
+        void video.play().catch(() => {
+          // Autoplay policy: start muted, prompt user to unmute.
+          video.muted = true;
+          if (audio) audio.muted = true;
+          setNeedsUnmute(true);
+          void video.play().catch(() => {});
+          if (audio) void audio.play().catch(() => {});
+        });
+        if (audio && audioSrc) {
+          void audio.play().catch(() => {});
+        }
+      },
+      [audioSrc],
+    );
 
     const loadHls = useCallback(
       async (video: HTMLVideoElement, url: string) => {
@@ -162,6 +186,93 @@ export const HlsVideoPlayer = forwardRef<HTMLVideoElement, HlsVideoPlayerProps>(
       };
     }, [src, isHls, loadHls, autoPlay, tryPlayWithAudio]);
 
+    // Separate audio track (split A/V live cams): hidden <audio> element with
+    // its own hls.js instance, driven in lock-step with the video element.
+    useEffect(() => {
+      const audio = audioRef.current;
+      if (!audio) return;
+      if (audioHlsRef.current) {
+        audioHlsRef.current.destroy();
+        audioHlsRef.current = null;
+      }
+      if (!audioSrc) {
+        audio.removeAttribute("src");
+        audio.load();
+        return;
+      }
+      const lower = audioSrc.toLowerCase();
+      const audioIsHls = lower.includes(".m3u8");
+      // Mirror the video element's current mute/volume at attach time.
+      const video = videoRef.current;
+      if (video) {
+        audio.muted = video.muted;
+        audio.volume = video.volume;
+      }
+      let cancelled = false;
+      if (audioIsHls) {
+        void import("hls.js")
+          .then(({ default: Hls }) => {
+            if (cancelled) return;
+            if (Hls.isSupported()) {
+              const hls = new Hls({ enableWorker: true, lowLatencyMode: true });
+              audioHlsRef.current = hls;
+              hls.loadSource(audioSrc);
+              hls.attachMedia(audio);
+            } else {
+              audio.src = audioSrc;
+            }
+          })
+          .catch(() => {
+            if (!cancelled) audio.src = audioSrc;
+          });
+      } else {
+        audio.src = audioSrc;
+      }
+      return () => {
+        cancelled = true;
+        if (audioHlsRef.current) {
+          audioHlsRef.current.destroy();
+          audioHlsRef.current = null;
+        }
+      };
+    }, [audioSrc]);
+
+    const syncAudio = useCallback((action: "play" | "pause" | "volume") => {
+      const audio = audioRef.current;
+      const video = videoRef.current;
+      if (!audio || !video) return;
+      if (action === "play") {
+        audio.muted = video.muted;
+        audio.volume = video.volume;
+        void audio.play().catch(() => {});
+      } else if (action === "pause") {
+        audio.pause();
+      } else {
+        audio.muted = video.muted;
+        audio.volume = video.volume;
+      }
+    }, []);
+
+    // Live A/V drift correction (throttled): re-seek the audio element when it
+    // drifts more than ~1.5s from the video element.
+    const handleAudioSync = useCallback(() => {
+      const audio = audioRef.current;
+      const video = videoRef.current;
+      if (!audio || !video || audio.paused || !audioSrc) return;
+      const now = Date.now();
+      if (now - lastSyncRef.current < 4000) return;
+      lastSyncRef.current = now;
+      const vt = video.currentTime;
+      const at = audio.currentTime;
+      if (Number.isFinite(vt) && Number.isFinite(at) && Math.abs(vt - at) > 1.5) {
+        try {
+          audio.currentTime = vt;
+        } catch {
+          /* live edge not seekable yet — ignore */
+        }
+      }
+    }, [audioSrc]);
+
     const handleVideoError = (e: React.SyntheticEvent<HTMLVideoElement>) => {
       const mediaError = e.currentTarget.error;
       if (mediaError?.code === 4) {
@@ -175,6 +286,12 @@ export const HlsVideoPlayer = forwardRef<HTMLVideoElement, HlsVideoPlayerProps>(
       if (!video) return;
       video.muted = false;
       video.volume = 1;
+      const audio = audioRef.current;
+      if (audio) {
+        audio.muted = false;
+        audio.volume = 1;
+        void audio.play().catch(() => {});
+      }
       setNeedsUnmute(false);
       void video.play().catch(() => {});
     };
@@ -213,18 +330,39 @@ export const HlsVideoPlayer = forwardRef<HTMLVideoElement, HlsVideoPlayerProps>(
           style={{ touchAction: "manipulation", ...style }}
           onError={handleVideoError}
           onTimeUpdate={onTimeUpdate}
-          onPause={onPause}
-          onPlay={onPlay}
+          onPause={() => {
+            syncAudio("pause");
+            onPause?.();
+          }}
+          onPlay={() => {
+            syncAudio("play");
+            onPlay?.();
+          }}
           onEnded={onEnded}
           onVolumeChange={() => {
             const video = videoRef.current;
             if (video && !video.muted && video.volume > 0) {
               setNeedsUnmute(false);
             }
+            syncAudio("volume");
           }}
         >
           <track kind="captions" />
         </video>
+        {/* Hidden companion audio for split A/V live streams. */}
+        {audioSrc ? (
+          <audio
+            ref={(node) => {
+              audioRef.current = node;
+            }}
+            key={audioSrc}
+            preload="auto"
+            playsInline
+            className="hidden"
+            aria-hidden="true"
+            onTimeUpdate={handleAudioSync}
+          />
+        ) : null}
 
         {needsUnmute && (
           <button

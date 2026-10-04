@@ -58,6 +58,17 @@ import { useSettingsStore } from "../stores/settings";
 import { isDesktopTauri, isTauri } from "../tauri";
 
 /**
+ * True when a livestream failure means the room isn't watchable right now
+ * (offline, private show, deleted) rather than a resolvable stream issue.
+ * Callers show a friendly offline message instead of the embed iframe.
+ */
+export function isRoomOfflineError(msg: string): boolean {
+  return /private show|room is offline|\boffline\b|not broadcasting|user not found|no longer live|stream has ended|room.+not found|could not find room/i.test(
+    msg,
+  );
+}
+
+/**
  * Guard scraped/resolved media URLs before they reach `<video src>` or
  * `<iframe src>`. Only absolute `http(s)` URLs are allowed; anything else
  * (`javascript:`, `data:`, `file:`, relative paths, empty) becomes `""` so
@@ -726,17 +737,37 @@ export const api = {
     return safeMediaUrl(raw);
   },
 
-  async resolveLivestream(url: string): Promise<{ stream_url: string; embed_url: string }> {
+  async resolveLivestream(url: string): Promise<{
+    stream_url: string;
+    audio_url: string;
+    embed_url: string;
+    stream_error: string;
+  }> {
     const raw = shouldUseRemoteApi()
-      ? await remoteFetch<{ stream_url: string; embed_url: string }>("/api/media/livestream", {
+      ? await remoteFetch<{
+          stream_url: string;
+          audio_url?: string | null;
+          embed_url: string;
+          stream_error?: string;
+        }>("/api/media/livestream", {
           method: "POST",
           body: JSON.stringify({ url }),
         })
-      : await localInvoke<{ stream_url: string; embed_url: string }>("resolve_livestream", {
+      : await localInvoke<{
+          stream_url: string;
+          audio_url?: string | null;
+          embed_url: string;
+          stream_error?: string;
+        }>("resolve_livestream", {
           url,
         });
     // Security: embed/stream URLs land in <iframe src> / <video src>.
-    return { stream_url: safeMediaUrl(raw.stream_url), embed_url: safeMediaUrl(raw.embed_url) };
+    return {
+      stream_url: safeMediaUrl(raw.stream_url),
+      audio_url: safeMediaUrl(raw.audio_url ?? ""),
+      embed_url: safeMediaUrl(raw.embed_url),
+      stream_error: typeof raw.stream_error === "string" ? raw.stream_error : "",
+    };
   },
 
   async ensurePerformer(name: string): Promise<Performer> {

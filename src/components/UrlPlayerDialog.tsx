@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { api, safeMediaUrl } from "@/lib/api/client";
+import { api, isRoomOfflineError, safeMediaUrl } from "@/lib/api/client";
 import { Button } from "@/components/ui/button";
 import { HlsVideoPlayer, STREAM_URL_EXPIRED_ERROR } from "@/components/HlsVideoPlayer";
 import { AlertCircle, ChevronLeft, ChevronRight, Loader2, X } from "lucide-react";
@@ -22,7 +22,9 @@ export function UrlPlayerDialog({
   onSelectItem,
 }: UrlPlayerDialogProps) {
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [embedUrl, setEmbedUrl] = useState<string | null>(null);
+  const [streamError, setStreamError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [queued, setQueued] = useState(false);
@@ -43,13 +45,21 @@ export function UrlPlayerDialog({
     setLoading(true);
     setError(null);
     setStreamUrl(null);
+    setAudioUrl(null);
     setEmbedUrl(null);
+    setStreamError(null);
     try {
       // Live rooms: same path as /live — prefer direct HLS, fall back to embed.
       if (item.is_live) {
         const live = await api.resolveLivestream(item.url);
         if (live.embed_url?.trim()) {
           setEmbedUrl(live.embed_url.trim());
+        }
+        if (live.audio_url?.trim()) {
+          setAudioUrl(live.audio_url.trim());
+        }
+        if (live.stream_error?.trim()) {
+          setStreamError(live.stream_error.trim());
         }
         if (live.stream_url?.trim()) {
           setStreamUrl(live.stream_url.trim());
@@ -168,6 +178,7 @@ export function UrlPlayerDialog({
           {streamUrl && !error && (
             <HlsVideoPlayer
               src={streamUrl}
+              audioSrc={audioUrl ?? undefined}
               autoPlay
               className="aspect-video max-h-[min(52dvh,26rem)] w-full rounded-md bg-black object-contain"
               onError={(mediaError: MediaError | null) => {
@@ -180,22 +191,42 @@ export function UrlPlayerDialog({
             />
           )}
 
-          {!streamUrl && !loading && embedUrl && (
-            <iframe
-              src={embedUrl}
-              className="aspect-video max-h-[min(52dvh,26rem)] w-full rounded-md border-0 bg-black object-contain"
-              title={`${item.title} live stream`}
-              allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
-              allowFullScreen
-            />
+          {!streamUrl && !loading && embedUrl && streamError && isRoomOfflineError(streamError) && (
+            <div className="flex aspect-video max-h-[min(52dvh,26rem)] w-full items-center justify-center rounded-md bg-[var(--color-muted)]">
+              <p className="px-4 text-center text-sm text-[var(--color-muted-foreground)]">
+                This room looks offline or is in a private show right now — nothing to play.
+              </p>
+            </div>
           )}
 
-          {!streamUrl && !loading && embedUrl && (
-            <p className="mt-2 text-xs text-[var(--color-muted-foreground)]">
-              Playing embedded player (direct stream URL unavailable). Tap Retry for HLS if cookies
-              are configured.
-            </p>
-          )}
+          {!streamUrl &&
+            !loading &&
+            embedUrl &&
+            (!streamError || !isRoomOfflineError(streamError)) && (
+              <iframe
+                src={embedUrl}
+                className="aspect-video max-h-[min(52dvh,26rem)] w-full rounded-md border-0 bg-black object-contain"
+                style={{ pointerEvents: "auto", touchAction: "manipulation" }}
+                title={`${item.title} live stream`}
+                allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
+                allowFullScreen
+              />
+            )}
+
+          {!streamUrl &&
+            !loading &&
+            embedUrl &&
+            (!streamError || !isRoomOfflineError(streamError)) && (
+              <div className="mt-2 space-y-1 text-xs text-[var(--color-muted-foreground)]">
+                <p>
+                  Playing the site embed player. If its controls don&apos;t respond, open the room
+                  URL below in your browser, or tap Retry for HLS if cookies are configured.
+                </p>
+                {streamError && (
+                  <p className="font-mono break-all">Direct HLS failed: {streamError}</p>
+                )}
+              </div>
+            )}
 
           <dl className="mt-4 space-y-2 text-sm">
             {item.performers.length > 0 && (

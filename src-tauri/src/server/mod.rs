@@ -166,7 +166,10 @@ impl LanServer {
                 post(save_cookies).delete(delete_cookies),
             )
             .route("/api/settings", get(get_settings).put(put_settings))
-            .route("/api/settings/backup", get(export_settings_backup).post(import_settings_backup))
+            .route(
+                "/api/settings/backup",
+                get(export_settings_backup).post(import_settings_backup),
+            )
             .route("/api/library/scan", post(scan_library))
             .route(
                 "/api/library/thumbs",
@@ -774,9 +777,11 @@ async fn import_settings_backup(
     State(state): State<ApiState>,
     Json(body): Json<ImportBackupBody>,
 ) -> Result<Json<crate::models::SettingsBackupImportResult>, StatusCode> {
-    let opts = body.options.unwrap_or(crate::models::SettingsBackupImportOptions {
-        include_remote_credentials: false,
-    });
+    let opts = body
+        .options
+        .unwrap_or(crate::models::SettingsBackupImportOptions {
+            include_remote_credentials: false,
+        });
     let result = state
         .app
         .import_settings_backup(&body.backup, &opts)
@@ -843,19 +848,30 @@ async fn resolve_livestream(
     let embed_url = crate::sites::urls::derive_embed_url(&body.url);
     // Try yt-dlp stream URL resolution first. If it fails, fall back to the
     // embed iframe (e.g. Chaturbate affiliate embed with embed_video_only=1).
-    let stream_url = match state.app.resolve_stream_url(&body.url).await {
-        Ok(u) => u,
-        Err(e) => {
-            tracing::warn!(
-                "resolve_stream_url failed for live stream, falling back to embed iframe: {}",
-                e
-            );
-            String::new()
-        }
-    };
+    // The failure reason is surfaced as `stream_error` so the UI can show why
+    // direct HLS was unavailable (cookies, separate A/V, expired session…).
+    // `audio_url` carries a separate audio chunklist for cams that serve split
+    // audio/video streams; the player syncs it with the video element.
+    let (stream_url, audio_url, stream_error) =
+        match state.app.resolve_livestream_urls(&body.url).await {
+            Ok((v, a)) => (v, a, String::new()),
+            Err(e) => {
+                tracing::warn!(
+                    "resolve_stream_url failed for live stream, falling back to embed iframe: {}",
+                    e
+                );
+                (
+                    String::new(),
+                    None,
+                    e.to_string().replace("site error:", "").trim().to_string(),
+                )
+            }
+        };
     Ok(Json(serde_json::json!({
         "stream_url": stream_url,
+        "audio_url": audio_url,
         "embed_url": embed_url,
+        "stream_error": stream_error,
     })))
 }
 
