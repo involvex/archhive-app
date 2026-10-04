@@ -196,7 +196,7 @@ impl SiteAdapter for PornhubAdapter {
             page: query.page,
             has_more,
             total: None,
-        ..Default::default()
+            ..Default::default()
         })
     }
 
@@ -289,12 +289,20 @@ impl SiteAdapter for PornhubAdapter {
             if let Ok(Some(stream_url)) =
                 crate::sites::extractors::pornhub::extract_download_url(ctx, url).await
             {
-                return Ok(maybe_loopback_proxy(ctx, &stream_url, "https://www.pornhub.com/"));
+                return Ok(maybe_loopback_proxy(
+                    ctx,
+                    &stream_url,
+                    "https://www.pornhub.com/",
+                ));
             }
             if let Ok(Some(hls_url)) =
                 crate::sites::extractors::pornhub::extract_hls_url(ctx, url).await
             {
-                return Ok(maybe_loopback_proxy(ctx, &hls_url, "https://www.pornhub.com/"));
+                return Ok(maybe_loopback_proxy(
+                    ctx,
+                    &hls_url,
+                    "https://www.pornhub.com/",
+                ));
             }
         }
 
@@ -945,11 +953,7 @@ fn scrape_tube_video_title(html: &str) -> Option<String> {
         };
         if let Some(el) = doc.select(&selector).next() {
             let text = if sel.starts_with("meta") {
-                el.value()
-                    .attr("content")
-                    .unwrap_or("")
-                    .trim()
-                    .to_string()
+                el.value().attr("content").unwrap_or("").trim().to_string()
             } else {
                 el.text().collect::<String>().trim().to_string()
             };
@@ -1228,10 +1232,7 @@ mod category_tests {
             page: 1,
             orientation: Some(BrowseOrientation::Gay),
         });
-        assert_eq!(
-            url,
-            format!("{PH_BASE}/gay/video/search?search=big+tits")
-        );
+        assert_eq!(url, format!("{PH_BASE}/gay/video/search?search=big+tits"));
     }
 
     #[test]

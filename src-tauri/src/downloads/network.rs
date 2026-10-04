@@ -64,10 +64,7 @@ impl NetworkMonitor {
 
             if settings.download_on_wifi_only
                 && !is_wifi
-                && matches!(
-                    job.status,
-                    DownloadStatus::Pending | DownloadStatus::Active
-                )
+                && matches!(job.status, DownloadStatus::Pending | DownloadStatus::Active)
             {
                 job.status = DownloadStatus::WaitingForWifi;
                 job.error = Some("Waiting for Wi-Fi connection".to_string());
@@ -133,10 +130,7 @@ mod tests {
         let mut s = AppSettings::default();
         s.download_quality = DownloadQuality::Best;
         s.data_saver = DataSaverMode::Off;
-        assert_eq!(
-            effective_download_quality(&s, true),
-            DownloadQuality::Best
-        );
+        assert_eq!(effective_download_quality(&s, true), DownloadQuality::Best);
     }
 
     #[test]
@@ -148,10 +142,7 @@ mod tests {
             effective_download_quality(&s, true),
             DownloadQuality::Height480
         );
-        assert_eq!(
-            effective_download_quality(&s, false),
-            DownloadQuality::Best
-        );
+        assert_eq!(effective_download_quality(&s, false), DownloadQuality::Best);
     }
 
     #[test]

@@ -254,6 +254,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       vibrateTick(10);
       setSearchOpen(true);
     }
+    // NOTE: when a long-press fired, keep fabLongFired true so the
+    // subsequent click event (mouse/pen/keyboard sequences fire click after
+    // pointerup) can suppress a duplicate search-sheet open. handleFabClick
+    // consumes and clears the flag.
     fabDownAt.current = 0;
     fabSwiping.current = false;
   }, []);
@@ -265,6 +269,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
     fabDownAt.current = 0;
     fabSwiping.current = false;
+    fabLongFired.current = false;
+  }, []);
+
+  const handleFabClick = useCallback(() => {
+    // Keyboard activation and mouse/pen clicks reach here without the
+    // touch long-press path. Suppress the click that follows a long-press
+    // (pointerup already opened the quick-actions sheet).
+    if (fabLongFired.current) {
+      fabLongFired.current = false;
+      return;
+    }
+    // Pointer-driven taps already opened the search sheet in onFabPointerUp;
+    // this is idempotent, and covers keyboard/screen-reader activation where
+    // no pointer events fire at all.
+    setSearchOpen(true);
   }, []);
 
   return (
@@ -439,8 +458,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             onPointerUp={onFabPointerUp}
             onPointerCancel={fabReset}
             onPointerLeave={fabReset}
-            aria-label="Quick actions"
-            aria-expanded={quickActionsOpen}
+            onClick={handleFabClick}
+            onContextMenu={(e) => e.preventDefault()}
+            aria-label="Open search — long-press for quick actions"
+            aria-expanded={quickActionsOpen || searchOpen}
             aria-haspopup="dialog"
             className={cn(
               "md:hidden fixed right-4 z-40 rounded-full bg-[var(--color-primary)] text-[var(--color-primary-foreground)] shadow-lg transition-transform",

@@ -45,7 +45,7 @@ impl SiteAdapter for CustomUrlAdapter {
                     page: query.page,
                     has_more,
                     total: None,
-                ..Default::default()
+                    ..Default::default()
                 })
             }
             Ok(items) if !items.is_empty() => Ok(BrowsePage {
@@ -53,7 +53,7 @@ impl SiteAdapter for CustomUrlAdapter {
                 page: query.page,
                 has_more: false,
                 total: Some(1),
-            ..Default::default()
+                ..Default::default()
             }),
             _ => Ok(BrowsePage {
                 items: vec![MediaItem {
@@ -77,7 +77,7 @@ impl SiteAdapter for CustomUrlAdapter {
                 page: query.page,
                 has_more: false,
                 total: Some(1),
-            ..Default::default()
+                ..Default::default()
             }),
         }
     }

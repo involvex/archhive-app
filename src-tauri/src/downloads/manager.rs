@@ -595,8 +595,12 @@ async fn run_job_with_plan(
             let filename = if Path::new(&base)
                 .extension()
                 .and_then(|e| e.to_str())
-                .is_some_and(|e| matches!(e.to_ascii_lowercase().as_str(), "mp4" | "webm" | "m4v" | "mov" | "mkv"))
-            {
+                .is_some_and(|e| {
+                    matches!(
+                        e.to_ascii_lowercase().as_str(),
+                        "mp4" | "webm" | "m4v" | "mov" | "mkv"
+                    )
+                }) {
                 base
             } else {
                 format!("{base}.mp4")
@@ -632,7 +636,8 @@ async fn run_job_with_plan(
                 .try_state::<Arc<crate::state::AppState>>()
                 .map(|s| s.network_monitor.is_metered())
                 .unwrap_or(false);
-            let quality = crate::downloads::network::effective_download_quality(&settings, is_metered);
+            let quality =
+                crate::downloads::network::effective_download_quality(&settings, is_metered);
             let format_args = SidecarRunner::format_selection_args(quality, settings.prefer_mp4);
             let path_result = runner
                 .run_yt_dlp(
@@ -856,7 +861,11 @@ fn update_progress(
         crate::mobile::ytdlp_bridge::update_keep_alive(
             app,
             "ArcHive downloads",
-            &format!("{}% — {}", pct, job.title.as_deref().unwrap_or("Downloading")),
+            &format!(
+                "{}% — {}",
+                pct,
+                job.title.as_deref().unwrap_or("Downloading")
+            ),
             pct.clamp(0, 100),
         );
     }
@@ -917,7 +926,13 @@ mod tests {
         let dir = tempdir().unwrap();
         let db = Database::new(dir.path().to_path_buf()).unwrap();
         let job = db
-            .insert_download_job("https://example.com/video.mp4", "generic_ytdlp", None, None, None)
+            .insert_download_job(
+                "https://example.com/video.mp4",
+                "generic_ytdlp",
+                None,
+                None,
+                None,
+            )
             .unwrap();
 
         let loaded = db.get_download_job(&job.id).unwrap().unwrap();
@@ -949,7 +964,13 @@ mod tests {
         let dir = tempdir().unwrap();
         let db = Database::new(dir.path().to_path_buf()).unwrap();
         let mut job = db
-            .insert_download_job("https://example.com/video.mp4", "generic_ytdlp", None, None, None)
+            .insert_download_job(
+                "https://example.com/video.mp4",
+                "generic_ytdlp",
+                None,
+                None,
+                None,
+            )
             .unwrap();
         job.status = DownloadStatus::Failed;
         job.retry_count = 2;

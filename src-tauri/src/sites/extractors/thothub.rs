@@ -49,8 +49,7 @@ fn extract_license_code(html: &str) -> Option<String> {
 fn collect_video_urls(html: &str) -> Vec<(i32, String)> {
     static URL_RE: OnceLock<Regex> = OnceLock::new();
     let url_re = URL_RE.get_or_init(|| {
-        Regex::new(r#"(video_url|video_alt_url\d*)\s*:\s*['"]([^'"]+)['"]"#)
-            .expect("url key regex")
+        Regex::new(r#"(video_url|video_alt_url\d*)\s*:\s*['"]([^'"]+)['"]"#).expect("url key regex")
     });
     static TEXT_RE: OnceLock<Regex> = OnceLock::new();
     let text_re = TEXT_RE.get_or_init(|| {
@@ -95,9 +94,7 @@ fn extract_json_ld_content_url(html: &str) -> Option<String> {
 fn parse_height(s: &str) -> i32 {
     static RE: OnceLock<Regex> = OnceLock::new();
     let re = RE.get_or_init(|| Regex::new(r"(\d{3,4})p").expect("height regex"));
-    re.captures(s)
-        .and_then(|c| c[1].parse().ok())
-        .unwrap_or(0)
+    re.captures(s).and_then(|c| c[1].parse().ok()).unwrap_or(0)
 }
 
 fn absolutize(page_url: &str, href: &str) -> String {
@@ -212,10 +209,7 @@ var playercfg = {
         let parsed = url::Url::parse(&real).unwrap();
         let parts: Vec<_> = parsed.path().split('/').collect();
         assert!(parts[3].len() >= 32);
-        assert_eq!(
-            parts[3].len(),
-            "0123456789abcdef0123456789abcdefREST".len()
-        );
+        assert_eq!(parts[3].len(), "0123456789abcdef0123456789abcdefREST".len());
     }
 
     #[test]

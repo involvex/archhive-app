@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "react-hot-toast";
 import { Compass, Newspaper, Plus, RefreshCw, QrCode, Link as LinkIcon, X } from "lucide-react";
+import { api } from "@/lib/api/client";
 
 interface MobileQuickActionsSheetProps {
   onClose: () => void;
@@ -64,7 +65,16 @@ export function MobileQuickActionsSheet({ onClose }: MobileQuickActionsSheetProp
 
   function openScan() {
     onClose();
-    setTimeout(() => navigate({ to: "/library" }), 10);
+    // Same behaviour as the "Scan library" action in MobileSearchSheet:
+    // actually run the scan instead of just navigating to /library.
+    void (async () => {
+      try {
+        const r = await api.scanLibrary();
+        toast.success(`Scan done: ${r.added} added, ${r.updated} updated`);
+      } catch {
+        toast.error("Library scan failed");
+      }
+    })();
   }
 
   const items: {

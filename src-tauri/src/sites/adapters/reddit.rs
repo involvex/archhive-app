@@ -44,7 +44,7 @@ impl SiteAdapter for RedditAdapter {
             page: query.page,
             has_more,
             total: None,
-        ..Default::default()
+            ..Default::default()
         })
     }
 

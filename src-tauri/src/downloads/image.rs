@@ -227,8 +227,9 @@ fn media_filename_stem(title: Option<&str>, url: &str) -> String {
         }
     }
     // If the stem already ends with a real media extension, drop it — caller adds `ext`.
-    for real in [".mp4", ".webm", ".m4v", ".mov", ".mkv", ".jpg", ".jpeg", ".png", ".gif", ".webp"]
-    {
+    for real in [
+        ".mp4", ".webm", ".m4v", ".mov", ".mkv", ".jpg", ".jpeg", ".png", ".gif", ".webp",
+    ] {
         if let Some(stripped) = lower.strip_suffix(real) {
             let end = stripped.len();
             return raw[..end].trim_matches('_').to_string();

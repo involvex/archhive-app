@@ -110,7 +110,7 @@ impl ChaturbateAdapter {
                     page: query.page,
                     has_more,
                     total: None,
-                ..Default::default()
+                    ..Default::default()
                 });
             }
         }
@@ -132,7 +132,7 @@ impl ChaturbateAdapter {
                 page: query.page,
                 has_more: false,
                 total: None,
-            ..Default::default()
+                ..Default::default()
             });
         }
         let (room_url, username) = if slug_raw.starts_with("http") {
@@ -148,7 +148,7 @@ impl ChaturbateAdapter {
                 page: query.page,
                 has_more: false,
                 total: None,
-            ..Default::default()
+                ..Default::default()
             });
         }
         Ok(BrowsePage {
@@ -173,7 +173,7 @@ impl ChaturbateAdapter {
             page: query.page,
             has_more: false,
             total: Some(1),
-        ..Default::default()
+            ..Default::default()
         })
     }
 }
@@ -222,9 +222,7 @@ fn build_api_url(query: &BrowseQuery) -> String {
             "{BASE}/api/ts/roomlist/room-list/?enable_recommendations=false&limit=90&q={}",
             url_slug(&query.slug)
         ),
-        _ => format!(
-            "{BASE}/api/ts/roomlist/room-list/?enable_recommendations=false&limit=90"
-        ),
+        _ => format!("{BASE}/api/ts/roomlist/room-list/?enable_recommendations=false&limit=90"),
     };
     if offset > 0 {
         url.push_str(&format!("&offset={offset}"));
@@ -240,7 +238,7 @@ fn api_rooms_to_page(rooms: Vec<HttpRoom>, page: u32) -> BrowsePage {
         page,
         has_more,
         total: None,
-    ..Default::default()
+        ..Default::default()
     }
 }
 

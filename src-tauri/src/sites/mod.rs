@@ -87,7 +87,12 @@ impl SiteContext {
     }
 
     /// JSON room-list style APIs (Chaturbate / Stripchat ts endpoints).
-    pub async fn fetch_json_api(&self, url: &str, site_id: &str, referer: &str) -> AppResult<String> {
+    pub async fn fetch_json_api(
+        &self,
+        url: &str,
+        site_id: &str,
+        referer: &str,
+    ) -> AppResult<String> {
         let origin = referer.trim_end_matches('/');
         self.fetch_with_headers(
             url,

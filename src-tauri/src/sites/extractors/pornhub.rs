@@ -52,10 +52,7 @@ fn extract_playlist_url(html: &str) -> Option<String> {
 
 /// Follow `/video/get_media` JSON endpoints and keep direct CDN URLs as-is.
 #[cfg_attr(not(mobile), allow(dead_code))]
-async fn expand_candidates(
-    ctx: &SiteContext,
-    candidates: &[(i32, String)],
-) -> Vec<(i32, String)> {
+async fn expand_candidates(ctx: &SiteContext, candidates: &[(i32, String)]) -> Vec<(i32, String)> {
     let mut out: Vec<(i32, String)> = Vec::new();
     for (quality, url) in candidates {
         if is_get_media(url) {
