@@ -6,6 +6,24 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.5.3",
+    date: "2026-10-05",
+    changes: [
+      {
+        type: "added",
+        text: "Cup & Color Finder in Browse with per-site external search links, recent searches, and library matches",
+      },
+      {
+        type: "added",
+        text: "Performer cup size / hair color attributes with library filtering, detail editor, and LAN API",
+      },
+      {
+        type: "fixed",
+        text: "External Open links now open in the system browser via the opener plugin on desktop and Android",
+      },
+    ],
+  },
+  {
     version: "0.5.2",
     date: "2026-09-23",
     changes: [
