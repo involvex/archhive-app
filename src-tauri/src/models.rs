@@ -196,6 +196,12 @@ pub struct Performer {
     pub aliases: Vec<String>,
     pub image: Option<String>,
     pub favorite: bool,
+    /// V2 BodyMatch cup size (canonical `CupId`: A,B,C,D,DD,F,G,H+,big-tits,huge-tits).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cup_size: Option<String>,
+    /// V2 BodyMatch hair color (blonde,brunette,black,red,auburn).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hair_color: Option<String>,
     pub scene_count: u32,
 }
 
@@ -685,6 +691,12 @@ pub struct SceneFilter {
     pub min_file_size: Option<u64>,
     #[serde(default)]
     pub collection_id: Option<String>,
+    /// V2 BodyMatch: only scenes with a performer of this cup size.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub performer_cup: Option<String>,
+    /// V2 BodyMatch: only scenes with a performer of this hair color.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub performer_hair: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

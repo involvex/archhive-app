@@ -315,6 +315,7 @@ pub fn run() {
             commands::clear_logs,
             commands::get_recent_logs,
             commands::export_performers,
+            commands::update_performer_attributes,
             commands::set_performer_image,
             commands::record_watch_progress,
             commands::get_watch_progress,

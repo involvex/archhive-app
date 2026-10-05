@@ -54,6 +54,7 @@ import { useTheme } from "@/lib/hooks/useTheme";
 import { isAmoled, setAmoled } from "@/lib/amoled";
 import { Sun, Moon, Monitor, Clock, Book, Contrast } from "lucide-react";
 import { ChangelogDialog, useChangelogDialog } from "@/components/ChangelogDialog";
+import { ExtLink } from "@/components/ExtLink";
 
 export const Route = createFileRoute("/settings/")({
   component: SettingsPage,
@@ -2277,14 +2278,9 @@ function SettingsPage() {
                   <li key={step}>{step}</li>
                 ))}
               </ol>
-              <a
-                href={COOKIE_EXTENSION_URL}
-                target="_blank"
-                rel="noreferrer"
-                className="text-xs text-[var(--color-primary)] underline"
-              >
+              <ExtLink href={COOKIE_EXTENSION_URL} className="text-xs underline">
                 Get Cookie-Editor extension
-              </a>
+              </ExtLink>
               <select
                 className="w-full rounded-md border border-[var(--color-border)] bg-transparent px-3 py-2 text-sm"
                 value={selectedSite}

@@ -777,9 +777,40 @@ export const api = {
     });
   },
 
-  async listPerformers(query?: string): Promise<Performer[]> {
-    const q = query ? `?q=${encodeURIComponent(query)}` : "";
-    return localOrRemote("list_performers", { query }, `/api/performers${q}`);
+  async listPerformers(
+    query?: string,
+    opts?: { cup_size?: string; hair_color?: string },
+  ): Promise<Performer[]> {
+    const params = new URLSearchParams();
+    if (query) params.set("q", query);
+    if (opts?.cup_size) params.set("cup_size", opts.cup_size);
+    if (opts?.hair_color) params.set("hair_color", opts.hair_color);
+    const qs = params.toString();
+    const suffix = qs ? `?${qs}` : "";
+    return localOrRemote(
+      "list_performers",
+      { query, cup_size: opts?.cup_size, hair_color: opts?.hair_color },
+      `/api/performers${suffix}`,
+    );
+  },
+
+  async updatePerformerAttributes(
+    id: string,
+    attrs: { cup_size?: string | null; hair_color?: string | null },
+  ): Promise<void> {
+    // `null`/empty clears the attribute (stored as NULL). Undefined leaves it out.
+    const body = {
+      cup_size: attrs.cup_size ?? undefined,
+      hair_color: attrs.hair_color ?? undefined,
+    };
+    if (shouldUseRemoteApi()) {
+      await remoteFetch(`/api/performers/${id}/attributes`, {
+        method: "PUT",
+        body: JSON.stringify(body),
+      });
+      return;
+    }
+    await localInvoke("update_performer_attributes", { id, ...body });
   },
 
   async listTags(): Promise<Tag[]> {

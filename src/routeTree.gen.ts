@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as BrowseIndexRouteImport } from './routes/browse/index'
+import { Route as BrowseBodyMatchRouteImport } from './routes/browse/body-match'
 import { Route as BrowseByUrlRouteImport } from './routes/browse/by-url'
 import { Route as DownloadsIndexRouteImport } from './routes/downloads/index'
 import { Route as DuplicatesIndexRouteImport } from './routes/duplicates/index'
@@ -38,6 +39,11 @@ const IndexRoute = IndexRouteImport.update({
 const BrowseIndexRoute = BrowseIndexRouteImport.update({
   id: '/browse/',
   path: '/browse/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BrowseBodyMatchRoute = BrowseBodyMatchRouteImport.update({
+  id: '/browse/body-match',
+  path: '/browse/body-match',
   getParentRoute: () => rootRouteImport,
 } as any)
 const BrowseByUrlRoute = BrowseByUrlRouteImport.update({
@@ -134,6 +140,7 @@ const BrowseSiteKindSlugRoute = BrowseSiteKindSlugRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/browse/body-match': typeof BrowseBodyMatchRoute
   '/browse/by-url': typeof BrowseByUrlRoute
   '/browse/': typeof BrowseIndexRoute
   '/downloads/': typeof DownloadsIndexRoute
@@ -156,6 +163,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/browse/body-match': typeof BrowseBodyMatchRoute
   '/browse/by-url': typeof BrowseByUrlRoute
   '/browse': typeof BrowseIndexRoute
   '/downloads': typeof DownloadsIndexRoute
@@ -179,6 +187,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/browse/body-match': typeof BrowseBodyMatchRoute
   '/browse/by-url': typeof BrowseByUrlRoute
   '/browse/': typeof BrowseIndexRoute
   '/downloads/': typeof DownloadsIndexRoute
@@ -203,6 +212,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/browse/body-match'
     | '/browse/by-url'
     | '/browse/'
     | '/downloads/'
@@ -225,6 +235,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/browse/body-match'
     | '/browse/by-url'
     | '/browse'
     | '/downloads'
@@ -247,6 +258,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/browse/body-match'
     | '/browse/by-url'
     | '/browse/'
     | '/downloads/'
@@ -270,6 +282,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  BrowseBodyMatchRoute: typeof BrowseBodyMatchRoute
   BrowseByUrlRoute: typeof BrowseByUrlRoute
   BrowseIndexRoute: typeof BrowseIndexRoute
   DownloadsIndexRoute: typeof DownloadsIndexRoute
@@ -305,6 +318,13 @@ declare module '@tanstack/react-router' {
       path: '/browse'
       fullPath: '/browse/'
       preLoaderRoute: typeof BrowseIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/browse/body-match': {
+      id: '/browse/body-match'
+      path: '/browse/body-match'
+      fullPath: '/browse/body-match'
+      preLoaderRoute: typeof BrowseBodyMatchRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/browse/by-url': {
@@ -438,6 +458,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  BrowseBodyMatchRoute: BrowseBodyMatchRoute,
   BrowseByUrlRoute: BrowseByUrlRoute,
   BrowseIndexRoute: BrowseIndexRoute,
   DownloadsIndexRoute: DownloadsIndexRoute,

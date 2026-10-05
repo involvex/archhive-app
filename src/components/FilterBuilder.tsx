@@ -1,5 +1,6 @@
 import { Input } from "@/components/ui/input";
 import type { SceneFilter } from "@/lib/types";
+import { CUP_OPTIONS, HAIR_OPTIONS } from "@/lib/body-match/queries";
 import { isDurationRangeInvalid } from "@/lib/sceneList";
 import { X } from "lucide-react";
 
@@ -60,6 +61,8 @@ export function FilterBuilder({
     filter.max_duration != null ||
     filter.min_rating != null ||
     filter.min_file_size != null ||
+    filter.performer_cup != null ||
+    filter.performer_hair != null ||
     (filter.performer_names?.length ?? 0) > 0 ||
     (filter.tag_names?.length ?? 0) > 0;
 
@@ -175,6 +178,38 @@ export function FilterBuilder({
 
       {showPerformerTagInputs && (
         <>
+          <div className="flex items-center gap-1">
+            <select
+              className="h-7 rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-1 text-xs"
+              value={filter.performer_cup ?? ""}
+              onChange={(e) =>
+                onChange((f) => ({ ...f, performer_cup: e.target.value || undefined }))
+              }
+              aria-label="Filter scenes by performer cup size"
+            >
+              <option value="">Cup: all</option>
+              {CUP_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+            <select
+              className="h-7 rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-1 text-xs"
+              value={filter.performer_hair ?? ""}
+              onChange={(e) =>
+                onChange((f) => ({ ...f, performer_hair: e.target.value || undefined }))
+              }
+              aria-label="Filter scenes by performer hair color"
+            >
+              <option value="">Hair: all</option>
+              {HAIR_OPTIONS.filter((o) => o.value !== "any").map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
           {(filter.performer_names?.length ?? 0) > 0 ? (
             filter.performer_names!.map((name) => (
               <FilterPill
@@ -265,6 +300,20 @@ export function FilterBuilder({
         />
       )}
 
+      {filter.performer_cup != null && (
+        <FilterPill
+          label={`Cup: ${filter.performer_cup}`}
+          onRemove={() => onChange((f) => ({ ...f, performer_cup: undefined }))}
+        />
+      )}
+
+      {filter.performer_hair != null && (
+        <FilterPill
+          label={`Hair: ${filter.performer_hair}`}
+          onRemove={() => onChange((f) => ({ ...f, performer_hair: undefined }))}
+        />
+      )}
+
       {hasFilter && (
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs text-[var(--color-muted-foreground)]">Active filters:</span>
@@ -340,6 +389,18 @@ export function FilterBuilder({
             <FilterPill
               label={`≥ ${Math.round(filter.min_file_size / 1048576)}MB`}
               onRemove={() => onChange((f) => ({ ...f, min_file_size: undefined }))}
+            />
+          )}
+          {filter.performer_cup != null && (
+            <FilterPill
+              label={`Cup: ${filter.performer_cup}`}
+              onRemove={() => onChange((f) => ({ ...f, performer_cup: undefined }))}
+            />
+          )}
+          {filter.performer_hair != null && (
+            <FilterPill
+              label={`Hair: ${filter.performer_hair}`}
+              onRemove={() => onChange((f) => ({ ...f, performer_hair: undefined }))}
             />
           )}
           {onClearAll && (

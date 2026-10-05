@@ -2,6 +2,7 @@ import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api/client";
 import type { Performer } from "@/lib/types";
+import { CUP_OPTIONS, HAIR_OPTIONS } from "@/lib/body-match/queries";
 import {
   loadPerformerSort,
   savePerformerSort,
@@ -31,16 +32,26 @@ function PerformersPage() {
     if (urlSearch.q) setQuery(urlSearch.q);
   }, [urlSearch.q]);
   const [sort, setSort] = useState<PerformerSort>(() => loadPerformerSort());
+  const [cupFilter, setCupFilter] = useState("");
+  const [hairFilter, setHairFilter] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadTargetId, setUploadTargetId] = useState<string | null>(null);
 
   useEffect(() => {
     void api
-      .listPerformers(query || undefined)
+      .listPerformers(
+        query || undefined,
+        cupFilter || hairFilter
+          ? {
+              ...(cupFilter ? { cup_size: cupFilter } : {}),
+              ...(hairFilter ? { hair_color: hairFilter } : {}),
+            }
+          : undefined,
+      )
       .then(setPerformers)
       .catch(console.error);
-  }, [query]);
+  }, [query, cupFilter, hairFilter]);
 
   function toggle(name: string) {
     setSelected((prev) => {
@@ -88,11 +99,13 @@ function PerformersPage() {
   async function exportPerformersCsv() {
     try {
       const data = await api.exportPerformers();
-      const header = ["name", "aliases", "favorite", "scene_count"];
+      const header = ["name", "aliases", "favorite", "cup_size", "hair_color", "scene_count"];
       const rows = data.map((p) => [
         csvEscape(p.name),
         csvEscape(p.aliases.join(", ")),
         String(p.favorite),
+        csvEscape(p.cup_size ?? ""),
+        csvEscape(p.hair_color ?? ""),
         String(p.scene_count),
       ]);
       const csv = [header.join(","), ...rows.map((r) => r.join(","))].join("\n");
@@ -165,6 +178,32 @@ function PerformersPage() {
           onChange={(e) => setQuery(e.target.value)}
           className="max-w-md flex-1"
         />
+        <select
+          className="h-9 rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-2 text-xs"
+          value={cupFilter}
+          onChange={(e) => setCupFilter(e.target.value)}
+          aria-label="Filter by cup size"
+        >
+          <option value="">Cup: all</option>
+          {CUP_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+        <select
+          className="h-9 rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-2 text-xs"
+          value={hairFilter}
+          onChange={(e) => setHairFilter(e.target.value)}
+          aria-label="Filter by hair color"
+        >
+          <option value="">Hair: all</option>
+          {HAIR_OPTIONS.filter((o) => o.value !== "any").map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
         <div className="flex gap-1" title="Sort performers">
           {(["name", "scenes"] as const).map((mode) => (
             <Button
@@ -218,6 +257,8 @@ function PerformersPage() {
                   <p className="font-medium">{p.name}</p>
                   <p className="text-xs text-[var(--color-muted-foreground)]">
                     {p.scene_count} scenes
+                    {(p.cup_size || p.hair_color) &&
+                      ` · ${[p.cup_size ?? null, p.hair_color ?? null].filter(Boolean).join(" · ")}`}
                   </p>
                 </div>
                 <Link

@@ -124,6 +124,10 @@ export interface Performer {
   aliases: string[];
   image?: string;
   favorite: boolean;
+  /** V2 BodyMatch cup size (A,B,C,D,DD,F,G,H+,big-tits,huge-tits). */
+  cup_size?: string;
+  /** V2 BodyMatch hair color (blonde,brunette,black,red,auburn). */
+  hair_color?: string;
   scene_count: number;
 }
 
@@ -255,6 +259,10 @@ export interface SceneFilter {
   min_rating?: number;
   min_file_size?: number;
   collection_id?: string;
+  /** V2 BodyMatch: scenes with a performer of this cup size. */
+  performer_cup?: string;
+  /** V2 BodyMatch: scenes with a performer of this hair color. */
+  performer_hair?: string;
 }
 
 export type CollectionType = "collection" | "watchlist" | "smart";

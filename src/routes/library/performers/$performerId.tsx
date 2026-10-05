@@ -2,6 +2,7 @@ import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api/client";
 import type { Performer, Scene } from "@/lib/types";
+import { CUP_OPTIONS, HAIR_OPTIONS } from "@/lib/body-match/queries";
 import { toWatchMap, watchFor, type WatchMap } from "@/lib/watch";
 import { SceneCard } from "@/components/SceneCard";
 import { ScenePlayerDialog } from "@/components/ScenePlayerDialog";
@@ -26,6 +27,10 @@ function PerformerDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [playerScene, setPlayerScene] = useState<Scene | null>(null);
   const [playerIndex, setPlayerIndex] = useState(0);
+  const [cupEdit, setCupEdit] = useState("");
+  const [hairEdit, setHairEdit] = useState("");
+  const [attrSaving, setAttrSaving] = useState(false);
+  const [attrError, setAttrError] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -37,6 +42,9 @@ function PerformerDetailPage() {
         const found = all.find((p) => p.id === performerId) ?? null;
         if (cancelled) return;
         setPerformer(found);
+        setCupEdit(found?.cup_size ?? "");
+        setHairEdit(found?.hair_color ?? "");
+        setAttrError("");
         if (!found) {
           setScenes([]);
           return;
@@ -136,6 +144,67 @@ function PerformerDetailPage() {
           Filter scenes
         </Button>
       </div>
+      <div className="flex flex-col gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] p-3 sm:flex-row sm:items-end">
+        <label className="flex flex-1 flex-col gap-1 text-xs font-medium text-[var(--color-muted-foreground)]">
+          Cup size
+          <select
+            className="h-9 rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-2 text-sm text-[var(--color-foreground)]"
+            value={cupEdit}
+            onChange={(e) => setCupEdit(e.target.value)}
+          >
+            <option value="">Unset</option>
+            {CUP_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-1 flex-col gap-1 text-xs font-medium text-[var(--color-muted-foreground)]">
+          Hair color
+          <select
+            className="h-9 rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-2 text-sm text-[var(--color-foreground)]"
+            value={hairEdit}
+            onChange={(e) => setHairEdit(e.target.value)}
+          >
+            <option value="">Unset</option>
+            {HAIR_OPTIONS.filter((o) => o.value !== "any").map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <Button
+          size="sm"
+          disabled={attrSaving}
+          onClick={() => {
+            setAttrSaving(true);
+            setAttrError("");
+            void api
+              .updatePerformerAttributes(performer.id, {
+                cup_size: cupEdit || null,
+                hair_color: hairEdit || null,
+              })
+              .then(() =>
+                setPerformer((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        cup_size: cupEdit || undefined,
+                        hair_color: hairEdit || undefined,
+                      }
+                    : prev,
+                ),
+              )
+              .catch((e) => setAttrError(e instanceof Error ? e.message : "Save failed"))
+              .finally(() => setAttrSaving(false));
+          }}
+        >
+          {attrSaving ? "Saving…" : "Save attributes"}
+        </Button>
+      </div>
+      {attrError && <p className="text-xs text-red-400">{attrError}</p>}
       {scenes.length === 0 ? (
         <EmptyState
           icon={<Users className="h-12 w-12" />}

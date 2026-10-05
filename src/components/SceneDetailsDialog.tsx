@@ -3,6 +3,7 @@ import { api } from "@/lib/api/client";
 import { sceneThumbUrl, sceneMediaUrl, isWebPlayableScene, isHttpMediaSrc } from "@/lib/mediaUrl";
 import { getAppRuntime } from "@/lib/runtime";
 import { HlsVideoPlayer } from "@/components/HlsVideoPlayer";
+import { ExtLink } from "@/components/ExtLink";
 import type { Scene } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Check, Copy, Star, X } from "lucide-react";
@@ -148,14 +149,7 @@ function SceneDetailsBody({ scene, onClose }: { scene: Scene; onClose: () => voi
           <div>
             <dt className="text-[var(--color-muted-foreground)]">Source URL</dt>
             <dd className="break-all">
-              <a
-                href={data.source_url}
-                target="_blank"
-                rel="noreferrer"
-                className="text-[var(--color-primary)] hover:underline"
-              >
-                {data.source_url}
-              </a>
+              <ExtLink href={data.source_url}>{data.source_url}</ExtLink>
             </dd>
           </div>
         )}

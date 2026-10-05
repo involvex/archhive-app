@@ -3,7 +3,7 @@ mod migrations;
 use crate::db::migrations::{
     MIGRATION_001, MIGRATION_002, MIGRATION_003, MIGRATION_004, MIGRATION_005, MIGRATION_006,
     MIGRATION_007, MIGRATION_008, MIGRATION_009, MIGRATION_010, MIGRATION_011, MIGRATION_012,
-    MIGRATION_013, MIGRATION_014, MIGRATION_015, MIGRATION_016,
+    MIGRATION_013, MIGRATION_014, MIGRATION_015, MIGRATION_016, MIGRATION_017,
 };
 use crate::error::{AppError, AppResult};
 use crate::models::{
@@ -27,6 +27,71 @@ fn column_exists(conn: &Connection, table: &str, column: &str) -> bool {
         Err(_) => return false,
     };
     names.iter().any(|name| name == column)
+}
+
+/// Canonical cup sizes stored in `performers.cup_size` (mirrors V1 `CupId`).
+const VALID_CUP_SIZES: &[&str] = &[
+    "A",
+    "B",
+    "C",
+    "D",
+    "DD",
+    "F",
+    "G",
+    "H+",
+    "big-tits",
+    "huge-tits",
+];
+
+/// Canonical hair colors stored in `performers.hair_color` (mirrors V1 `HairId` minus `any`).
+const VALID_HAIR_COLORS: &[&str] = &["blonde", "brunette", "black", "red", "auburn"];
+
+fn normalize_cup_size(raw: Option<&str>) -> AppResult<Option<String>> {
+    match raw.map(str::trim) {
+        None | Some("") => Ok(None),
+        Some(v) => {
+            let upper = v.to_ascii_uppercase();
+            // Accept "DD/E", "E" as aliases for "DD" (V1 label is "DD / E").
+            let canonical = match upper.as_str() {
+                "DD/E" | "E" | "DD" => "DD",
+                "H+" | "H" => "H+",
+                "BIG TITS" | "BIG-TITS" | "BIGTITS" => "big-tits",
+                "HUGE TITS" | "HUGE-TITS" | "HUGETITS" => "huge-tits",
+                _ => upper.as_str(),
+            };
+            // Re-borrow as owned for the allowlist check.
+            let owned = canonical.to_string();
+            let check = if owned == "big-tits" || owned == "huge-tits" {
+                owned.as_str()
+            } else {
+                // Single-letter sizes stay uppercase; H+ handled above.
+                owned.as_str()
+            };
+            if VALID_CUP_SIZES.contains(&check) {
+                Ok(Some(check.to_string()))
+            } else {
+                Err(AppError::InvalidInput(format!(
+                    "invalid cup_size '{v}' (expected one of A,B,C,D,DD,F,G,H+,big-tits,huge-tits)"
+                )))
+            }
+        }
+    }
+}
+
+fn normalize_hair_color(raw: Option<&str>) -> AppResult<Option<String>> {
+    match raw.map(str::trim) {
+        None | Some("") => Ok(None),
+        Some(v) => {
+            let lower = v.to_ascii_lowercase();
+            if VALID_HAIR_COLORS.contains(&lower.as_str()) {
+                Ok(Some(lower))
+            } else {
+                Err(AppError::InvalidInput(format!(
+                    "invalid hair_color '{v}' (expected one of blonde,brunette,black,red,auburn)"
+                )))
+            }
+        }
+    }
 }
 
 type SceneRow = (
@@ -88,6 +153,9 @@ impl Database {
             conn.execute_batch(MIGRATION_015)?;
         }
         conn.execute_batch(MIGRATION_016)?;
+        if !column_exists(&conn, "performers", "cup_size") {
+            conn.execute_batch(MIGRATION_017)?;
+        }
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
         })
@@ -1292,6 +1360,20 @@ impl Database {
             joins.push("JOIN tags tf ON stf.tag_id = tf.id".to_string());
             conditions.push(format!("tf.name IN ({in_clause})"));
         }
+        // V2 BodyMatch: scenes with at least one performer matching cup/hair.
+        // EXISTS avoids disturbing the performer_names/tag_names JOIN + HAVING logic above.
+        if let Some(cup) = normalize_cup_size(filter.performer_cup.as_deref())? {
+            conditions.push(format!(
+                "EXISTS (SELECT 1 FROM scene_performers spc JOIN performers pc ON pc.id = spc.performer_id WHERE spc.scene_id = scenes.id AND pc.cup_size = '{}')",
+                cup.replace('\'', "''")
+            ));
+        }
+        if let Some(hair) = normalize_hair_color(filter.performer_hair.as_deref())? {
+            conditions.push(format!(
+                "EXISTS (SELECT 1 FROM scene_performers sph JOIN performers ph ON ph.id = sph.performer_id WHERE sph.scene_id = scenes.id AND ph.hair_color = '{}')",
+                hair.replace('\'', "''")
+            ));
+        }
 
         let where_clause = if conditions.is_empty() {
             String::new()
@@ -1799,27 +1881,68 @@ impl Database {
         rows.collect::<Result<Vec<_>, _>>().map_err(AppError::from)
     }
 
-    pub fn list_performers(&self, query: Option<&str>) -> AppResult<Vec<Performer>> {
+    pub fn update_performer_attributes(
+        &self,
+        id: &str,
+        cup_size: Option<&str>,
+        hair_color: Option<&str>,
+    ) -> AppResult<()> {
+        let cup = normalize_cup_size(cup_size)?;
+        let hair = normalize_hair_color(hair_color)?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let changed = conn.execute(
+            "UPDATE performers SET cup_size = ?2, hair_color = ?3 WHERE id = ?1",
+            params![id, cup, hair],
+        )?;
+        if changed == 0 {
+            return Err(AppError::InvalidInput("performer not found".into()));
+        }
+        Ok(())
+    }
+
+    pub fn list_performers(
+        &self,
+        query: Option<&str>,
+        cup_size: Option<&str>,
+        hair_color: Option<&str>,
+    ) -> AppResult<Vec<Performer>> {
+        let cup = normalize_cup_size(cup_size)?;
+        let hair = normalize_hair_color(hair_color)?;
         let conn = self
             .conn
             .lock()
             .map_err(|e| AppError::Other(e.to_string()))?;
         let mut sql = String::from(
-            "SELECT p.id, p.name, p.aliases, p.image, p.favorite,
+            "SELECT p.id, p.name, p.aliases, p.image, p.favorite, p.cup_size, p.hair_color,
                     (SELECT COUNT(*) FROM scene_performers sp WHERE sp.performer_id = p.id) as scene_count
              FROM performers p",
         );
-        if query.filter(|s| !s.is_empty()).is_some() {
-            sql.push_str(" WHERE p.name LIKE ?1");
+        let mut conditions: Vec<String> = Vec::new();
+        let mut params: Vec<String> = Vec::new();
+        if let Some(q) = query.filter(|s| !s.is_empty()) {
+            conditions.push("p.name LIKE ?".to_string());
+            params.push(format!("%{q}%"));
+        }
+        if let Some(c) = cup {
+            conditions.push("p.cup_size = ?".to_string());
+            params.push(c);
+        }
+        if let Some(h) = hair {
+            conditions.push("p.hair_color = ?".to_string());
+            params.push(h);
+        }
+        if !conditions.is_empty() {
+            sql.push_str(" WHERE ");
+            sql.push_str(&conditions.join(" AND "));
         }
         sql.push_str(" ORDER BY p.name LIMIT 200");
         let mut stmt = conn.prepare(&sql)?;
-        let rows = if let Some(q) = query.filter(|s| !s.is_empty()) {
-            let pattern = format!("%{q}%");
-            stmt.query_map(params![pattern], map_performer)?
-        } else {
-            stmt.query_map([], map_performer)?
-        };
+        let param_refs: Vec<&dyn rusqlite::ToSql> =
+            params.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
+        let rows = stmt.query_map(param_refs.as_slice(), map_performer)?;
         rows.collect::<Result<Vec<_>, _>>().map_err(AppError::from)
     }
 
@@ -2539,7 +2662,9 @@ fn map_performer(row: &rusqlite::Row<'_>) -> rusqlite::Result<Performer> {
         aliases,
         image: row.get(3)?,
         favorite: row.get::<_, i32>(4)? != 0,
-        scene_count: row.get(5)?,
+        cup_size: row.get(5)?,
+        hair_color: row.get(6)?,
+        scene_count: row.get(7)?,
     })
 }
 
@@ -2819,5 +2944,154 @@ mod tests {
         assert_eq!(combined.thumb_cache.file_count, 2);
         assert_eq!(combined.thumb_cache.total_bytes, 150);
         assert_eq!(combined.orphans.len(), 2);
+    }
+
+    #[test]
+    fn performer_attributes_round_trip_and_filter() {
+        let dir = tempdir().unwrap();
+        let db = Database::new(dir.path().to_path_buf()).unwrap();
+
+        let alice = db.upsert_performer("Alice").unwrap();
+        let betty = db.upsert_performer("Betty").unwrap();
+
+        // Unset by default.
+        let all = db.list_performers(None, None, None).unwrap();
+        assert_eq!(all.len(), 2);
+        assert!(all
+            .iter()
+            .all(|p| p.cup_size.is_none() && p.hair_color.is_none()));
+
+        db.update_performer_attributes(&alice, Some("DD"), Some("brunette"))
+            .unwrap();
+        db.update_performer_attributes(&betty, Some("C"), Some("blonde"))
+            .unwrap();
+
+        // Alias normalization: E and DD/E map to DD.
+        let carol = db.upsert_performer("Carol").unwrap();
+        db.update_performer_attributes(&carol, Some("E"), Some("Black"))
+            .unwrap();
+
+        let dd = db.list_performers(None, Some("DD"), None).unwrap();
+        assert_eq!(dd.len(), 2);
+
+        let brunettes = db.list_performers(None, None, Some("brunette")).unwrap();
+        assert_eq!(brunettes.len(), 1);
+        assert_eq!(brunettes[0].name, "Alice");
+
+        // Clearing works (empty string -> NULL).
+        db.update_performer_attributes(&alice, Some(""), Some(""))
+            .unwrap();
+        let cleared = db
+            .list_performers(Some("Alice"), None, None)
+            .unwrap()
+            .pop()
+            .unwrap();
+        assert!(cleared.cup_size.is_none() && cleared.hair_color.is_none());
+
+        // Invalid values are rejected, unknown ids too.
+        assert!(db
+            .update_performer_attributes(&alice, Some("ZZZ"), None)
+            .is_err());
+        assert!(db
+            .update_performer_attributes(&alice, None, Some("green"))
+            .is_err());
+        assert!(db
+            .update_performer_attributes("missing-id", Some("D"), None)
+            .is_err());
+    }
+
+    #[test]
+    fn scene_filter_by_performer_cup_and_hair() {
+        let dir = tempdir().unwrap();
+        let db = Database::new(dir.path().to_path_buf()).unwrap();
+
+        let alice = db.upsert_performer("Alice").unwrap();
+        let betty = db.upsert_performer("Betty").unwrap();
+        db.update_performer_attributes(&alice, Some("DD"), Some("brunette"))
+            .unwrap();
+        db.update_performer_attributes(&betty, Some("C"), Some("blonde"))
+            .unwrap();
+
+        db.insert_scene(
+            "scene-alice",
+            None,
+            None,
+            &["Alice".to_string()],
+            &[],
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        db.insert_scene(
+            "scene-betty",
+            None,
+            None,
+            &["Betty".to_string()],
+            &[],
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+        let dd = db
+            .list_scenes_with_filter(
+                &crate::models::SceneFilter {
+                    performer_cup: Some("DD".to_string()),
+                    ..Default::default()
+                },
+                None,
+                None,
+            )
+            .unwrap();
+        assert_eq!(dd.len(), 1);
+        assert_eq!(dd[0].title, "scene-alice");
+
+        let blonde = db
+            .list_scenes_with_filter(
+                &crate::models::SceneFilter {
+                    performer_hair: Some("blonde".to_string()),
+                    ..Default::default()
+                },
+                None,
+                None,
+            )
+            .unwrap();
+        assert_eq!(blonde.len(), 1);
+        assert_eq!(blonde[0].title, "scene-betty");
+
+        // Combined cup + hair narrows to one; mismatched combo is empty.
+        let both = db
+            .list_scenes_with_filter(
+                &crate::models::SceneFilter {
+                    performer_cup: Some("DD".to_string()),
+                    performer_hair: Some("brunette".to_string()),
+                    ..Default::default()
+                },
+                None,
+                None,
+            )
+            .unwrap();
+        assert_eq!(both.len(), 1);
+
+        let mismatch = db
+            .list_scenes_with_filter(
+                &crate::models::SceneFilter {
+                    performer_cup: Some("DD".to_string()),
+                    performer_hair: Some("blonde".to_string()),
+                    ..Default::default()
+                },
+                None,
+                None,
+            )
+            .unwrap();
+        assert!(mismatch.is_empty());
     }
 }

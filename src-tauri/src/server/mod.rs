@@ -45,6 +45,8 @@ struct ScenesQuery {
     sort: Option<String>,
     limit: Option<i64>,
     offset: Option<i64>,
+    cup_size: Option<String>,
+    hair_color: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -157,6 +159,10 @@ impl LanServer {
             .route("/api/sites/pornhub/categories", get(pornhub_categories))
             .route("/api/performers", get(list_performers))
             .route("/api/performers/{id}/image", put(set_performer_image))
+            .route(
+                "/api/performers/{id}/attributes",
+                put(set_performer_attributes),
+            )
             .route("/api/tags", get(list_tags))
             .route("/api/duplicates", get(list_duplicates))
             .route("/api/duplicates/merge", post(merge_duplicates))
@@ -664,7 +670,11 @@ async fn list_performers(
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let performers = state
         .app
-        .list_performers(q.q.as_deref())
+        .list_performers(
+            q.q.as_deref(),
+            q.cup_size.as_deref(),
+            q.hair_color.as_deref(),
+        )
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(serde_json::json!(performers)))
 }
@@ -1133,6 +1143,24 @@ async fn set_performer_image(
     state
         .app
         .set_performer_image(&id, body.image.as_deref())
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+struct SetPerformerAttributesBody {
+    cup_size: Option<String>,
+    hair_color: Option<String>,
+}
+
+async fn set_performer_attributes(
+    Path(id): Path<String>,
+    State(state): State<ApiState>,
+    Json(body): Json<SetPerformerAttributesBody>,
+) -> Result<StatusCode, StatusCode> {
+    state
+        .app
+        .update_performer_attributes(&id, body.cup_size.as_deref(), body.hair_color.as_deref())
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(StatusCode::NO_CONTENT)
 }

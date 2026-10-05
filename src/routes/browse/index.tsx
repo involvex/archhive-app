@@ -354,6 +354,14 @@ function BrowsePage() {
           <Newspaper className="h-4 w-4 mr-1.5" />
           News / Feed
         </Button>
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() => navigate({ to: "/browse/body-match" })}
+        >
+          <Search className="h-4 w-4 mr-1.5" />
+          Cup &amp; Color
+        </Button>
       </div>
 
       <Card>

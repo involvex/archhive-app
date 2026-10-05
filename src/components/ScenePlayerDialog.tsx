@@ -16,6 +16,7 @@ import { getCapabilities, hasLocalBackend } from "@/lib/runtime";
 import { useRecentlyViewedStore } from "@/lib/stores/recentlyViewed";
 import { api } from "@/lib/api/client";
 import { HlsVideoPlayer } from "@/components/HlsVideoPlayer";
+import { ExtLink } from "@/components/ExtLink";
 import type { Scene, WatchProgress } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { formatDuration } from "@/components/SceneCard";
@@ -525,14 +526,7 @@ function ScenePlayerBody({
             <div>
               <dt className="text-xs text-[var(--color-muted-foreground)]">Source</dt>
               <dd className="break-all">
-                <a
-                  href={data.source_url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-[var(--color-primary)] hover:underline"
-                >
-                  {data.source_url}
-                </a>
+                <ExtLink href={data.source_url}>{data.source_url}</ExtLink>
               </dd>
             </div>
           )}

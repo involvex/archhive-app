@@ -2,6 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { api, isRoomOfflineError } from "@/lib/api/client";
 import { Button } from "@/components/ui/button";
+import { ExtLink } from "@/components/ExtLink";
+import { openExternal } from "@/lib/external";
 import { HlsVideoPlayer, STREAM_URL_EXPIRED_ERROR } from "@/components/HlsVideoPlayer";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Radio, ArrowLeft, ExternalLink } from "lucide-react";
@@ -96,15 +98,13 @@ function LivePlayerPage() {
             browsers can&apos;t mux directly). Retry for direct HLS if cookies are configured.
           </p>
           {streamError && <p className="font-mono break-all">Direct HLS failed: {streamError}</p>}
-          <a
+          <ExtLink
             href={getChatUrl(site, slug)}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1 text-xs text-[var(--color-primary)] underline underline-offset-2"
+            className="inline-flex items-center gap-1 text-xs underline underline-offset-2"
           >
             <ExternalLink className="h-3 w-3" />
             Open room in browser (full controls + audio)
-          </a>
+          </ExtLink>
         </div>
       )}
 
@@ -187,11 +187,13 @@ function LivePlayerPage() {
                     Chat can&apos;t be embedded here — Chaturbate blocks framing of room pages. Open
                     it in the browser:
                   </p>
-                  <Button asChild variant="outline" size="sm">
-                    <a href={getChatUrl(site, slug)} target="_blank" rel="noreferrer">
-                      <ExternalLink className="mr-1 h-4 w-4" />
-                      Open live chat
-                    </a>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void openExternal(getChatUrl(site, slug)).catch(console.error)}
+                  >
+                    <ExternalLink className="mr-1 h-4 w-4" />
+                    Open live chat
                   </Button>
                   <p className="break-all font-mono text-xs text-[var(--color-muted-foreground)]">
                     {getChatUrl(site, slug)}

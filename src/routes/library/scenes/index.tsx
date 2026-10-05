@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api/client";
 import { sceneThumbUrl, isVideoScene } from "@/lib/mediaUrl";
 import type { Scene, SceneFilter, SceneSort } from "@/lib/types";
+import { CUP_OPTIONS, HAIR_OPTIONS } from "@/lib/body-match/queries";
 import { toWatchMap, watchFor, type WatchMap } from "@/lib/watch";
 import { applySceneQueryAndSort, isDurationRangeInvalid } from "@/lib/sceneList";
 import { Input } from "@/components/ui/input";
@@ -25,7 +26,7 @@ import { Film, LayoutGrid, List, RefreshCw, X, Zap } from "lucide-react";
 export const Route = createFileRoute("/library/scenes/")({
   validateSearch: (
     search: Record<string, unknown>,
-  ): { performers?: string[]; tags?: string[]; q?: string } => {
+  ): { performers?: string[]; tags?: string[]; q?: string; cup?: string; hair?: string } => {
     const parseArray = (key: string): string[] | undefined => {
       const v = search[key];
       if (Array.isArray(v)) return v.filter((x): x is string => typeof x === "string");
@@ -33,10 +34,14 @@ export const Route = createFileRoute("/library/scenes/")({
       return undefined;
     };
     const q = search.q;
+    const cup = search.cup;
+    const hair = search.hair;
     return {
       performers: parseArray("performers"),
       tags: parseArray("tags"),
       q: typeof q === "string" && q.trim() ? q : undefined,
+      cup: typeof cup === "string" && cup.trim() ? cup : undefined,
+      hair: typeof hair === "string" && hair.trim() ? hair : undefined,
     };
   },
   component: ScenesPage,
@@ -56,6 +61,49 @@ function FilterPill({ label, onRemove }: { label: string; onRemove: () => void }
       >
         <X className="h-3 w-3" />
       </button>
+    </span>
+  );
+}
+
+function BodyMatchCupHairInline({
+  cup,
+  hair,
+  onCup,
+  onHair,
+}: {
+  cup?: string;
+  hair?: string;
+  onCup: (v: string | undefined) => void;
+  onHair: (v: string | undefined) => void;
+}) {
+  return (
+    <span className="inline-flex items-center gap-1">
+      <select
+        className="h-7 rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-1 text-xs"
+        value={cup ?? ""}
+        onChange={(e) => onCup(e.target.value || undefined)}
+        aria-label="Filter scenes by performer cup size"
+      >
+        <option value="">Cup: all</option>
+        {CUP_OPTIONS.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+      <select
+        className="h-7 rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-1 text-xs"
+        value={hair ?? ""}
+        onChange={(e) => onHair(e.target.value || undefined)}
+        aria-label="Filter scenes by performer hair color"
+      >
+        <option value="">Hair: all</option>
+        {HAIR_OPTIONS.filter((o) => o.value !== "any").map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
     </span>
   );
 }
@@ -96,9 +144,17 @@ function ScenesPage() {
         setTagInput(urlTagsArr.join(", "));
         changed = true;
       }
+      if ((urlSearch.cup ?? undefined) !== (prev.performer_cup ?? undefined)) {
+        next.performer_cup = urlSearch.cup ?? undefined;
+        changed = true;
+      }
+      if ((urlSearch.hair ?? undefined) !== (prev.performer_hair ?? undefined)) {
+        next.performer_hair = urlSearch.hair ?? undefined;
+        changed = true;
+      }
       return changed ? next : prev;
     });
-  }, [urlSearch.performers, urlSearch.tags]);
+  }, [urlSearch.performers, urlSearch.tags, urlSearch.cup, urlSearch.hair]);
   const [editScene, setEditScene] = useState<Scene | null>(null);
   const [detailsScene, setDetailsScene] = useState<Scene | null>(null);
   const [playerScene, setPlayerScene] = useState<Scene | null>(null);
@@ -131,6 +187,8 @@ function ScenesPage() {
     filter.max_duration != null ||
     filter.min_rating != null ||
     filter.min_file_size != null ||
+    filter.performer_cup != null ||
+    filter.performer_hair != null ||
     (filter.performer_names?.length ?? 0) > 0 ||
     (filter.tag_names?.length ?? 0) > 0;
 
@@ -642,6 +700,24 @@ function ScenesPage() {
                 className="h-7 w-36 text-xs"
               />
             </form>
+          )}
+          <BodyMatchCupHairInline
+            cup={filter.performer_cup}
+            hair={filter.performer_hair}
+            onCup={(performer_cup) => setFilter((f) => ({ ...f, performer_cup }))}
+            onHair={(performer_hair) => setFilter((f) => ({ ...f, performer_hair }))}
+          />
+          {filter.performer_cup != null && (
+            <FilterPill
+              label={`Cup: ${filter.performer_cup}`}
+              onRemove={() => setFilter((f) => ({ ...f, performer_cup: undefined }))}
+            />
+          )}
+          {filter.performer_hair != null && (
+            <FilterPill
+              label={`Hair: ${filter.performer_hair}`}
+              onRemove={() => setFilter((f) => ({ ...f, performer_hair: undefined }))}
+            />
           )}
           {(filter.tag_names?.length ?? 0) > 0 ? (
             filter.tag_names!.map((name) => (

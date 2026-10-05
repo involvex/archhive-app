@@ -218,8 +218,10 @@ pub fn ensure_performer(state: State<'_, Arc<AppState>>, name: String) -> CmdRes
 pub fn list_performers(
     state: State<'_, Arc<AppState>>,
     query: Option<String>,
+    cup_size: Option<String>,
+    hair_color: Option<String>,
 ) -> CmdResult<Vec<Performer>> {
-    map_err(state.list_performers(query.as_deref()))
+    map_err(state.list_performers(query.as_deref(), cup_size.as_deref(), hair_color.as_deref()))
 }
 
 #[tauri::command]
@@ -708,7 +710,17 @@ pub fn dismiss_saved_search_news(state: State<'_, Arc<AppState>>, id: String) ->
 
 #[tauri::command]
 pub fn export_performers(state: State<'_, Arc<AppState>>) -> CmdResult<Vec<Performer>> {
-    map_err(state.list_performers(None))
+    map_err(state.list_performers(None, None, None))
+}
+
+#[tauri::command]
+pub fn update_performer_attributes(
+    state: State<'_, Arc<AppState>>,
+    id: String,
+    cup_size: Option<String>,
+    hair_color: Option<String>,
+) -> CmdResult<()> {
+    map_err(state.update_performer_attributes(&id, cup_size.as_deref(), hair_color.as_deref()))
 }
 
 #[tauri::command]

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { CHANGELOG, type ChangelogEntry, getLatestVersion } from "@/lib/changelog";
+import { openExternal } from "@/lib/external";
 import { ChevronDown, ChevronRight, ExternalLink } from "lucide-react";
 
 interface ChangelogDialogProps {
@@ -74,7 +75,9 @@ export function ChangelogDialog({ open, onOpenChange }: ChangelogDialogProps) {
             variant="ghost"
             size="sm"
             onClick={() => {
-              window.open("https://github.com/archhive-app/archhive-app/releases", "_blank");
+              void openExternal("https://github.com/archhive-app/archhive-app/releases").catch(
+                console.error,
+              );
             }}
           >
             GitHub Releases

@@ -226,3 +226,15 @@ CREATE TABLE IF NOT EXISTS browse_cache (
 
 CREATE INDEX IF NOT EXISTS idx_browse_cache_fetched ON browse_cache(fetched_at);
 "#;
+
+/// V2 BodyMatch: performer body attributes (cup size + hair color).
+/// Values are validated in Rust (see `normalize_cup_size` / `normalize_hair_color`);
+/// `NULL` means "unset". Old DBs get the columns via `column_exists` gating in
+/// `Database::new` (bundled SQLite may not support `ADD COLUMN IF NOT EXISTS`).
+pub const MIGRATION_017: &str = r#"
+ALTER TABLE performers ADD COLUMN cup_size TEXT;
+ALTER TABLE performers ADD COLUMN hair_color TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_performers_cup ON performers(cup_size);
+CREATE INDEX IF NOT EXISTS idx_performers_hair ON performers(hair_color);
+"#;

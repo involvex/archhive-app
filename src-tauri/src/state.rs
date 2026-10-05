@@ -401,12 +401,29 @@ impl AppState {
             aliases: vec![],
             image: None,
             favorite: false,
+            cup_size: None,
+            hair_color: None,
             scene_count: 0,
         })
     }
 
-    pub fn list_performers(&self, query: Option<&str>) -> AppResult<Vec<Performer>> {
-        self.db.list_performers(query)
+    pub fn list_performers(
+        &self,
+        query: Option<&str>,
+        cup_size: Option<&str>,
+        hair_color: Option<&str>,
+    ) -> AppResult<Vec<Performer>> {
+        self.db.list_performers(query, cup_size, hair_color)
+    }
+
+    pub fn update_performer_attributes(
+        &self,
+        id: &str,
+        cup_size: Option<&str>,
+        hair_color: Option<&str>,
+    ) -> AppResult<()> {
+        self.db
+            .update_performer_attributes(id, cup_size, hair_color)
     }
 
     pub fn set_performer_image(&self, id: &str, image: Option<&str>) -> AppResult<()> {
@@ -1505,7 +1522,7 @@ impl AppState {
         let scenes = self
             .db
             .list_scenes(None, crate::models::SceneSort::Newest, None, None)?;
-        let performers = self.db.list_performers(None)?;
+        let performers = self.db.list_performers(None, None, None)?;
         let tags = self.db.list_tags()?;
 
         let settings = self.get_settings()?;
