@@ -168,6 +168,9 @@ function DownloadsPage() {
     refreshJobs();
     refreshStorage();
     const unsubs: Array<() => void> = [];
+    // Track download:progress for live job list updates. Toast deduplication
+    // lives in useDownloadNotifications (session-scoped seenStatus); this
+    // listener only updates jobs state. Desktop gets native toasts from Rust.
     void api
       .subscribeDownloadProgress((job) => {
         setJobs((prev) => {

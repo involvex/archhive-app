@@ -1,15 +1,22 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useCallback } from "react";
 import { api } from "@/lib/api/client";
-import { shouldUseRemoteApi, isDesktopTauriRuntime } from "@/lib/runtime";
+import { shouldUseRemoteApi, getAppRuntime } from "@/lib/runtime";
 import type { DownloadJob } from "@/lib/types";
 
 const POLL_INTERVAL_MS = 5000;
 
 export type ToastFn = (message: string, options?: { icon?: string; duration?: number }) => string;
 
+/**
+ * Session-scoped seen-status map. Module-scoped so it survives component
+ * remounts (e.g. when the share-target navigates to /downloads) — otherwise
+ * every completed/failed job would re-toast on each tab open.
+ */
+const seenStatus = new Map<string, DownloadJob["status"]>();
+
 export function useDownloadNotifications(toastFn?: ToastFn) {
-  const prevStatus = useRef<Map<string, DownloadJob["status"]>>(new Map());
   const useRemote = shouldUseRemoteApi();
+  const runtime = getAppRuntime();
 
   const emitToast = useCallback(
     (job: DownloadJob) => {
@@ -30,12 +37,15 @@ export function useDownloadNotifications(toastFn?: ToastFn) {
   );
 
   useEffect(() => {
-    if (isDesktopTauriRuntime() && !useRemote) {
+    // Desktop emits native OS notifications from Rust (#55) — no in-app toasts.
+    // Mobile (local or standalone, not remote) uses the polling branch below
+    // to surface brief in-app toasts for completed/failed downloads.
+    if (runtime === "mobile-tauri" && !useRemote) {
       const unlisten = api
         .subscribeDownloadProgress((job) => {
-          const prev = prevStatus.current.get(job.id);
+          const prev = seenStatus.get(job.id);
           if (prev !== job.status) {
-            prevStatus.current.set(job.id, job.status);
+            seenStatus.set(job.id, job.status);
             emitToast(job);
           }
         })
@@ -45,23 +55,37 @@ export function useDownloadNotifications(toastFn?: ToastFn) {
       };
     }
 
-    const poll = async () => {
-      try {
-        const jobs = await api.listDownloads();
-        for (const job of jobs) {
-          const prev = prevStatus.current.get(job.id);
-          if (prev !== job.status) {
-            prevStatus.current.set(job.id, job.status);
-            emitToast(job);
+    // Non-toasting runtimes (desktop, browser, remote LAN): listen once to keep
+    // prevStatus in sync so a future tab open doesn't replay stale transitions.
+    if (runtime === "mobile-tauri" && useRemote) {
+      const poll = async () => {
+        try {
+          const jobs = await api.listDownloads();
+          for (const job of jobs) {
+            seenStatus.set(job.id, job.status);
           }
+        } catch {
+          /* network or auth error — silently retry next poll */
         }
-      } catch {
-        // Network or auth error — silently skip; next poll retry.
-      }
-    };
+      };
+      poll();
+      const timer = setInterval(poll, POLL_INTERVAL_MS);
+      return () => clearInterval(timer);
+    }
 
-    poll();
-    const timer = setInterval(poll, POLL_INTERVAL_MS);
-    return () => clearInterval(timer);
-  }, [useRemote, emitToast]);
+    // Desktop / browser / remote: still track via IPC events to keep the store
+    // current, but never emit in-app toasts (Rust handles native notifications).
+    if (runtime !== "mobile-tauri") {
+      const unlisten = api
+        .subscribeDownloadProgress((job) => {
+          seenStatus.set(job.id, job.status);
+        })
+        .catch(() => {});
+      return () => {
+        void unlisten.then((fn) => fn?.());
+      };
+    }
+
+    return undefined;
+  }, [useRemote, runtime, emitToast]);
 }
