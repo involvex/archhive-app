@@ -175,6 +175,9 @@ pub fn run() {
     #[cfg(mobile)]
     let builder = builder.plugin(mobile::ytdlp_bridge::init());
 
+    #[cfg(mobile)]
+    let builder = builder.plugin(mobile::share::init());
+
     let builder = builder.setup(|app| {
         let data_dir = app
             .path()
@@ -269,6 +272,7 @@ pub fn run() {
             commands::update_network_state,
             commands::get_network_info,
             commands::queue_bulk_import,
+            commands::get_pending_share,
             commands::list_scenes,
             commands::delete_scene,
             commands::ensure_performer,

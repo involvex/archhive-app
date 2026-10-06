@@ -189,6 +189,22 @@ pub async fn queue_bulk_import(
     )
 }
 
+/// Android share-target intake: take + clear the pending shared text stashed by
+/// ShareIntentPlugin (ACTION_SEND / ACTION_SEND_MULTIPLE, text/plain).
+/// Returns `None` on desktop and when nothing was shared.
+#[tauri::command]
+pub fn get_pending_share(app: AppHandle) -> CmdResult<Option<String>> {
+    #[cfg(target_os = "android")]
+    {
+        map_err(crate::mobile::share::take_pending(&app))
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = app;
+        Ok(None)
+    }
+}
+
 #[tauri::command]
 pub fn list_scenes(
     state: State<'_, Arc<AppState>>,

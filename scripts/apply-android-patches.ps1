@@ -34,4 +34,9 @@ if ($LASTEXITCODE -ne 0 -and $null -ne $LASTEXITCODE) {
     throw "patch-android-ytdlp.ps1 failed with exit code $LASTEXITCODE"
 }
 
-Write-Host "Android patches applied (LAN + yt-dlp)."
+& (Join-Path $PSScriptRoot "patch-android-share.ps1") -GenAndroid $gen
+if ($LASTEXITCODE -ne 0 -and $null -ne $LASTEXITCODE) {
+    throw "patch-android-share.ps1 failed with exit code $LASTEXITCODE"
+}
+
+Write-Host "Android patches applied (LAN + yt-dlp + share)."

@@ -32,7 +32,9 @@ import { CommandPalette } from "@/components/CommandPalette";
 import { ShortcutHelp } from "@/components/ShortcutHelp";
 import { api } from "@/lib/api/client";
 import { useTheme } from "@/lib/hooks/useTheme";
-import { isMobileDevice } from "@/lib/tauri";
+import { isMobileDevice, isTauri } from "@/lib/tauri";
+import { pollPendingShare } from "@/lib/share";
+import { useShareStore } from "@/lib/stores/share";
 import type { AppTheme } from "@/lib/types";
 
 const desktopNavItems = [
@@ -132,6 +134,36 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     registerDefaultShortcuts((path: string) => navigate({ to: path }));
   }, [navigate]);
+
+  // Android share target: pull pending shared text and route to Downloads.
+  // Pure pull model (no Kotlin event) — covers cold start, warm share, and
+  // shares arriving while on another tab. Desktop/browsers no-op.
+  useEffect(() => {
+    if (!isMobileDevice() || !isTauri()) return;
+    let cancelled = false;
+    const check = async () => {
+      const text = await pollPendingShare();
+      if (cancelled || !text) return;
+      useShareStore.getState().setPendingShare(text);
+      if (!location.pathname.startsWith("/downloads")) {
+        navigate({ to: "/downloads" });
+      }
+    };
+    void check();
+    const id = window.setInterval(() => void check(), 2500);
+    const onFocus = () => void check();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void check();
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [navigate, location.pathname]);
 
   useEffect(() => {
     let cancelled = false;

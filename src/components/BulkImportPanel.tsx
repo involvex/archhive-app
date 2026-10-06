@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api/client";
 import { classifyBulkUrls } from "@/lib/parseBulkUrls";
 import { Button } from "@/components/ui/button";
@@ -11,9 +11,12 @@ import { DownloadGuardDialog } from "@/components/DownloadGuardDialog";
 
 interface BulkImportPanelProps {
   onQueued: () => void;
+  /** Shared text from the Android share sheet. Appended once, then consumed. */
+  prefill?: string | null;
+  onPrefillConsumed?: () => void;
 }
 
-export function BulkImportPanel({ onQueued }: BulkImportPanelProps) {
+export function BulkImportPanel({ onQueued, prefill, onPrefillConsumed }: BulkImportPanelProps) {
   const [text, setText] = useState("");
   const [status, setStatus] = useState("");
   const [importing, setImporting] = useState(false);
@@ -24,6 +27,16 @@ export function BulkImportPanel({ onQueued }: BulkImportPanelProps) {
     () => classifyBulkUrls(text, importAll),
     [text, importAll],
   );
+
+  useEffect(() => {
+    if (!prefill?.trim()) return;
+    const incoming = prefill.trim();
+    // One-shot external event consumption — the cascading render happens at
+    // most once per share, which is exactly what this effect is for.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setText((prev) => (prev.trim() ? `${prev.trimEnd()}\n${incoming}` : incoming));
+    onPrefillConsumed?.();
+  }, [prefill, onPrefillConsumed]);
 
   const totalToQueue = importAll
     ? videos.length + browse.length + other.length

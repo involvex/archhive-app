@@ -32,6 +32,8 @@ if (-not (Test-Path $gen)) {
 }
 
 $plugin = Join-Path $gen "app\src\main\java\com\archhive\app\YtDlpPlugin.kt"
+$sharePlugin = Join-Path $gen "app\src\main\java\com\archhive\app\ShareIntentPlugin.kt"
+$mainActivity = Join-Path $gen "app\src\main\java\com\archhive\app\MainActivity.kt"
 $fgService = Join-Path $gen "app\src\main\java\com\archhive\app\DownloadForegroundService.kt"
 $resumeWorker = Join-Path $gen "app\src\main\java\com\archhive\app\PendingResumeWorker.kt"
 $gradle = Join-Path $gen "app\build.gradle.kts"
@@ -41,6 +43,12 @@ $binAssets = Join-Path $gen "app\src\main\assets\binaries"
 
 if (-not (Test-Path $plugin)) {
     Add-Fail "Missing YtDlpPlugin.kt (run scripts/apply-android-patches.ps1)"
+}
+if (-not (Test-Path $sharePlugin)) {
+    Add-Fail "Missing ShareIntentPlugin.kt (run scripts/apply-android-patches.ps1)"
+}
+if ((Test-Path $mainActivity) -and ((Get-Content $mainActivity -Raw) -notmatch 'ShareIntentPlugin')) {
+    Add-Fail "MainActivity.kt missing share-intent forwarding (run scripts/apply-android-patches.ps1)"
 }
 if (-not (Test-Path $fgService)) {
     Add-Fail "Missing DownloadForegroundService.kt"
@@ -82,6 +90,9 @@ if (-not (Test-Path $manifest)) {
     $mf = Get-Content $manifest -Raw
     if ($mf -notmatch 'android\.permission\.INTERNET') {
         Add-Fail "AndroidManifest missing INTERNET permission"
+    }
+    if ($mf -notmatch 'android\.intent\.action\.SEND') {
+        Add-Fail "AndroidManifest missing share-target SEND intent-filter"
     }
     if ($mf -notmatch 'supportsPictureInPicture') {
         Add-Warn "AndroidManifest may be missing PiP support (patch-android-lan)"

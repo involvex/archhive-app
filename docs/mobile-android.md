@@ -41,6 +41,7 @@ bun run android:regen
 
 - [`scripts/patch-android-lan.ps1`](../scripts/patch-android-lan.ps1) — cleartext HTTP + media permissions + PiP + FG service
 - [`scripts/patch-android-ytdlp.ps1`](../scripts/patch-android-ytdlp.ps1) — restores `YtDlpPlugin.kt`, `DownloadForegroundService.kt`, `PendingResumeWorker.kt`, youtubedl-android **0.18.1** Gradle deps, WorkManager, and ProGuard keep rules from [`src-tauri/android-overlays/`](../src-tauri/android-overlays/)
+- [`scripts/patch-android-share.ps1`](../scripts/patch-android-share.ps1) — share-target `SEND`/`SEND_MULTIPLE` intent filters, `ShareIntentPlugin.kt` overlay, and `MainActivity` intent forwarding
 
 Then it runs [`scripts/validate-android-build.ps1`](../scripts/validate-android-build.ps1) (`-Strict`) so a broken overlay fails the regen.
 
@@ -207,3 +208,27 @@ Video playback uses `GET /api/scenes/{id}/media` and `GET /api/files/stream` wit
 | `.\scripts\apply-android-patches.ps1`  | Atomic LAN + yt-dlp patch apply                        |
 | `.\scripts\validate-android-build.ps1` | Fail if overlays / cleartext / YtDlpPlugin incomplete  |
 | `.\scripts\patch-android-lan.ps1`      | Allow HTTP + mDNS multicast on Android                 |
+| `.\scripts\patch-android-share.ps1`    | Share-sheet target (SEND text/plain to Bulk import)    |
+
+## Share target (Android share sheet)
+
+ArcHive appears in the Android share sheet as **Add to ArcHive** for `text/plain`
+(single `SEND` + multiple `SEND_MULTIPLE`). Sharing a video URL from Chrome or
+any app opens ArcHive on the **Downloads** tab with **Bulk import URLs** prefilled.
+
+How it works: `MainActivity.onCreate` / `onNewIntent` forwards the intent to the
+`ShareIntentPlugin` static slot (`src-tauri/android-overlays/ShareIntentPlugin.kt`).
+The frontend pulls it via the `get_pending_share` command (take + clear) — polled
+by `AppShell` on boot, on window focus, and every 2.5s on mobile, with a backup
+poll on the Downloads page for cold starts. Follow-up shares append with a newline
+instead of overwriting what is already queued.
+
+Test without leaving the desk:
+
+```powershell
+adb shell am start -a android.intent.action.SEND --es android.intent.extra.TEXT "https://www.pornhub.com/view_video.php?viewkey=xyz" -t text/plain -n com.archhive.app/.MainActivity
+```
+
+Then confirm the Downloads tab opens with the URL in Bulk import. For multiple
+URLs, share text containing several links or use `SEND_MULTIPLE` — they land as
+newline-separated lines.

@@ -5,7 +5,9 @@ import { toast } from "react-hot-toast";
 import { Pause, Play, RotateCcw, Trash2, HardDrive, BatteryCharging, X } from "lucide-react";
 import { api } from "@/lib/api/client";
 import type { DownloadJob } from "@/lib/types";
-import { isDesktopTauri, isMobileDevice } from "@/lib/tauri";
+import { isDesktopTauri, isMobileDevice, isTauri } from "@/lib/tauri";
+import { pollPendingShare } from "@/lib/share";
+import { useShareStore } from "@/lib/stores/share";
 import { DownloadProgressRow } from "@/components/DownloadProgress";
 import { BulkImportPanel } from "@/components/BulkImportPanel";
 import { DownloadGuardDialog } from "@/components/DownloadGuardDialog";
@@ -29,6 +31,26 @@ function DownloadsPage() {
   const [guard, setGuard] = useState<GuardBlock>(null);
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
   const wifiOnly = useSettingsStore((s) => s.settings.download_on_wifi_only ?? true);
+  const pendingShare = useShareStore((s) => s.pendingShare);
+  const clearPendingShare = useShareStore((s) => s.clearPendingShare);
+  const handlePrefillConsumed = useCallback(() => {
+    clearPendingShare();
+    toast.success("Shared link loaded into Bulk import");
+  }, [clearPendingShare]);
+
+  // Backup poll: if the user lands on Downloads before the AppShell poll fires
+  // (cold start), pick the pending share up directly.
+  useEffect(() => {
+    if (!isTauri()) return;
+    let cancelled = false;
+    void pollPendingShare().then((text) => {
+      if (cancelled || !text) return;
+      useShareStore.getState().setPendingShare(text);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // In-app complete/failed toasts (desktop also gets system notifications;
   // mobile relies on these plus the foreground-service channel).
@@ -260,7 +282,11 @@ function DownloadsPage() {
           </span>
         </div>
       )}
-      <BulkImportPanel onQueued={refreshJobs} />
+      <BulkImportPanel
+        onQueued={refreshJobs}
+        prefill={pendingShare}
+        onPrefillConsumed={handlePrefillConsumed}
+      />
       <div className="space-y-2">
         {jobs.map((job) => (
           <DownloadProgressRow
