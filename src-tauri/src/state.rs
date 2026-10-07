@@ -671,32 +671,16 @@ impl AppState {
 
     /// Apply a chosen StashDB match to a library scene. Only the checked
     /// field groups are written; performers/tags merge (no silent removal).
-    /// Fetches full match details first so apply works from a stash_id alone.
+    /// Resolves the match by stash id directly, so a candidate picked from a
+    /// title search applies exactly (no re-search that might miss it).
     pub async fn apply_stashdb_match(
         &self,
         req: &crate::models::ApplyStashMatchRequest,
     ) -> AppResult<crate::models::Scene> {
         let client = self.stashbox_client(&req.endpoint_id)?;
-        // Resolve the match: prefer a fresh lookup so callers only need ids.
-        let scene_fallback = self.db.get_scene(&req.scene_id)?;
-        let (_, oshash, md5, _) = self.db.scene_fingerprints(&req.scene_id)?;
-        let candidates = match client
-            .find_by_fingerprints(md5.as_deref(), oshash.as_deref())
-            .await
-        {
-            Ok(m) if !m.is_empty() => m,
-            _ => client
-                .search_scenes(&scene_fallback.title)
-                .await
-                .unwrap_or_default(),
-        };
-        let m = candidates
-            .iter()
-            .find(|c| c.stash_id == req.stash_id)
-            .cloned()
-            .ok_or_else(|| {
-                crate::error::AppError::NotFound(format!("stash scene {}", req.stash_id))
-            })?;
+        let m = client.find_scene(&req.stash_id).await?.ok_or_else(|| {
+            crate::error::AppError::NotFound(format!("stash scene {}", req.stash_id))
+        })?;
         if req.apply_title && !m.title.trim().is_empty() {
             self.db
                 .update_scene(&req.scene_id, Some(&m.title), None, None, false, None, None)?;

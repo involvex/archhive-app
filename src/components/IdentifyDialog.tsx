@@ -80,19 +80,37 @@ export function IdentifyDialog({ open, onClose, onDone }: IdentifyDialogProps) {
     onClose();
   }
 
+  /** Capped-concurrency pool: stash-box RTT dominates, so a few in flight
+   *  beats sequential without hammering the box. Rows update independently
+   *  via functional setState, so order doesn't matter. */
+  async function runPooled<T>(items: T[], size: number, fn: (item: T) => Promise<void>) {
+    let next = 0;
+    const workers = Array.from({ length: Math.max(1, Math.min(size, items.length)) }, () =>
+      (async () => {
+        while (next < items.length) {
+          if (cancelRef.current) return;
+          const item = items[next];
+          next += 1;
+          await fn(item);
+        }
+      })(),
+    );
+    await Promise.all(workers);
+  }
+
   async function runBatch() {
     if (running || rows.length === 0 || !endpointId) return;
     setRunning(true);
     setError(null);
     cancelRef.current = false;
-    for (const row of rows) {
-      if (cancelRef.current) break;
-      if (row.state !== "pending" && row.state !== "error") continue;
+    const endpoint = endpointId;
+    const targets = rows.filter((r) => r.state === "pending" || r.state === "error");
+    await runPooled(targets, 5, async (row) => {
       setRows((prev) =>
         prev.map((r) => (r.scene.id === row.scene.id ? { ...r, state: "working" } : r)),
       );
       try {
-        const matches = await api.queryStashdbForScene(row.scene.id, endpointId, true);
+        const matches = await api.queryStashdbForScene(row.scene.id, endpoint, true);
         const best = matches[0] ?? null;
         setRows((prev) =>
           prev.map((r) =>
@@ -114,7 +132,7 @@ export function IdentifyDialog({ open, onClose, onDone }: IdentifyDialogProps) {
           ),
         );
       }
-    }
+    });
     setRunning(false);
   }
 
@@ -155,10 +173,9 @@ export function IdentifyDialog({ open, onClose, onDone }: IdentifyDialogProps) {
     const targets = rows.filter((r) => r.state === "matched");
     if (targets.length === 0) return;
     setApplyingAll(true);
-    for (const row of targets) {
-      if (cancelRef.current) break;
-      await applyRow(row);
-    }
+    cancelRef.current = false;
+    // Applies are writes — keep parallelism low.
+    await runPooled(targets, 3, (row) => applyRow(row));
     setApplyingAll(false);
   }
 

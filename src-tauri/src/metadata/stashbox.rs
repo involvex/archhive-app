@@ -23,10 +23,14 @@ use serde_json::{json, Value};
 /// Default public StashDB endpoint.
 pub const STASHDB_ENDPOINT: &str = "https://stashdb.org/graphql";
 
-const FIND_BY_FINGERPRINTS_QUERY: &str = r#"
-query FindByFingerprints($fingerprints: [[FingerprintQueryInput!]!]!) {
-  findScenesBySceneFingerprints(fingerprints: $fingerprints) {
-    id
+/// Shared scene selection — every field here exists on stash-box `Scene`:
+/// `images` (not `image`), `performers` as appearances wrapping `performer`,
+/// `date` (present on all box versions; `release_date` only on newer ones).
+/// Kept in one place and interpolated into each query so the field lists
+/// can't drift apart (unknown fields fail the whole call server-side).
+/// `concat!` can't take a const, so the full documents are built once via
+/// `LazyLock` instead of per call.
+const SCENE_SELECTION: &str = r#"id
     title
     date
     details
@@ -34,29 +38,43 @@ query FindByFingerprints($fingerprints: [[FingerprintQueryInput!]!]!) {
     images { url }
     studio { id name }
     performers { performer { id name images { url } } }
-    tags { name }
-  }
-}
-"#;
+    tags { name }"#;
 
-const SEARCH_SCENES_QUERY: &str = r#"
-query SearchScenes($title: String!) {
-  queryScenes(input: { title: $title, per_page: 10 }) {
+static FIND_BY_FINGERPRINTS_QUERY: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+    format!(
+        r#"query FindByFingerprints($fingerprints: [[FingerprintQueryInput!]!]!) {{
+  findScenesBySceneFingerprints(fingerprints: $fingerprints) {{
+    {SCENE_SELECTION}
+  }}
+}}
+"#
+    )
+});
+
+static FIND_SCENE_QUERY: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+    format!(
+        r#"query FindScene($id: ID!) {{
+  findScene(id: $id) {{
+    {SCENE_SELECTION}
+  }}
+}}
+"#
+    )
+});
+
+static SEARCH_SCENES_QUERY: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+    format!(
+        r#"query SearchScenes($title: String!) {{
+  queryScenes(input: {{ title: $title, per_page: 10 }}) {{
     count
-    scenes {
-      id
-      title
-      date
-      details
-      duration
-      images { url }
-      studio { id name }
-      performers { performer { id name images { url } } }
-      tags { name }
-    }
-  }
-}
-"#;
+    scenes {{
+      {SCENE_SELECTION}
+    }}
+  }}
+}}
+"#
+    )
+});
 
 const SEARCH_PERFORMERS_QUERY: &str = r#"
 query SearchPerformers($name: String!) {
@@ -78,6 +96,18 @@ mutation SubmitFingerprint($input: FingerprintSubmission!) {
 }
 "#;
 
+/// One shared HTTP client for all stash-box calls: cloning is cheap and
+/// shares the connection pool (keep-alive + TLS resumption). Building a new
+/// `reqwest::Client` per query — e.g. once per batch Identify row — would
+/// throw the pool away every time.
+static SHARED_HTTP: std::sync::LazyLock<reqwest::Client> = std::sync::LazyLock::new(|| {
+    reqwest::Client::builder()
+        .user_agent("ArcHive/1.0 (stash-box client)")
+        .timeout(std::time::Duration::from_secs(20))
+        .build()
+        .expect("stash-box http client builds with static config")
+});
+
 #[derive(Clone)]
 pub struct StashBoxClient {
     endpoint: String,
@@ -94,15 +124,11 @@ impl StashBoxClient {
                 "stash-box API key is required".into(),
             ));
         }
-        let http = reqwest::Client::builder()
-            .user_agent("ArcHive/1.0 (stash-box client)")
-            .timeout(std::time::Duration::from_secs(20))
-            .build()?;
         Ok(Self {
             endpoint,
             endpoint_id: endpoint_id.to_string(),
             api_key: api_key.to_string(),
-            http,
+            http: SHARED_HTTP.clone(),
         })
     }
 
@@ -176,7 +202,7 @@ impl StashBoxClient {
         }
         let data = self
             .graphql(
-                FIND_BY_FINGERPRINTS_QUERY,
+                FIND_BY_FINGERPRINTS_QUERY.as_str(),
                 json!({ "fingerprints": [inputs] }),
             )
             .await?;
@@ -194,6 +220,27 @@ impl StashBoxClient {
         Ok(out)
     }
 
+    /// Direct lookup by stash id. Used by Apply so a match picked from a
+    /// title search resolves exactly, instead of re-searching by filename
+    /// title (which may not return the same candidate).
+    pub async fn find_scene(&self, stash_id: &str) -> AppResult<Option<StashSceneMatch>> {
+        let stash_id = stash_id.trim();
+        if stash_id.is_empty() {
+            return Err(AppError::InvalidInput("stash_id is required".into()));
+        }
+        let data = self
+            .graphql(FIND_SCENE_QUERY.as_str(), json!({ "id": stash_id }))
+            .await?;
+        let raw = data.get("findScene").cloned().unwrap_or(Value::Null);
+        if raw.is_null() {
+            return Ok(None);
+        }
+        let mut m = parse_scene_value(&raw)
+            .ok_or_else(|| AppError::Site("stash-box returned an unparseable scene".into()))?;
+        m.endpoint_id = self.endpoint_id.clone();
+        Ok(Some(m))
+    }
+
     /// Title search fallback when no fingerprints match. The box treats
     /// `title` as a LIKE query unless quoted.
     pub async fn search_scenes(&self, title: &str) -> AppResult<Vec<StashSceneMatch>> {
@@ -202,7 +249,7 @@ impl StashBoxClient {
             return Err(AppError::InvalidInput("title is required".into()));
         }
         let data = self
-            .graphql(SEARCH_SCENES_QUERY, json!({ "title": title }))
+            .graphql(SEARCH_SCENES_QUERY.as_str(), json!({ "title": title }))
             .await?;
         let raw = data
             .get("queryScenes")
@@ -460,8 +507,9 @@ mod tests {
     #[test]
     fn all_queries_use_schema_fields_only() {
         for query in [
-            FIND_BY_FINGERPRINTS_QUERY,
-            SEARCH_SCENES_QUERY,
+            FIND_BY_FINGERPRINTS_QUERY.as_str(),
+            FIND_SCENE_QUERY.as_str(),
+            SEARCH_SCENES_QUERY.as_str(),
             SEARCH_PERFORMERS_QUERY,
         ] {
             assert!(
@@ -479,6 +527,15 @@ mod tests {
         }
         assert!(FIND_BY_FINGERPRINTS_QUERY.contains("findScenesBySceneFingerprints"));
         assert!(FIND_BY_FINGERPRINTS_QUERY.contains("FingerprintQueryInput"));
+        assert!(FIND_SCENE_QUERY.contains("findScene"));
+        // All scene queries share one selection — same fields, no drift.
+        for query in [
+            FIND_BY_FINGERPRINTS_QUERY.as_str(),
+            FIND_SCENE_QUERY.as_str(),
+            SEARCH_SCENES_QUERY.as_str(),
+        ] {
+            assert!(query.contains(SCENE_SELECTION));
+        }
         assert!(SEARCH_SCENES_QUERY.contains("queryScenes"));
         assert!(SEARCH_PERFORMERS_QUERY.contains("queryPerformers"));
         assert!(SUBMIT_FINGERPRINT_MUTATION.contains("submitFingerprint"));
