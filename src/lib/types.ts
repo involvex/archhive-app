@@ -89,6 +89,10 @@ export interface Scene {
   notes?: string;
   width?: number;
   height?: number;
+  /** StashDB scene id (set by Enrich). */
+  stash_id?: string;
+  /** Last StashDB enrichment timestamp (RFC3339). */
+  stashdb_updated_at?: string;
 }
 
 export interface UpdateSceneRequest {
@@ -128,6 +132,8 @@ export interface Performer {
   cup_size?: string;
   /** V2 BodyMatch hair color (blonde,brunette,black,red,auburn). */
   hair_color?: string;
+  /** StashDB performer id (set by Enrich). */
+  stash_id?: string;
   scene_count: number;
 }
 
@@ -200,6 +206,8 @@ export interface AppSettings {
   last_binary_check?: number;
   /** Auto-check binary updates on app launch. (#69) */
   auto_check_binaries?: boolean;
+  /** Stash-box endpoints (API keys stay in the encrypted vault). */
+  stashbox_endpoints?: StashBoxEndpoint[];
 }
 
 export interface MergeDuplicatesResult {
@@ -476,4 +484,81 @@ export interface SettingsBackupImportResult {
   settings_applied: boolean;
   cookies_imported: number;
   library_path_skipped: boolean;
+}
+
+/** One stash-box endpoint (StashDB, FansDB, …). Key lives in vault. */
+export interface StashBoxEndpoint {
+  id: string;
+  name: string;
+  endpoint: string;
+  has_key?: boolean;
+}
+
+export interface StashPerformerRef {
+  name: string;
+  stash_id?: string;
+  image?: string;
+}
+
+export interface StashTagRef {
+  name: string;
+}
+
+export interface StashStudioRef {
+  name: string;
+  stash_id?: string;
+  image?: string;
+}
+
+/** One StashDB scene candidate. */
+export interface StashSceneMatch {
+  stash_id: string;
+  title: string;
+  date?: string;
+  details?: string;
+  studio?: StashStudioRef;
+  performers: StashPerformerRef[];
+  tags: StashTagRef[];
+  image?: string;
+  duration?: number;
+  endpoint_id: string;
+}
+
+export interface StashPerformerMatch {
+  stash_id: string;
+  name: string;
+  aliases: string[];
+  image?: string;
+  endpoint_id: string;
+}
+
+/** Field groups the user chose to apply from a StashDB match. */
+export interface ApplyStashMatchRequest {
+  scene_id: string;
+  endpoint_id: string;
+  stash_id: string;
+  apply_title?: boolean;
+  apply_date?: boolean;
+  apply_studio?: boolean;
+  apply_performers?: boolean;
+  apply_tags?: boolean;
+  apply_image_as_thumb?: boolean;
+}
+
+export interface SubmitFingerprintsResult {
+  submitted: number;
+  endpoint_id: string;
+}
+
+/** Batch Identify payload: enrichable scenes + total count. */
+export interface UnenrichedScenesResult {
+  scenes: Scene[];
+  total: number;
+  /** Scenes with a file but no matchable fingerprints yet (need rehash). */
+  hashes_missing: number;
+}
+
+export interface RehashResult {
+  rehashed: number;
+  errors: number;
 }

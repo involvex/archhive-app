@@ -181,6 +181,7 @@ impl LanServer {
                 "/api/library/thumbs",
                 post(generate_missing_thumbs).delete(clear_all_thumbs),
             )
+            .route("/api/library/rehash", post(rehash_scene_hashes))
             .route("/api/system/versions", get(binary_versions))
             .route("/api/diagnostics", get(diagnostics))
             .route("/api/logs", get(list_logs))
@@ -242,6 +243,25 @@ impl LanServer {
                 "/api/scenes/{id}/collections",
                 get(scene_collection_ids_lan),
             )
+            .route(
+                "/api/stashbox/endpoints",
+                get(list_stashbox_lan).post(save_stashbox_lan),
+            )
+            .route("/api/stashbox/endpoints/{id}", delete(delete_stashbox_lan))
+            .route("/api/stashbox/endpoints/{id}/test", post(test_stashbox_lan))
+            .route("/api/stashbox/query", post(query_stashdb_lan))
+            .route("/api/stashbox/unenriched", get(list_unenriched_lan))
+            .route(
+                "/api/stashbox/search-scenes",
+                post(search_stashdb_scenes_lan),
+            )
+            .route(
+                "/api/stashbox/search-performers",
+                post(search_stashdb_performers_lan),
+            )
+            .route("/api/stashbox/apply", post(apply_stashdb_lan))
+            .route("/api/stashbox/submit", post(submit_stashdb_lan))
+            .route("/api/stashbox/link-performer", post(link_performer_lan))
             .layer(middleware::from_fn_with_state(api.clone(), auth_middleware))
             .with_state(api);
 
@@ -817,6 +837,17 @@ async fn generate_missing_thumbs(
     let result = state
         .app
         .generate_missing_thumbs()
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(serde_json::json!(result)))
+}
+
+async fn rehash_scene_hashes(
+    State(state): State<ApiState>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let result = state
+        .app
+        .rehash_scene_hashes()
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(serde_json::json!(result)))
@@ -1624,6 +1655,195 @@ async fn dismiss_saved_search_news(
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         })?;
     Ok(Json(serde_json::json!(dismissed)))
+}
+
+async fn list_stashbox_lan(
+    State(state): State<ApiState>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    // Never leak API keys over LAN: has_key flag only.
+    let endpoints = state
+        .app
+        .list_stashbox_endpoints()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(serde_json::json!(endpoints)))
+}
+
+#[derive(Deserialize)]
+struct SaveStashboxBody {
+    id: Option<String>,
+    name: String,
+    endpoint: String,
+    api_key: Option<String>,
+}
+
+async fn save_stashbox_lan(
+    State(state): State<ApiState>,
+    Json(body): Json<SaveStashboxBody>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let saved = state
+        .app
+        .save_stashbox_endpoint(
+            body.id.as_deref(),
+            &body.name,
+            &body.endpoint,
+            body.api_key.as_deref(),
+        )
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    Ok(Json(serde_json::json!(saved)))
+}
+
+async fn delete_stashbox_lan(
+    State(state): State<ApiState>,
+    Path(id): Path<String>,
+) -> Result<StatusCode, StatusCode> {
+    state
+        .app
+        .delete_stashbox_endpoint(&id)
+        .map_err(|_| StatusCode::NOT_FOUND)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn test_stashbox_lan(
+    State(state): State<ApiState>,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let name = state
+        .app
+        .test_stashbox_endpoint(&id)
+        .await
+        .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
+    Ok(Json(serde_json::json!({ "account": name })))
+}
+
+#[derive(Deserialize)]
+struct QueryStashBody {
+    scene_id: Option<String>,
+    title: Option<String>,
+    endpoint_id: Option<String>,
+    fingerprint_only: Option<bool>,
+}
+
+async fn query_stashdb_lan(
+    State(state): State<ApiState>,
+    Json(body): Json<QueryStashBody>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let fingerprint_only = body.fingerprint_only.unwrap_or(false);
+    let matches = if let Some(scene_id) = body.scene_id.as_deref() {
+        state
+            .app
+            .query_stashdb_for_scene(scene_id, body.endpoint_id.as_deref(), fingerprint_only)
+            .await
+    } else if let Some(title) = body.title.as_deref() {
+        state
+            .app
+            .search_stashdb_scenes(title, body.endpoint_id.as_deref())
+            .await
+    } else {
+        return Err((StatusCode::BAD_REQUEST, "scene_id or title required".into()));
+    }
+    .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
+    Ok(Json(serde_json::json!(matches)))
+}
+
+#[derive(Deserialize)]
+struct UnenrichedQuery {
+    limit: Option<u32>,
+}
+
+async fn list_unenriched_lan(
+    State(state): State<ApiState>,
+    Query(q): Query<UnenrichedQuery>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let result = state
+        .app
+        .list_unenriched_scenes(q.limit.unwrap_or(25))
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(serde_json::json!(result)))
+}
+
+async fn search_stashdb_scenes_lan(
+    State(state): State<ApiState>,
+    Json(body): Json<QueryStashBody>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let title = body.title.as_deref().unwrap_or("");
+    let matches = state
+        .app
+        .search_stashdb_scenes(title, body.endpoint_id.as_deref())
+        .await
+        .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
+    Ok(Json(serde_json::json!(matches)))
+}
+
+#[derive(Deserialize)]
+struct SearchPerformerBody {
+    name: String,
+    endpoint_id: Option<String>,
+}
+
+async fn search_stashdb_performers_lan(
+    State(state): State<ApiState>,
+    Json(body): Json<SearchPerformerBody>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let matches = state
+        .app
+        .search_stashdb_performers(&body.name, body.endpoint_id.as_deref())
+        .await
+        .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
+    Ok(Json(serde_json::json!(matches)))
+}
+
+async fn apply_stashdb_lan(
+    State(state): State<ApiState>,
+    Json(body): Json<crate::models::ApplyStashMatchRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let scene = state
+        .app
+        .apply_stashdb_match(&body)
+        .await
+        .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
+    Ok(Json(serde_json::json!(scene)))
+}
+
+#[derive(Deserialize)]
+struct SubmitFingerprintsBody {
+    scene_id: String,
+    endpoint_id: Option<String>,
+}
+
+async fn submit_stashdb_lan(
+    State(state): State<ApiState>,
+    Json(body): Json<SubmitFingerprintsBody>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let result = state
+        .app
+        .submit_stashdb_fingerprints(&body.scene_id, body.endpoint_id.as_deref())
+        .await
+        .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
+    Ok(Json(serde_json::json!(result)))
+}
+
+#[derive(Deserialize)]
+struct LinkPerformerBody {
+    performer_id: String,
+    stash_id: String,
+    image: Option<String>,
+    aliases: Option<Vec<String>>,
+}
+
+async fn link_performer_lan(
+    State(state): State<ApiState>,
+    Json(body): Json<LinkPerformerBody>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let performer = state
+        .app
+        .link_performer_stash(
+            &body.performer_id,
+            &body.stash_id,
+            body.image.as_deref(),
+            body.aliases.as_deref().unwrap_or(&[]),
+        )
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    Ok(Json(serde_json::json!(performer)))
 }
 
 fn parse_kind(s: &str) -> AppResult<crate::models::BrowseKind> {

@@ -403,6 +403,7 @@ impl AppState {
             favorite: false,
             cup_size: None,
             hair_color: None,
+            stash_id: None,
             scene_count: 0,
         })
     }
@@ -428,6 +429,429 @@ impl AppState {
 
     pub fn set_performer_image(&self, id: &str, image: Option<&str>) -> AppResult<()> {
         self.db.update_performer_image(id, image)
+    }
+
+    // ---- StashDB / stash-box enrichment (vault-backed API keys) ----
+
+    fn stashbox_endpoint(&self, endpoint_id: &str) -> AppResult<crate::models::StashBoxEndpoint> {
+        let settings = self.db.get_settings()?;
+        settings
+            .stashbox_endpoints
+            .iter()
+            .find(|e| e.id == endpoint_id)
+            .cloned()
+            .ok_or_else(|| {
+                crate::error::AppError::NotFound(format!("stash-box endpoint {endpoint_id}"))
+            })
+    }
+
+    fn stashbox_client(
+        &self,
+        endpoint_id: &str,
+    ) -> AppResult<crate::metadata::stashbox::StashBoxClient> {
+        let ep = self.stashbox_endpoint(endpoint_id)?;
+        let key = self
+            .vault
+            .get_secret(&crate::vault::stashbox_secret_key(&ep.id))?
+            .filter(|k| !k.trim().is_empty())
+            .ok_or_else(|| {
+                crate::error::AppError::InvalidInput(
+                    "stash-box API key missing — save it in Settings → Metadata".into(),
+                )
+            })?;
+        crate::metadata::stashbox::StashBoxClient::new(&ep.endpoint, &ep.id, &key)
+    }
+
+    pub fn list_stashbox_endpoints(&self) -> AppResult<Vec<crate::models::StashBoxEndpoint>> {
+        let settings = self.db.get_settings()?;
+        let mut out = settings.stashbox_endpoints;
+        for ep in &mut out {
+            ep.has_key = self
+                .vault
+                .get_secret(&crate::vault::stashbox_secret_key(&ep.id))
+                .map(|k| k.is_some_and(|v| !v.trim().is_empty()))
+                .unwrap_or(false);
+        }
+        Ok(out)
+    }
+
+    pub async fn test_stashbox_endpoint(&self, endpoint_id: &str) -> AppResult<String> {
+        self.stashbox_client(endpoint_id)?.test_connection().await
+    }
+
+    pub fn save_stashbox_endpoint(
+        &self,
+        id: Option<&str>,
+        name: &str,
+        endpoint: &str,
+        api_key: Option<&str>,
+    ) -> AppResult<crate::models::StashBoxEndpoint> {
+        use crate::models::StashBoxEndpoint;
+        let name = name.trim();
+        if name.is_empty() {
+            return Err(crate::error::AppError::InvalidInput(
+                "endpoint name is required".into(),
+            ));
+        }
+        let endpoint = crate::metadata::stashbox::normalize_endpoint(endpoint)?;
+        let mut settings = self.db.get_settings()?;
+        let ep_id = id
+            .filter(|s| !s.trim().is_empty())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+        match settings
+            .stashbox_endpoints
+            .iter_mut()
+            .find(|e| e.id == ep_id)
+        {
+            Some(existing) => {
+                existing.name = name.to_string();
+                existing.endpoint = endpoint;
+            }
+            None => settings.stashbox_endpoints.push(StashBoxEndpoint {
+                id: ep_id.clone(),
+                name: name.to_string(),
+                endpoint,
+                has_key: false,
+            }),
+        }
+        // has_key is transient (computed from the vault on read) — never persist.
+        for ep in &mut settings.stashbox_endpoints {
+            ep.has_key = false;
+        }
+        self.db.save_settings(&settings)?;
+        // Empty key clears the stored secret (lets users rotate/remove).
+        if let Some(key) = api_key {
+            if key.trim().is_empty() {
+                self.vault
+                    .delete_secret(&crate::vault::stashbox_secret_key(&ep_id))?;
+            } else {
+                self.vault
+                    .set_secret(&crate::vault::stashbox_secret_key(&ep_id), key.trim())?;
+            }
+        }
+        let mut saved = self.stashbox_endpoint(&ep_id)?;
+        saved.has_key = self
+            .vault
+            .get_secret(&crate::vault::stashbox_secret_key(&ep_id))?
+            .is_some_and(|v| !v.trim().is_empty());
+        Ok(saved)
+    }
+
+    pub fn delete_stashbox_endpoint(&self, endpoint_id: &str) -> AppResult<()> {
+        let mut settings = self.db.get_settings()?;
+        let before = settings.stashbox_endpoints.len();
+        settings.stashbox_endpoints.retain(|e| e.id != endpoint_id);
+        if settings.stashbox_endpoints.len() == before {
+            return Err(crate::error::AppError::NotFound(format!(
+                "stash-box endpoint {endpoint_id}"
+            )));
+        }
+        self.db.save_settings(&settings)?;
+        let _ = self
+            .vault
+            .delete_secret(&crate::vault::stashbox_secret_key(endpoint_id));
+        Ok(())
+    }
+
+    /// Query StashDB for one library scene: fingerprints first, title fallback
+    /// (unless `fingerprint_only`, used by batch Identify to avoid mismatches).
+    pub async fn query_stashdb_for_scene(
+        &self,
+        scene_id: &str,
+        endpoint_id: Option<&str>,
+        fingerprint_only: bool,
+    ) -> AppResult<Vec<crate::models::StashSceneMatch>> {
+        let endpoint_id = match endpoint_id {
+            Some(id) => id.to_string(),
+            None => self
+                .db
+                .get_settings()?
+                .stashbox_endpoints
+                .first()
+                .map(|e| e.id.clone())
+                .ok_or_else(|| {
+                    crate::error::AppError::InvalidInput(
+                        "no stash-box endpoint configured — add one in Settings → Metadata".into(),
+                    )
+                })?,
+        };
+        let client = self.stashbox_client(&endpoint_id)?;
+        let scene = self.db.get_scene(scene_id)?;
+        let (_, oshash, md5, _) = self.db.scene_fingerprints(scene_id)?;
+        // Nothing stored to match with is "no match", not a failure — and it
+        // keeps batch Identify from flagging every unhashed row as an error.
+        // Any other Err (auth, GraphQL, network) must propagate so callers can
+        // tell "query failed" apart from "no match".
+        if fingerprint_only
+            && md5.as_deref().is_none_or(|h| h.trim().is_empty())
+            && oshash.as_deref().is_none_or(|h| h.trim().is_empty())
+        {
+            return Ok(Vec::new());
+        }
+        match client
+            .find_by_fingerprints(md5.as_deref(), oshash.as_deref())
+            .await
+        {
+            Ok(matches) if !matches.is_empty() => Ok(matches),
+            Ok(_) if fingerprint_only => Ok(Vec::new()),
+            Ok(_) => client.search_scenes(&scene.title).await,
+            Err(e) if fingerprint_only => Err(e),
+            Err(_) => client.search_scenes(&scene.title).await,
+        }
+    }
+
+    /// Scenes eligible for batch Identify + total count for the banner.
+    pub fn list_unenriched_scenes(
+        &self,
+        limit: u32,
+    ) -> AppResult<crate::models::UnenrichedScenesResult> {
+        Ok(crate::models::UnenrichedScenesResult {
+            scenes: self.db.list_unenriched_scenes(limit)?,
+            total: self.db.count_unenriched_scenes()?,
+            hashes_missing: self.db.count_scenes_missing_hashes()?,
+        })
+    }
+
+    /// (Re)compute MD5 + OSHASH (+ phash from the existing thumb sidecar)
+    /// for every library file missing them. Needed once for libraries
+    /// hashed before the fingerprint fix; afterwards new files get hashes
+    /// at import/scan time.
+    pub async fn rehash_scene_hashes(&self) -> AppResult<crate::models::RehashResult> {
+        crate::library::LibraryScanner::rehash_library_hashes(self.db.clone(), 2).await
+    }
+
+    pub async fn search_stashdb_scenes(
+        &self,
+        title: &str,
+        endpoint_id: Option<&str>,
+    ) -> AppResult<Vec<crate::models::StashSceneMatch>> {
+        let endpoint_id = match endpoint_id {
+            Some(id) => id.to_string(),
+            None => self
+                .db
+                .get_settings()?
+                .stashbox_endpoints
+                .first()
+                .map(|e| e.id.clone())
+                .ok_or_else(|| {
+                    crate::error::AppError::InvalidInput(
+                        "no stash-box endpoint configured — add one in Settings → Metadata".into(),
+                    )
+                })?,
+        };
+        self.stashbox_client(&endpoint_id)?
+            .search_scenes(title)
+            .await
+    }
+
+    pub async fn search_stashdb_performers(
+        &self,
+        name: &str,
+        endpoint_id: Option<&str>,
+    ) -> AppResult<Vec<crate::models::StashPerformerMatch>> {
+        let endpoint_id = match endpoint_id {
+            Some(id) => id.to_string(),
+            None => self
+                .db
+                .get_settings()?
+                .stashbox_endpoints
+                .first()
+                .map(|e| e.id.clone())
+                .ok_or_else(|| {
+                    crate::error::AppError::InvalidInput(
+                        "no stash-box endpoint configured — add one in Settings → Metadata".into(),
+                    )
+                })?,
+        };
+        self.stashbox_client(&endpoint_id)?
+            .search_performers(name)
+            .await
+    }
+
+    /// Apply a chosen StashDB match to a library scene. Only the checked
+    /// field groups are written; performers/tags merge (no silent removal).
+    /// Fetches full match details first so apply works from a stash_id alone.
+    pub async fn apply_stashdb_match(
+        &self,
+        req: &crate::models::ApplyStashMatchRequest,
+    ) -> AppResult<crate::models::Scene> {
+        let client = self.stashbox_client(&req.endpoint_id)?;
+        // Resolve the match: prefer a fresh lookup so callers only need ids.
+        let scene_fallback = self.db.get_scene(&req.scene_id)?;
+        let (_, oshash, md5, _) = self.db.scene_fingerprints(&req.scene_id)?;
+        let candidates = match client
+            .find_by_fingerprints(md5.as_deref(), oshash.as_deref())
+            .await
+        {
+            Ok(m) if !m.is_empty() => m,
+            _ => client
+                .search_scenes(&scene_fallback.title)
+                .await
+                .unwrap_or_default(),
+        };
+        let m = candidates
+            .iter()
+            .find(|c| c.stash_id == req.stash_id)
+            .cloned()
+            .ok_or_else(|| {
+                crate::error::AppError::NotFound(format!("stash scene {}", req.stash_id))
+            })?;
+        if req.apply_title && !m.title.trim().is_empty() {
+            self.db
+                .update_scene(&req.scene_id, Some(&m.title), None, None, false, None, None)?;
+        }
+        if req.apply_performers {
+            let mut performer_names = self.db.get_scene(&req.scene_id)?.performers;
+            for p in &m.performers {
+                if !performer_names
+                    .iter()
+                    .any(|e| e.eq_ignore_ascii_case(&p.name))
+                {
+                    performer_names.push(p.name.clone());
+                }
+            }
+            self.db
+                .replace_scene_performers(&req.scene_id, &performer_names)?;
+            // Tag performer rows with their stash ids (best-effort).
+            for p in &m.performers {
+                if let Some(sid) = &p.stash_id {
+                    if let Ok(pid) = self.db.upsert_performer(&p.name) {
+                        let _ = self.db.set_performer_stash_id(&pid, sid);
+                    }
+                }
+            }
+        }
+        if req.apply_tags {
+            let existing = self.db.get_scene(&req.scene_id)?.tags;
+            let mut tags = existing;
+            for t in &m.tags {
+                if !tags.iter().any(|e| e.eq_ignore_ascii_case(&t.name)) {
+                    tags.push(t.name.clone());
+                }
+            }
+            self.db.replace_scene_tags(&req.scene_id, &tags)?;
+        }
+        if req.apply_studio {
+            if let Some(studio) = &m.studio {
+                let _ = self.db.upsert_studio(
+                    &studio.name,
+                    studio.stash_id.as_deref(),
+                    None,
+                    studio.image.as_deref(),
+                );
+            }
+        }
+        if req.apply_image_as_thumb {
+            if let Some(url) = m.image.as_deref().filter(|u| !u.trim().is_empty()) {
+                if let Ok(thumb) = self.download_stash_image(&req.scene_id, url).await {
+                    let _ = self.db.set_scene_thumb(&req.scene_id, &thumb);
+                }
+            }
+        }
+        self.db.set_scene_stash_match(
+            &req.scene_id,
+            &m.stash_id,
+            if req.apply_studio {
+                m.studio.as_ref().map(|s| s.name.as_str())
+            } else {
+                None
+            },
+            if req.apply_date {
+                m.date.as_deref()
+            } else {
+                None
+            },
+        )?;
+        self.db.get_scene(&req.scene_id)
+    }
+
+    /// Download a StashDB cover into the library dir as `{stem}.stash.jpg`
+    /// sidecar next to the video (same convention as remote thumbnails).
+    async fn download_stash_image(&self, scene_id: &str, url: &str) -> AppResult<String> {
+        let scene = self.db.get_scene(scene_id)?;
+        let video_path = scene
+            .path
+            .ok_or_else(|| crate::error::AppError::NotFound("scene has no file on disk".into()))?;
+        let stem = std::path::Path::new(&video_path)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or(scene_id);
+        let parent = std::path::Path::new(&video_path)
+            .parent()
+            .ok_or_else(|| crate::error::AppError::Other("scene path has no parent".into()))?;
+        let target = parent.join(format!("{stem}.stash.jpg"));
+        let bytes = self.site_ctx.client.get(url).send().await?.bytes().await?;
+        if bytes.is_empty() || bytes.len() > 20_000_000 {
+            return Err(crate::error::AppError::Site(
+                "stash image empty or too large".into(),
+            ));
+        }
+        std::fs::write(&target, &bytes)?;
+        Ok(target.to_string_lossy().to_string())
+    }
+
+    pub async fn submit_stashdb_fingerprints(
+        &self,
+        scene_id: &str,
+        endpoint_id: Option<&str>,
+    ) -> AppResult<crate::models::SubmitFingerprintsResult> {
+        let endpoint_id = match endpoint_id {
+            Some(id) => id.to_string(),
+            None => self
+                .db
+                .get_settings()?
+                .stashbox_endpoints
+                .first()
+                .map(|e| e.id.clone())
+                .ok_or_else(|| {
+                    crate::error::AppError::InvalidInput("no stash-box endpoint configured".into())
+                })?,
+        };
+        let client = self.stashbox_client(&endpoint_id)?;
+        let scene = self.db.get_scene(scene_id)?;
+        let stash_id = scene.stash_id.clone().ok_or_else(|| {
+            crate::error::AppError::InvalidInput(
+                "enrich this scene from StashDB first (no stash_id)".into(),
+            )
+        })?;
+        let (_, oshash, md5, _) = self.db.scene_fingerprints(scene_id)?;
+        let submitted = client
+            .submit_fingerprints(&stash_id, md5.as_deref(), oshash.as_deref(), scene.duration)
+            .await?;
+        Ok(crate::models::SubmitFingerprintsResult {
+            submitted,
+            endpoint_id,
+        })
+    }
+
+    /// Link a library performer to a StashDB performer: records the stash id,
+    /// merges aliases, and sets the portrait only when none is stored.
+    pub fn link_performer_stash(
+        &self,
+        performer_id: &str,
+        stash_id: &str,
+        image: Option<&str>,
+        aliases: &[String],
+    ) -> AppResult<crate::models::Performer> {
+        let stash_id = stash_id.trim();
+        if stash_id.is_empty() {
+            return Err(crate::error::AppError::InvalidInput(
+                "stash_id is required".into(),
+            ));
+        }
+        // Validates existence first.
+        let current = self.db.get_performer(performer_id)?;
+        self.db.set_performer_stash_id(performer_id, stash_id)?;
+        if !aliases.is_empty() {
+            self.db.merge_performer_aliases(performer_id, aliases)?;
+        }
+        if let Some(url) = image.map(str::trim).filter(|u| !u.is_empty()) {
+            if current.image.as_deref().is_none_or(|i| i.trim().is_empty()) {
+                self.db.update_performer_image(performer_id, Some(url))?;
+            }
+        }
+        self.db.get_performer(performer_id)
     }
 
     pub fn list_tags(&self) -> AppResult<Vec<Tag>> {
@@ -672,6 +1096,12 @@ impl AppState {
 
         let current = self.get_settings().unwrap_or_default();
         let mut next = backup.settings.clone();
+
+        // Stash-box API keys live in the vault and are never exported.
+        // Clear the transient has_key flags so the UI re-checks the vault.
+        for ep in &mut next.stashbox_endpoints {
+            ep.has_key = false;
+        }
 
         // Always regenerate LAN token on import (avoid sharing host secrets blindly).
         next.lan_token = None;

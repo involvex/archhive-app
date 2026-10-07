@@ -6,6 +6,7 @@ mod error;
 mod library;
 mod log_buffer;
 mod media;
+mod metadata;
 mod mobile;
 mod models;
 mod server;
@@ -282,6 +283,7 @@ pub fn run() {
             commands::save_settings,
             commands::scan_library,
             commands::generate_missing_thumbs,
+            commands::rehash_scene_hashes,
             commands::find_duplicates,
             commands::merge_duplicates,
             commands::list_cookie_sites,
@@ -355,6 +357,18 @@ pub fn run() {
             commands::remove_scene_from_collection,
             commands::list_collection_scenes,
             commands::scene_collection_ids,
+            commands::export_collection,
+            commands::list_stashbox_endpoints,
+            commands::save_stashbox_endpoint,
+            commands::delete_stashbox_endpoint,
+            commands::test_stashbox_endpoint,
+            commands::query_stashdb_for_scene,
+            commands::list_unenriched_scenes,
+            commands::search_stashdb_scenes,
+            commands::search_stashdb_performers,
+            commands::apply_stashdb_match,
+            commands::submit_stashdb_fingerprints,
+            commands::link_performer_stash,
         ])
         .run(tauri::generate_context!())
         .unwrap_or_else(|e| {

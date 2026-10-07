@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { SceneEditDialog } from "@/components/SceneEditDialog";
 import { SceneDetailsDialog } from "@/components/SceneDetailsDialog";
+import { IdentifyDialog } from "@/components/IdentifyDialog";
 import { ScenePlayerDialog } from "@/components/ScenePlayerDialog";
 import { SceneBulkEditBar } from "@/components/SceneBulkEditBar";
 import { SceneContextMenu, type SceneContextMenuState } from "@/components/SceneContextMenu";
@@ -21,7 +22,7 @@ import { usePullToRefresh } from "@/lib/hooks/usePullToRefresh";
 import { useIsLandscape } from "@/lib/hooks/useMediaQuery";
 import { vibrateTick } from "@/lib/haptics";
 import { registerShortcut, unregisterShortcut } from "@/lib/shortcuts/registry";
-import { Film, LayoutGrid, List, RefreshCw, X, Zap } from "lucide-react";
+import { Film, Database, LayoutGrid, List, RefreshCw, X, Zap } from "lucide-react";
 
 export const Route = createFileRoute("/library/scenes/")({
   validateSearch: (
@@ -215,6 +216,33 @@ function ScenesPage() {
       .catch(() => {});
   }, [setWatchMap]);
 
+  // StashDB Identify banner count (best-effort; endpoints/keys may be missing).
+  const [unenrichedTotal, setUnenrichedTotal] = useState<number | null>(null);
+  const [hashesMissing, setHashesMissing] = useState(0);
+  const [rehashLoading, setRehashLoading] = useState(false);
+  const [identifyOpen, setIdentifyOpen] = useState(false);
+  const refreshUnenriched = useCallback(() => {
+    void api
+      .listUnenrichedScenes(1)
+      .then((r) => {
+        setUnenrichedTotal(r.total);
+        setHashesMissing(r.hashes_missing ?? 0);
+      })
+      .catch(() => setUnenrichedTotal(null));
+  }, []);
+
+  /** One-shot repair: compute MD5 + OSHASH for files hashed before the fix. */
+  const rehashAllHashes = useCallback(() => {
+    setRehashLoading(true);
+    void api
+      .rehashSceneHashes()
+      .then(() => refreshUnenriched())
+      .catch((e) => {
+        console.error(e);
+      })
+      .finally(() => setRehashLoading(false));
+  }, [refreshUnenriched]);
+
   const refresh = useCallback(() => {
     // Q8 guard: contradictory range can never match — keep current results
     // and let the inline hint explain instead of flashing an empty grid.
@@ -242,7 +270,8 @@ function ScenesPage() {
       })
       .finally(() => setLoading(false));
     refreshWatch();
-  }, [query, sort, filter, hasFilter, refreshWatch]);
+    refreshUnenriched();
+  }, [query, sort, filter, hasFilter, refreshWatch, refreshUnenriched]);
 
   const loadMore = useCallback(() => {
     if (loadingMore || !hasMore) return;
@@ -827,6 +856,35 @@ function ScenesPage() {
           </Button>
         </div>
       )}
+      {hashesMissing > 0 && (
+        <div className="flex flex-wrap items-center gap-3 rounded-md border border-amber-400/30 bg-amber-400/10 px-3 py-2">
+          <p className="text-sm text-amber-300">
+            {hashesMissing} scene{hashesMissing === 1 ? "" : "s"} need
+            {hashesMissing === 1 ? "s" : ""} file hashes (MD5 + OSHASH) before StashDB matching can
+            work.
+          </p>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => void rehashAllHashes()}
+            disabled={rehashLoading}
+          >
+            {rehashLoading ? "Computing…" : "Compute hashes"}
+          </Button>
+        </div>
+      )}
+      {unenrichedTotal !== null && unenrichedTotal > 0 && (
+        <div className="flex flex-wrap items-center gap-3 rounded-md border border-sky-400/30 bg-sky-400/10 px-3 py-2">
+          <p className="text-sm text-sky-300">
+            {unenrichedTotal} scene{unenrichedTotal === 1 ? "" : "s"} can be identified from
+            StashDB.
+          </p>
+          <Button size="sm" variant="outline" onClick={() => setIdentifyOpen(true)}>
+            <Database className="mr-1 h-3.5 w-3.5" />
+            Identify
+          </Button>
+        </div>
+      )}
       {loading ? (
         <SkeletonGrid count={12} cols={3} />
       ) : error ? (
@@ -956,6 +1014,15 @@ function ScenesPage() {
         scene={detailsScene}
         open={detailsScene !== null}
         onClose={() => setDetailsScene(null)}
+      />
+
+      <IdentifyDialog
+        open={identifyOpen}
+        onClose={() => setIdentifyOpen(false)}
+        onDone={() => {
+          refresh();
+          refreshUnenriched();
+        }}
       />
 
       <ScenePlayerDialog

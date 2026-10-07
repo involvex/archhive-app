@@ -51,6 +51,13 @@ import type {
   SettingsBackup,
   SettingsBackupImportOptions,
   SettingsBackupImportResult,
+  StashBoxEndpoint,
+  StashSceneMatch,
+  StashPerformerMatch,
+  ApplyStashMatchRequest,
+  SubmitFingerprintsResult,
+  UnenrichedScenesResult,
+  RehashResult,
 } from "../types";
 import { getAppRuntime, shouldUseRemoteApi } from "../runtime";
 import { vibrateTick } from "../haptics";
@@ -395,6 +402,16 @@ export const api = {
     return localInvoke<ThumbGenResult>("generate_missing_thumbs");
   },
 
+  /** (Re)compute MD5 + OSHASH for files missing them (post-fingerprint-fix repair). */
+  async rehashSceneHashes(): Promise<RehashResult> {
+    if (shouldUseRemoteApi()) {
+      return remoteFetch<RehashResult>("/api/library/rehash", {
+        method: "POST",
+      });
+    }
+    return localInvoke<RehashResult>("rehash_scene_hashes");
+  },
+
   async probeSceneMetadata(sceneId: string): Promise<Scene> {
     if (shouldUseRemoteApi()) {
       return remoteFetch<Scene>(`/api/scenes/${sceneId}/probe`, { method: "POST" });
@@ -591,7 +608,8 @@ export const api = {
       });
       return res.id;
     }
-    return localInvoke<{ id: string }>("create_collection", { req }).then((r) => r.id);
+    // Local IPC returns the bare id string (see commands::create_collection).
+    return localInvoke<string>("create_collection", { req });
   },
 
   async deleteCollection(id: string): Promise<void> {
@@ -1220,5 +1238,162 @@ export const api = {
       throw new Error("Load the demo scene on the local device, not via Remote LAN.");
     }
     return localInvoke<string>("load_demo_scene");
+  },
+
+  // ---- StashDB / stash-box enrichment (vault-backed API keys) ----
+
+  /** Endpoints only expose has_key — keys never leave the host vault. */
+  async listStashboxEndpoints(): Promise<StashBoxEndpoint[]> {
+    return localOrRemote("list_stashbox_endpoints", undefined, "/api/stashbox/endpoints");
+  },
+
+  async saveStashboxEndpoint(args: {
+    id?: string;
+    name: string;
+    endpoint: string;
+    apiKey?: string;
+  }): Promise<StashBoxEndpoint> {
+    const { id, name, endpoint, apiKey } = args;
+    if (shouldUseRemoteApi()) {
+      return remoteFetch<StashBoxEndpoint>("/api/stashbox/endpoints", {
+        method: "POST",
+        body: JSON.stringify({ id, name, endpoint, api_key: apiKey }),
+      });
+    }
+    return localInvoke<StashBoxEndpoint>("save_stashbox_endpoint", {
+      id: id ?? null,
+      name,
+      endpoint,
+      apiKey: apiKey ?? null,
+    });
+  },
+
+  async deleteStashboxEndpoint(id: string): Promise<void> {
+    if (shouldUseRemoteApi()) {
+      await remoteFetch<void>(`/api/stashbox/endpoints/${id}`, { method: "DELETE" });
+      return;
+    }
+    await localInvoke("delete_stashbox_endpoint", { id });
+  },
+
+  async testStashboxEndpoint(id: string): Promise<string> {
+    if (shouldUseRemoteApi()) {
+      const res = await remoteFetch<{ account: string }>(`/api/stashbox/endpoints/${id}/test`, {
+        method: "POST",
+      });
+      return res.account;
+    }
+    return localInvoke<string>("test_stashbox_endpoint", { id });
+  },
+
+  /** Fingerprint-first, title fallback. Works local + Remote LAN. */
+  async queryStashdbForScene(
+    sceneId: string,
+    endpointId?: string,
+    fingerprintOnly = false,
+  ): Promise<StashSceneMatch[]> {
+    const body = {
+      scene_id: sceneId,
+      endpoint_id: endpointId ?? null,
+      fingerprint_only: fingerprintOnly,
+    };
+    if (shouldUseRemoteApi()) {
+      return remoteFetch<StashSceneMatch[]>("/api/stashbox/query", {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+    }
+    return localInvoke<StashSceneMatch[]>("query_stashdb_for_scene", {
+      sceneId,
+      endpointId: endpointId ?? null,
+      fingerprintOnly,
+    });
+  },
+
+  /** Scenes with fingerprints but no StashDB link yet (batch Identify). */
+  async listUnenrichedScenes(limit = 25): Promise<UnenrichedScenesResult> {
+    if (shouldUseRemoteApi()) {
+      return remoteFetch<UnenrichedScenesResult>(`/api/stashbox/unenriched?limit=${limit}`);
+    }
+    return localInvoke<UnenrichedScenesResult>("list_unenriched_scenes", { limit });
+  },
+
+  async searchStashdbScenes(title: string, endpointId?: string): Promise<StashSceneMatch[]> {
+    if (shouldUseRemoteApi()) {
+      return remoteFetch<StashSceneMatch[]>("/api/stashbox/search-scenes", {
+        method: "POST",
+        body: JSON.stringify({ title, endpoint_id: endpointId ?? null }),
+      });
+    }
+    return localInvoke<StashSceneMatch[]>("search_stashdb_scenes", {
+      title,
+      endpointId: endpointId ?? null,
+    });
+  },
+
+  async searchStashdbPerformers(name: string, endpointId?: string): Promise<StashPerformerMatch[]> {
+    if (shouldUseRemoteApi()) {
+      return remoteFetch<StashPerformerMatch[]>("/api/stashbox/search-performers", {
+        method: "POST",
+        body: JSON.stringify({ name, endpoint_id: endpointId ?? null }),
+      });
+    }
+    return localInvoke<StashPerformerMatch[]>("search_stashdb_performers", {
+      name,
+      endpointId: endpointId ?? null,
+    });
+  },
+
+  async applyStashdbMatch(body: ApplyStashMatchRequest): Promise<Scene> {
+    if (shouldUseRemoteApi()) {
+      return remoteFetch<Scene>("/api/stashbox/apply", {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+    }
+    return localInvoke<Scene>("apply_stashdb_match", { body });
+  },
+
+  async submitStashdbFingerprints(
+    sceneId: string,
+    endpointId?: string,
+  ): Promise<SubmitFingerprintsResult> {
+    if (shouldUseRemoteApi()) {
+      return remoteFetch<SubmitFingerprintsResult>("/api/stashbox/submit", {
+        method: "POST",
+        body: JSON.stringify({ scene_id: sceneId, endpoint_id: endpointId ?? null }),
+      });
+    }
+    return localInvoke<SubmitFingerprintsResult>("submit_stashdb_fingerprints", {
+      sceneId,
+      endpointId: endpointId ?? null,
+    });
+  },
+
+  /** Link a performer to a StashDB id (merges aliases, sets portrait if empty). */
+  async linkPerformerStash(args: {
+    performerId: string;
+    stashId: string;
+    image?: string;
+    aliases?: string[];
+  }): Promise<Performer> {
+    const { performerId, stashId, image, aliases } = args;
+    if (shouldUseRemoteApi()) {
+      return remoteFetch<Performer>("/api/stashbox/link-performer", {
+        method: "POST",
+        body: JSON.stringify({
+          performer_id: performerId,
+          stash_id: stashId,
+          image: image ?? null,
+          aliases: aliases ?? [],
+        }),
+      });
+    }
+    return localInvoke<Performer>("link_performer_stash", {
+      performerId,
+      stashId,
+      image: image ?? null,
+      aliases: aliases ?? [],
+    });
   },
 };

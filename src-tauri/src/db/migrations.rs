@@ -238,3 +238,42 @@ ALTER TABLE performers ADD COLUMN hair_color TEXT;
 CREATE INDEX IF NOT EXISTS idx_performers_cup ON performers(cup_size);
 CREATE INDEX IF NOT EXISTS idx_performers_hair ON performers(hair_color);
 "#;
+
+/// StashDB enrichment: remote stash-box ids + local studio cache.
+/// `scenes.studio_name` mirrors the matched studio (kept denormalized so
+/// library lists don't need a join). `vault_secrets` holds stash-box API
+/// keys encrypted (same AES-256-GCM cipher as cookies).
+pub const MIGRATION_018: &str = r#"
+ALTER TABLE scenes ADD COLUMN stash_id TEXT;
+ALTER TABLE scenes ADD COLUMN stashdb_updated_at TEXT;
+ALTER TABLE scenes ADD COLUMN studio_name TEXT;
+ALTER TABLE performers ADD COLUMN stash_id TEXT;
+
+CREATE TABLE IF NOT EXISTS studios (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    stash_id TEXT,
+    url TEXT,
+    image TEXT
+);
+
+CREATE TABLE IF NOT EXISTS vault_secrets (
+    key TEXT PRIMARY KEY,
+    encrypted_data BLOB NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_scenes_stash_id ON scenes(stash_id);
+CREATE INDEX IF NOT EXISTS idx_performers_stash_id ON performers(stash_id);
+CREATE INDEX IF NOT EXISTS idx_studios_stash_id ON studios(stash_id);
+"#;
+
+/// StashDB fingerprint fix: `scenes.md5` (full-file MD5, StashDB's most common
+/// fingerprint — previously never computed) plus cleanup of bogus `oshash`
+/// rows. The old `compute_oshash` wrote a 64-char SHA-256 digest; real
+/// OSHASH values are always exactly 16 hex chars, so anything else is
+/// unreachable junk that would break batch Identify counts.
+pub const MIGRATION_019: &str = r#"
+ALTER TABLE scenes ADD COLUMN md5 TEXT;
+UPDATE scenes SET oshash = NULL WHERE oshash IS NOT NULL AND length(oshash) != 16;
+"#;

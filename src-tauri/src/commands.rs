@@ -310,6 +310,15 @@ pub async fn generate_missing_thumbs(
     map_err(state.generate_missing_thumbs().await)
 }
 
+/// (Re)compute MD5 + OSHASH for library files missing them (one-shot repair
+/// after the fingerprint fix; afterwards hashes are written at import time).
+#[tauri::command]
+pub async fn rehash_scene_hashes(
+    state: State<'_, Arc<AppState>>,
+) -> CmdResult<crate::models::RehashResult> {
+    map_err(state.rehash_scene_hashes().await)
+}
+
 #[tauri::command]
 pub async fn resolve_media_details(
     state: State<'_, Arc<AppState>>,
@@ -999,26 +1008,26 @@ pub async fn rollback_binary(
 }
 
 #[tauri::command]
-pub fn list_collections(state: State<'_, AppState>) -> CmdResult<Vec<Collection>> {
+pub fn list_collections(state: State<'_, Arc<AppState>>) -> CmdResult<Vec<Collection>> {
     state.list_collections().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn create_collection(
-    state: State<'_, AppState>,
+    state: State<'_, Arc<AppState>>,
     req: CreateCollectionRequest,
 ) -> CmdResult<String> {
     state.create_collection(req).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn delete_collection(state: State<'_, AppState>, id: String) -> CmdResult<()> {
+pub fn delete_collection(state: State<'_, Arc<AppState>>, id: String) -> CmdResult<()> {
     state.delete_collection(&id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn update_collection(
-    state: State<'_, AppState>,
+    state: State<'_, Arc<AppState>>,
     id: String,
     req: UpdateCollectionRequest,
 ) -> CmdResult<()> {
@@ -1027,7 +1036,7 @@ pub fn update_collection(
 
 #[tauri::command]
 pub fn add_scene_to_collection(
-    state: State<'_, AppState>,
+    state: State<'_, Arc<AppState>>,
     scene_id: String,
     collection_id: String,
 ) -> CmdResult<()> {
@@ -1038,7 +1047,7 @@ pub fn add_scene_to_collection(
 
 #[tauri::command]
 pub fn remove_scene_from_collection(
-    state: State<'_, AppState>,
+    state: State<'_, Arc<AppState>>,
     scene_id: String,
     collection_id: String,
 ) -> CmdResult<()> {
@@ -1049,7 +1058,7 @@ pub fn remove_scene_from_collection(
 
 #[tauri::command]
 pub fn list_collection_scenes(
-    state: State<'_, AppState>,
+    state: State<'_, Arc<AppState>>,
     collection_id: String,
 ) -> CmdResult<Vec<Scene>> {
     state
@@ -1059,7 +1068,7 @@ pub fn list_collection_scenes(
 
 #[tauri::command]
 pub fn scene_collection_ids(
-    state: State<'_, AppState>,
+    state: State<'_, Arc<AppState>>,
     scene_id: String,
 ) -> CmdResult<Vec<String>> {
     state
@@ -1069,7 +1078,7 @@ pub fn scene_collection_ids(
 
 #[tauri::command]
 pub fn export_collection(
-    state: State<'_, AppState>,
+    state: State<'_, Arc<AppState>>,
     collection_id: String,
     req: ExportCollectionRequest,
 ) -> CmdResult<ExportCollectionResult> {
@@ -1110,6 +1119,132 @@ pub fn export_collection(
         content: m3u,
         filename,
     })
+}
+
+/// StashDB / stash-box endpoints (vault-backed API keys).
+#[tauri::command]
+pub fn list_stashbox_endpoints(
+    state: State<'_, Arc<AppState>>,
+) -> CmdResult<Vec<crate::models::StashBoxEndpoint>> {
+    map_err(state.list_stashbox_endpoints())
+}
+
+#[tauri::command]
+pub fn save_stashbox_endpoint(
+    state: State<'_, Arc<AppState>>,
+    id: Option<String>,
+    name: String,
+    endpoint: String,
+    api_key: Option<String>,
+) -> CmdResult<crate::models::StashBoxEndpoint> {
+    map_err(state.save_stashbox_endpoint(id.as_deref(), &name, &endpoint, api_key.as_deref()))
+}
+
+#[tauri::command]
+pub fn delete_stashbox_endpoint(state: State<'_, Arc<AppState>>, id: String) -> CmdResult<()> {
+    map_err(state.delete_stashbox_endpoint(&id))
+}
+
+#[tauri::command]
+pub async fn test_stashbox_endpoint(
+    state: State<'_, Arc<AppState>>,
+    id: String,
+) -> CmdResult<String> {
+    state
+        .test_stashbox_endpoint(&id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Query StashDB for one library scene (fingerprints, title fallback
+/// unless fingerprint_only — used by batch Identify to avoid mismatches).
+#[tauri::command]
+pub async fn query_stashdb_for_scene(
+    state: State<'_, Arc<AppState>>,
+    scene_id: String,
+    endpoint_id: Option<String>,
+    fingerprint_only: Option<bool>,
+) -> CmdResult<Vec<crate::models::StashSceneMatch>> {
+    state
+        .query_stashdb_for_scene(
+            &scene_id,
+            endpoint_id.as_deref(),
+            fingerprint_only.unwrap_or(false),
+        )
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Scenes eligible for batch Identify (have fingerprints, no stash_id yet).
+#[tauri::command]
+pub fn list_unenriched_scenes(
+    state: State<'_, Arc<AppState>>,
+    limit: Option<u32>,
+) -> CmdResult<crate::models::UnenrichedScenesResult> {
+    map_err(state.list_unenriched_scenes(limit.unwrap_or(25)))
+}
+
+#[tauri::command]
+pub async fn search_stashdb_scenes(
+    state: State<'_, Arc<AppState>>,
+    title: String,
+    endpoint_id: Option<String>,
+) -> CmdResult<Vec<crate::models::StashSceneMatch>> {
+    state
+        .search_stashdb_scenes(&title, endpoint_id.as_deref())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn search_stashdb_performers(
+    state: State<'_, Arc<AppState>>,
+    name: String,
+    endpoint_id: Option<String>,
+) -> CmdResult<Vec<crate::models::StashPerformerMatch>> {
+    state
+        .search_stashdb_performers(&name, endpoint_id.as_deref())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn apply_stashdb_match(
+    state: State<'_, Arc<AppState>>,
+    body: crate::models::ApplyStashMatchRequest,
+) -> CmdResult<Scene> {
+    state
+        .apply_stashdb_match(&body)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn submit_stashdb_fingerprints(
+    state: State<'_, Arc<AppState>>,
+    scene_id: String,
+    endpoint_id: Option<String>,
+) -> CmdResult<crate::models::SubmitFingerprintsResult> {
+    state
+        .submit_stashdb_fingerprints(&scene_id, endpoint_id.as_deref())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn link_performer_stash(
+    state: State<'_, Arc<AppState>>,
+    performer_id: String,
+    stash_id: String,
+    image: Option<String>,
+    aliases: Option<Vec<String>>,
+) -> CmdResult<crate::models::Performer> {
+    map_err(state.link_performer_stash(
+        &performer_id,
+        &stash_id,
+        image.as_deref(),
+        aliases.as_deref().unwrap_or(&[]),
+    ))
 }
 
 /// #73: Load a demo scene for empty-state testing in the first-run wizard.

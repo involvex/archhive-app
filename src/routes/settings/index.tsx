@@ -45,6 +45,7 @@ import type {
 } from "@/lib/types";
 import { DuplicateGroupCard } from "@/components/DuplicateGroupCard";
 import { DirectoryPickerDialog } from "@/components/DirectoryPickerDialog";
+import { StashboxSettingsCard } from "@/components/StashboxSettingsCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -2350,6 +2351,10 @@ function SettingsPage() {
               )}
             </CardContent>
           </Card>
+        </Tabs.Content>
+
+        <Tabs.Content value="metadata" className="mt-4 space-y-4">
+          <StashboxSettingsCard />
         </Tabs.Content>
 
         <Tabs.Content value="duplicates" className="mt-4 space-y-4">

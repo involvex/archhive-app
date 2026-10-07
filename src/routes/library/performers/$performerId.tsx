@@ -1,7 +1,7 @@
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api/client";
-import type { Performer, Scene } from "@/lib/types";
+import type { Performer, Scene, StashPerformerMatch } from "@/lib/types";
 import { CUP_OPTIONS, HAIR_OPTIONS } from "@/lib/body-match/queries";
 import { toWatchMap, watchFor, type WatchMap } from "@/lib/watch";
 import { SceneCard } from "@/components/SceneCard";
@@ -11,7 +11,7 @@ import { ErrorState } from "@/components/ErrorState";
 import { EmptyState } from "@/components/EmptyState";
 import { Button } from "@/components/ui/button";
 import { sceneThumbUrl, isVideoScene } from "@/lib/mediaUrl";
-import { ArrowLeft, Filter, Users } from "lucide-react";
+import { ArrowLeft, Check, Database, Filter, Users, X } from "lucide-react";
 
 export const Route = createFileRoute("/library/performers/$performerId")({
   component: PerformerDetailPage,
@@ -31,6 +31,11 @@ function PerformerDetailPage() {
   const [hairEdit, setHairEdit] = useState("");
   const [attrSaving, setAttrSaving] = useState(false);
   const [attrError, setAttrError] = useState("");
+  // StashDB performer linking.
+  const [stashMatches, setStashMatches] = useState<StashPerformerMatch[] | null>(null);
+  const [stashSearching, setStashSearching] = useState(false);
+  const [stashLinking, setStashLinking] = useState<string | null>(null);
+  const [stashError, setStashError] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -205,6 +210,114 @@ function PerformerDetailPage() {
         </Button>
       </div>
       {attrError && <p className="text-xs text-red-400">{attrError}</p>}
+      <div className="flex flex-col gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] p-3">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-xs font-medium text-[var(--color-muted-foreground)]">
+            StashDB
+            {performer.stash_id ? (
+              <span className="ml-2 rounded bg-green-500/15 px-1.5 py-0.5 text-green-400">
+                linked
+              </span>
+            ) : (
+              <span className="ml-2 rounded bg-[var(--color-muted)] px-1.5 py-0.5">not linked</span>
+            )}
+          </p>
+          {!performer.stash_id && (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={stashSearching}
+              onClick={() => {
+                setStashSearching(true);
+                setStashError("");
+                void api
+                  .searchStashdbPerformers(performer.name)
+                  .then((matches) => {
+                    setStashMatches(matches);
+                    if (matches.length === 0) setStashError("No StashDB match for this name.");
+                  })
+                  .catch((e) => setStashError(e instanceof Error ? e.message : "Search failed"))
+                  .finally(() => setStashSearching(false));
+              }}
+            >
+              <Database className="mr-1.5 h-3.5 w-3.5" />
+              {stashSearching ? "Searching…" : "Search StashDB"}
+            </Button>
+          )}
+        </div>
+        {stashError && <p className="text-xs text-red-400">{stashError}</p>}
+        {stashMatches && stashMatches.length > 0 && !performer.stash_id && (
+          <ul className="space-y-2">
+            {stashMatches.map((m) => (
+              <li
+                key={m.stash_id}
+                className="flex items-center justify-between gap-2 rounded-md border border-[var(--color-border)] p-2 text-sm"
+              >
+                <div className="flex min-w-0 items-center gap-2">
+                  {m.image ? (
+                    <img
+                      src={m.image}
+                      alt=""
+                      className="h-8 w-8 shrink-0 rounded-full object-cover"
+                    />
+                  ) : (
+                    <Users className="h-5 w-5 shrink-0 text-[var(--color-muted-foreground)]" />
+                  )}
+                  <div className="min-w-0">
+                    <p className="truncate font-medium">{m.name}</p>
+                    {m.aliases.length > 0 && (
+                      <p className="truncate text-xs text-[var(--color-muted-foreground)]">
+                        aka {m.aliases.join(", ")}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={stashLinking !== null}
+                  onClick={() => {
+                    setStashLinking(m.stash_id);
+                    setStashError("");
+                    void api
+                      .linkPerformerStash({
+                        performerId: performer.id,
+                        stashId: m.stash_id,
+                        image: m.image,
+                        aliases: m.aliases,
+                      })
+                      .then((updated) => {
+                        setPerformer(updated);
+                        setStashMatches(null);
+                      })
+                      .catch((e) => setStashError(e instanceof Error ? e.message : "Link failed"))
+                      .finally(() => setStashLinking(null));
+                  }}
+                >
+                  {stashLinking === m.stash_id ? (
+                    "Linking…"
+                  ) : (
+                    <>
+                      <Check className="mr-1 h-3.5 w-3.5" />
+                      Apply
+                    </>
+                  )}
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+        {stashMatches && (
+          <button
+            type="button"
+            onClick={() => setStashMatches(null)}
+            className="flex items-center gap-1 self-start text-xs text-[var(--color-muted-foreground)] underline"
+          >
+            <X className="h-3 w-3" />
+            Clear results
+          </button>
+        )}
+      </div>
       {scenes.length === 0 ? (
         <EmptyState
           icon={<Users className="h-12 w-12" />}

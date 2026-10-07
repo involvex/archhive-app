@@ -49,6 +49,7 @@ function CollectionsPage() {
   const [playerIndex, setPlayerIndex] = useState(0);
   const [contextMenu, setContextMenu] = useState<SceneContextMenuState | null>(null);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [opError, setOpError] = useState("");
 
   const processedFilterRef = useRef<string | null>(null);
 
@@ -94,22 +95,40 @@ function CollectionsPage() {
       .finally(() => setScenesLoading(false));
   };
 
-  const handleCreate = (data: { name: string; type: CollectionType; description?: string }) => {
+  const handleCreate = (data: {
+    name: string;
+    type: CollectionType;
+    description?: string;
+    filter?: import("@/lib/types").SceneFilter;
+  }) => {
+    setOpError("");
     api
-      .createCollection({ name: data.name, type: data.type, description: data.description })
+      .createCollection({
+        name: data.name,
+        type: data.type,
+        description: data.description,
+        filter: data.filter,
+      })
       .then(() => loadCollections())
-      .catch(console.error);
+      .catch((e) => {
+        console.error(e);
+        setOpError(e instanceof Error ? e.message : "Failed to create collection");
+      });
   };
 
   const handleDelete = (id: string) => {
     if (!confirm("Delete this collection? Scenes will not be removed.")) return;
+    setOpError("");
     api
       .deleteCollection(id)
       .then(() => {
         loadCollections();
         if (selected?.id === id) setSelected(null);
       })
-      .catch(console.error);
+      .catch((e) => {
+        console.error(e);
+        setOpError(e instanceof Error ? e.message : "Failed to delete collection");
+      });
   };
 
   const handleAddToCollection = (scene: Scene) => {
@@ -144,6 +163,12 @@ function CollectionsPage() {
           New
         </Button>
       </div>
+
+      {opError && (
+        <p className="rounded-md border border-red-400/30 bg-red-400/10 px-3 py-2 text-sm text-red-400">
+          {opError}
+        </p>
+      )}
 
       {loading ? (
         <div className="space-y-2">

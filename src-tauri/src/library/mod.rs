@@ -1,6 +1,6 @@
 use crate::db::Database;
 use crate::error::AppResult;
-use crate::library::hashing::{compute_oshash, compute_phash_from_image};
+use crate::library::hashing::{compute_md5, compute_oshash, compute_phash_from_image};
 use crate::media::FfmpegProcessor;
 use crate::models::ScanProgress;
 use std::path::{Path, PathBuf};
@@ -182,10 +182,18 @@ impl LibraryScanner {
                                     .ok()
                                     .flatten()
                             };
+                            let md5 = {
+                                let p = video_path.clone();
+                                tokio::task::spawn_blocking(move || compute_md5(&p).ok())
+                                    .await
+                                    .ok()
+                                    .flatten()
+                            };
                             let _ = db.update_scene_hashes(
                                 &scene_id,
                                 phash.as_deref(),
                                 oshash.as_deref(),
+                                md5.as_deref(),
                                 Some(&thumb_str),
                             );
                             generated.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -320,6 +328,13 @@ impl LibraryScanner {
                 .ok()
                 .flatten()
         };
+        let md5 = {
+            let path = final_path.to_path_buf();
+            tokio::task::spawn_blocking(move || compute_md5(&path).ok())
+                .await
+                .ok()
+                .flatten()
+        };
         let phash = {
             let t = thumb.clone();
             tokio::task::spawn_blocking(move || {
@@ -338,9 +353,99 @@ impl LibraryScanner {
             scene_id,
             phash.as_deref(),
             oshash.as_deref(),
+            md5.as_deref(),
             thumb_str.as_deref(),
         )?;
 
         Ok((phash, oshash, thumb_str))
+    }
+
+    /// (Re)compute MD5 + OSHASH for every library file missing them, without
+    /// touching thumbnails. One-shot repair for libraries hashed before the
+    /// fingerprint fix (old rows stored SHA-256 as `oshash`, since purged).
+    /// Caps concurrency to avoid storage thrash; MD5 streams the file.
+    pub async fn rehash_library_hashes(
+        db: Arc<Database>,
+        concurrency: usize,
+    ) -> AppResult<crate::models::RehashResult> {
+        use tokio::sync::Semaphore;
+
+        let missing = db.list_scenes_missing_hashes()?;
+        if missing.is_empty() {
+            return Ok(crate::models::RehashResult {
+                rehashed: 0,
+                errors: 0,
+            });
+        }
+
+        let limit = concurrency.max(1);
+        let sem = Arc::new(Semaphore::new(limit));
+        let mut handles = Vec::new();
+        let rehashed = Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let errors = Arc::new(std::sync::atomic::AtomicU32::new(0));
+
+        for (scene_id, path_str) in missing {
+            let permit = sem
+                .clone()
+                .acquire_owned()
+                .await
+                .map_err(|e| crate::error::AppError::Other(format!("rehash semaphore: {e}")))?;
+            let db = db.clone();
+            let rehashed = rehashed.clone();
+            let errors = errors.clone();
+            handles.push(tokio::spawn(async move {
+                let _permit = permit;
+                let video_path = PathBuf::from(&path_str);
+                if !video_path.is_file() {
+                    errors.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    return;
+                }
+                let (md5, oshash) = {
+                    let p = video_path.clone();
+                    tokio::task::spawn_blocking(move || {
+                        (compute_md5(&p).ok(), compute_oshash(&p).ok())
+                    })
+                    .await
+                    .ok()
+                    .unwrap_or((None, None))
+                };
+                // Refresh the phash from the stored thumb sidecar when present
+                // (cheap, keeps duplicate detection in sync); otherwise keep
+                // whatever is stored via COALESCE.
+                let phash = db
+                    .get_scene(&scene_id)
+                    .ok()
+                    .and_then(|s| s.thumb)
+                    .filter(|t| Path::new(t).is_file())
+                    .and_then(|t| compute_phash_from_image(Path::new(&t)).ok());
+                match db.update_scene_hashes(
+                    &scene_id,
+                    phash.as_deref(),
+                    oshash.as_deref(),
+                    md5.as_deref(),
+                    None,
+                ) {
+                    Ok(_) => {
+                        if md5.is_some() || oshash.is_some() {
+                            rehashed.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        } else {
+                            errors.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!("[rehash] failed for {path_str}: {e}");
+                        errors.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    }
+                }
+            }));
+        }
+
+        for h in handles {
+            let _ = h.await;
+        }
+        Ok(crate::models::RehashResult {
+            rehashed: rehashed.load(std::sync::atomic::Ordering::Relaxed),
+            errors: errors.load(std::sync::atomic::Ordering::Relaxed),
+        })
     }
 }

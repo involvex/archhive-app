@@ -5,6 +5,7 @@ export const SETTINGS_TABS = [
   "library",
   "downloads",
   "cookies",
+  "metadata",
   "duplicates",
   "lan",
   "desktop",

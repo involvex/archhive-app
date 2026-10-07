@@ -187,6 +187,12 @@ pub struct Scene {
     pub width: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub height: Option<u32>,
+    /// StashDB / stash-box scene id (UUID on the remote box). Set by Enrich.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stash_id: Option<String>,
+    /// Last StashDB enrichment timestamp (RFC3339).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stashdb_updated_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -202,6 +208,9 @@ pub struct Performer {
     /// V2 BodyMatch hair color (blonde,brunette,black,red,auburn).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hair_color: Option<String>,
+    /// StashDB / stash-box performer id. Set by Enrich.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stash_id: Option<String>,
     pub scene_count: u32,
 }
 
@@ -367,6 +376,9 @@ pub struct AppSettings {
     /// Backup path for last-known-good binary rollback. (#69)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub binary_backup_path: Option<String>,
+    /// Configured stash-box endpoints (StashDB etc). API keys live in vault.
+    #[serde(default)]
+    pub stashbox_endpoints: Vec<StashBoxEndpoint>,
 }
 
 fn default_phash_threshold() -> u8 {
@@ -534,6 +546,7 @@ impl Default for AppSettings {
             last_binary_check: None,
             auto_check_binaries: default_auto_check_binaries(),
             binary_backup_path: None,
+            stashbox_endpoints: default_stashbox_endpoints(),
         }
     }
 }
@@ -626,7 +639,7 @@ pub struct Collection {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateCollectionRequest {
     pub name: String,
-    #[serde(default)]
+    #[serde(default, rename = "type")]
     pub collection_type: CollectionType,
     #[serde(default)]
     pub description: Option<String>,
@@ -974,4 +987,155 @@ pub struct SettingsBackupImportResult {
     pub settings_applied: bool,
     pub cookies_imported: u32,
     pub library_path_skipped: bool,
+}
+
+/// One configured stash-box endpoint (StashDB, FansDB, JAVStash, …).
+/// The API key is stored in the encrypted vault, never in settings JSON.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StashBoxEndpoint {
+    pub id: String,
+    pub name: String,
+    pub endpoint: String,
+    /// True when a vault API key is stored for this endpoint.
+    #[serde(default)]
+    pub has_key: bool,
+}
+
+/// Pre-configured StashDB endpoint so setup is just "paste API key".
+/// Stable id `stashdb` keeps the vault key (`stashbox:stashdb`) stable.
+pub fn default_stashbox_endpoints() -> Vec<StashBoxEndpoint> {
+    vec![StashBoxEndpoint {
+        id: "stashdb".to_string(),
+        name: "StashDB".to_string(),
+        endpoint: crate::metadata::stashbox::STASHDB_ENDPOINT.to_string(),
+        has_key: false,
+    }]
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct StashPerformerRef {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stash_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct StashTagRef {
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct StashStudioRef {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stash_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image: Option<String>,
+}
+
+/// One StashDB scene candidate returned by fingerprint / title search.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct StashSceneMatch {
+    pub stash_id: String,
+    pub title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub date: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub details: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub studio: Option<StashStudioRef>,
+    #[serde(default)]
+    pub performers: Vec<StashPerformerRef>,
+    #[serde(default)]
+    pub tags: Vec<StashTagRef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration: Option<u32>,
+    /// Which endpoint returned this match (endpoint id).
+    #[serde(default)]
+    pub endpoint_id: String,
+}
+
+/// One StashDB performer candidate.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct StashPerformerMatch {
+    pub stash_id: String,
+    pub name: String,
+    #[serde(default)]
+    pub aliases: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image: Option<String>,
+    #[serde(default)]
+    pub endpoint_id: String,
+}
+
+/// Fields the user chose to apply from a StashDB match.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ApplyStashMatchRequest {
+    pub scene_id: String,
+    pub endpoint_id: String,
+    pub stash_id: String,
+    #[serde(default = "default_true")]
+    pub apply_title: bool,
+    #[serde(default = "default_true")]
+    pub apply_date: bool,
+    #[serde(default = "default_true")]
+    pub apply_studio: bool,
+    #[serde(default = "default_true")]
+    pub apply_performers: bool,
+    #[serde(default = "default_true")]
+    pub apply_tags: bool,
+    #[serde(default)]
+    pub apply_image_as_thumb: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SubmitFingerprintsResult {
+    pub submitted: u32,
+    pub endpoint_id: String,
+}
+
+/// Batch Identify payload: enrichable scenes + total count for the banner.
+/// `hashes_missing` counts scenes with a file on disk but no matchable
+/// fingerprints yet — the banner offers to compute them first.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UnenrichedScenesResult {
+    pub scenes: Vec<Scene>,
+    pub total: u32,
+    pub hashes_missing: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RehashResult {
+    pub rehashed: u32,
+    pub errors: u32,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn create_collection_request_accepts_type_field() {
+        // Frontend + LAN send `{ name, type: "watchlist", ... }`.
+        let req: CreateCollectionRequest =
+            serde_json::from_value(serde_json::json!({ "name": "x", "type": "watchlist" }))
+                .expect("parses");
+        assert_eq!(req.collection_type, CollectionType::Watchlist);
+        let req: CreateCollectionRequest =
+            serde_json::from_value(serde_json::json!({ "name": "x", "type": "smart" }))
+                .expect("parses");
+        assert_eq!(req.collection_type, CollectionType::Smart);
+        // Missing type defaults to plain collection (back-compat).
+        let req: CreateCollectionRequest =
+            serde_json::from_value(serde_json::json!({ "name": "x" })).expect("parses");
+        assert_eq!(req.collection_type, CollectionType::Collection);
+    }
 }

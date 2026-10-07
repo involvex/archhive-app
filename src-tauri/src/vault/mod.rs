@@ -31,6 +31,17 @@ impl CookieVault {
         let key = load_or_create_key(&key_path)?;
         let cipher = Aes256Gcm::new_from_slice(&key)
             .map_err(|e| AppError::Other(format!("cipher init: {e}")))?;
+        // Generic encrypted secret store (stash-box API keys). Created lazily
+        // here as well as in MIGRATION_018 so old vaults self-heal.
+        if let Ok(guard) = conn.lock() {
+            let _ = guard.execute_batch(
+                "CREATE TABLE IF NOT EXISTS vault_secrets (
+                    key TEXT PRIMARY KEY,
+                    encrypted_data BLOB NOT NULL,
+                    updated_at TEXT NOT NULL
+                )",
+            );
+        }
         Ok(Self {
             conn,
             cipher,
@@ -175,6 +186,56 @@ impl CookieVault {
         Ok(out)
     }
 
+    /// Generic encrypted secret (stash-box API keys). Key format
+    /// `stashbox:<endpoint-id>`; value is opaque text (never logged).
+    pub fn set_secret(&self, key: &str, value: &str) -> AppResult<()> {
+        let key = validate_secret_key(key)?;
+        let encrypted = self.encrypt(value.as_bytes())?;
+        let now = Utc::now().to_rfc3339();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        conn.execute(
+            "INSERT INTO vault_secrets (key, encrypted_data, updated_at) VALUES (?1, ?2, ?3)
+             ON CONFLICT(key) DO UPDATE SET encrypted_data = excluded.encrypted_data, updated_at = excluded.updated_at",
+            params![key, encrypted, now],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_secret(&self, key: &str) -> AppResult<Option<String>> {
+        let key = validate_secret_key(key)?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let blob: Option<Vec<u8>> = conn
+            .query_row(
+                "SELECT encrypted_data FROM vault_secrets WHERE key = ?1",
+                params![key],
+                |row| row.get(0),
+            )
+            .optional()?;
+        let Some(blob) = blob else {
+            return Ok(None);
+        };
+        let plain = self.decrypt(&blob)?;
+        String::from_utf8(plain)
+            .map(Some)
+            .map_err(|e| AppError::Other(e.to_string()))
+    }
+
+    pub fn delete_secret(&self, key: &str) -> AppResult<()> {
+        let key = validate_secret_key(key)?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        conn.execute("DELETE FROM vault_secrets WHERE key = ?1", params![key])?;
+        Ok(())
+    }
+
     fn encrypt(&self, plain: &[u8]) -> AppResult<Vec<u8>> {
         let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
         let ciphertext = self
@@ -210,6 +271,28 @@ fn validate_site_id(site_id: &str) -> AppResult<&str> {
         )));
     }
     Ok(site_id)
+}
+
+/// Vault secret keys are `namespace:id` (e.g. `stashbox:abc123`).
+/// Allows URL-safe chars plus `:` `/` `.` for endpoint-derived ids.
+fn validate_secret_key(key: &str) -> AppResult<&str> {
+    if key.is_empty()
+        || key.len() > 256
+        || key.contains("..")
+        || !key
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | ':' | '/' | '.' | '@'))
+    {
+        return Err(AppError::InvalidInput(format!(
+            "Invalid secret key: {key:?}"
+        )));
+    }
+    Ok(key)
+}
+
+/// Vault key for a stash-box endpoint id.
+pub fn stashbox_secret_key(endpoint_id: &str) -> String {
+    format!("stashbox:{endpoint_id}")
 }
 
 fn load_or_create_key(path: &PathBuf) -> AppResult<[u8; 32]> {
@@ -283,7 +366,7 @@ fn normalize_netscape(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{normalize_netscape, validate_site_id};
+    use super::{normalize_netscape, validate_secret_key, validate_site_id};
 
     #[test]
     fn rejects_path_traversal_site_ids() {
@@ -327,5 +410,14 @@ mod tests {
             normalize_netscape(input),
             ".example.com\tTRUE\t/\tFALSE\t0\tn\tv\n"
         );
+    }
+
+    #[test]
+    fn validates_secret_keys() {
+        assert!(validate_secret_key("stashbox:abc123").is_ok());
+        assert!(validate_secret_key("stashbox:https://stashdb.org/graphql").is_ok());
+        assert!(validate_secret_key("../etc").is_err());
+        assert!(validate_secret_key("").is_err());
+        assert!(validate_secret_key("a b").is_err());
     }
 }

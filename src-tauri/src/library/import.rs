@@ -22,7 +22,7 @@ pub fn import_download(
 
     if let Some(p) = path {
         if let Some(existing) = db.scene_by_path(p)? {
-            db.update_scene_hashes(&existing.id, phash, oshash, thumb)?;
+            db.update_scene_hashes(&existing.id, phash, oshash, None, thumb)?;
             if let Some(dur) = duration {
                 db.update_scene_duration(&existing.id, dur)?;
             }

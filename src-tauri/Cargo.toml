@@ -46,6 +46,7 @@ walkdir = "2"
 aes-gcm = "0.10"
 base64 = "0.22"
 sha2 = "0.10"
+md5 = "0.7"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "bmp", "ico", "tiff", "webp"] }
 image_hasher = "2.0"
 tauri-plugin-global-shortcut = "2"

@@ -4,9 +4,10 @@ import { sceneThumbUrl, sceneMediaUrl, isWebPlayableScene, isHttpMediaSrc } from
 import { getAppRuntime } from "@/lib/runtime";
 import { HlsVideoPlayer } from "@/components/HlsVideoPlayer";
 import { ExtLink } from "@/components/ExtLink";
+import { EnrichDialog } from "@/components/EnrichDialog";
 import type { Scene } from "@/lib/types";
 import { Button } from "@/components/ui/button";
-import { Check, Copy, Star, X } from "lucide-react";
+import { Check, Copy, Database, Star, X } from "lucide-react";
 
 interface SceneDetailsDialogProps {
   scene: Scene | null;
@@ -28,6 +29,7 @@ function SceneDetailsBody({ scene, onClose }: { scene: Scene; onClose: () => voi
   const [probing, setProbing] = useState(false);
   const [probeResult, setProbeResult] = useState("");
   const [copied, setCopied] = useState(false);
+  const [enrichOpen, setEnrichOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -195,6 +197,27 @@ function SceneDetailsBody({ scene, onClose }: { scene: Scene; onClose: () => voi
             <dd className="break-all font-mono text-xs">{data.oshash}</dd>
           </div>
         )}
+        {data.studio_name && (
+          <div>
+            <dt className="text-[var(--color-muted-foreground)]">Studio</dt>
+            <dd>{data.studio_name}</dd>
+          </div>
+        )}
+        {data.date && (
+          <div>
+            <dt className="text-[var(--color-muted-foreground)]">Date</dt>
+            <dd>{data.date}</dd>
+          </div>
+        )}
+        {data.stash_id && (
+          <div>
+            <dt className="text-[var(--color-muted-foreground)]">StashDB</dt>
+            <dd className="text-xs text-[var(--color-muted-foreground)]">
+              Linked
+              {data.stashdb_updated_at ? ` · enriched ${data.stashdb_updated_at.slice(0, 10)}` : ""}
+            </dd>
+          </div>
+        )}
         {data.performers.length > 0 && (
           <div>
             <dt className="text-[var(--color-muted-foreground)]">Performers</dt>
@@ -242,10 +265,20 @@ function SceneDetailsBody({ scene, onClose }: { scene: Scene; onClose: () => voi
         <Button variant="outline" size="sm" onClick={() => void probeMetadata()} disabled={probing}>
           {probing ? "Probing…" : "Probe metadata"}
         </Button>
+        <Button variant="outline" size="sm" onClick={() => setEnrichOpen(true)}>
+          <Database className="h-3.5 w-3.5" />
+          Enrich from StashDB
+        </Button>
         <Button variant="outline" onClick={onClose}>
           Close
         </Button>
       </div>
+      <EnrichDialog
+        scene={data}
+        open={enrichOpen}
+        onClose={() => setEnrichOpen(false)}
+        onApplied={(updated) => setDetail(updated)}
+      />
     </>
   );
 }

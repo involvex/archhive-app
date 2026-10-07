@@ -3,7 +3,8 @@ mod migrations;
 use crate::db::migrations::{
     MIGRATION_001, MIGRATION_002, MIGRATION_003, MIGRATION_004, MIGRATION_005, MIGRATION_006,
     MIGRATION_007, MIGRATION_008, MIGRATION_009, MIGRATION_010, MIGRATION_011, MIGRATION_012,
-    MIGRATION_013, MIGRATION_014, MIGRATION_015, MIGRATION_016, MIGRATION_017,
+    MIGRATION_013, MIGRATION_014, MIGRATION_015, MIGRATION_016, MIGRATION_017, MIGRATION_018,
+    MIGRATION_019,
 };
 use crate::error::{AppError, AppResult};
 use crate::models::{
@@ -155,6 +156,40 @@ impl Database {
         conn.execute_batch(MIGRATION_016)?;
         if !column_exists(&conn, "performers", "cup_size") {
             conn.execute_batch(MIGRATION_017)?;
+        }
+        // StashDB ids are additive; gate on the new column so old DBs migrate
+        // without failing on re-runs. vault_secrets + studios use IF NOT EXISTS.
+        if !column_exists(&conn, "scenes", "stash_id") {
+            conn.execute_batch(MIGRATION_018)?;
+        }
+        // MD5 fingerprints + purge of SHA-256 junk previously stored as oshash.
+        if !column_exists(&conn, "scenes", "md5") {
+            conn.execute_batch(MIGRATION_019)?;
+        }
+        // Backfill the default StashDB endpoint for DBs created before it
+        // existed (fresh DBs get it via AppSettings::default).
+        {
+            let raw: Option<String> = conn
+                .query_row(
+                    "SELECT value FROM app_settings WHERE key = 'settings'",
+                    [],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            let mut settings: crate::models::AppSettings = match raw {
+                Some(json) => serde_json::from_str(&json).unwrap_or_default(),
+                None => crate::models::AppSettings::default(),
+            };
+            if settings.stashbox_endpoints.is_empty() {
+                settings.stashbox_endpoints = crate::models::default_stashbox_endpoints();
+                let json = serde_json::to_string(&settings)
+                    .map_err(|e| AppError::Other(format!("settings serialize: {e}")))?;
+                conn.execute(
+                    "INSERT INTO app_settings (key, value) VALUES ('settings', ?1)
+                     ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                    params![json],
+                )?;
+            }
         }
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
@@ -731,6 +766,7 @@ impl Database {
         id: &str,
         phash: Option<&str>,
         oshash: Option<&str>,
+        md5: Option<&str>,
         thumb: Option<&str>,
     ) -> AppResult<()> {
         let conn = self
@@ -738,8 +774,8 @@ impl Database {
             .lock()
             .map_err(|e| AppError::Other(e.to_string()))?;
         conn.execute(
-            "UPDATE scenes SET phash = COALESCE(?2, phash), oshash = COALESCE(?3, oshash), thumb = COALESCE(?4, thumb) WHERE id = ?1",
-            params![id, phash, oshash, thumb],
+            "UPDATE scenes SET phash = COALESCE(?2, phash), oshash = COALESCE(?3, oshash), md5 = COALESCE(?4, md5), thumb = COALESCE(?5, thumb) WHERE id = ?1",
+            params![id, phash, oshash, md5, thumb],
         )?;
         Ok(())
     }
@@ -1484,6 +1520,8 @@ impl Database {
                 studio_id: None,
                 studio_name: None,
                 date: None,
+                stash_id: None,
+                stashdb_updated_at: None,
                 rating,
                 performers,
                 tags,
@@ -1779,6 +1817,8 @@ impl Database {
                 studio_id: None,
                 studio_name: None,
                 date: None,
+                stash_id: None,
+                stashdb_updated_at: None,
                 rating,
                 performers,
                 tags,
@@ -1846,6 +1886,8 @@ impl Database {
                     studio_id: None,
                     studio_name: None,
                     date: None,
+                    stash_id: None,
+                    stashdb_updated_at: None,
                     rating,
                     performers,
                     tags,
@@ -1916,7 +1958,7 @@ impl Database {
             .lock()
             .map_err(|e| AppError::Other(e.to_string()))?;
         let mut sql = String::from(
-            "SELECT p.id, p.name, p.aliases, p.image, p.favorite, p.cup_size, p.hair_color,
+            "SELECT p.id, p.name, p.aliases, p.image, p.favorite, p.cup_size, p.hair_color, p.stash_id,
                     (SELECT COUNT(*) FROM scene_performers sp WHERE sp.performer_id = p.id) as scene_count
              FROM performers p",
         );
@@ -2207,6 +2249,8 @@ impl Database {
                 studio_id: None,
                 studio_name: None,
                 date: None,
+                stash_id: None,
+                stashdb_updated_at: None,
                 rating,
                 performers,
                 tags,
@@ -2310,7 +2354,7 @@ impl Database {
             .map_err(|e| AppError::Other(e.to_string()))?;
         let row = conn
             .query_row(
-                "SELECT id, title, path, thumb, source_url, phash, oshash, duration, channel, notes, width, height, rating FROM scenes WHERE id = ?1",
+                "SELECT id, title, path, thumb, source_url, phash, oshash, duration, channel, notes, width, height, rating, date, studio_name, stash_id, stashdb_updated_at FROM scenes WHERE id = ?1",
                 params![scene_id],
                 |row| {
                     Ok((
@@ -2327,6 +2371,10 @@ impl Database {
                     row.get::<_, Option<u32>>(10)?,
                     row.get::<_, Option<u32>>(11)?,
                     row.get::<_, Option<u8>>(12)?,
+                    row.get::<_, Option<String>>(13)?,
+                    row.get::<_, Option<String>>(14)?,
+                    row.get::<_, Option<String>>(15)?,
+                    row.get::<_, Option<String>>(16)?,
                 ))
                 },
             )
@@ -2345,6 +2393,10 @@ impl Database {
             width,
             height,
             rating,
+            date,
+            studio_name,
+            stash_id,
+            stashdb_updated_at,
         )) = row
         else {
             return Err(AppError::NotFound(format!("scene {scene_id}")));
@@ -2363,8 +2415,8 @@ impl Database {
             thumb,
             source_url,
             studio_id: None,
-            studio_name: None,
-            date: None,
+            studio_name,
+            date,
             rating,
             performers,
             tags,
@@ -2375,7 +2427,256 @@ impl Database {
             notes,
             width,
             height,
+            stash_id,
+            stashdb_updated_at,
         })
+    }
+
+    /// Fingerprints + duration for stash-box matching (no filesystem access).
+    /// Tuple is (phash, oshash, md5, duration). Only MD5 + OSHASH go over the
+    /// wire: our thumbnail phash is Stash-incompatible (base64 vs int64).
+    pub fn scene_fingerprints(
+        &self,
+        scene_id: &str,
+    ) -> AppResult<(Option<String>, Option<String>, Option<String>, Option<u32>)> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let row: Option<(Option<String>, Option<String>, Option<String>, Option<u32>)> = conn
+            .query_row(
+                "SELECT phash, oshash, md5, duration FROM scenes WHERE id = ?1",
+                params![scene_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .optional()?;
+        row.ok_or_else(|| AppError::NotFound(format!("scene {scene_id}")))
+    }
+
+    /// Scenes with a file on disk that still need MD5/OSHASH computed
+    /// (e.g. hashed by the old SHA-256 implementation, since purged).
+    pub fn list_scenes_missing_hashes(&self) -> AppResult<Vec<(String, String)>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let mut stmt = conn.prepare(
+            "SELECT id, path FROM scenes
+             WHERE (stash_id IS NULL OR stash_id = '')
+             AND path IS NOT NULL AND path != ''
+             AND (md5 IS NULL OR oshash IS NULL OR length(oshash) != 16)",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(AppError::from)
+    }
+
+    /// Count of the above, for the library banner.
+    pub fn count_scenes_missing_hashes(&self) -> AppResult<u32> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM scenes
+             WHERE (stash_id IS NULL OR stash_id = '')
+             AND path IS NOT NULL AND path != ''
+             AND (md5 IS NULL OR oshash IS NULL OR length(oshash) != 16)",
+            [],
+            |row| row.get(0),
+        )?;
+        Ok(count.max(0) as u32)
+    }
+
+    /// Record a StashDB match on a scene (id + denormalized studio/date).
+    pub fn set_scene_stash_match(
+        &self,
+        scene_id: &str,
+        stash_id: &str,
+        studio_name: Option<&str>,
+        date: Option<&str>,
+    ) -> AppResult<()> {
+        let now = Utc::now().to_rfc3339();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let changed = conn.execute(
+            "UPDATE scenes SET stash_id = ?2, stashdb_updated_at = ?3,
+             studio_name = COALESCE(?4, studio_name), date = COALESCE(?5, date)
+             WHERE id = ?1",
+            params![scene_id, stash_id, now, studio_name, date],
+        )?;
+        if changed == 0 {
+            return Err(AppError::NotFound(format!("scene {scene_id}")));
+        }
+        Ok(())
+    }
+
+    pub fn set_performer_stash_id(&self, performer_id: &str, stash_id: &str) -> AppResult<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        conn.execute(
+            "UPDATE performers SET stash_id = ?2 WHERE id = ?1",
+            params![performer_id, stash_id],
+        )?;
+        Ok(())
+    }
+
+    /// Upsert a studio row by name; returns the studio id.
+    pub fn upsert_studio(
+        &self,
+        name: &str,
+        stash_id: Option<&str>,
+        url: Option<&str>,
+        image: Option<&str>,
+    ) -> AppResult<String> {
+        let name = name.trim();
+        if name.is_empty() {
+            return Err(AppError::InvalidInput("studio name is required".into()));
+        }
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        if let Some(id) = conn
+            .query_row(
+                "SELECT id FROM studios WHERE name = ?1",
+                params![name],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?
+        {
+            conn.execute(
+                "UPDATE studios SET stash_id = COALESCE(?2, stash_id), url = COALESCE(?3, url), image = COALESCE(?4, image) WHERE id = ?1",
+                params![id, stash_id, url, image],
+            )?;
+            return Ok(id);
+        }
+        let id = Uuid::new_v4().to_string();
+        conn.execute(
+            "INSERT INTO studios (id, name, stash_id, url, image) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![id, name, stash_id, url, image],
+        )?;
+        Ok(id)
+    }
+
+    #[allow(dead_code)]
+    pub fn performer_stash_id(&self, performer_id: &str) -> AppResult<Option<String>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let stash_id: Option<String> = conn
+            .query_row(
+                "SELECT stash_id FROM performers WHERE id = ?1",
+                params![performer_id],
+                |row| row.get(0),
+            )
+            .optional()?
+            .flatten();
+        Ok(stash_id)
+    }
+
+    pub fn get_performer(&self, performer_id: &str) -> AppResult<Performer> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let row = conn
+            .query_row(
+                "SELECT p.id, p.name, p.aliases, p.image, p.favorite, p.cup_size, p.hair_color, p.stash_id,
+                        (SELECT COUNT(*) FROM scene_performers sp WHERE sp.performer_id = p.id) as scene_count
+                 FROM performers p WHERE p.id = ?1",
+                params![performer_id],
+                map_performer,
+            )
+            .optional()?;
+        row.ok_or_else(|| AppError::NotFound(format!("performer {performer_id}")))
+    }
+
+    /// Union new aliases into a performer (case-insensitive, ordered, capped).
+    pub fn merge_performer_aliases(&self, performer_id: &str, aliases: &[String]) -> AppResult<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let current: Option<String> = conn
+            .query_row(
+                "SELECT aliases FROM performers WHERE id = ?1",
+                params![performer_id],
+                |row| row.get(0),
+            )
+            .optional()?
+            .flatten();
+        let mut merged: Vec<String> =
+            serde_json::from_str(current.as_deref().unwrap_or("[]")).unwrap_or_default();
+        for alias in aliases {
+            let alias = alias.trim();
+            if alias.is_empty() || merged.iter().any(|e| e.eq_ignore_ascii_case(alias)) {
+                continue;
+            }
+            merged.push(alias.to_string());
+            if merged.len() >= 50 {
+                break;
+            }
+        }
+        let json = serde_json::to_string(&merged)
+            .map_err(|e| AppError::Other(format!("aliases serialize: {e}")))?;
+        conn.execute(
+            "UPDATE performers SET aliases = ?2 WHERE id = ?1",
+            params![performer_id, json],
+        )?;
+        Ok(())
+    }
+
+    /// Scenes not yet enriched from StashDB that have matchable fingerprints
+    /// (MD5/OSHASH — the only hashes stash-box accepts from us). Ordered
+    /// newest-first, capped so batch Identify stays bounded.
+    pub fn list_unenriched_scenes(&self, limit: u32) -> AppResult<Vec<Scene>> {
+        let limit = limit.clamp(1, 100) as i64;
+        let ids: Vec<String> = {
+            let conn = self
+                .conn
+                .lock()
+                .map_err(|e| AppError::Other(e.to_string()))?;
+            let mut stmt = conn.prepare(
+                "SELECT id FROM scenes
+                 WHERE (stash_id IS NULL OR stash_id = '')
+                 AND (md5 IS NOT NULL OR oshash IS NOT NULL)
+                 ORDER BY created_at DESC LIMIT ?1",
+            )?;
+            let rows = stmt.query_map(params![limit], |row| row.get::<_, String>(0))?;
+            let ids: Vec<String> = rows.collect::<Result<Vec<_>, _>>()?;
+            ids
+        };
+        let mut out = Vec::with_capacity(ids.len());
+        for id in &ids {
+            // Scene may vanish mid-batch (user delete); skip, don't fail.
+            if let Ok(scene) = self.get_scene(id) {
+                out.push(scene);
+            }
+        }
+        Ok(out)
+    }
+
+    /// Count of enrichable scenes (for the library Identify banner).
+    pub fn count_unenriched_scenes(&self) -> AppResult<u32> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM scenes
+             WHERE (stash_id IS NULL OR stash_id = '')
+             AND (md5 IS NOT NULL OR oshash IS NOT NULL)",
+            [],
+            |row| row.get(0),
+        )?;
+        Ok(count.max(0) as u32)
     }
 
     pub fn batch_update_scenes(
@@ -2627,6 +2928,8 @@ impl Database {
                     studio_id: None,
                     studio_name: None,
                     date: None,
+                    stash_id: None,
+                    stashdb_updated_at: None,
                     rating: None,
                     performers,
                     tags,
@@ -2664,7 +2967,8 @@ fn map_performer(row: &rusqlite::Row<'_>) -> rusqlite::Result<Performer> {
         favorite: row.get::<_, i32>(4)? != 0,
         cup_size: row.get(5)?,
         hair_color: row.get(6)?,
-        scene_count: row.get(7)?,
+        stash_id: row.get(7).unwrap_or(None),
+        scene_count: row.get(8)?,
     })
 }
 
