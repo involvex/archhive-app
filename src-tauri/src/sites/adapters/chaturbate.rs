@@ -2,6 +2,7 @@ use crate::error::{AppError, AppResult};
 use crate::models::{BrowseKind, BrowsePage, BrowseQuery, DownloadPlan, DownloadTool, MediaItem};
 use crate::sites::{SiteAdapter, SiteContext};
 use async_trait::async_trait;
+use tracing::info;
 use uuid::Uuid;
 
 const BASE: &str = "https://chaturbate.com";
@@ -76,12 +77,16 @@ impl ChaturbateAdapter {
         let url = build_listing_url(&query);
         let api_url = build_api_url(&query);
 
+        // Debug logging
+        info!("[chaturbate] browse_listing: kind={:?}, slug={}, api_url={}", query.kind, query.slug, api_url);
+
         // Primary: JSON API (works on mobile; HTML is often placeholder-only cards).
         if let Ok(body) = ctx
             .fetch_json_api(&api_url, self.id(), &format!("{BASE}/"))
             .await
         {
             if let Some(rooms) = parse_api_json(&body) {
+                info!("[chaturbate] API returned {} rooms", rooms.len());
                 return Ok(api_rooms_to_page(rooms, query.page));
             }
         }
@@ -89,6 +94,7 @@ impl ChaturbateAdapter {
         // Secondary: HTML scraping (legacy server-rendered listings).
         if let Ok(html) = ctx.fetch_html(&url, &self.id()).await {
             if let Some(rooms) = parse_listing_html(&html) {
+                info!("[chaturbate] HTML returned {} rooms", rooms.len());
                 return Ok(api_rooms_to_page(rooms, query.page));
             }
         }

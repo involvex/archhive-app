@@ -93,6 +93,7 @@ impl SiteContext {
         site_id: &str,
         referer: &str,
     ) -> AppResult<String> {
+        tracing::info!("[{}] fetch_json_api: {}", site_id, url);
         let origin = referer.trim_end_matches('/');
         self.fetch_with_headers(
             url,

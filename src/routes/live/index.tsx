@@ -50,7 +50,12 @@ function LiveIndexPage() {
       setLoading(true);
       setError("");
       try {
+        console.log("[live] Searching for:", query.trim());
         const result = await api.browse(site, "search", query.trim(), 1);
+        console.log("[live] Search results:", result.items.length, "items");
+        if (result.items.length > 0) {
+          console.log("[live] First result:", result.items[0].title, result.items[0].channel);
+        }
         setItems(result.items);
       } catch (e) {
         const raw = e instanceof Error ? e.message : "Search failed";
@@ -137,6 +142,10 @@ function LiveIndexPage() {
             params={{
               site: selectedSite,
               slug: item.channel ?? item.performers[0] ?? "",
+            }}
+            search={{
+              fromSearch: query.trim() ? "1" : "0",
+              searchQuery: query.trim(),
             }}
           >
             <SceneCard item={item} onInfo={(i) => setInfoItem(i)} />

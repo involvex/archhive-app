@@ -2,6 +2,7 @@ use crate::error::{AppError, AppResult};
 use crate::models::{BrowseKind, BrowsePage, BrowseQuery, DownloadPlan, DownloadTool, MediaItem};
 use crate::sites::{SiteAdapter, SiteContext};
 use async_trait::async_trait;
+use tracing::info;
 use uuid::Uuid;
 
 const BASE: &str = "https://stripchat.com";
@@ -90,17 +91,21 @@ impl StripchatAdapter {
         let url = build_listing_url(&query);
         let api_url = build_api_url(&query);
 
+        info!("[stripchat] browse_listing: kind={:?}, slug={}, api_url={}", query.kind, query.slug, api_url);
+
         if let Ok(body) = ctx
             .fetch_json_api(&api_url, self.id(), &format!("{BASE}/"))
             .await
         {
             if let Some(rooms) = parse_api_json(&body) {
+                info!("[stripchat] API returned {} rooms", rooms.len());
                 return Ok(build_browse_page(rooms, query.page));
             }
         }
 
         if let Ok(html) = ctx.fetch_html(&url, self.id()).await {
             if let Some(rooms) = parse_listing_html(&html) {
+                info!("[stripchat] HTML returned {} rooms", rooms.len());
                 return Ok(build_browse_page(rooms, query.page));
             }
         }

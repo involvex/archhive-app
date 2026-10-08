@@ -1,15 +1,20 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, isRoomOfflineError } from "@/lib/api/client";
 import { Button } from "@/components/ui/button";
 import { ExtLink } from "@/components/ExtLink";
 import { openExternal } from "@/lib/external";
 import { HlsVideoPlayer, STREAM_URL_EXPIRED_ERROR } from "@/components/HlsVideoPlayer";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Radio, ArrowLeft, ExternalLink } from "lucide-react";
-import { Link } from "@tanstack/react-router";
+import { Radio, ArrowLeft, ExternalLink, ChevronLeft, ChevronRight } from "lucide-react";
+import { Link, useNavigate } from "@tanstack/react-router";
+import type { MediaItem } from "@/lib/types";
 
 export const Route = createFileRoute("/live/$site/$slug")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    fromSearch: typeof search.fromSearch === "string" ? search.fromSearch : "0",
+    searchQuery: typeof search.searchQuery === "string" ? search.searchQuery : "",
+  }),
   component: LivePlayerPage,
 });
 
@@ -40,6 +45,8 @@ function getChatUrl(site: string, slug: string): string {
 
 function LivePlayerPage() {
   const { site, slug } = Route.useParams();
+  const search = Route.useSearch();
+  const navigate = useNavigate();
 
   const [streamUrl, setStreamUrl] = useState("");
   const [audioUrl, setAudioUrl] = useState("");
@@ -48,6 +55,7 @@ function LivePlayerPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showChat, setShowChat] = useState(false);
+  const [playlist, setPlaylist] = useState<MediaItem[]>([]);
 
   const loadStream = useCallback(async () => {
     setLoading(true);
@@ -68,10 +76,67 @@ function LivePlayerPage() {
     }
   }, [site, slug]);
 
+  const loadPlaylist = useCallback(async () => {
+    try {
+      const kind = search.fromSearch === "1" ? "search" : "livestream";
+      const query = search.fromSearch === "1" ? search.searchQuery : "";
+      const result = await api.browse(site, kind as "livestream" | "search", query, 1);
+      setPlaylist(result.items);
+    } catch (e) {
+      console.error("[live] loadPlaylist failed:", e);
+    }
+  }, [site, search.fromSearch, search.searchQuery]);
+
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadStream();
-  }, [loadStream]);
+    void loadPlaylist();
+  }, [loadStream, loadPlaylist]);
+
+  const index = useMemo(() => {
+    return playlist.findIndex((p) => p.channel === slug || p.performers[0] === slug);
+  }, [playlist, slug]);
+
+  const prevItem = index > 0 ? playlist[index - 1] : null;
+  const nextItem = index >= 0 && index < playlist.length - 1 ? playlist[index + 1] : null;
+
+  const handlePrev = useCallback(() => {
+    if (prevItem) {
+      const newSlug = prevItem.channel ?? prevItem.performers[0] ?? "";
+      navigate({
+        to: "/live/$site/$slug",
+        params: { site, slug: newSlug },
+        search: { fromSearch: search.fromSearch, searchQuery: search.searchQuery },
+      });
+    }
+  }, [prevItem, site, search.fromSearch, search.searchQuery, navigate]);
+
+  const handleNext = useCallback(() => {
+    if (nextItem) {
+      const newSlug = nextItem.channel ?? nextItem.performers[0] ?? "";
+      navigate({
+        to: "/live/$site/$slug",
+        params: { site, slug: newSlug },
+        search: { fromSearch: search.fromSearch, searchQuery: search.searchQuery },
+      });
+    }
+  }, [nextItem, site, search.fromSearch, search.searchQuery, navigate]);
+
+  // Keyboard navigation
+  useEffect(() => {
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === "ArrowLeft" && prevItem) {
+        e.preventDefault();
+        handlePrev();
+      }
+      if (e.key === "ArrowRight" && nextItem) {
+        e.preventDefault();
+        handleNext();
+      }
+    }
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [prevItem, nextItem, handlePrev, handleNext]);
 
   return (
     <div className="space-y-4">
@@ -209,6 +274,35 @@ function LivePlayerPage() {
           </Card>
         </div>
       </div>
+
+      {/* Navigation footer */}
+      {(prevItem || nextItem) && playlist.length > 1 && (
+        <div className="flex items-center justify-between gap-4 border-t border-[var(--color-border)] pt-4">
+          <Button
+            variant="outline"
+            disabled={!prevItem}
+            onClick={handlePrev}
+            className="min-h-10 gap-1"
+            aria-label="Previous stream"
+          >
+            <ChevronLeft className="h-4 w-4" />
+            Previous
+          </Button>
+          <span className="text-sm text-[var(--color-muted-foreground)]">
+            {index + 1} / {playlist.length}
+          </span>
+          <Button
+            variant="outline"
+            disabled={!nextItem}
+            onClick={handleNext}
+            className="min-h-10 gap-1"
+            aria-label="Next stream"
+          >
+            Next
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
