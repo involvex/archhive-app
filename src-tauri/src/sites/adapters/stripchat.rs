@@ -91,7 +91,10 @@ impl StripchatAdapter {
         let url = build_listing_url(&query);
         let api_url = build_api_url(&query);
 
-        info!("[stripchat] browse_listing: kind={:?}, slug={}, api_url={}", query.kind, query.slug, api_url);
+        info!(
+            "[stripchat] browse_listing: kind={:?}, slug={}, api_url={}",
+            query.kind, query.slug, api_url
+        );
 
         if let Ok(body) = ctx
             .fetch_json_api(&api_url, self.id(), &format!("{BASE}/"))

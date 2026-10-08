@@ -78,7 +78,10 @@ impl ChaturbateAdapter {
         let api_url = build_api_url(&query);
 
         // Debug logging
-        info!("[chaturbate] browse_listing: kind={:?}, slug={}, api_url={}", query.kind, query.slug, api_url);
+        info!(
+            "[chaturbate] browse_listing: kind={:?}, slug={}, api_url={}",
+            query.kind, query.slug, api_url
+        );
 
         // Primary: JSON API (works on mobile; HTML is often placeholder-only cards).
         if let Ok(body) = ctx

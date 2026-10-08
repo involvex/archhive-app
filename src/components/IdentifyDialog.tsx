@@ -265,7 +265,14 @@ export function IdentifyDialog({ open, onClose, onDone }: IdentifyDialogProps) {
                       </p>
                     )}
                     {(row.state === "matched" || row.state === "applying") && row.match && (
-                      <div className="mt-1 flex items-start justify-between gap-2">
+                      <div className="mt-1 flex items-start gap-2">
+                        {row.match.image && (
+                          <img
+                            src={row.match.image}
+                            alt=""
+                            className="h-10 w-14 shrink-0 rounded object-cover"
+                          />
+                        )}
                         <div className="min-w-0 text-xs">
                           <p className="truncate">
                             → {row.match.title}

@@ -736,11 +736,9 @@ impl AppState {
         self.db.set_scene_stash_match(
             &req.scene_id,
             &m.stash_id,
-            if req.apply_studio {
-                m.studio.as_ref().map(|s| s.name.as_str())
-            } else {
-                None
-            },
+            // Always preserve the StashDB studio name at match time for
+            // disambiguation, even if the user is not applying it to the scene.
+            m.studio.as_ref().map(|s| s.name.as_str()),
             if req.apply_date {
                 m.date.as_deref()
             } else {
