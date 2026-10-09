@@ -61,7 +61,14 @@ impl SiteAdapter for StripchatAdapter {
     }
 
     async fn resolve_stream_url(&self, ctx: &SiteContext, url: &str) -> AppResult<String> {
-        crate::sites::urls::resolve_cam_stream_url(ctx, self.id(), url).await
+        match crate::sites::urls::resolve_cam_stream_url(ctx, self.id(), url).await {
+            Ok(url) => Ok(url),
+            Err(_e) => {
+                // Fall back to the embed iframe URL — the player loads it in
+                // an <iframe> for cam sites yt-dlp can't resolve directly.
+                Ok(crate::sites::urls::derive_embed_url(url))
+            }
+        }
     }
 
     async fn resolve_download(
@@ -313,14 +320,16 @@ fn parse_api_json(body: &str) -> Option<Vec<HttpRoom>> {
         .iter()
         .filter_map(|r| {
             let username = r.get("username")?.as_str()?;
-            let title = r
-                .get("subject")
-                .or_else(|| r.get("title"))
-                .or_else(|| r.get("display_name"))
-                .or_else(|| r.get("room_subject"))
-                .and_then(|t| t.as_str())
-                .unwrap_or(username)
-                .to_string();
+            let title = crate::sites::urls::html_unescape(
+                r.get("subject")
+                    .or_else(|| r.get("title"))
+                    .or_else(|| r.get("display_name"))
+                    .or_else(|| r.get("room_subject"))
+                    .and_then(|t| t.as_str())
+                    .unwrap_or(username),
+            )
+            .trim()
+            .to_string();
             let thumbnail = r
                 .get("previewUrlThumbSmall")
                 .or_else(|| r.get("previewUrlThumbBig"))
@@ -436,14 +445,15 @@ fn parse_listing_html(html: &str) -> Option<Vec<HttpRoom>> {
                 continue;
             }
 
-            let title = el
-                .value()
-                .attr("title")
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| el.text().collect::<String>().trim().to_string())
-                .replace('\n', " ")
-                .trim()
-                .to_string();
+            let title = crate::sites::urls::html_unescape(
+                &el.value()
+                    .attr("title")
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| el.text().collect::<String>().trim().to_string()),
+            )
+            .replace('\n', " ")
+            .trim()
+            .to_string();
 
             if title.is_empty() || title.len() < 2 {
                 continue;

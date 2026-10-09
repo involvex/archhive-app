@@ -16,6 +16,7 @@
 | xhamster  | xHamster     | tag, search, channel, video                  | Yes                         |
 | xvideos   | XVIDEOS      | tag, search, channel, video                  | Yes                         |
 | reddit    | Reddit       | channel, search, video                       | OAuth for subreddits        |
+| eporner   | Eporner      | search, tag, category, video                 | No                          |
 
 ## Tier B — Live Cam Sites (scraping + webview bridge)
 

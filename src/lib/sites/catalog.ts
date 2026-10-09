@@ -73,6 +73,13 @@ export const SITE_CATALOG: SiteInfo[] = [
     requires_cookies: false,
   },
   {
+    id: "eporner",
+    display_name: "Eporner",
+    base_url: "https://www.eporner.com",
+    supported_kinds: ["search", "tag", "category", "video"] as BrowseKind[],
+    requires_cookies: false,
+  },
+  {
     id: "youtube",
     display_name: "YouTube",
     base_url: "https://www.youtube.com",

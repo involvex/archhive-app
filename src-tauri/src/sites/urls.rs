@@ -41,6 +41,19 @@ pub fn query_slug(slug: &str) -> String {
     url::form_urlencoded::byte_serialize(slug.trim().as_bytes()).collect()
 }
 
+/// Decode HTML entities (`&#39;`, `&amp;`, `&quot;`, …) from scraped text.
+pub fn html_unescape(s: &str) -> String {
+    html_escape::decode_html_entities(s).to_string()
+}
+
+/// Strip a leading `MM:SS` or `HH:MM:SS` duration pattern from text.
+/// Used as a last-resort fallback when YouPorn titles are scraped as just
+/// the duration string (e.g. `05:47`).
+pub fn strip_duration_from_title(text: &str) -> String {
+    let re = regex::Regex::new(r"^\d{1,2}:\d{2}(?::\d{2})?\s*[-:]?\s*").unwrap();
+    re.replace(text, "").trim().to_string()
+}
+
 /// Derive an embed URL from a live cam room URL.
 /// For Chaturbate, appends `embed_video_only=1` so the iframe plays video
 /// directly (no chat) as a fallback when yt-dlp stream resolution fails.
@@ -238,6 +251,32 @@ pub async fn resolve_cam_stream_urls(
         }
     }
 
+    // Last-ditch: retry yt-dlp on the embed-page variant for cams that fail
+    // on the room URL ("Unable to extract data"). The embed endpoint serves
+    // a different page structure that yt-dlp's extractor can often parse.
+    let embed_url = derive_embed_url(url);
+    if embed_url != url {
+        let mut embed_args = vec![
+            embed_url.clone(),
+            "--get-url".to_string(),
+            "--no-warnings".to_string(),
+            "--no-playlist".to_string(),
+            "--no-check-certificates".to_string(),
+        ];
+        if let Some(cookies) = cookies.as_ref() {
+            embed_args.push("--cookies".to_string());
+            embed_args.push(cookies.to_string_lossy().to_string());
+        }
+        if let Ok(raw) = runner
+            .run_capture_for_stream_url("yt-dlp", &embed_args)
+            .await
+        {
+            if let Ok(pair) = pick_av_urls_from_ytdlp(&raw) {
+                return Ok(pair);
+            }
+        }
+    }
+
     // When `--get-url` produced nothing usable, probe `-J` metadata for a
     // master manifest that hls.js can play with audio before giving up.
     if let Ok(meta) = runner.resolve_media_json(url, cookies.as_deref()).await {
@@ -414,5 +453,28 @@ https://cdn.example/chunklist_3_video.m3u8
             ]
         });
         assert!(pick_master_manifest_from_ytdlp_json(&v).is_none());
+    }
+
+    #[test]
+    fn html_unescape_decodes_common_entities() {
+        assert_eq!(html_unescape("i&#x27;m nika"), "i'm nika");
+        assert_eq!(html_unescape("test &amp; stuff"), "test & stuff");
+        assert_eq!(html_unescape("&quot;hello&quot;"), "\"hello\"");
+        assert_eq!(html_unescape("no entities here"), "no entities here");
+        assert_eq!(html_unescape("a &lt; b &gt; c"), "a < b > c");
+    }
+
+    #[test]
+    fn strip_duration_from_title_removes_leading_duration() {
+        assert_eq!(strip_duration_from_title("05:47 Some Title"), "Some Title");
+        assert_eq!(
+            strip_duration_from_title("1:23:45 Long Title"),
+            "Long Title"
+        );
+        assert_eq!(strip_duration_from_title("12:34"), "");
+        assert_eq!(
+            strip_duration_from_title("Real Title Here"),
+            "Real Title Here"
+        );
     }
 }

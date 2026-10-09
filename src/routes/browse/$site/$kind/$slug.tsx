@@ -41,7 +41,8 @@ function BrowseDetailPage() {
     site === "pornhub" && kind === "category" ? normalizePornhubCategorySlug(cleanSlug) : cleanSlug;
   const [orientation, setOrientation] = useState<BrowseOrientation>("straight");
   const isPornhubAnimal =
-    site === "pornhub" && (kind === "category" || kind === "tag" || kind === "search");
+    (site === "pornhub" && (kind === "category" || kind === "tag" || kind === "search")) ||
+    (site === "chaturbate" && (kind === "livestream" || kind === "tag" || kind === "search"));
   const ORIENT_TABS: { value: BrowseOrientation; label: string }[] = [
     { value: "straight", label: "Straight" },
     { value: "gay", label: "Gay" },

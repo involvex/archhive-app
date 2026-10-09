@@ -661,11 +661,49 @@ fn parse_video_links(html: &str, base: &str, site_id: &str) -> AppResult<Vec<Med
             if !seen.insert(url.clone()) {
                 continue;
             }
-            let title = el
-                .value()
-                .attr("title")
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| el.text().collect::<String>().trim().to_string());
+            let title = {
+                // 1) <a title="..."> — works for PornHub.
+                let from_a_title = el
+                    .value()
+                    .attr("title")
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.to_string());
+                // 2) <img title="..."> — YouPorn puts the real title on the thumbnail img.
+                let from_img_title = from_a_title.clone().or_else(|| {
+                    let img_sel = Selector::parse("img").ok();
+                    img_sel
+                        .as_ref()
+                        .and_then(|sel| {
+                            el.select(sel)
+                                .find_map(|img| img.value().attr("title").filter(|t| !t.is_empty()))
+                        })
+                        .map(|s| s.to_string())
+                });
+                // 3) <b> child text — YouPorn fallback.
+                let from_b = from_img_title.clone().or_else(|| {
+                    let b_sel = Selector::parse("b").ok();
+                    b_sel
+                        .as_ref()
+                        .and_then(|sel| {
+                            el.select(sel).find_map(|b| {
+                                let t = b.text().collect::<String>().trim().to_string();
+                                if !t.is_empty() && !is_junk_nav_title(&t) {
+                                    Some(t)
+                                } else {
+                                    None
+                                }
+                            })
+                        })
+                        .map(|s| s.to_string())
+                });
+                // 4) Last resort: strip duration patterns from full text.
+                from_b.unwrap_or_else(|| {
+                    crate::sites::urls::strip_duration_from_title(
+                        el.text().collect::<String>().trim(),
+                    )
+                })
+            };
+            let title = crate::sites::urls::html_unescape(&title);
             if title.is_empty() || is_junk_nav_title(&title) {
                 continue;
             }

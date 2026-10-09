@@ -155,7 +155,9 @@ fn parse_redgifs(html: &str) -> AppResult<Vec<MediaItem>> {
         };
         items.push(MediaItem {
             id: Uuid::new_v4().to_string(),
-            title: url.split('/').next_back().unwrap_or("redgif").to_string(),
+            title: crate::sites::urls::html_unescape(
+                url.split('/').next_back().unwrap_or("redgif"),
+            ),
             url,
             thumbnail: None,
             duration: None,

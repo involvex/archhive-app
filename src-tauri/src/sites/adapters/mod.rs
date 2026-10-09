@@ -1,6 +1,7 @@
 pub mod chaturbate;
 pub mod chaturbate_webview;
 pub mod custom;
+pub mod eporner;
 pub mod generic_ytdlp;
 pub mod pornhub;
 pub mod reddit;

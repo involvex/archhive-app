@@ -118,9 +118,18 @@ impl AppState {
         page: u32,
         orientation: Option<BrowseOrientation>,
     ) -> AppResult<crate::models::BrowsePage> {
+        // When site is "custom" but the slug is a known site URL, auto-detect
+        // the correct adapter so users don't need to manually select the site.
+        let effective_site_id = if site_id == "custom" && slug.starts_with("http") {
+            self.sites
+                .detect(slug)
+                .unwrap_or_else(|| "custom".to_string())
+        } else {
+            site_id.to_string()
+        };
         let adapter = self
             .sites
-            .get(site_id)
+            .get(&effective_site_id)
             .ok_or_else(|| crate::error::AppError::NotFound(format!("site {site_id}")))?;
         let kind_str = serde_json::to_value(kind)
             .ok()

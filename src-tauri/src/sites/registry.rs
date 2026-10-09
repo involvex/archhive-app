@@ -1,9 +1,9 @@
 use crate::models::SiteInfo;
 use crate::sites::adapters::{
-    chaturbate::ChaturbateAdapter, custom::CustomUrlAdapter, generic_ytdlp::GenericYtDlpAdapter,
-    reddit::RedditAdapter, redgifs::RedgifsAdapter, stripchat::StripchatAdapter,
-    thothub::ThotHubAdapter, PornhubAdapter, XHamsterAdapter, XVideosAdapter, XnxxAdapter,
-    YouPornAdapter,
+    chaturbate::ChaturbateAdapter, custom::CustomUrlAdapter, eporner::EpornerAdapter,
+    generic_ytdlp::GenericYtDlpAdapter, reddit::RedditAdapter, redgifs::RedgifsAdapter,
+    stripchat::StripchatAdapter, thothub::ThotHubAdapter, PornhubAdapter, XHamsterAdapter,
+    XVideosAdapter, XnxxAdapter, YouPornAdapter,
 };
 use crate::sites::SiteAdapter;
 use std::sync::Arc;
@@ -18,6 +18,7 @@ impl SiteRegistry {
             Arc::new(ChaturbateAdapter),
             Arc::new(StripchatAdapter),
             Arc::new(ThotHubAdapter),
+            Arc::new(EpornerAdapter),
             Arc::new(PornhubAdapter),
             Arc::new(YouPornAdapter),
             Arc::new(XnxxAdapter),
@@ -84,6 +85,9 @@ impl SiteRegistry {
         }
         if lower.contains("xhamster.com") {
             return Some("xhamster".to_string());
+        }
+        if lower.contains("eporner.com") {
+            return Some("eporner".to_string());
         }
         if lower.contains("pornhub.com") {
             return Some("pornhub".to_string());

@@ -26,6 +26,7 @@ tokio = { version = "1", features = ["full", "test-util"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "cookies", "charset", "http2", "rustls-tls", "rustls-tls-webpki-roots", "stream"] }
 scraper = "0.27"
+html-escape = "0.1"
 regex = "1"
 uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }

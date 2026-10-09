@@ -260,20 +260,21 @@ fn parse_listing(html: &str, site_id: &str) -> Vec<MediaItem> {
                     continue;
                 }
 
-                let title = a
-                    .value()
-                    .attr("title")
-                    .map(|s| s.to_string())
-                    .or_else(|| {
-                        let text = a.text().collect::<String>();
-                        let trimmed = text.trim();
-                        if trimmed.is_empty() {
-                            None
-                        } else {
-                            Some(trimmed.to_string())
-                        }
-                    })
-                    .unwrap_or_else(|| "Untitled".to_string());
+                let title = crate::sites::urls::html_unescape(
+                    &a.value()
+                        .attr("title")
+                        .map(|s| s.to_string())
+                        .or_else(|| {
+                            let text = a.text().collect::<String>();
+                            let trimmed = text.trim();
+                            if trimmed.is_empty() {
+                                None
+                            } else {
+                                Some(trimmed.to_string())
+                            }
+                        })
+                        .unwrap_or_else(|| "Untitled".to_string()),
+                );
 
                 if is_junk_title(&title) {
                     continue;

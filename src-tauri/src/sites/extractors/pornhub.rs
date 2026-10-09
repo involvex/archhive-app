@@ -296,7 +296,7 @@ fn clean_url(raw: &str) -> Option<String> {
     }
     // Prefer proper JSON unescaping (handles \/ \u0026 etc.).
     if let Ok(unescaped) = serde_json::from_str::<String>(&format!("\"{trimmed}\"")) {
-        let fixed = unescaped.replace("&amp;", "&");
+        let fixed = crate::sites::urls::html_unescape(&unescaped);
         if !fixed.trim().is_empty() {
             return Some(fixed);
         }
@@ -307,6 +307,7 @@ fn clean_url(raw: &str) -> Option<String> {
         .replace("\\u0026amp;", "&")
         .replace("&amp;", "&")
         .replace("\\\\", "\\");
+    let fixed = crate::sites::urls::html_unescape(&fixed);
     if fixed.trim().is_empty() {
         return None;
     }

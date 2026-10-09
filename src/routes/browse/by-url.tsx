@@ -25,7 +25,10 @@ export const Route = createFileRoute("/browse/by-url")({
 
 function CustomBrowsePage() {
   const searchParams = Route.useSearch();
-  const cacheKey = useMemo(() => browseCacheKey({ site: "custom", kind: "by-url", url: "_" }), []);
+  const cacheKey = useMemo(
+    () => browseCacheKey({ site: "detected", kind: "by-url", url: "_" }),
+    [],
+  );
   const cached = useBrowseStore((s) => s.caches[cacheKey]);
   const setCache = useBrowseStore((s) => s.set);
 

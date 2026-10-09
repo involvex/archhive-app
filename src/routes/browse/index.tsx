@@ -126,7 +126,9 @@ function BrowsePage() {
         navigate({ to: "/browse/by-url", search: { url: slug } });
         return;
       }
-      site = sites[0]?.id ?? "custom";
+      // Default to generic_ytdlp for non-URL searches — it handles any URL.
+      // Users can still explicitly select Chaturbate/Stripchat from the dropdown.
+      site = "generic_ytdlp";
     }
 
     const targetSite = sites.find((s) => s.id === site);

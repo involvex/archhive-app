@@ -1,5 +1,7 @@
 use crate::error::{AppError, AppResult};
-use crate::models::{BrowseKind, BrowsePage, BrowseQuery, DownloadPlan, DownloadTool, MediaItem};
+use crate::models::{
+    BrowseKind, BrowseOrientation, BrowsePage, BrowseQuery, DownloadPlan, DownloadTool, MediaItem,
+};
 use crate::sites::{SiteAdapter, SiteContext};
 use async_trait::async_trait;
 use tracing::info;
@@ -47,7 +49,14 @@ impl SiteAdapter for ChaturbateAdapter {
     }
 
     async fn resolve_stream_url(&self, ctx: &SiteContext, url: &str) -> AppResult<String> {
-        crate::sites::urls::resolve_cam_stream_url(ctx, self.id(), url).await
+        match crate::sites::urls::resolve_cam_stream_url(ctx, self.id(), url).await {
+            Ok(url) => Ok(url),
+            Err(_e) => {
+                // Fall back to the embed iframe URL — the player loads it in
+                // an <iframe> for cam sites yt-dlp can't resolve directly.
+                Ok(crate::sites::urls::derive_embed_url(url))
+            }
+        }
     }
 
     async fn resolve_download(
@@ -220,6 +229,15 @@ fn http_room_to_item(room: &HttpRoom) -> MediaItem {
     }
 }
 
+fn orient_to_chaturbate(o: BrowseOrientation) -> &'static str {
+    match o {
+        BrowseOrientation::Straight => "straight",
+        BrowseOrientation::Gay => "gay",
+        BrowseOrientation::Lesbian => "lesbian",
+        BrowseOrientation::Transgender => "transgender",
+    }
+}
+
 fn build_api_url(query: &BrowseQuery) -> String {
     let offset = (query.page.saturating_sub(1)) * 90;
     let mut url = match query.kind {
@@ -231,8 +249,24 @@ fn build_api_url(query: &BrowseQuery) -> String {
             "{BASE}/api/ts/roomlist/room-list/?enable_recommendations=false&limit=90&q={}",
             url_slug(&query.slug)
         ),
+        BrowseKind::Livestream => {
+            let mut u =
+                format!("{BASE}/api/ts/roomlist/room-list/?enable_recommendations=false&limit=90");
+            if !query.slug.is_empty() {
+                u.push_str(&format!("&q={}", url_slug(&query.slug)));
+            }
+            u
+        }
         _ => format!("{BASE}/api/ts/roomlist/room-list/?enable_recommendations=false&limit=90"),
     };
+    if let Some(orient) = &query.orientation {
+        if matches!(
+            query.kind,
+            BrowseKind::Livestream | BrowseKind::Tag | BrowseKind::Search
+        ) {
+            url.push_str(&format!("&orientation={}", orient_to_chaturbate(*orient)));
+        }
+    }
     if offset > 0 {
         url.push_str(&format!("&offset={offset}"));
     }
@@ -300,14 +334,16 @@ fn parse_listing_html(html: &str) -> Option<Vec<HttpRoom>> {
                 continue;
             }
 
-            let title = el
-                .value()
-                .attr("title")
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| el.text().collect::<String>().trim().to_string())
-                .replace('\n', " ")
-                .trim()
-                .to_string();
+            let title = crate::sites::urls::html_unescape(
+                el.value()
+                    .attr("title")
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| el.text().collect::<String>().trim().to_string())
+                    .trim(),
+            )
+            .replace('\n', " ")
+            .trim()
+            .to_string();
 
             if title.is_empty() || title.len() < 2 {
                 continue;
@@ -430,13 +466,15 @@ fn parse_api_json(body: &str) -> Option<Vec<HttpRoom>> {
         .iter()
         .filter_map(|r| {
             let username = r.get("username")?.as_str()?;
-            let title = r
-                .get("subject")
-                .or_else(|| r.get("title"))
-                .or_else(|| r.get("room_subject"))
-                .and_then(|t| t.as_str())
-                .unwrap_or(username)
-                .to_string();
+            let title = crate::sites::urls::html_unescape(
+                r.get("subject")
+                    .or_else(|| r.get("title"))
+                    .or_else(|| r.get("room_subject"))
+                    .and_then(|t| t.as_str())
+                    .unwrap_or(username),
+            )
+            .trim()
+            .to_string();
             let thumbnail = r
                 .get("img")
                 .or_else(|| r.get("thumbnail"))

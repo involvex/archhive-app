@@ -186,11 +186,12 @@ fn parse_reddit(html: &str) -> Vec<MediaItem> {
             if !seen.insert(url.clone()) {
                 continue;
             }
-            let title = el
-                .value()
-                .attr("title")
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| el.text().collect::<String>().trim().to_string());
+            let title = crate::sites::urls::html_unescape(
+                &el.value()
+                    .attr("title")
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| el.text().collect::<String>().trim().to_string()),
+            );
             if title.is_empty() {
                 continue;
             }
