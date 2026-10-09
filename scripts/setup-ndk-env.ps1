@@ -8,6 +8,28 @@
 # `tauri android build` — do NOT invoke with `pwsh -File` as a child
 # process (env vars won't propagate to the parent).
 
+# Limit parallel codegen jobs for Android builds (rustc OOM guard).
+# A debug aarch64 build of this graph (aws-lc, reqwest, tauri, sqlite,
+# image, all with debuginfo) needs roughly 1-2 GB per rustc job, while
+# the machine typically has only a few GB free (IDE + emulator + browser).
+# Default cargo parallelism (one job per logical CPU) OOMs the compiler.
+# Respect an explicit CARGO_BUILD_JOBS if the user set one.
+if (-not $env:CARGO_BUILD_JOBS) {
+    $jobs = 4
+    try {
+        $os = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
+        $freeGB = $os.FreePhysicalMemory / 1MB
+        $byMem = [Math]::Floor($freeGB / 2)
+        $byCpu = [int]$env:NUMBER_OF_PROCESSORS
+        if (-not $byCpu) { $byCpu = 8 }
+        $jobs = [Math]::Max(2, [Math]::Min([Math]::Min($byMem, $byCpu), 8))
+        Write-Host "CARGO_BUILD_JOBS=$jobs (free RAM $([Math]::Round($freeGB, 1)) GB; override by setting CARGO_BUILD_JOBS)"
+    } catch {
+        Write-Host "CARGO_BUILD_JOBS=$jobs (could not query memory; override by setting CARGO_BUILD_JOBS)"
+    }
+    $env:CARGO_BUILD_JOBS = "$jobs"
+}
+
 # Detect NDK root path.
 $ndkPath = $env:ANDROID_NDK_HOME
 if (-not $ndkPath) { $ndkPath = $env:ANDROID_NDK_ROOT }
