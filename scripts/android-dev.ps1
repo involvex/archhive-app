@@ -113,6 +113,7 @@ function Set-AndroidCargoTargetDir {
 
 Set-Location $root
 Set-AndroidCargoTargetDir
+. "$PSScriptRoot\setup-ndk-env.ps1"
 
 $adb = Get-AdbPath
 $devices = Get-BootedDevices $adb
