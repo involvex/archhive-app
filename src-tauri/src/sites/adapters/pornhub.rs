@@ -1,6 +1,7 @@
 use crate::error::AppResult;
 use crate::models::{
-    BrowseKind, BrowseOrientation, BrowsePage, BrowseQuery, DownloadPlan, DownloadTool, MediaItem,
+    BrowseKind, BrowseOptions, BrowseOrientation, BrowsePage, BrowseQuery, DownloadPlan,
+    DownloadTool, FilterOption, MediaItem, SiteCategory,
 };
 use crate::sites::browse_fallback::ytdlp_browse_fallback;
 use crate::sites::urls::{path_slug, query_slug};
@@ -38,6 +39,14 @@ macro_rules! ytdlp_tube_adapter {
 
             fn requires_cookies(&self) -> bool {
                 false
+            }
+
+            fn browse_options(&self) -> BrowseOptions {
+                tube_browse_options($id)
+            }
+
+            async fn list_categories(&self, ctx: &SiteContext) -> AppResult<Vec<SiteCategory>> {
+                tube_list_categories(ctx, $id, $base).await
             }
 
             async fn browse(&self, ctx: &SiteContext, query: BrowseQuery) -> AppResult<BrowsePage> {
@@ -120,6 +129,52 @@ macro_rules! ytdlp_tube_adapter {
     };
 }
 
+/// Category / tag index for the macro-generated tube adapters.
+async fn tube_list_categories(
+    ctx: &SiteContext,
+    site_id: &str,
+    base: &str,
+) -> AppResult<Vec<SiteCategory>> {
+    use crate::sites::listing::{parse_category_index, segment_after, CategorySpec};
+    let (path, selector, prefix, kind, max) = match site_id {
+        "xvideos" => ("/tags", "a[href^='/tags/']", "/tags/", BrowseKind::Tag, 400),
+        "xnxx" => (
+            "/tags",
+            "a[href^='/search/']",
+            "/search/",
+            BrowseKind::Tag,
+            400,
+        ),
+        "xhamster" => (
+            "/categories",
+            "a[href*='/categories/']",
+            "/categories/",
+            BrowseKind::Category,
+            300,
+        ),
+        "youporn" => (
+            "/categories/",
+            "a[href*='/category/']",
+            "/category/",
+            BrowseKind::Category,
+            300,
+        ),
+        _ => return Ok(Vec::new()),
+    };
+    let html = ctx.fetch_html(&format!("{base}{path}"), site_id).await?;
+    let slug = |href: &str| segment_after(href, prefix);
+    Ok(parse_category_index(
+        &html,
+        &CategorySpec {
+            base,
+            anchor_selector: selector,
+            slug_from_href: &slug,
+            kind,
+            max,
+        },
+    ))
+}
+
 pub struct PornhubAdapter;
 
 const PH_BASE: &str = "https://www.pornhub.com";
@@ -153,10 +208,34 @@ impl SiteAdapter for PornhubAdapter {
         true
     }
 
+    fn browse_options(&self) -> BrowseOptions {
+        tube_browse_options("pornhub")
+    }
+
+    async fn list_categories(&self, ctx: &SiteContext) -> AppResult<Vec<SiteCategory>> {
+        let url = categories_page_url(BrowseOrientation::Straight);
+        let html = ctx.fetch_html(&url, self.id()).await?;
+        Ok(parse_pornhub_categories(&html, BrowseOrientation::Straight)
+            .into_iter()
+            .map(|c| SiteCategory {
+                slug: c
+                    .category_id
+                    .map(|id| id.to_string())
+                    .unwrap_or_else(|| c.slug.clone()),
+                name: c.name,
+                kind: BrowseKind::Category,
+                thumbnail: None,
+                count: c.video_count,
+            })
+            .collect())
+    }
+
     async fn browse(&self, ctx: &SiteContext, query: BrowseQuery) -> AppResult<BrowsePage> {
         let url = match query.kind {
-            BrowseKind::Category => build_pornhub_category_url(&query),
-            BrowseKind::Search | BrowseKind::Tag => build_pornhub_search_url(&query),
+            BrowseKind::Category => pornhub_filtered(build_pornhub_category_url(&query), &query),
+            BrowseKind::Search | BrowseKind::Tag => {
+                pornhub_filtered(build_pornhub_search_url(&query), &query)
+            }
             BrowseKind::Model => format!("{PH_BASE}/pornstar/{}", path_slug(&query.slug)),
             BrowseKind::Channel => format!("{PH_BASE}/channels/{}", path_slug(&query.slug)),
             BrowseKind::Livestream => {
@@ -391,6 +470,181 @@ ytdlp_tube_adapter!(
 ytdlp_tube_adapter!(XnxxAdapter, "xnxx", "XNXX", "https://www.xnxx.com");
 
 fn tube_browse_url(site_id: &str, base: &str, query: &BrowseQuery) -> String {
+    let url = tube_base_url(site_id, base, query);
+    if matches!(query.kind, BrowseKind::Video | BrowseKind::Livestream) {
+        return url;
+    }
+    let f = &query.filters;
+    let opt = |v: &Option<String>| {
+        v.as_deref()
+            .filter(|s| allowed_option(site_id, s))
+            .unwrap_or("")
+            .to_string()
+    };
+    match site_id {
+        "xvideos" if matches!(query.kind, BrowseKind::Search | BrowseKind::Tag) => {
+            crate::sites::urls::with_query(
+                &url,
+                &[
+                    ("sort", &opt(&f.sort)),
+                    ("datef", &opt(&f.period)),
+                    ("durf", &opt(&f.duration)),
+                    ("quality", &opt(&f.quality)),
+                ],
+            )
+        }
+        "xhamster" => {
+            let category = query.kind == BrowseKind::Category;
+            let sort = opt(&f.sort);
+            // Categories: "/hd" path + ?quality=1080p|2160p (720p is plain /hd).
+            let quality = match (category, opt(&f.quality).as_str()) {
+                (true, "720p") => String::new(),
+                (_, q) => q.to_string(),
+            };
+            let (min, max) = match opt(&f.duration).as_str() {
+                "0-10" => ("", "10"),
+                "10-30" => ("10", "30"),
+                "30-plus" => ("30", ""),
+                _ => ("", ""),
+            };
+            crate::sites::urls::with_query(
+                &url,
+                &[
+                    // Categories carry sort in the path (see tube_base_url).
+                    ("sort", if category { "" } else { &sort }),
+                    ("min-duration", min),
+                    ("max-duration", max),
+                    ("quality", &quality),
+                ],
+            )
+        }
+        _ => url,
+    }
+}
+
+/// True when `value` is one of the option ids `site_id` advertises (filter
+/// values end up in URLs, so unknown ids are dropped instead of forwarded).
+fn allowed_option(site_id: &str, value: &str) -> bool {
+    let o = tube_browse_options(site_id);
+    o.sorts
+        .iter()
+        .chain(&o.periods)
+        .chain(&o.durations)
+        .chain(&o.qualities)
+        .any(|opt| opt.id == value)
+}
+
+/// Sort / filter options per tube site (ids are the sites' own URL tokens,
+/// verified against their filter menus).
+pub fn tube_browse_options(site_id: &str) -> BrowseOptions {
+    let o = |pairs: &[(&str, &str)]| {
+        pairs
+            .iter()
+            .map(|(id, label)| FilterOption::new(id, label))
+            .collect::<Vec<_>>()
+    };
+    let search = vec![BrowseKind::Search, BrowseKind::Tag];
+    match site_id {
+        "pornhub" => BrowseOptions {
+            sorts: o(&[
+                ("mr", "Newest"),
+                ("mv", "Most viewed"),
+                ("tr", "Top rated"),
+                ("lg", "Longest"),
+                ("ht", "Hottest"),
+            ]),
+            periods: o(&[
+                ("t", "Today"),
+                ("w", "This week"),
+                ("m", "This month"),
+                ("y", "This year"),
+                ("a", "All time"),
+            ]),
+            durations: o(&[
+                ("0-10", "Under 10 min"),
+                ("10-20", "10–20 min"),
+                ("20-30", "20–30 min"),
+                ("30-plus", "30+ min"),
+            ]),
+            qualities: o(&[("hd", "HD only")]),
+            filter_kinds: vec![BrowseKind::Search, BrowseKind::Tag, BrowseKind::Category],
+            has_categories: true,
+        },
+        "xvideos" => BrowseOptions {
+            sorts: o(&[
+                ("relevance", "Relevance"),
+                ("uploaddate", "Newest"),
+                ("rating", "Top rated"),
+                ("views", "Most viewed"),
+                ("length", "Longest"),
+                ("random", "Random"),
+            ]),
+            periods: o(&[
+                ("today", "Today"),
+                ("week", "This week"),
+                ("month", "This month"),
+                ("3month", "Last 3 months"),
+                ("6month", "Last 6 months"),
+            ]),
+            durations: o(&[
+                ("1-3min", "1–3 min"),
+                ("3-10min", "3–10 min"),
+                ("10min_more", "10+ min"),
+                ("10-20min", "10–20 min"),
+                ("20min_more", "20+ min"),
+            ]),
+            qualities: o(&[("hd", "HD"), ("1080P", "1080p+")]),
+            filter_kinds: search,
+            has_categories: true,
+        },
+        "xnxx" => BrowseOptions {
+            sorts: o(&[("hits", "Most viewed"), ("random", "Random")]),
+            periods: o(&[("month", "This month"), ("year", "This year")]),
+            durations: o(&[
+                ("0-10min", "Under 10 min"),
+                ("10-20min", "10–20 min"),
+                ("10min+", "10+ min"),
+                ("20min+", "20+ min"),
+            ]),
+            qualities: o(&[("hd-only", "HD"), ("fullhd", "Full HD")]),
+            filter_kinds: vec![BrowseKind::Search, BrowseKind::Tag, BrowseKind::Category],
+            has_categories: true,
+        },
+        "xhamster" => BrowseOptions {
+            sorts: o(&[
+                ("relevance", "Relevance"),
+                ("newest", "Newest"),
+                ("views", "Most viewed"),
+                ("best", "Top rated"),
+                ("longest", "Longest"),
+            ]),
+            periods: vec![],
+            durations: o(&[
+                ("0-10", "Under 10 min"),
+                ("10-30", "10–30 min"),
+                ("30-plus", "30+ min"),
+            ]),
+            qualities: o(&[("720p", "720p+"), ("1080p", "1080p+"), ("2160p", "4K")]),
+            filter_kinds: vec![BrowseKind::Search, BrowseKind::Tag, BrowseKind::Category],
+            has_categories: true,
+        },
+        "youporn" => BrowseOptions {
+            sorts: o(&[
+                ("relevance", "Relevance"),
+                ("date", "Newest"),
+                ("views", "Most viewed"),
+                ("rating", "Top rated"),
+                ("duration", "Longest"),
+            ]),
+            filter_kinds: search,
+            has_categories: true,
+            ..Default::default()
+        },
+        _ => BrowseOptions::default(),
+    }
+}
+
+fn tube_base_url(site_id: &str, base: &str, query: &BrowseQuery) -> String {
     let slug = path_slug(&query.slug);
     let q = query_slug(&query.slug);
     match site_id {
@@ -426,7 +680,26 @@ fn tube_browse_url(site_id: &str, base: &str, query: &BrowseQuery) -> String {
             }
             BrowseKind::Channel => format!("{base}/channels/{slug}"),
             BrowseKind::Model => format!("{base}/pornstars/{slug}"),
-            BrowseKind::Category => format!("{base}/categories/{slug}"),
+            BrowseKind::Category => {
+                // Category listings take sort / HD as path segments:
+                // /categories/<slug>/[newest|best]/[hd]/<page>
+                let f = &query.filters;
+                let mut path = format!("{base}/categories/{slug}");
+                if let Some(sort @ ("newest" | "best")) = f.sort.as_deref() {
+                    path.push('/');
+                    path.push_str(sort);
+                }
+                if f.quality
+                    .as_deref()
+                    .is_some_and(|q| allowed_option(site_id, q))
+                {
+                    path.push_str("/hd");
+                }
+                if query.page > 1 {
+                    path.push_str(&format!("/{}", query.page));
+                }
+                path
+            }
             BrowseKind::Video => {
                 if query.slug.starts_with("http") {
                     query.slug.clone()
@@ -438,7 +711,15 @@ fn tube_browse_url(site_id: &str, base: &str, query: &BrowseQuery) -> String {
         },
         "youporn" => match query.kind {
             BrowseKind::Search | BrowseKind::Tag => {
-                format!("{base}/search/?query={q}{}", page_amp(query.page))
+                // /search/<sort>/?query=… (views, rating, date, duration).
+                let sort = query
+                    .filters
+                    .sort
+                    .as_deref()
+                    .filter(|s| allowed_option(site_id, s) && *s != "relevance")
+                    .map(|s| format!("{s}/"))
+                    .unwrap_or_default();
+                format!("{base}/search/{sort}?query={q}{}", page_amp(query.page))
             }
             BrowseKind::Category => {
                 if slug.is_empty() || slug == "categories" {
@@ -460,16 +741,28 @@ fn tube_browse_url(site_id: &str, base: &str, query: &BrowseQuery) -> String {
             BrowseKind::Livestream => format!("{base}/live/{slug}"),
         },
         "xnxx" => match query.kind {
-            BrowseKind::Search | BrowseKind::Tag => {
+            BrowseKind::Search | BrowseKind::Tag | BrowseKind::Category => {
+                // /search/[sort]/[period]/[duration]/[quality]/<query>/[page-1]
+                let f = &query.filters;
+                let mut path = String::from("/search");
+                for part in [&f.sort, &f.period, &f.duration, &f.quality]
+                    .into_iter()
+                    .flatten()
+                {
+                    if allowed_option(site_id, part) {
+                        path.push('/');
+                        path.push_str(part);
+                    }
+                }
                 let page = if query.page > 1 {
-                    format!("/{}", query.page)
+                    // XNXX pages are 0-based: page 2 is /1.
+                    format!("/{}", query.page - 1)
                 } else {
                     String::new()
                 };
-                format!("{base}/search/{slug}{page}")
+                format!("{base}{path}/{slug}{page}")
             }
             BrowseKind::Model | BrowseKind::Channel => format!("{base}/pornstars/{slug}"),
-            BrowseKind::Category => format!("{base}/search/{slug}"),
             BrowseKind::Livestream => format!("{base}/live/{slug}"),
             BrowseKind::Video => {
                 if query.slug.starts_with("http") {
@@ -527,6 +820,35 @@ fn orientation_path(orientation: BrowseOrientation) -> &'static str {
         BrowseOrientation::Lesbian => "lesbian",
         BrowseOrientation::Transgender => "transgender",
     }
+}
+
+/// Append PornHub sort (`o`), period (`t`), duration and HD filters.
+fn pornhub_filtered(url: String, query: &BrowseQuery) -> String {
+    let f = &query.filters;
+    let ok = |v: &Option<String>| {
+        v.as_deref()
+            .filter(|s| allowed_option("pornhub", s))
+            .unwrap_or("")
+            .to_string()
+    };
+    let (min, max) = match ok(&f.duration).as_str() {
+        "0-10" => ("", "10"),
+        "10-20" => ("10", "20"),
+        "20-30" => ("20", "30"),
+        "30-plus" => ("30", ""),
+        _ => ("", ""),
+    };
+    let hd = if ok(&f.quality) == "hd" { "1" } else { "" };
+    crate::sites::urls::with_query(
+        &url,
+        &[
+            ("o", &ok(&f.sort)),
+            ("t", &ok(&f.period)),
+            ("min_duration", min),
+            ("max_duration", max),
+            ("hd", hd),
+        ],
+    )
 }
 
 fn build_pornhub_search_url(query: &BrowseQuery) -> String {
@@ -703,6 +1025,14 @@ pub fn parse_pornhub_categories(
 ) -> Vec<crate::models::PornhubCategoryEntry> {
     use crate::models::PornhubCategoryEntry;
     use scraper::{Html, Selector};
+    // Current markup embeds the full catalog as JSON objects
+    // ({"id":722,"name":"Uncensored",…,"slug":"…",…,"video_count":10207,…});
+    // the visible tiles only expose counts, which the HTML path used to
+    // mistake for names.
+    let from_json = pornhub_categories_from_json(html, orientation);
+    if from_json.len() >= 10 {
+        return from_json;
+    }
     let document = Html::parse_document(html);
     let selectors = [
         "li.categoryWrapper a",
@@ -750,6 +1080,40 @@ pub fn parse_pornhub_categories(
 
     items.sort_by(|a, b| a.name.cmp(&b.name));
     items
+}
+
+fn pornhub_categories_from_json(
+    html: &str,
+    orientation: BrowseOrientation,
+) -> Vec<crate::models::PornhubCategoryEntry> {
+    use std::sync::LazyLock;
+    static RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+        regex::Regex::new(
+            r#"\{"id":(\d+),"name":("(?:[^"\\]|\\.)*")(?:,"english":"(?:[^"\\]|\\.)*")?,"slug":"([a-z0-9-]+)"[^{}]*?"video_count":(\d+)"#,
+        )
+        .expect("pornhub category json regex")
+    });
+    let mut seen = std::collections::HashSet::new();
+    let mut out: Vec<_> = RE
+        .captures_iter(html)
+        .filter_map(|c| {
+            let id: u32 = c.get(1)?.as_str().parse().ok()?;
+            let name: String = serde_json::from_str(c.get(2)?.as_str()).ok()?;
+            let name = name.trim().to_string();
+            if name.is_empty() || !seen.insert(id) {
+                return None;
+            }
+            Some(crate::models::PornhubCategoryEntry {
+                name,
+                slug: c.get(3)?.as_str().to_string(),
+                orientation,
+                category_id: Some(id),
+                video_count: c.get(4)?.as_str().parse().ok(),
+            })
+        })
+        .collect();
+    out.sort_by_key(|c| c.name.to_lowercase());
+    out
 }
 
 fn category_id_from_href(href: &str) -> Option<u32> {
@@ -972,6 +1336,22 @@ mod category_tests {
     }
 
     #[test]
+    fn parses_embedded_category_json() {
+        let mut html = String::new();
+        for i in 0..12 {
+            html.push_str(&format!(
+                r#"{{"id":{i},"name":"Cat \u0026 {i}","english":"x","slug":"cat-{i}","segment":0,"video_count":{}}},"#,
+                1000 + i
+            ));
+        }
+        let cats = parse_pornhub_categories(&html, BrowseOrientation::Straight);
+        assert_eq!(cats.len(), 12);
+        assert_eq!(cats[0].name, "Cat & 0");
+        assert_eq!(cats[0].category_id, Some(0));
+        assert_eq!(cats[0].video_count, Some(1000));
+    }
+
+    #[test]
     fn parses_count_from_text() {
         assert_eq!(parse_video_count("544,892 Videos"), Some(544892));
     }
@@ -979,6 +1359,7 @@ mod category_tests {
     #[test]
     fn lesbian_numeric_category_url() {
         let url = build_pornhub_category_url(&BrowseQuery {
+            filters: Default::default(),
             kind: BrowseKind::Category,
             slug: "8".into(),
             page: 1,
@@ -990,6 +1371,7 @@ mod category_tests {
     #[test]
     fn lesbian_slug_maps_to_category_id() {
         let url = build_pornhub_category_url(&BrowseQuery {
+            filters: Default::default(),
             kind: BrowseKind::Category,
             slug: "lesbian".into(),
             page: 1,
@@ -1001,6 +1383,7 @@ mod category_tests {
     #[test]
     fn lesbian_slug_falls_back_to_search() {
         let url = build_pornhub_category_url(&BrowseQuery {
+            filters: Default::default(),
             kind: BrowseKind::Category,
             slug: "big-tits".into(),
             page: 1,
@@ -1015,6 +1398,7 @@ mod category_tests {
     #[test]
     fn lesbian_search_url() {
         let url = build_pornhub_search_url(&BrowseQuery {
+            filters: Default::default(),
             kind: BrowseKind::Search,
             slug: "big tits".into(),
             page: 1,
@@ -1029,6 +1413,7 @@ mod category_tests {
     #[test]
     fn gay_search_url() {
         let url = build_pornhub_search_url(&BrowseQuery {
+            filters: Default::default(),
             kind: BrowseKind::Search,
             slug: "big tits".into(),
             page: 1,
@@ -1040,6 +1425,7 @@ mod category_tests {
     #[test]
     fn transgender_search_url() {
         let url = build_pornhub_search_url(&BrowseQuery {
+            filters: Default::default(),
             kind: BrowseKind::Tag,
             slug: "big tits".into(),
             page: 1,
@@ -1054,6 +1440,7 @@ mod category_tests {
     #[test]
     fn straight_search_url_has_no_prefix() {
         let url = build_pornhub_search_url(&BrowseQuery {
+            filters: Default::default(),
             kind: BrowseKind::Search,
             slug: "big tits".into(),
             page: 1,
@@ -1065,6 +1452,7 @@ mod category_tests {
     #[test]
     fn search_page_2_appends_page_param() {
         let url = build_pornhub_search_url(&BrowseQuery {
+            filters: Default::default(),
             kind: BrowseKind::Search,
             slug: "big tits".into(),
             page: 2,
@@ -1080,6 +1468,7 @@ mod category_tests {
     fn search_term_with_ampersand_cannot_inject_param() {
         // `&` must be percent-encoded so it can't smuggle `&page=` / `&c=`.
         let url = build_pornhub_search_url(&BrowseQuery {
+            filters: Default::default(),
             kind: BrowseKind::Search,
             slug: "big & busty".into(),
             page: 1,
@@ -1095,6 +1484,7 @@ mod category_tests {
     #[test]
     fn search_term_with_unicode_is_encoded() {
         let url = build_pornhub_search_url(&BrowseQuery {
+            filters: Default::default(),
             kind: BrowseKind::Search,
             slug: "amateur €".into(),
             page: 1,
@@ -1109,6 +1499,7 @@ mod category_tests {
         // Same guarantee for the orientation category-fallback branch (M3):
         // routed through query_slug, so specials can't break the query string.
         let url = build_pornhub_category_url(&BrowseQuery {
+            filters: Default::default(),
             kind: BrowseKind::Category,
             slug: "big-tits".into(),
             page: 1,
@@ -1135,6 +1526,7 @@ mod category_tests {
     #[test]
     fn straight_slug_keeps_categories_path() {
         let url = build_pornhub_category_url(&BrowseQuery {
+            filters: Default::default(),
             kind: BrowseKind::Category,
             slug: "big-tits".into(),
             page: 1,
@@ -1159,6 +1551,7 @@ mod category_tests {
             "xvideos",
             "https://www.xvideos.com",
             &BrowseQuery {
+                filters: Default::default(),
                 kind: BrowseKind::Search,
                 slug: "lesbian".into(),
                 page: 1,
@@ -1174,6 +1567,7 @@ mod category_tests {
             "xhamster",
             "https://xhamster.com",
             &BrowseQuery {
+                filters: Default::default(),
                 kind: BrowseKind::Search,
                 slug: "lesbian".into(),
                 page: 1,
@@ -1189,6 +1583,7 @@ mod category_tests {
             "youporn",
             "https://www.youporn.com",
             &BrowseQuery {
+                filters: Default::default(),
                 kind: BrowseKind::Category,
                 slug: "lesbian".into(),
                 page: 1,
@@ -1201,6 +1596,7 @@ mod category_tests {
             "youporn",
             "https://www.youporn.com",
             &BrowseQuery {
+                filters: Default::default(),
                 kind: BrowseKind::Model,
                 slug: "alexis-fawx".into(),
                 page: 1,
@@ -1213,6 +1609,7 @@ mod category_tests {
             "youporn",
             "https://www.youporn.com",
             &BrowseQuery {
+                filters: Default::default(),
                 kind: BrowseKind::Search,
                 slug: "lesbian".into(),
                 page: 1,
@@ -1222,12 +1619,133 @@ mod category_tests {
         assert_eq!(search, "https://www.youporn.com/search/?query=lesbian");
     }
 
+    fn q(kind: BrowseKind, slug: &str, page: u32, f: &[(&str, &str)]) -> BrowseQuery {
+        let get = |k: &str| f.iter().find(|(n, _)| *n == k).map(|(_, v)| v.to_string());
+        BrowseQuery {
+            kind,
+            slug: slug.into(),
+            page,
+            orientation: None,
+            filters: crate::models::BrowseFilters {
+                sort: get("sort"),
+                period: get("period"),
+                duration: get("duration"),
+                quality: get("quality"),
+            },
+        }
+    }
+
+    #[test]
+    fn filtered_tube_urls() {
+        let xv = tube_browse_url(
+            "xvideos",
+            "https://www.xvideos.com",
+            &q(
+                BrowseKind::Search,
+                "milf",
+                2,
+                &[
+                    ("sort", "uploaddate"),
+                    ("duration", "10min_more"),
+                    ("quality", "hd"),
+                ],
+            ),
+        );
+        assert_eq!(
+            xv,
+            "https://www.xvideos.com/?k=milf&p=1&sort=uploaddate&durf=10min_more&quality=hd"
+        );
+        let xn = tube_browse_url(
+            "xnxx",
+            "https://www.xnxx.com",
+            &q(
+                BrowseKind::Search,
+                "milf",
+                3,
+                &[
+                    ("sort", "hits"),
+                    ("period", "month"),
+                    ("duration", "20min+"),
+                ],
+            ),
+        );
+        assert_eq!(xn, "https://www.xnxx.com/search/hits/month/20min+/milf/2");
+        let xh = tube_browse_url(
+            "xhamster",
+            "https://xhamster.com",
+            &q(
+                BrowseKind::Search,
+                "milf",
+                1,
+                &[
+                    ("sort", "newest"),
+                    ("duration", "10-30"),
+                    ("quality", "1080p"),
+                ],
+            ),
+        );
+        assert_eq!(xh, "https://xhamster.com/search/milf?sort=newest&min-duration=10&max-duration=30&quality=1080p");
+        let xhc = tube_browse_url(
+            "xhamster",
+            "https://xhamster.com",
+            &q(
+                BrowseKind::Category,
+                "amateur",
+                2,
+                &[
+                    ("sort", "best"),
+                    ("quality", "1080p"),
+                    ("duration", "30-plus"),
+                ],
+            ),
+        );
+        assert_eq!(
+            xhc,
+            "https://xhamster.com/categories/amateur/best/hd/2?min-duration=30&quality=1080p"
+        );
+        let yp = tube_browse_url(
+            "youporn",
+            "https://www.youporn.com",
+            &q(BrowseKind::Search, "milf", 2, &[("sort", "views")]),
+        );
+        assert_eq!(
+            yp,
+            "https://www.youporn.com/search/views/?query=milf&page=2"
+        );
+        // Unknown ids never reach the URL.
+        let bad = tube_browse_url(
+            "xvideos",
+            "https://www.xvideos.com",
+            &q(BrowseKind::Search, "milf", 1, &[("sort", "x&evil=1")]),
+        );
+        assert_eq!(bad, "https://www.xvideos.com/?k=milf");
+        let ph = pornhub_filtered(
+            build_pornhub_search_url(&q(BrowseKind::Search, "milf", 1, &[])),
+            &q(
+                BrowseKind::Search,
+                "milf",
+                1,
+                &[
+                    ("sort", "mv"),
+                    ("period", "w"),
+                    ("duration", "30-plus"),
+                    ("quality", "hd"),
+                ],
+            ),
+        );
+        assert_eq!(
+            ph,
+            "https://www.pornhub.com/video/search?search=milf&o=mv&t=w&min_duration=30&hd=1"
+        );
+    }
+
     #[test]
     fn xnxx_search_url() {
         let url = tube_browse_url(
             "xnxx",
             "https://www.xnxx.com",
             &BrowseQuery {
+                filters: Default::default(),
                 kind: BrowseKind::Search,
                 slug: "lesbians".into(),
                 page: 1,

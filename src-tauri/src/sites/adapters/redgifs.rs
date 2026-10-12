@@ -28,6 +28,19 @@ impl SiteAdapter for RedgifsAdapter {
         ]
     }
 
+    fn browse_options(&self) -> crate::models::BrowseOptions {
+        use crate::models::FilterOption as O;
+        crate::models::BrowseOptions {
+            sorts: vec![
+                O::new("trending", "Trending"),
+                O::new("latest", "Newest"),
+                O::new("top", "Top"),
+            ],
+            filter_kinds: vec![BrowseKind::Search, BrowseKind::Tag],
+            ..Default::default()
+        }
+    }
+
     async fn browse(&self, ctx: &SiteContext, query: BrowseQuery) -> AppResult<BrowsePage> {
         use crate::sites::extractors::redgifs;
         const PAGE_SIZE: u32 = 40;
@@ -48,7 +61,13 @@ impl SiteAdapter for RedgifsAdapter {
             _ => {
                 // Empty query → trending feed; tag slugs use hyphens.
                 let text = slug.replace('-', " ");
-                redgifs::search(ctx, &text, "trending", query.page, PAGE_SIZE).await?
+                let order = query
+                    .filters
+                    .sort
+                    .as_deref()
+                    .filter(|s| self.browse_options().sorts.iter().any(|o| o.id == *s))
+                    .unwrap_or("trending");
+                redgifs::search(ctx, &text, order, query.page, PAGE_SIZE).await?
             }
         };
         if items.is_empty() {

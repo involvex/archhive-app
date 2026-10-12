@@ -1,5 +1,7 @@
 use crate::error::{AppError, AppResult};
-use crate::models::{BrowseKind, BrowsePage, BrowseQuery, DownloadPlan, MediaItem};
+use crate::models::{
+    BrowseKind, BrowseOptions, BrowsePage, BrowseQuery, DownloadPlan, MediaItem, SiteCategory,
+};
 use crate::vault::CookieVault;
 use async_trait::async_trait;
 use std::sync::Arc;
@@ -118,6 +120,17 @@ pub trait SiteAdapter: Send + Sync {
     fn supported_kinds(&self) -> Vec<BrowseKind>;
     fn requires_cookies(&self) -> bool {
         false
+    }
+
+    /// Sort / filter options this site understands (see `BrowseQuery::filters`).
+    fn browse_options(&self) -> BrowseOptions {
+        BrowseOptions::default()
+    }
+
+    /// The site's category / tag index. Only called when
+    /// `browse_options().has_categories` is true.
+    async fn list_categories(&self, _ctx: &SiteContext) -> AppResult<Vec<SiteCategory>> {
+        Ok(Vec::new())
     }
 
     async fn browse(&self, ctx: &SiteContext, query: BrowseQuery) -> AppResult<BrowsePage>;

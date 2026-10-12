@@ -38,12 +38,28 @@ pub async fn browse(
     slug: String,
     page: Option<u32>,
     orientation: Option<BrowseOrientation>,
+    filters: Option<crate::models::BrowseFilters>,
 ) -> CmdResult<crate::models::BrowsePage> {
     map_err(
         state
-            .browse(&site_id, kind, &slug, page.unwrap_or(1), orientation)
+            .browse(
+                &site_id,
+                kind,
+                &slug,
+                page.unwrap_or(1),
+                orientation,
+                filters.unwrap_or_default(),
+            )
             .await,
     )
+}
+
+#[tauri::command]
+pub async fn list_site_categories(
+    state: State<'_, Arc<AppState>>,
+    site_id: String,
+) -> CmdResult<Vec<crate::models::SiteCategory>> {
+    map_err(state.list_site_categories(&site_id).await)
 }
 
 #[tauri::command]

@@ -62,6 +62,7 @@ impl GenericYtDlpAdapter {
             base: "https://thisvid.com",
             kinds: vec![
                 crate::models::BrowseKind::Tag,
+                crate::models::BrowseKind::Category,
                 crate::models::BrowseKind::Search,
                 crate::models::BrowseKind::Video,
             ],
@@ -120,15 +121,19 @@ async fn browse_thisvid(ctx: &SiteContext, query: &BrowseQuery) -> AppResult<Bro
         query.slug.clone()
     } else {
         match query.kind {
-            BrowseKind::Tag | BrowseKind::Category if page > 1 => {
-                format!("{BASE}/tags/{slug}/{page}/")
-            }
-            BrowseKind::Tag | BrowseKind::Category => format!("{BASE}/tags/{slug}/"),
+            BrowseKind::Tag if page > 1 => format!("{BASE}/tags/{slug}/{page}/"),
+            BrowseKind::Tag => format!("{BASE}/tags/{slug}/"),
+            BrowseKind::Category if page > 1 => format!("{BASE}/categories/{slug}/{page}/"),
+            BrowseKind::Category => format!("{BASE}/categories/{slug}/"),
             BrowseKind::Model | BrowseKind::Channel => format!("{BASE}/members/{slug}/videos/"),
             _ if page > 1 => format!("{BASE}/search/{page}/?q={}", query_slug(&query.slug)),
             _ => format!("{BASE}/search/?q={}", query_slug(&query.slug)),
         }
     };
+    let url = crate::sites::urls::with_query(
+        &url,
+        &[("sort_by", &crate::sites::adapters::thothub::kvs_sort(query))],
+    );
     let items = parse_thisvid(&ctx.fetch_html(&url, "thisvid").await?);
     if items.is_empty() {
         return Err(AppError::Site("No videos found on ThisVid.".into()));
@@ -182,6 +187,41 @@ impl SiteAdapter for GenericYtDlpAdapter {
 
     fn requires_cookies(&self) -> bool {
         self.cookies
+    }
+
+    fn browse_options(&self) -> crate::models::BrowseOptions {
+        if self.site_id == "thisvid" {
+            crate::sites::adapters::thothub::kvs_browse_options(
+                vec![BrowseKind::Search, BrowseKind::Tag, BrowseKind::Category],
+                true,
+            )
+        } else {
+            crate::models::BrowseOptions::default()
+        }
+    }
+
+    async fn list_categories(
+        &self,
+        ctx: &SiteContext,
+    ) -> AppResult<Vec<crate::models::SiteCategory>> {
+        use crate::sites::listing::{parse_category_index, segment_after, CategorySpec};
+        if self.site_id != "thisvid" {
+            return Ok(Vec::new());
+        }
+        let html = ctx
+            .fetch_html("https://thisvid.com/categories/", self.site_id)
+            .await?;
+        let slug = |href: &str| segment_after(href, "/categories/");
+        Ok(parse_category_index(
+            &html,
+            &CategorySpec {
+                base: self.base,
+                anchor_selector: "a[href*='/categories/']",
+                slug_from_href: &slug,
+                kind: BrowseKind::Category,
+                max: 300,
+            },
+        ))
     }
 
     async fn browse(

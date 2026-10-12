@@ -28,6 +28,10 @@ impl SiteAdapter for RedditAdapter {
         vec![BrowseKind::Channel, BrowseKind::Search, BrowseKind::Video]
     }
 
+    fn browse_options(&self) -> crate::models::BrowseOptions {
+        reddit_options()
+    }
+
     async fn browse(&self, ctx: &SiteContext, query: BrowseQuery) -> AppResult<BrowsePage> {
         let url = build_browse_url(&query)?;
         let html = ctx.fetch_html(&url, "reddit").await?;
@@ -140,23 +144,71 @@ impl SiteAdapter for RedditAdapter {
 }
 
 fn build_browse_url(query: &BrowseQuery) -> AppResult<String> {
+    let f = &query.filters;
+    let pick = |v: &Option<String>, list: &[crate::models::FilterOption]| {
+        v.as_deref()
+            .filter(|s| list.iter().any(|o| o.id == *s))
+            .unwrap_or("")
+            .to_string()
+    };
+    let opts = reddit_options();
+    let sort = pick(&f.sort, &opts.sorts);
+    let period = pick(&f.period, &opts.periods);
     Ok(match query.kind {
-        BrowseKind::Channel => format!("{OLD_BASE}/r/{}/", path_slug(&query.slug)),
         BrowseKind::Search => {
-            format!(
-                "{OLD_BASE}/search?q={}&type=link&sort=relevance",
-                query_slug(&query.slug)
+            // Search has no "rising"; keep the default relevance for it.
+            let sort = if sort == "rising" {
+                String::new()
+            } else {
+                sort
+            };
+            crate::sites::urls::with_query(
+                &format!("{OLD_BASE}/search?q={}&type=link", query_slug(&query.slug)),
+                &[
+                    ("sort", if sort.is_empty() { "relevance" } else { &sort }),
+                    ("t", &period),
+                ],
             )
         }
-        BrowseKind::Video => {
-            if query.slug.starts_with("http") {
-                query.slug.clone()
+        BrowseKind::Video if query.slug.starts_with("http") => query.slug.clone(),
+        _ => {
+            // /r/<sub>/<sort>/?t=<period>
+            let base = format!("{OLD_BASE}/r/{}/", path_slug(&query.slug));
+            let base = if sort.is_empty() {
+                base
             } else {
-                format!("{OLD_BASE}/r/{}/", path_slug(&query.slug))
-            }
+                format!("{base}{sort}/")
+            };
+            let period = if matches!(sort.as_str(), "top" | "controversial") {
+                period
+            } else {
+                String::new()
+            };
+            crate::sites::urls::with_query(&base, &[("t", &period)])
         }
-        _ => format!("{OLD_BASE}/r/{}/", path_slug(&query.slug)),
     })
+}
+
+fn reddit_options() -> crate::models::BrowseOptions {
+    use crate::models::FilterOption as O;
+    crate::models::BrowseOptions {
+        sorts: vec![
+            O::new("hot", "Hot"),
+            O::new("new", "New"),
+            O::new("top", "Top"),
+            O::new("rising", "Rising"),
+        ],
+        periods: vec![
+            O::new("hour", "Past hour"),
+            O::new("day", "Today"),
+            O::new("week", "This week"),
+            O::new("month", "This month"),
+            O::new("year", "This year"),
+            O::new("all", "All time"),
+        ],
+        filter_kinds: vec![BrowseKind::Channel, BrowseKind::Search],
+        ..Default::default()
+    }
 }
 
 fn parse_reddit(html: &str) -> Vec<MediaItem> {
@@ -238,6 +290,7 @@ mod tests {
     #[test]
     fn search_url_encodes_spaces() {
         let q = BrowseQuery {
+            filters: Default::default(),
             kind: BrowseKind::Search,
             slug: "sweetie fox".to_string(),
             page: 1,
@@ -251,6 +304,7 @@ mod tests {
     #[test]
     fn channel_uses_old_reddit() {
         let q = BrowseQuery {
+            filters: Default::default(),
             kind: BrowseKind::Channel,
             slug: "nsfw".to_string(),
             page: 1,

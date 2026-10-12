@@ -45,6 +45,7 @@ impl SiteRegistry {
                 base_url: a.base_url().to_string(),
                 supported_kinds: a.supported_kinds(),
                 requires_cookies: a.requires_cookies(),
+                browse_options: a.browse_options(),
             })
             .collect()
     }

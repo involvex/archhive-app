@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { BrowseOrientation, MediaItem } from "../types";
+import type { BrowseFilters, BrowseOrientation, MediaItem } from "../types";
 
 export interface BrowseCacheEntry {
   items: MediaItem[];
@@ -9,6 +9,8 @@ export interface BrowseCacheEntry {
   orientation?: BrowseOrientation;
   categoryKey?: string;
   url?: string;
+  /** Site-side sort / filters the cached results were loaded with. */
+  filters?: BrowseFilters;
 }
 
 interface BrowseState {

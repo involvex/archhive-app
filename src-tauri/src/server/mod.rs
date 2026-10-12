@@ -30,6 +30,10 @@ struct BrowseParams {
     slug: String,
     page: Option<u32>,
     orientation: Option<String>,
+    sort: Option<String>,
+    period: Option<String>,
+    duration: Option<String>,
+    quality: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -131,6 +135,7 @@ impl LanServer {
             .route("/api/network/info", get(network_info))
             .route("/api/sites", get(list_sites))
             .route("/api/sites/{id}/browse", get(browse))
+            .route("/api/sites/{id}/categories", get(site_categories))
             .route("/api/downloads", get(list_downloads).post(queue_download))
             .route("/api/downloads/bulk", post(queue_bulk_import))
             .route("/api/downloads/{id}/cancel", post(cancel_download))
@@ -404,10 +409,28 @@ async fn browse(
             &params.slug,
             params.page.unwrap_or(1),
             orientation,
+            crate::models::BrowseFilters {
+                sort: params.sort,
+                period: params.period,
+                duration: params.duration,
+                quality: params.quality,
+            },
         )
         .await
         .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
     Ok(Json(serde_json::json!(page)))
+}
+
+async fn site_categories(
+    State(state): State<ApiState>,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let cats = state
+        .app
+        .list_site_categories(&id)
+        .await
+        .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
+    Ok(Json(serde_json::json!(cats)))
 }
 
 async fn list_downloads(

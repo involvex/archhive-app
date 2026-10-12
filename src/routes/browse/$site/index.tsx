@@ -1,6 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { mergeSiteLists, SITE_CATALOG } from "@/lib/sites/catalog";
+import { useSiteInfo } from "@/lib/sites/useSiteInfo";
 import { PornhubCategoryBrowser } from "@/components/PornhubCategoryBrowser";
+import { SiteCategoryBrowser } from "@/components/SiteCategoryBrowser";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { CookieLoginButton } from "@/components/CookieLoginButton";
@@ -22,8 +24,11 @@ const KIND_LABELS: Record<BrowseKind, string> = {
 
 function SiteHubPage() {
   const { site: siteId } = Route.useParams();
+  const liveSite = useSiteInfo(siteId);
   const site =
-    mergeSiteLists([]).find((s) => s.id === siteId) ?? SITE_CATALOG.find((s) => s.id === siteId);
+    liveSite ??
+    mergeSiteLists([]).find((s) => s.id === siteId) ??
+    SITE_CATALOG.find((s) => s.id === siteId);
 
   if (!site) {
     return (
@@ -49,6 +54,10 @@ function SiteHubPage() {
       </div>
 
       {site.id === "pornhub" && <PornhubCategoryBrowser />}
+
+      {site.id !== "pornhub" && site.browse_options?.has_categories && (
+        <SiteCategoryBrowser siteId={site.id} siteName={site.display_name} />
+      )}
 
       {advancedKinds.length > 0 && (
         <Card>

@@ -37,6 +37,42 @@ export interface SiteInfo {
   base_url: string;
   supported_kinds: BrowseKind[];
   requires_cookies: boolean;
+  /** Sort / filter / category support (absent for static catalog entries). */
+  browse_options?: BrowseOptions;
+}
+
+/** Mirrors `models::FilterOption`. */
+export interface FilterOption {
+  id: string;
+  label: string;
+}
+
+/** Mirrors `models::BrowseOptions`. */
+export interface BrowseOptions {
+  sorts: FilterOption[];
+  periods: FilterOption[];
+  durations: FilterOption[];
+  qualities: FilterOption[];
+  /** Browse kinds the filters apply to. */
+  filter_kinds: BrowseKind[];
+  has_categories: boolean;
+}
+
+/** Mirrors `models::BrowseFilters`: option ids, omitted = site default. */
+export interface BrowseFilters {
+  sort?: string;
+  period?: string;
+  duration?: string;
+  quality?: string;
+}
+
+/** Mirrors `models::SiteCategory`. */
+export interface SiteCategory {
+  name: string;
+  slug: string;
+  kind: BrowseKind;
+  thumbnail?: string;
+  count?: number;
 }
 
 export type DownloadStatus =

@@ -117,7 +117,9 @@ impl AppState {
         slug: &str,
         page: u32,
         orientation: Option<BrowseOrientation>,
+        filters: crate::models::BrowseFilters,
     ) -> AppResult<crate::models::BrowsePage> {
+        let filters = filters.normalized();
         // When site is "custom" but the slug is a known site URL, auto-detect
         // the correct adapter so users don't need to manually select the site.
         let effective_site_id = if site_id == "custom" && slug.starts_with("http") {
@@ -135,6 +137,8 @@ impl AppState {
             .ok()
             .and_then(|v| v.as_str().map(|s| s.to_string()))
             .unwrap_or_else(|| format!("{:?}", kind).to_lowercase());
+        // Different sort/filter selections are different pages.
+        let kind_str = format!("{kind_str}{}", filters.cache_key());
         let orient_str = orientation.and_then(|o| {
             serde_json::to_value(o)
                 .ok()
@@ -145,6 +149,7 @@ impl AppState {
             .browse(
                 &self.site_ctx,
                 BrowseQuery {
+                    filters: filters.clone(),
                     kind,
                     slug: slug.to_string(),
                     page,
@@ -1020,6 +1025,40 @@ impl AppState {
         Ok(crate::models::BatchUpdateScenesResult { updated })
     }
 
+    /// A site's category / tag index, cached in memory for six hours.
+    pub async fn list_site_categories(
+        &self,
+        site_id: &str,
+    ) -> AppResult<Vec<crate::models::SiteCategory>> {
+        use std::collections::HashMap;
+        use std::sync::LazyLock;
+        use std::time::{Duration, Instant};
+        type Cache = HashMap<String, (Instant, Vec<crate::models::SiteCategory>)>;
+        static CACHE: LazyLock<std::sync::Mutex<Cache>> =
+            LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
+        const TTL: Duration = Duration::from_secs(6 * 3600);
+
+        if let Some((at, cats)) = CACHE.lock().ok().and_then(|c| c.get(site_id).cloned()) {
+            if at.elapsed() < TTL {
+                return Ok(cats);
+            }
+        }
+        let adapter = self
+            .sites
+            .get(site_id)
+            .ok_or_else(|| crate::error::AppError::NotFound(format!("site {site_id}")))?;
+        if !adapter.browse_options().has_categories {
+            return Ok(Vec::new());
+        }
+        let cats = adapter.list_categories(&self.site_ctx).await?;
+        if !cats.is_empty() {
+            if let Ok(mut c) = CACHE.lock() {
+                c.insert(site_id.to_string(), (Instant::now(), cats.clone()));
+            }
+        }
+        Ok(cats)
+    }
+
     pub async fn list_pornhub_categories(
         &self,
         orientation: crate::models::BrowseOrientation,
@@ -1860,6 +1899,7 @@ impl AppState {
                 &search.slug,
                 1,
                 search.orientation,
+                Default::default(),
             )
             .await?;
         let previous = self.db.saved_search_keys(id)?;
