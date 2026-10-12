@@ -32,12 +32,14 @@ export async function loadSiteCategories(
   return list;
 }
 
-/** Group id holding tags that start with `text` ("09" for digits/other). */
+/** Group id holding tags that start with `text` (digits/other go to the
+ *  site's "09" / "0" group). */
 export function groupForText(text: string, groups: FilterOption[]): string | undefined {
   const first = text.trim().charAt(0).toLowerCase();
   if (!first || groups.length === 0) return undefined;
   if (groups.some((g) => g.id === first)) return first;
-  return groups.find((g) => g.id === "09")?.id;
+  // Digits / other characters: XVIDEOS calls that group "09", xHamster "0".
+  return groups.find((g) => g.id === "09" || g.id === "0")?.id;
 }
 
 function formatCount(n?: number): string {
