@@ -62,7 +62,8 @@ function PerformerDetailPage() {
         setScenes(filtered);
         setWatchMap(toWatchMap(progress));
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load performer");
+        if (!cancelled)
+          setError(e instanceof Error ? e.message : String(e) || "Failed to load performer");
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -202,7 +203,9 @@ function PerformerDetailPage() {
                     : prev,
                 ),
               )
-              .catch((e) => setAttrError(e instanceof Error ? e.message : "Save failed"))
+              .catch((e) =>
+                setAttrError(e instanceof Error ? e.message : String(e) || "Save failed"),
+              )
               .finally(() => setAttrSaving(false));
           }}
         >
@@ -236,7 +239,9 @@ function PerformerDetailPage() {
                     setStashMatches(matches);
                     if (matches.length === 0) setStashError("No StashDB match for this name.");
                   })
-                  .catch((e) => setStashError(e instanceof Error ? e.message : "Search failed"))
+                  .catch((e) =>
+                    setStashError(e instanceof Error ? e.message : String(e) || "Search failed"),
+                  )
                   .finally(() => setStashSearching(false));
               }}
             >
@@ -290,7 +295,9 @@ function PerformerDetailPage() {
                         setPerformer(updated);
                         setStashMatches(null);
                       })
-                      .catch((e) => setStashError(e instanceof Error ? e.message : "Link failed"))
+                      .catch((e) =>
+                        setStashError(e instanceof Error ? e.message : String(e) || "Link failed"),
+                      )
                       .finally(() => setStashLinking(null));
                   }}
                 >
