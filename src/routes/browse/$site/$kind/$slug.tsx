@@ -108,13 +108,17 @@ function BrowseDetailPage() {
   // Suggest for the tag being typed (after the last comma when combining).
   const typedTag = querySlug.split(",").pop()?.trim().toLowerCase() ?? "";
   // XVIDEOS keeps categories (/c/…) in their own group, separate from tags.
-  const tagGroup =
-    kind === "category" && tagGroups.some((g) => g.id === "categories")
+  // Category pages suggest categories: XVIDEOS keeps them in a "categories"
+  // group, Eporner in its main index; tag pages use the typed letter's group.
+  const categoryKind = kind === "category";
+  const tagGroup = categoryKind
+    ? tagGroups.some((g) => g.id === "categories")
       ? "categories"
-      : groupForText(typedTag, tagGroups);
-  const tagGroupKey = tagGroups.length > 0 ? (tagGroup ?? "") : "all";
+      : undefined
+    : groupForText(typedTag, tagGroups);
+  const tagGroupKey = tagGroup ?? (categoryKind || tagGroups.length === 0 ? "all" : "");
   useEffect(() => {
-    if (!suggestTags || (tagGroups.length > 0 && !tagGroup)) return;
+    if (!suggestTags || tagGroupKey === "") return;
     let cancelled = false;
     loadSiteCategories(site, false, tagGroup)
       .then((cats) => {

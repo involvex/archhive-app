@@ -172,7 +172,15 @@ export function SiteCategoryBrowser({
       <CardContent className="space-y-3">
         {groups.length > 0 && (
           <div className="flex gap-1 overflow-x-auto pb-1 scrollbar-hide">
-            {[{ id: "", label: "Popular" }, ...groups].map((g) => (
+            {[
+              {
+                // Main index: XVIDEOS' popular tags (its categories are a
+                // group), Eporner's categories (its tags are groups).
+                id: "",
+                label: groups.some((g) => g.id === "categories") ? "Popular" : "Categories",
+              },
+              ...groups,
+            ].map((g) => (
               <button
                 key={g.id || "popular"}
                 type="button"
