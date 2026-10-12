@@ -13,7 +13,6 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ConnectionStatusChip } from "@/components/ConnectionStatusChip";
 import {
-  Globe,
   Link2,
   Search,
   Clock,
@@ -35,6 +34,7 @@ import { useSavedSearches } from "@/lib/hooks/useSavedSearches";
 import { clearTrendingCache, useTrending } from "@/lib/hooks/useTrending";
 import { useRefreshGuard } from "@/lib/hooks/useRefreshGuard";
 import { NewMatchesCard } from "@/components/NewMatchesCard";
+import { SitePicker } from "@/components/SitePicker";
 
 const ORIENTATIONS: { value: BrowseOrientation; label: string }[] = [
   { value: "straight", label: "Straight" },
@@ -160,10 +160,6 @@ function BrowsePage() {
       setUrlLoading(false);
     }
   }, [urlInput]);
-
-  const handleSiteChip = useCallback((siteId: string) => {
-    setSelectedSite(siteId);
-  }, []);
 
   const [categories, setCategories] = useState<PornhubCategoryEntry[]>([]);
   const [catOrientation, setCatOrientation] = useState<BrowseOrientation>("straight");
@@ -295,51 +291,30 @@ function BrowsePage() {
 
       <Card>
         <CardContent className="p-4 space-y-3">
-          <div className="flex flex-col sm:flex-row gap-2">
-            <div className="flex-1 flex gap-2">
-              <select
-                className="h-10 shrink-0 rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-3 text-sm"
-                value={selectedSite}
-                onChange={(e) => setSelectedSite(e.target.value)}
-              >
-                <option value="auto">Auto-detect</option>
-                {sites.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.display_name}
-                  </option>
-                ))}
-              </select>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <SitePicker
+              sites={sites}
+              value={selectedSite}
+              onChange={setSelectedSite}
+              className="w-full sm:w-56 sm:shrink-0"
+            />
+            <div className="flex flex-1 gap-2">
               <Input
-                placeholder='Search (e.g. "model name", "#tag", or paste URL)'
+                placeholder="Search, #tag or paste a URL"
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-                className="flex-1"
+                className="h-10 flex-1"
               />
-            </div>
-            <Button onClick={handleSearch} disabled={!searchInput.trim()} className="h-10 shrink-0">
-              <Search className="h-4 w-4 sm:mr-2" />
-              <span className="hidden sm:inline">Browse</span>
-            </Button>
-          </div>
-
-          <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1 snap-x snap-mandatory scrollbar-hide">
-            {sites.map((site) => (
-              <button
-                key={site.id}
-                type="button"
-                onClick={() => handleSiteChip(site.id)}
-                className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-medium transition shrink-0 snap-start ${
-                  selectedSite === site.id
-                    ? "bg-[var(--color-primary)] text-[var(--color-primary-foreground)]"
-                    : "bg-[var(--color-secondary)] hover:bg-[var(--color-muted)]"
-                }`}
+              <Button
+                onClick={handleSearch}
+                disabled={!searchInput.trim()}
+                className="h-10 shrink-0"
               >
-                <Globe className="h-3 w-3" />
-                {site.display_name}
-                {site.requires_cookies && <span className="text-[10px] opacity-70">(cookies)</span>}
-              </button>
-            ))}
+                <Search className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">Browse</span>
+              </Button>
+            </div>
           </div>
 
           {selectedSiteInfo && siteHasCategories(selectedSiteInfo) && (

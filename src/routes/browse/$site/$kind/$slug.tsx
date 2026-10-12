@@ -7,6 +7,7 @@ import { siteHasCategories } from "@/lib/sites/catalog";
 import { groupForText, loadSiteCategories } from "@/components/SiteCategoryBrowser";
 import { CategoryIncludeExclude } from "@/components/CategoryIncludeExclude";
 import { CategoryTagNarrow } from "@/components/CategoryTagNarrow";
+import { SuggestInput, type Suggestion } from "@/components/SuggestInput";
 import {
   applyLocalFilters,
   BrowseFilterBar,
@@ -29,7 +30,6 @@ import { UrlPlayerDialog } from "@/components/UrlPlayerDialog";
 import { SkeletonGrid } from "@/components/SkeletonGrid";
 import { ErrorState } from "@/components/ErrorState";
 import { EmptyState } from "@/components/EmptyState";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useInfiniteScroll } from "@/lib/hooks/useInfiniteScroll";
 import { usePullToRefresh } from "@/lib/hooks/usePullToRefresh";
@@ -146,7 +146,11 @@ function BrowseDetailPage() {
       )
       .sort((a, b) => (b.count ?? 0) - (a.count ?? 0))
       .slice(0, 50)
-      .map((c) => `${prefix}${c.slug}`);
+      .map((c): Suggestion => ({
+        value: `${prefix}${c.slug}`,
+        label: c.name,
+        hint: c.count != null ? c.count.toLocaleString() : undefined,
+      }));
   }, [tagIndex, typedTag, querySlug]);
   const filtersKey = browseFiltersKey(filters);
   const [loading, setLoading] = useState(false);
@@ -440,17 +444,13 @@ function BrowseDetailPage() {
           </div>
         )}
         <div className="mt-3 flex gap-2 max-w-md">
-          <Input
+          <SuggestInput
             placeholder={
               suggestTags ? `Type a ${kind} (comma-separate to combine)` : `Enter ${kind} slug...`
             }
-            list={suggestTags ? "browse-tag-suggestions" : undefined}
+            suggestions={suggestTags ? tagSuggestions : []}
             value={querySlug}
-            onChange={(e) => {
-              let val = e.target.value;
-              if (val.startsWith("#")) val = val.slice(1);
-              setQuerySlug(val);
-            }}
+            onValueChange={(v) => setQuerySlug(v.startsWith("#") ? v.slice(1) : v)}
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 let val = querySlug;
@@ -474,13 +474,6 @@ function BrowseDetailPage() {
           >
             Browse
           </Button>
-          {suggestTags && (
-            <datalist id="browse-tag-suggestions">
-              {tagSuggestions.map((t) => (
-                <option key={t} value={t} />
-              ))}
-            </datalist>
-          )}
         </div>
         {querySlug.includes(",") &&
           (siteInfo?.browse_options?.combine_tags ?? 0) <
