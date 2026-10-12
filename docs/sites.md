@@ -81,6 +81,9 @@ desktop host.
 
 ## Sorting, filters and categories
 
+What each site can strictly combine (tags, categories, search + category,
+exclusions) is documented in [tag-combining.md](tag-combining.md).
+
 Adapters advertise what they support via `SiteAdapter::browse_options()`
 (returned in `SiteInfo.browse_options`); the browse page shows matching
 Sort / Date / Length / Quality selects and passes the chosen ids as
