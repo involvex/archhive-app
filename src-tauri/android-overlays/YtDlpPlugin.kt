@@ -10,6 +10,7 @@ import app.tauri.plugin.Plugin
 import com.yausername.ffmpeg.FFmpeg
 import com.yausername.youtubedl_android.YoutubeDL
 import com.yausername.youtubedl_android.YoutubeDLRequest
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -22,7 +23,13 @@ import java.util.concurrent.TimeUnit
 @TauriPlugin
 class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
 
-    private val scope = CoroutineScope(Dispatchers.IO)
+    // Last-resort guard: an uncaught Throwable in a plugin coroutine (e.g. a
+    // LinkageError from youtubedl-android) must not take the whole app down.
+    private val scope = CoroutineScope(
+        Dispatchers.IO + CoroutineExceptionHandler { _, e ->
+            Log.e("YtDlpPlugin", "Uncaught error in plugin coroutine", e)
+        }
+    )
     @Volatile private var initialized = false
     @Volatile private var ffmpegPath: String? = null
     @Volatile private var ffprobePath: String? = null
@@ -44,7 +51,7 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
             YoutubeDL.getInstance().init(activity)
             try {
                 FFmpeg.getInstance().init(activity)
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 // FFmpeg module may be absent in some builds; yt-dlp can still run.
                 Log.w("YtDlpPlugin", "FFmpeg.init failed (media tools may be unavailable)", e)
             }
@@ -52,7 +59,7 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
             resolveMediaToolsLocked()
             initialized = true
             true
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.e("YtDlpPlugin", "Failed to init YoutubeDL", e)
             initError = "${e.javaClass.simpleName}: ${e.message ?: ""}"
             false
@@ -282,7 +289,7 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
                 ret.put("stderr", stderr)
                 ret.put("exitCode", code)
                 invoke.resolve(ret)
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 val ret = JSObject()
                 ret.put("stdout", "")
                 ret.put("stderr", e.message ?: "Unknown error")
@@ -321,7 +328,7 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
                 ret.put("stderr", result.err)
                 ret.put("exitCode", 0)
                 invoke.resolve(ret)
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 val ret = JSObject()
                 ret.put("stdout", "")
                 ret.put("stderr", e.message ?: "Unknown error")
@@ -352,7 +359,7 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
                 val ret = JSObject()
                 ret.put("version", ver ?: "")
                 invoke.resolve(ret)
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 val ret = JSObject()
                 ret.put("version", "")
                 invoke.resolve(ret)
@@ -383,7 +390,7 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
                 ret.put("success", true)
                 ret.put("message", "Updated successfully")
                 invoke.resolve(ret)
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 val ret = JSObject()
                 ret.put("success", false)
                 ret.put("message", e.message ?: "Update failed")
@@ -406,7 +413,7 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
             val ret = JSObject()
             ret.put("ok", true)
             invoke.resolve(ret)
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             val ret = JSObject()
             ret.put("ok", false)
             ret.put("message", e.message ?: "startKeepAlive failed")
@@ -427,7 +434,7 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
             val ret = JSObject()
             ret.put("ok", true)
             invoke.resolve(ret)
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             val ret = JSObject()
             ret.put("ok", false)
             ret.put("message", e.message ?: "updateKeepAlive failed")
@@ -442,7 +449,7 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
             val ret = JSObject()
             ret.put("ok", true)
             invoke.resolve(ret)
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             val ret = JSObject()
             ret.put("ok", false)
             ret.put("message", e.message ?: "stopKeepAlive failed")
@@ -459,7 +466,7 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
             val ret = JSObject()
             ret.put("ok", true)
             invoke.resolve(ret)
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             val ret = JSObject()
             ret.put("ok", false)
             ret.put("message", e.message ?: "schedulePendingResume failed")
@@ -474,7 +481,7 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
             val ret = JSObject()
             ret.put("ok", true)
             invoke.resolve(ret)
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             val ret = JSObject()
             ret.put("ok", false)
             ret.put("message", e.message ?: "cancelPendingResume failed")

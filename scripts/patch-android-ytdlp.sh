@@ -135,6 +135,22 @@ else
   echo "Wrote ProGuard keep rules to $PROGUARD"
 fi
 
+# Projects patched before these rules existed: keep the libraries
+# youtubedl-android drives reflectively (R8 broke release-build init).
+if ! grep -q 'org.apache.commons.compress' "$PROGUARD"; then
+  cat >> "$PROGUARD" <<'PG'
+
+-keep class org.apache.commons.compress.** { *; }
+-keep class org.apache.commons.io.** { *; }
+-keep class com.fasterxml.jackson.** { *; }
+-keepattributes Signature,*Annotation*,InnerClasses,EnclosingMethod
+-dontwarn org.apache.commons.compress.**
+-dontwarn org.apache.commons.io.**
+-dontwarn com.fasterxml.jackson.**
+PG
+  echo "Added youtubedl-android library ProGuard keeps."
+fi
+
 # Projects patched before the cookie login browser existed: add its keeps.
 if ! grep -q 'CookieBrowserPlugin' "$PROGUARD"; then
   printf '\n-keep class com.archhive.app.CookieBrowserPlugin { *; }\n-keep class com.archhive.app.CookieBrowserPlugin$OpenArgs { *; }\n' >> "$PROGUARD"

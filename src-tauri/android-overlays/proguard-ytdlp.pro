@@ -25,3 +25,12 @@
 # youtubedl-android native/Python bridge
 -keep class com.yausername.** { *; }
 -dontwarn com.yausername.**
+# ...and the libraries it drives reflectively during YoutubeDL.init /
+# FFmpeg.init (zip unpacking, JSON). R8 renaming these crashed release builds.
+-keep class org.apache.commons.compress.** { *; }
+-keep class org.apache.commons.io.** { *; }
+-keep class com.fasterxml.jackson.** { *; }
+-keepattributes Signature,*Annotation*,InnerClasses,EnclosingMethod
+-dontwarn org.apache.commons.compress.**
+-dontwarn org.apache.commons.io.**
+-dontwarn com.fasterxml.jackson.**
