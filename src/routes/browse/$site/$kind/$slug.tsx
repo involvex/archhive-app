@@ -24,8 +24,16 @@ import { usePullToRefresh } from "@/lib/hooks/usePullToRefresh";
 import { browseCacheKey, useBrowseStore } from "@/lib/stores/browse";
 import { PORNHUB_CATEGORIES } from "@/lib/sites/pornhub-categories";
 
+const ORIENTATIONS: readonly BrowseOrientation[] = ["straight", "gay", "lesbian", "transgender"];
+
 export const Route = createFileRoute("/browse/$site/$kind/$slug")({
   component: BrowseDetailPage,
+  validateSearch: (search: Record<string, unknown>): { orientation?: BrowseOrientation } => {
+    const o = search.orientation;
+    return typeof o === "string" && (ORIENTATIONS as readonly string[]).includes(o)
+      ? { orientation: o as BrowseOrientation }
+      : {};
+  },
 });
 
 function normalizeInitialSlug(rawSlug: string): string {
@@ -46,7 +54,10 @@ function BrowseDetailPage() {
   const cleanSlug = normalizeInitialSlug(slug);
   const browseSlug =
     site === "pornhub" && kind === "category" ? normalizePornhubCategorySlug(cleanSlug) : cleanSlug;
-  const [orientation, setOrientation] = useState<BrowseOrientation>("straight");
+  const { orientation: initialOrientation } = Route.useSearch();
+  const [orientation, setOrientation] = useState<BrowseOrientation>(
+    initialOrientation ?? "straight",
+  );
   const isPornhubAnimal =
     (site === "pornhub" && (kind === "category" || kind === "tag" || kind === "search")) ||
     (site === "chaturbate" && (kind === "livestream" || kind === "tag" || kind === "search"));
@@ -63,8 +74,9 @@ function BrowseDetailPage() {
         site,
         kind,
         slug: browseSlug,
+        orientation: initialOrientation,
       }),
-    [site, kind, browseSlug],
+    [site, kind, browseSlug, initialOrientation],
   );
   const cached = useBrowseStore((s) => s.caches[cacheKey]);
   const setCache = useBrowseStore((s) => s.set);
@@ -138,6 +150,16 @@ function BrowseDetailPage() {
   useEffect(() => {
     loadRef.current = load;
   });
+  // Opening a category / tag / saved search loads page 1 right away unless
+  // results for it are already cached.
+  const hasCachedItems = Boolean(cached?.items?.length);
+  useEffect(() => {
+    if (hasCachedItems || !browseSlug.trim()) return;
+    void loadRef.current(1);
+    // Only on first open of each listing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cacheKey]);
+
   const lastFiltersKey = useRef(filtersKey);
   useEffect(() => {
     if (lastFiltersKey.current === filtersKey) return;
