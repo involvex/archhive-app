@@ -1,6 +1,7 @@
 use crate::error::{AppError, AppResult};
 use crate::models::{
-    BrowseKind, BrowseOrientation, BrowsePage, BrowseQuery, DownloadPlan, DownloadTool, MediaItem,
+    BrowseKind, BrowseOptions, BrowseOrientation, BrowsePage, BrowseQuery, DownloadPlan,
+    DownloadTool, FilterOption, MediaItem, SiteCategory,
 };
 use crate::sites::urls::query_slug;
 use crate::sites::{SiteAdapter, SiteContext};
@@ -38,6 +39,26 @@ impl SiteAdapter for EpornerAdapter {
 
     fn requires_cookies(&self) -> bool {
         false
+    }
+
+    fn browse_options(&self) -> BrowseOptions {
+        eporner_options()
+    }
+
+    async fn list_categories(&self, ctx: &SiteContext) -> AppResult<Vec<SiteCategory>> {
+        use crate::sites::listing::{parse_category_index, segment_after, CategorySpec};
+        let html = ctx.fetch_html(&format!("{BASE}/cats/"), self.id()).await?;
+        let slug = |href: &str| segment_after(href, "/cat/").filter(|s| s != "all");
+        Ok(parse_category_index(
+            &html,
+            &CategorySpec {
+                base: BASE,
+                anchor_selector: "a[href^='/cat/'][title]",
+                slug_from_href: &slug,
+                kind: BrowseKind::Category,
+                max: 300,
+            },
+        ))
     }
 
     async fn browse(&self, ctx: &SiteContext, query: BrowseQuery) -> AppResult<BrowsePage> {
@@ -204,8 +225,14 @@ fn build_api_url(query: &BrowseQuery) -> String {
     // Fallback to "all" if we couldn't extract a query.
     let q = if q.is_empty() { "all" } else { q.as_str() };
 
+    let order = query
+        .filters
+        .sort
+        .as_deref()
+        .filter(|s| eporner_options().sorts.iter().any(|o| o.id == *s))
+        .unwrap_or("latest");
     let mut url = format!(
-        "{API_SEARCH}?query={}&per_page=24&page={}&thumbsize=big&order=latest",
+        "{API_SEARCH}?query={}&per_page=24&page={}&thumbsize=big&order={order}",
         query_slug(q),
         query.page.max(1),
     );
@@ -215,6 +242,25 @@ fn build_api_url(query: &BrowseQuery) -> String {
     }
 
     url
+}
+
+/// API `order` values (verified against the v2 search endpoint).
+fn eporner_options() -> BrowseOptions {
+    let o = |id: &str, label: &str| FilterOption::new(id, label);
+    BrowseOptions {
+        sorts: vec![
+            o("latest", "Newest"),
+            o("most-popular", "Most viewed"),
+            o("top-rated", "Top rated"),
+            o("top-weekly", "Top this week"),
+            o("top-monthly", "Top this month"),
+            o("longest", "Longest"),
+            o("shortest", "Shortest"),
+        ],
+        filter_kinds: vec![BrowseKind::Search, BrowseKind::Tag, BrowseKind::Category],
+        has_categories: true,
+        ..Default::default()
+    }
 }
 
 fn parse_api_json(body: &str, page: u32, site_id: &str) -> Option<BrowsePage> {
@@ -315,6 +361,7 @@ mod tests {
     #[test]
     fn build_api_url_uses_query_param() {
         let q = BrowseQuery {
+            filters: Default::default(),
             kind: BrowseKind::Search,
             slug: "teen".to_string(),
             page: 1,
@@ -331,6 +378,7 @@ mod tests {
     #[test]
     fn build_api_url_defaults_to_all_when_empty() {
         let q = BrowseQuery {
+            filters: Default::default(),
             kind: BrowseKind::Search,
             slug: "".to_string(),
             page: 2,
@@ -345,6 +393,7 @@ mod tests {
     fn build_api_url_falls_back_to_all_for_non_category_url_slugs() {
         // Non-Tag/Category kinds with URL slugs should fall back to "all".
         let q = BrowseQuery {
+            filters: Default::default(),
             kind: BrowseKind::Search,
             slug: "https://www.eporner.com/video-abc/".to_string(),
             page: 1,
@@ -357,6 +406,7 @@ mod tests {
     #[test]
     fn build_api_url_extracts_category_from_url() {
         let q = BrowseQuery {
+            filters: Default::default(),
             kind: BrowseKind::Category,
             slug: "https://www.eporner.com/cat/japanese/".to_string(),
             page: 1,
@@ -370,6 +420,7 @@ mod tests {
     #[test]
     fn build_api_url_extracts_category_with_hyphen() {
         let q = BrowseQuery {
+            filters: Default::default(),
             kind: BrowseKind::Category,
             slug: "https://www.eporner.com/cat/4k-porn/".to_string(),
             page: 3,
@@ -383,6 +434,7 @@ mod tests {
     #[test]
     fn build_api_url_extracts_tag_from_url() {
         let q = BrowseQuery {
+            filters: Default::default(),
             kind: BrowseKind::Tag,
             slug: "https://www.eporner.com/tag/japanese-uncensored/".to_string(),
             page: 1,
@@ -415,6 +467,7 @@ mod tests {
     #[test]
     fn build_api_url_applies_orientation() {
         let q = BrowseQuery {
+            filters: Default::default(),
             kind: BrowseKind::Search,
             slug: "japanese".to_string(),
             page: 1,

@@ -8,7 +8,7 @@
 //! video is merged into one card, and the best title/thumbnail/duration
 //! across all of them wins.
 
-use crate::models::MediaItem;
+use crate::models::{BrowseKind, MediaItem, SiteCategory};
 use regex::Regex;
 use scraper::{ElementRef, Html, Node, Selector};
 use std::collections::HashMap;
@@ -188,6 +188,124 @@ pub fn clean_listing_title(raw: &str, is_junk: &dyn Fn(&str) -> bool) -> Option<
         return None;
     }
     Some(t)
+}
+
+/// A count at the end of a label: "tag 100,466", "Cat (1.2K)", "x 12 videos".
+/// Requires whitespace before it so "1-on-1" keeps its digits.
+static TRAILING_COUNT_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)\s+\(?(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*([km])?\)?(?:\s*videos?)?\s*$")
+        .expect("trailing count regex")
+});
+
+/// How a site's category / tag index page should be read.
+pub struct CategorySpec<'a> {
+    pub base: &'a str,
+    /// CSS selector matching every category anchor.
+    pub anchor_selector: &'a str,
+    /// Browse slug from an anchor href (`None` skips the anchor).
+    pub slug_from_href: &'a dyn Fn(&str) -> Option<String>,
+    pub kind: BrowseKind,
+    /// Keep at most this many entries (largest counts first when counts exist).
+    pub max: usize,
+}
+
+/// Parse a category / tag index page. Names come from `title`/`alt`/text,
+/// counts from numbers in the anchor (or its parent, e.g. XNXX
+/// `<li><a>tag</a><strong>1,234</strong></li>`).
+pub fn parse_category_index(html: &str, spec: &CategorySpec<'_>) -> Vec<SiteCategory> {
+    let document = Html::parse_document(html);
+    let (Ok(sel), Ok(img_sel)) = (
+        Selector::parse(spec.anchor_selector),
+        Selector::parse("img"),
+    ) else {
+        return Vec::new();
+    };
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for el in document.select(&sel) {
+        let Some(href) = el.value().attr("href") else {
+            continue;
+        };
+        let Some(slug) = (spec.slug_from_href)(href) else {
+            continue;
+        };
+        if slug.is_empty() || !seen.insert(slug.clone()) {
+            continue;
+        }
+        let text = visible_text(&el);
+        let img = el.select(&img_sel).next();
+        let text_name = TRAILING_COUNT_RE.replace(&text, "").trim().to_string();
+        let text_name = text_name
+            .strip_suffix(" Category")
+            .unwrap_or(&text_name)
+            .to_string();
+        let name = [
+            el.value().attr("title").map(str::to_string),
+            (!text_name.is_empty()).then_some(text_name),
+            img.and_then(|i| i.value().attr("alt")).map(str::to_string),
+        ]
+        .into_iter()
+        .flatten()
+        .map(|n| crate::sites::urls::html_unescape(n.trim()))
+        .find(|n| n.chars().any(char::is_alphanumeric))
+        .unwrap_or_else(|| slug.replace(['-', '_'], " "));
+        // Count inside the anchor, else in a parent that wraps only this
+        // anchor (XNXX: <li><a>tag</a><strong>1,234</strong></li>).
+        let count = parse_count(&text).or_else(|| {
+            let parent = el.parent().and_then(ElementRef::wrap)?;
+            let a_sel = Selector::parse("a").ok()?;
+            (parent.select(&a_sel).count() == 1)
+                .then(|| parse_count(&visible_text(&parent)))
+                .flatten()
+        });
+        let thumbnail = img.and_then(|i| image_from_img(spec.base, &i));
+        out.push(SiteCategory {
+            name,
+            slug,
+            kind: spec.kind,
+            thumbnail,
+            count,
+        });
+    }
+    if out.len() > spec.max {
+        if out.iter().any(|c| c.count.is_some()) {
+            out.sort_by_key(|c| std::cmp::Reverse(c.count.unwrap_or(0)));
+        }
+        out.truncate(spec.max);
+    }
+    out
+}
+
+/// Trailing count of a label ("tag 100,466" → 100466, "x (1.2K)" → 1200).
+fn parse_count(text: &str) -> Option<u32> {
+    let c = TRAILING_COUNT_RE.captures(text.trim_end())?;
+    let raw = c.get(1)?.as_str();
+    let mult: f64 = match c.get(2).map(|m| m.as_str().to_ascii_lowercase()) {
+        Some(ref s) if s == "k" => 1_000.0,
+        Some(ref s) if s == "m" => 1_000_000.0,
+        _ => 1.0,
+    };
+    let n: f64 = if mult > 1.0 {
+        raw.replace(',', "").parse().ok()?
+    } else {
+        // Without a suffix, '.' and ',' are thousands separators.
+        raw.chars()
+            .filter(char::is_ascii_digit)
+            .collect::<String>()
+            .parse()
+            .ok()?
+    };
+    let v = (n * mult).round();
+    (v >= 0.0 && v <= u32::MAX as f64).then_some(v as u32)
+}
+
+/// Path segment after `prefix` in an href (`/tags/foo/` + "/tags/" → "foo").
+pub fn segment_after(href: &str, prefix: &str) -> Option<String> {
+    let path = href.split(['?', '#']).next()?;
+    let idx = path.find(prefix)?;
+    let rest = &path[idx + prefix.len()..];
+    let seg = rest.split('/').next()?.trim();
+    (!seg.is_empty()).then(|| seg.to_string())
 }
 
 /// Plain text from an HTML fragment (tags removed, entities decoded,
@@ -370,6 +488,43 @@ mod tests {
         assert_eq!(
             clean_listing_title("05:47 Some &amp; Title", &no_junk).as_deref(),
             Some("Some & Title")
+        );
+    }
+
+    #[test]
+    fn category_index_names_and_counts() {
+        let html = r#"<ul>
+          <li><a href="/tags/0-pussy"><b>0-pussy </b><span class="navbadge">100,466</span></a></li>
+          <li><a href="/tags/1-on-1"><b>1-on-1 </b><span class="navbadge">205,885</span></a></li>
+          <li><a href="/search/big-ass">big ass</a><strong>2,500</strong></li>
+          <li><a href="/tags/small" title="Small Tag">x</a></li>
+          <li><a href="/tags/0-pussy">dupe</a></li>
+          <li><a href="/other/x">skip</a></li>
+        </ul>"#;
+        let slug = |h: &str| segment_after(h, "/tags/").or_else(|| segment_after(h, "/search/"));
+        let cats = parse_category_index(
+            html,
+            &CategorySpec {
+                base: "https://example.com",
+                anchor_selector: "a[href]",
+                slug_from_href: &slug,
+                kind: BrowseKind::Tag,
+                max: 3,
+            },
+        );
+        assert_eq!(cats.len(), 3);
+        assert_eq!(cats[0].name, "1-on-1");
+        assert_eq!(cats[0].count, Some(205_885));
+        assert_eq!(cats[1].name, "0-pussy");
+        assert_eq!(cats[1].count, Some(100_466));
+        assert_eq!(cats[2].slug, "big-ass");
+        assert_eq!(cats[2].count, Some(2_500));
+        assert_eq!(parse_count("tag (1.2K)"), Some(1_200));
+        assert_eq!(parse_count("4K Porn"), None);
+        assert_eq!(parse_count("Young (18+) and Old"), None);
+        assert_eq!(
+            segment_after("https://x.com/categories/amateur/?p=2", "/categories/").as_deref(),
+            Some("amateur")
         );
     }
 

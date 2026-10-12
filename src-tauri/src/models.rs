@@ -71,6 +71,104 @@ pub struct BrowseQuery {
     pub page: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub orientation: Option<BrowseOrientation>,
+    /// Site-side sort / filter selection (ids from the adapter's `BrowseOptions`).
+    #[serde(default)]
+    pub filters: BrowseFilters,
+}
+
+/// Sort and filter choices for a browse request. Each value is an option `id`
+/// advertised by the site in [`BrowseOptions`]; `None` means the site default.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BrowseFilters {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sort: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub period: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quality: Option<String>,
+}
+
+impl BrowseFilters {
+    pub fn is_empty(&self) -> bool {
+        self.sort.is_none()
+            && self.period.is_none()
+            && self.duration.is_none()
+            && self.quality.is_none()
+    }
+
+    /// Stable cache-key suffix (empty when no filter is set).
+    pub fn cache_key(&self) -> String {
+        if self.is_empty() {
+            return String::new();
+        }
+        format!(
+            "|s={}|p={}|d={}|q={}",
+            self.sort.as_deref().unwrap_or(""),
+            self.period.as_deref().unwrap_or(""),
+            self.duration.as_deref().unwrap_or(""),
+            self.quality.as_deref().unwrap_or("")
+        )
+    }
+
+    /// Normalize empty strings (from query params / UI) to `None`.
+    pub fn normalized(self) -> Self {
+        let f = |v: Option<String>| v.filter(|s| !s.trim().is_empty());
+        Self {
+            sort: f(self.sort),
+            period: f(self.period),
+            duration: f(self.duration),
+            quality: f(self.quality),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FilterOption {
+    pub id: String,
+    pub label: String,
+}
+
+impl FilterOption {
+    pub fn new(id: &str, label: &str) -> Self {
+        Self {
+            id: id.to_string(),
+            label: label.to_string(),
+        }
+    }
+}
+
+/// What a site supports for sorting / filtering / category listing.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BrowseOptions {
+    #[serde(default)]
+    pub sorts: Vec<FilterOption>,
+    #[serde(default)]
+    pub periods: Vec<FilterOption>,
+    #[serde(default)]
+    pub durations: Vec<FilterOption>,
+    #[serde(default)]
+    pub qualities: Vec<FilterOption>,
+    /// Browse kinds the filters apply to (others ignore them).
+    #[serde(default)]
+    pub filter_kinds: Vec<BrowseKind>,
+    /// True when `list_site_categories` returns entries for this site.
+    #[serde(default)]
+    pub has_categories: bool,
+}
+
+/// One entry of a site's category / tag index.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SiteCategory {
+    pub name: String,
+    /// Slug to browse with `kind`.
+    pub slug: String,
+    pub kind: BrowseKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thumbnail: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub count: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -80,6 +178,8 @@ pub struct SiteInfo {
     pub base_url: String,
     pub supported_kinds: Vec<BrowseKind>,
     pub requires_cookies: bool,
+    #[serde(default)]
+    pub browse_options: BrowseOptions,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

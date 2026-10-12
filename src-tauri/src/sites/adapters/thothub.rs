@@ -1,5 +1,7 @@
 use crate::error::AppResult;
-use crate::models::{BrowseKind, BrowsePage, BrowseQuery, DownloadPlan, DownloadTool, MediaItem};
+use crate::models::{
+    BrowseKind, BrowseOptions, BrowsePage, BrowseQuery, DownloadPlan, DownloadTool, MediaItem,
+};
 use crate::sites::browse_fallback::ytdlp_browse_fallback;
 use crate::sites::urls::path_slug;
 use crate::sites::{SiteAdapter, SiteContext};
@@ -27,6 +29,13 @@ impl SiteAdapter for ThotHubAdapter {
 
     fn requires_cookies(&self) -> bool {
         true
+    }
+
+    fn browse_options(&self) -> BrowseOptions {
+        kvs_browse_options(
+            vec![BrowseKind::Search, BrowseKind::Tag, BrowseKind::Model],
+            false,
+        )
     }
 
     fn supported_kinds(&self) -> Vec<BrowseKind> {
@@ -165,14 +174,17 @@ fn build_browse_url(query: &BrowseQuery) -> AppResult<String> {
     let path = match query.kind {
         BrowseKind::Tag | BrowseKind::Model => format!("/tags/{}/", path_slug(&query.slug)),
         BrowseKind::Search => {
-            // KVS search: /search/{query}/ (not ?search=)
+            // KVS search: /search/{query}/ pages with ?from_videos=N (1-based);
+            // a plain `from` offset is ignored and returns page 1 again.
             let q = path_slug(&query.slug);
-            let page_suffix = if query.page > 1 {
-                format!("?from={}", (query.page.saturating_sub(1)) * 24)
-            } else {
-                String::new()
-            };
-            return Ok(format!("{BASE}/search/{q}/{page_suffix}"));
+            let page = (query.page > 1).then(|| query.page.to_string());
+            return Ok(crate::sites::urls::with_query(
+                &format!("{BASE}/search/{q}/"),
+                &[
+                    ("sort_by", &kvs_sort(query)),
+                    ("from_videos", page.as_deref().unwrap_or("")),
+                ],
+            ));
         }
         BrowseKind::Video => {
             if query.slug.starts_with("http") {
@@ -194,12 +206,51 @@ fn build_browse_url(query: &BrowseQuery) -> AppResult<String> {
         }
     };
 
-    let page_suffix = if query.page > 1 {
-        format!("?page={}", query.page)
-    } else {
-        String::new()
-    };
-    Ok(format!("{BASE}{path}{page_suffix}"))
+    if matches!(query.kind, BrowseKind::Video | BrowseKind::Livestream) {
+        return Ok(format!("{BASE}{path}"));
+    }
+    // KVS list pages (tags, channels): ?from=N is the 1-based page number.
+    let page = (query.page > 1).then(|| query.page.to_string());
+    Ok(crate::sites::urls::with_query(
+        &format!("{BASE}{path}"),
+        &[
+            ("sort_by", &kvs_sort(query)),
+            ("from", page.as_deref().unwrap_or("")),
+        ],
+    ))
+}
+
+/// KVS `sort_by` values shared by ThotHub and ThisVid.
+pub fn kvs_browse_options(filter_kinds: Vec<BrowseKind>, has_categories: bool) -> BrowseOptions {
+    use crate::models::FilterOption;
+    BrowseOptions {
+        sorts: vec![
+            FilterOption::new("post_date", "Newest"),
+            FilterOption::new("video_viewed", "Most viewed"),
+            FilterOption::new("rating", "Top rated"),
+            FilterOption::new("duration", "Longest"),
+            FilterOption::new("most_favourited", "Most favourited"),
+        ],
+        filter_kinds,
+        has_categories,
+        ..Default::default()
+    }
+}
+
+/// Validated `sort_by` value for a KVS listing ("" = site default).
+pub fn kvs_sort(query: &BrowseQuery) -> String {
+    query
+        .filters
+        .sort
+        .as_deref()
+        .filter(|s| {
+            kvs_browse_options(vec![], false)
+                .sorts
+                .iter()
+                .any(|o| o.id == *s)
+        })
+        .unwrap_or("")
+        .to_string()
 }
 
 fn is_video_href(href: &str) -> bool {
@@ -345,11 +396,34 @@ fn is_junk_title(title: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn kvs_paging_and_sort() {
+        let mut q = BrowseQuery {
+            kind: BrowseKind::Search,
+            slug: "amateur".into(),
+            page: 2,
+            orientation: None,
+            filters: Default::default(),
+        };
+        q.filters.sort = Some("video_viewed".into());
+        assert_eq!(
+            build_browse_url(&q).unwrap(),
+            "https://thethothub.com/search/amateur/?sort_by=video_viewed&from_videos=2"
+        );
+        q.kind = BrowseKind::Tag;
+        q.filters.sort = Some("bogus".into());
+        assert_eq!(
+            build_browse_url(&q).unwrap(),
+            "https://thethothub.com/tags/amateur/?from=2"
+        );
+    }
     use std::fs;
 
     #[test]
     fn build_model_url() {
         let q = BrowseQuery {
+            filters: Default::default(),
             kind: BrowseKind::Model,
             slug: "sweetie fox".to_string(),
             page: 1,
@@ -362,6 +436,7 @@ mod tests {
     #[test]
     fn build_search_url_uses_query_param() {
         let q = BrowseQuery {
+            filters: Default::default(),
             kind: BrowseKind::Search,
             slug: "sweetie fox".to_string(),
             page: 1,
@@ -377,6 +452,7 @@ mod tests {
     #[test]
     fn build_video_url_numeric() {
         let q = BrowseQuery {
+            filters: Default::default(),
             kind: BrowseKind::Video,
             slug: "286350".to_string(),
             page: 1,

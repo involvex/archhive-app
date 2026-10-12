@@ -79,6 +79,30 @@ desktop host.
   the StashDB id, merges aliases (deduped, capped), and sets the portrait
   only when none is stored.
 
+## Sorting, filters and categories
+
+Adapters advertise what they support via `SiteAdapter::browse_options()`
+(returned in `SiteInfo.browse_options`); the browse page shows matching
+Sort / Date / Length / Quality selects and passes the chosen ids as
+`BrowseQuery.filters`. Unknown ids are dropped before they reach a URL.
+Every page also has on-device filters (words, `-exclude`, length) over
+loaded results. Category / tag indexes come from `list_categories()`
+(`list_site_categories` command, `GET /api/sites/{id}/categories`).
+
+| Site       | Sort                                    | Date / Length / Quality      | Categories            |
+| ---------- | --------------------------------------- | ---------------------------- | --------------------- |
+| PornHub    | newest, views, rating, longest, hottest | period, duration, HD         | JSON-embedded catalog |
+| XVIDEOS    | relevance, date, rating, views, length  | period, duration, HD/1080p   | `/tags` (top 400)     |
+| XNXX       | views, random                           | period, duration, HD/Full HD | `/tags` (top 400)     |
+| xHamster   | search: 5 sorts; category: newest/best  | duration, 720p/1080p/4K      | `/categories`         |
+| YouPorn    | relevance, date, views, rating, length  | —                            | `/categories/`        |
+| Eporner    | 7 API `order` values                    | —                            | `/cats/`              |
+| ThotHub    | KVS `sort_by` (5)                       | —                            | —                     |
+| ThisVid    | KVS `sort_by` (5)                       | —                            | `/categories/`        |
+| Reddit     | hot, new, top, rising                   | period (top)                 | —                     |
+| RedGifs    | trending, latest, top                   | —                            | —                     |
+| Chaturbate | —                                       | —                            | top hashtags API      |
+
 ## SCrawler Parity Roadmap
 
 Future adapters: Threads, Pinterest, OnlyFans (cookie + DRM limitations), Bluesky, LPSG.

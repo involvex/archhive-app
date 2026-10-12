@@ -1,9 +1,16 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Bookmark, BookmarkCheck, EyeOff, LayoutGrid, List, Search } from "lucide-react";
-import { api } from "@/lib/api/client";
+import { api, browseFiltersKey } from "@/lib/api/client";
+import { useSiteInfo } from "@/lib/sites/useSiteInfo";
+import {
+  applyLocalFilters,
+  BrowseFilterBar,
+  EMPTY_LOCAL_FILTERS,
+  type LocalFilters,
+} from "@/components/BrowseFilterBar";
 import { normalizeBrowseInput } from "@/lib/browse/normalize";
-import type { BrowseKind, BrowseOrientation, MediaItem } from "@/lib/types";
+import type { BrowseFilters, BrowseKind, BrowseOrientation, MediaItem } from "@/lib/types";
 import { SceneCard, type CardItem } from "@/components/SceneCard";
 import { BrowseItemDetailsDialog } from "@/components/BrowseItemDetailsDialog";
 import { UrlPlayerDialog } from "@/components/UrlPlayerDialog";
@@ -66,6 +73,10 @@ function BrowseDetailPage() {
   const [page, setPage] = useState(cached?.page ?? 1);
   const [hasMore, setHasMore] = useState(cached?.hasMore ?? false);
   const [querySlug, setQuerySlug] = useState(cached?.querySlug ?? browseSlug);
+  const siteInfo = useSiteInfo(site);
+  const [filters, setFilters] = useState<BrowseFilters>(cached?.filters ?? {});
+  const [localFilters, setLocalFilters] = useState<LocalFilters>(EMPTY_LOCAL_FILTERS);
+  const filtersKey = browseFiltersKey(filters);
   const [loading, setLoading] = useState(false);
   const [initial, setInitial] = useState(!cached?.items?.length);
   const [error, setError] = useState("");
@@ -85,8 +96,8 @@ function BrowseDetailPage() {
   }, []);
 
   useEffect(() => {
-    setCache(cacheKey, { items, page, hasMore, querySlug });
-  }, [cacheKey, items, page, hasMore, querySlug, setCache]);
+    setCache(cacheKey, { items, page, hasMore, querySlug, filters });
+  }, [cacheKey, items, page, hasMore, querySlug, filters, setCache]);
 
   const load = useCallback(
     async (p: number, append = false) => {
@@ -101,6 +112,7 @@ function BrowseDetailPage() {
           normalized.slug,
           p,
           isPornhubAnimal ? orientation : undefined,
+          filters,
         );
         setItems((prev) => (append ? [...prev, ...result.items] : result.items));
         setHasMore(result.has_more);
@@ -117,8 +129,23 @@ function BrowseDetailPage() {
         setLoading(false);
       }
     },
-    [site, kind, querySlug, orientation, isPornhubAnimal],
+    [site, kind, querySlug, orientation, isPornhubAnimal, filters],
   );
+
+  // Changing a site-side sort/filter reloads from page 1. `load` is read via
+  // a ref so typing in the slug box doesn't trigger reloads.
+  const loadRef = useRef(load);
+  useEffect(() => {
+    loadRef.current = load;
+  });
+  const lastFiltersKey = useRef(filtersKey);
+  useEffect(() => {
+    if (lastFiltersKey.current === filtersKey) return;
+    lastFiltersKey.current = filtersKey;
+    setInitial(true);
+    setItems([]);
+    void loadRef.current(1);
+  }, [filtersKey]);
 
   const loadMore = useCallback(() => {
     if (!loading && hasMore) {
@@ -197,9 +224,11 @@ function BrowseDetailPage() {
     }
   }
 
-  const visibleItems =
+  const unwatched =
     hideWatched && watchedUrls ? items.filter((i) => !watchedUrls.has(i.url)) : items;
-  const hiddenCount = items.length - visibleItems.length;
+  const hiddenCount = items.length - unwatched.length;
+  const visibleItems = applyLocalFilters(unwatched, localFilters);
+  const filteredOut = unwatched.length - visibleItems.length;
 
   const showInitialSkeleton = initial && loading && !error;
   const showEmpty = !loading && !error && visibleItems.length === 0 && querySlug && !initial;
@@ -294,6 +323,11 @@ function BrowseDetailPage() {
               {hiddenCount} watched {hiddenCount === 1 ? "result" : "results"} hidden.
             </p>
           )}
+          {filteredOut > 0 && (
+            <p className="mt-1 text-xs text-[var(--color-muted-foreground)]">
+              {filteredOut} loaded {filteredOut === 1 ? "result" : "results"} filtered out.
+            </p>
+          )}
         </div>
         {isPornhubAnimal && (
           <div className="mt-3 flex flex-wrap gap-1.5">
@@ -350,6 +384,16 @@ function BrowseDetailPage() {
           >
             Browse
           </Button>
+        </div>
+        <div className="mt-3">
+          <BrowseFilterBar
+            options={siteInfo?.browse_options}
+            kind={kind as BrowseKind}
+            filters={filters}
+            onFiltersChange={setFilters}
+            local={localFilters}
+            onLocalChange={setLocalFilters}
+          />
         </div>
       </div>
 

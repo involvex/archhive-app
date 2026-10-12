@@ -292,6 +292,7 @@ pub fn run() {
             commands::list_cookie_sites,
             commands::save_site_cookies,
             commands::cookie_login,
+            commands::list_site_categories,
             commands::cookie_login_finish,
             commands::delete_site_cookies,
             commands::export_settings_backup,
