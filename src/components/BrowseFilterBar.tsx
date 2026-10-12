@@ -110,8 +110,14 @@ export function BrowseFilterBar({
 }: BrowseFilterBarProps) {
   const siteFilters = Boolean(options && options.filter_kinds.includes(kind));
   const active =
-    Boolean(filters.sort || filters.period || filters.duration || filters.quality) ||
-    Boolean(local.text || local.duration);
+    Boolean(
+      filters.sort ||
+      filters.period ||
+      filters.duration ||
+      filters.quality ||
+      filters.include ||
+      filters.exclude,
+    ) || Boolean(local.text || local.duration);
 
   return (
     <div className="flex flex-wrap items-end gap-2">

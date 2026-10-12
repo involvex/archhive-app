@@ -30,5 +30,8 @@ describe("browseFiltersKey", () => {
   it("mirrors the Rust cache key", () => {
     expect(browseFiltersKey({})).toBe("");
     expect(browseFiltersKey({ sort: "mv", quality: "hd" })).toBe("|s=mv|p=|d=|q=hd");
+    expect(browseFiltersKey({ include: "milf", exclude: "anal" })).toBe(
+      "|s=|p=|d=|q=|i=milf|x=anal",
+    );
   });
 });

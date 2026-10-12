@@ -60,6 +60,8 @@ export interface BrowseOptions {
   combine_tags?: number;
   /** Index sections loaded one at a time (e.g. XVIDEOS letters 0-9, A–Z). */
   category_groups?: FilterOption[];
+  /** Results can require / exclude categories (BrowseFilters.include/exclude). */
+  include_exclude?: boolean;
 }
 
 /** Mirrors `models::BrowseFilters`: option ids, omitted = site default. */
@@ -68,6 +70,10 @@ export interface BrowseFilters {
   period?: string;
   duration?: string;
   quality?: string;
+  /** Comma-separated category slugs results must have. */
+  include?: string;
+  /** Comma-separated category slugs to leave out. */
+  exclude?: string;
 }
 
 /** Mirrors `models::SiteCategory`. */
