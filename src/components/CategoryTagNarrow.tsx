@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Tag, X } from "lucide-react";
 import type { BrowseFilters, FilterOption, SiteCategory } from "@/lib/types";
 import { groupForText, loadSiteCategories } from "@/components/SiteCategoryBrowser";
-import { Input } from "@/components/ui/input";
+import { SuggestInput } from "@/components/SuggestInput";
 import { Button } from "@/components/ui/button";
 
 interface CategoryTagNarrowProps {
@@ -54,6 +54,7 @@ export function CategoryTagNarrow({
         ? index
             .filter((c) => c.slug.startsWith(typed) || c.name.toLowerCase().startsWith(typed))
             .slice(0, 50)
+            .map((c) => ({ value: c.slug, label: c.name }))
         : [],
     [index, typed],
   );
@@ -67,27 +68,20 @@ export function CategoryTagNarrow({
     onFiltersChange({ ...filters, tag: tag || undefined });
   }
 
-  const listId = `narrow-tag-${siteId}`;
   return (
     <div className="flex items-center gap-2">
       <Tag className="h-4 w-4 shrink-0 text-[var(--color-muted-foreground)]" />
-      <Input
+      <SuggestInput
         className="h-8 text-xs"
-        list={listId}
         placeholder="Narrow by tag (videos in this category with this tag)"
         value={text}
-        onChange={(e) => setText(e.target.value)}
+        onValueChange={setText}
+        suggestions={suggestions}
+        onPick={apply}
         onKeyDown={(e) => {
           if (e.key === "Enter") apply(text);
         }}
       />
-      <datalist id={listId}>
-        {suggestions.map((c) => (
-          <option key={c.slug} value={c.slug}>
-            {c.name}
-          </option>
-        ))}
-      </datalist>
       <Button size="sm" className="h-8" onClick={() => apply(text)} disabled={!typed}>
         Apply
       </Button>
