@@ -3,6 +3,7 @@ import { mergeSiteLists, SITE_CATALOG } from "@/lib/sites/catalog";
 import { PornhubCategoryBrowser } from "@/components/PornhubCategoryBrowser";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { CookieLoginButton } from "@/components/CookieLoginButton";
 import type { BrowseKind } from "@/lib/types";
 
 export const Route = createFileRoute("/browse/$site/")({
@@ -92,8 +93,9 @@ function SiteHubPage() {
       {site.requires_cookies && (
         <Card className="border-yellow-600/50 bg-yellow-950/30">
           <CardContent className="p-4 text-sm text-yellow-200">
-            <strong>{site.display_name}</strong> requires cookies for browse and download. Import
-            them in <Link to="/settings">Settings → Cookies</Link> before browsing.
+            <strong>{site.display_name}</strong> requires cookies for browse and download. Log in
+            below, or import them in <Link to="/settings">Settings → Cookies</Link>.
+            <CookieLoginButton className="mt-3" siteId={site.id} siteName={site.display_name} />
           </CardContent>
         </Card>
       )}

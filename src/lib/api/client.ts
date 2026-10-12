@@ -14,6 +14,7 @@ import type {
   LibraryStorageStats,
   DownloadJob,
   DuplicateGroup,
+  CookieLoginResult,
   CookieSiteInfo,
   FilesListResponse,
   DirBrowseResponse,
@@ -1041,6 +1042,22 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ cookies }),
     });
+  },
+
+  /**
+   * Open the in-app login browser for `siteId` and store the captured cookies
+   * (on this device, or on the LAN host in Remote LAN mode). Resolves once the
+   * user saves; rejects with "Login cancelled." when they back out.
+   */
+  async loginForCookies(siteId: string): Promise<CookieLoginResult> {
+    const result = await localInvoke<CookieLoginResult>("cookie_login", { siteId });
+    await api.saveSiteCookies(siteId, result.netscape);
+    return result;
+  },
+
+  /** Desktop: save (`true`) or cancel (`false`) the open login window. */
+  async finishCookieLogin(save: boolean): Promise<void> {
+    await localInvoke("cookie_login_finish", { save });
   },
 
   async deleteSiteCookies(siteId: string): Promise<void> {

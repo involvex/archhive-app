@@ -47,6 +47,11 @@ if (Test-Path $resumeWorkerSrc) {
     Copy-Item -Path $resumeWorkerSrc -Destination (Join-Path $pluginDestDir "PendingResumeWorker.kt") -Force
     Write-Host "Installed PendingResumeWorker.kt"
 }
+$cookieBrowserSrc = Join-Path $Overlays "CookieBrowserPlugin.kt"
+if (Test-Path $cookieBrowserSrc) {
+    Copy-Item -Path $cookieBrowserSrc -Destination (Join-Path $pluginDestDir "CookieBrowserPlugin.kt") -Force
+    Write-Host "Installed CookieBrowserPlugin.kt"
+}
 
 # Ensure youtubedl-android + WorkManager dependencies
 $gradle = Get-Content $gradlePath -Raw
@@ -123,6 +128,14 @@ if (Test-Path $proguardPath) {
 } else {
     Set-Content -Path $proguardPath -Value $overlayText -NoNewline
     Write-Host "Created $proguardPath with YtDlp keep rules"
+}
+
+# Projects patched before the cookie login browser existed: add its keeps.
+$proguardNow = Get-Content $proguardPath -Raw
+if ($proguardNow -notmatch 'CookieBrowserPlugin') {
+    $cookieKeeps = "-keep class com.archhive.app.CookieBrowserPlugin { *; }`r`n-keep class com.archhive.app.CookieBrowserPlugin`$OpenArgs { *; }`r`n"
+    Set-Content -Path $proguardPath -Value ($proguardNow.TrimEnd() + "`r`n" + $cookieKeeps) -NoNewline
+    Write-Host "Added CookieBrowserPlugin ProGuard keeps."
 }
 
 Write-Host "Android YtDlp overlay patch complete (youtubedl-android $YoutubeDlAndroidVersion)."

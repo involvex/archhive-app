@@ -110,6 +110,58 @@ fn search_url(base: &str, site_id: &str, slug: &str) -> String {
     }
 }
 
+/// ThisVid is a KVS tube site: listings are plain HTML (yt-dlp has no search
+/// extractor for it), so scrape them like the other tube adapters.
+async fn browse_thisvid(ctx: &SiteContext, query: &BrowseQuery) -> AppResult<BrowsePage> {
+    const BASE: &str = "https://thisvid.com";
+    let slug = crate::sites::urls::path_slug(&query.slug);
+    let page = query.page.max(1);
+    let url = if query.slug.starts_with("https://thisvid.com/") {
+        query.slug.clone()
+    } else {
+        match query.kind {
+            BrowseKind::Tag | BrowseKind::Category if page > 1 => {
+                format!("{BASE}/tags/{slug}/{page}/")
+            }
+            BrowseKind::Tag | BrowseKind::Category => format!("{BASE}/tags/{slug}/"),
+            BrowseKind::Model | BrowseKind::Channel => format!("{BASE}/members/{slug}/videos/"),
+            _ if page > 1 => format!("{BASE}/search/{page}/?q={}", query_slug(&query.slug)),
+            _ => format!("{BASE}/search/?q={}", query_slug(&query.slug)),
+        }
+    };
+    let items = parse_thisvid(&ctx.fetch_html(&url, "thisvid").await?);
+    if items.is_empty() {
+        return Err(AppError::Site("No videos found on ThisVid.".into()));
+    }
+    let has_more = items.len() >= 20;
+    Ok(BrowsePage {
+        items,
+        page: query.page,
+        has_more,
+        total: None,
+        ..Default::default()
+    })
+}
+
+fn parse_thisvid(html: &str) -> Vec<MediaItem> {
+    const BASE: &str = "https://thisvid.com";
+    let is_video = |href: &str| {
+        let path = href.strip_prefix(BASE).unwrap_or(href);
+        path.starts_with("/videos/") && path.trim_end_matches('/').len() > "/videos/".len()
+    };
+    let no_junk = |_: &str| false;
+    crate::sites::listing::parse_listing(
+        html,
+        &crate::sites::listing::ListingSpec {
+            site_id: "thisvid",
+            base: BASE,
+            anchor_selector: "a[href*='/videos/']",
+            is_video_href: &is_video,
+            is_junk_title: &no_junk,
+        },
+    )
+}
+
 #[async_trait]
 impl SiteAdapter for GenericYtDlpAdapter {
     fn id(&self) -> &str {
@@ -161,19 +213,30 @@ impl SiteAdapter for GenericYtDlpAdapter {
             }
         };
 
+        if self.site_id == "thisvid" && query.kind != BrowseKind::Video {
+            return browse_thisvid(ctx, &query).await;
+        }
+
         if matches!(
             query.kind,
             BrowseKind::Channel | BrowseKind::Model | BrowseKind::Search
         ) {
             let runner = SidecarRunner::new(ctx.app().clone());
             let cookies = ctx.cookie_file_for_site(self.site_id);
-            let entries = match runner
+            let entries = runner
                 .list_flat_playlist(&url, query.page, 24, cookies.as_deref())
                 .await
-            {
-                Ok(entries) => entries,
-                Err(_) => Vec::new(),
-            };
+                .map_err(|e| {
+                    let hint = if self.cookies || matches!(self.site_id, "tiktok" | "twitter") {
+                        format!(
+                            " {} usually needs you to be logged in: use Settings → Cookies → Log in.",
+                            self.name
+                        )
+                    } else {
+                        String::new()
+                    };
+                    AppError::Site(format!("{} browse failed: {e}.{hint}", self.name))
+                })?;
             let items = entries
                 .into_iter()
                 .map(|(id, title, item_url, thumbnail)| MediaItem {

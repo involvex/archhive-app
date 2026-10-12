@@ -209,16 +209,20 @@ struct HttpRoom {
 fn http_room_to_item(room: &HttpRoom) -> MediaItem {
     let room_url = format!("{BASE}/{}/", room.username);
     let embed_url = format!("{BASE}/embed/{}/", room.username);
+    // Room subjects embed `<a href="/tag/x/">#x</a>` markup; show the
+    // username as the card title (like Stripchat) and keep the cleaned
+    // subject as the description.
+    let subject = crate::sites::listing::strip_html_tags(&room.title);
     MediaItem {
         id: Uuid::new_v4().to_string(),
-        title: room.title.clone(),
+        title: room.username.clone(),
         url: room_url,
         thumbnail: room.thumbnail.clone(),
         duration: None,
         site_id: "chaturbate".to_string(),
         performers: vec![room.username.clone()],
         tags: vec![],
-        description: None,
+        description: (!subject.is_empty() && subject != room.username).then_some(subject),
         channel: Some(room.username.clone()),
         is_live: Some(true),
         viewers: room.viewers,

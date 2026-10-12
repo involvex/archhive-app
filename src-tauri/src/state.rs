@@ -1053,6 +1053,18 @@ impl AppState {
         self.vault.list_sites()
     }
 
+    /// `(display_name, base_url)` of a registered site, for the login browser.
+    pub fn site_login_info(&self, site_id: &str) -> AppResult<(String, String)> {
+        let adapter = self
+            .sites
+            .get(site_id)
+            .ok_or_else(|| crate::error::AppError::NotFound(format!("site {site_id}")))?;
+        Ok((
+            adapter.display_name().to_string(),
+            adapter.base_url().to_string(),
+        ))
+    }
+
     pub fn save_site_cookies(&self, site_id: &str, cookies: &str) -> AppResult<()> {
         self.vault.save_cookies(site_id, cookies)
     }
