@@ -11,8 +11,42 @@ function siteHue(id: string): number {
   return h;
 }
 
-function SiteAvatar({ site, size = "md" }: { site?: SiteInfo; size?: "sm" | "md" }) {
+/**
+ * Sites with a bundled icon in `public/site-icons/<id>.png` (128×128, taken
+ * from each site's apple-touch / largest favicon). Sites whose only icon is
+ * tiny (ThotHub, ThisVid) and plugin sites keep the initial badge.
+ */
+const SITE_ICONS = new Set([
+  "chaturbate",
+  "stripchat",
+  "pornhub",
+  "youporn",
+  "xnxx",
+  "xhamster",
+  "xvideos",
+  "reddit",
+  "redgifs",
+  "eporner",
+  "youtube",
+  "tiktok",
+  "instagram",
+  "twitter",
+]);
+
+export function SiteAvatar({ site, size = "md" }: { site?: SiteInfo; size?: "sm" | "md" }) {
+  const [broken, setBroken] = useState(false);
   const cls = size === "sm" ? "h-6 w-6 text-[11px]" : "h-10 w-10 text-sm";
+  if (site && SITE_ICONS.has(site.id) && !broken) {
+    return (
+      <img
+        src={`/site-icons/${site.id}.png`}
+        alt=""
+        className={cn("shrink-0 rounded-lg object-contain", cls)}
+        onError={() => setBroken(true)}
+        draggable={false}
+      />
+    );
+  }
   if (!site) {
     return (
       <span
