@@ -166,6 +166,17 @@ async fn tube_list_category_group(
     base: &str,
     group: &str,
 ) -> AppResult<Vec<SiteCategory>> {
+    if site_id == "xnxx" {
+        // Same per-letter index as XVIDEOS (/tags/09, /tags/a …), linking to
+        // /search/<tag> — XNXX has no separate tag pages.
+        if !xnxx_tag_groups().iter().any(|g| g.id == group) {
+            return Ok(Vec::new());
+        }
+        let html = ctx
+            .fetch_html(&format!("{base}/tags/{group}"), site_id)
+            .await?;
+        return Ok(parse_xnxx_tag_letter(&html));
+    }
     if site_id == "xhamster" {
         if !xhamster_tag_groups().iter().any(|g| g.id == group) {
             return Ok(Vec::new());
@@ -186,6 +197,48 @@ async fn tube_list_category_group(
         .fetch_html(&format!("{base}/tags/{group}"), site_id)
         .await?;
     Ok(parse_xvideos_tag_letter(&html))
+}
+
+fn xnxx_tag_groups() -> Vec<FilterOption> {
+    std::iter::once(FilterOption::new("09", "0-9"))
+        .chain(
+            ('a'..='z')
+                .map(|c| FilterOption::new(&c.to_string(), &c.to_ascii_uppercase().to_string())),
+        )
+        .collect()
+}
+
+/// `<li><a href="/search/z-asian">z asian</a><strong>30,913</strong></li>`.
+fn parse_xnxx_tag_letter(html: &str) -> Vec<SiteCategory> {
+    use std::sync::LazyLock;
+    static RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+        regex::Regex::new(
+            r#"<li><a href="/search/([^"/?#]+)">([^<]*)</a>\s*<strong>([\d,]+)</strong>"#,
+        )
+        .expect("xnxx tag letter regex")
+    });
+    let mut seen = std::collections::HashSet::new();
+    RE.captures_iter(html)
+        .filter_map(|c| {
+            let slug = c.get(1)?.as_str().to_string();
+            if !seen.insert(slug.clone()) {
+                return None;
+            }
+            let name = html_escape_decode(c.get(2)?.as_str().trim());
+            Some(SiteCategory {
+                name: if name.is_empty() { slug.clone() } else { name },
+                slug,
+                kind: BrowseKind::Tag,
+                thumbnail: None,
+                count: c[3]
+                    .chars()
+                    .filter(char::is_ascii_digit)
+                    .collect::<String>()
+                    .parse()
+                    .ok(),
+            })
+        })
+        .collect()
 }
 
 /// xHamster's A–Z tag index: /categories-0 ("#") and /categories-a … -z,
@@ -817,7 +870,7 @@ pub fn tube_browse_options(site_id: &str) -> BrowseOptions {
             filter_kinds: vec![BrowseKind::Search, BrowseKind::Tag, BrowseKind::Category],
             has_categories: true,
             combine_tags: 0,
-            category_groups: Vec::new(),
+            category_groups: xnxx_tag_groups(),
             include_exclude: false,
         },
         "xhamster" => BrowseOptions {
@@ -2216,6 +2269,19 @@ mod category_tests {
             url,
             "https://www.xvideos.com/c/s:uploaddate/d:10-20min/Femdom-235/2"
         );
+    }
+
+    #[test]
+    fn parses_xnxx_tag_letter_page() {
+        let html = r#"<ul id="tags"><li><a href="/search/z-asian">z asian</a><strong>30,913</strong></li><li><a href="/search/zaad">zaad</a><strong>1,204</strong></li></ul><a href="/tags/b">B</a>"#;
+        let tags = parse_xnxx_tag_letter(html);
+        assert_eq!(tags.len(), 2);
+        assert_eq!(
+            (tags[0].slug.as_str(), tags[0].name.as_str()),
+            ("z-asian", "z asian")
+        );
+        assert_eq!(tags[0].count, Some(30_913));
+        assert_eq!(xnxx_tag_groups().len(), 27);
     }
 
     #[test]
