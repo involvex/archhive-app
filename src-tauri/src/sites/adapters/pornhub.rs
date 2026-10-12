@@ -825,8 +825,14 @@ pub fn tube_browse_options(site_id: &str) -> BrowseOptions {
             has_categories: true,
             combine_tags: 2,
             category_groups: Vec::new(),
-            include_exclude: false,
+            // Searches take one required category (`filter_category`) and up
+            // to 10 excluded ones (`exclude_category=a-b`); category pages
+            // only the excludes (`filter_category` is ignored there).
+            include_exclude: true,
             category_tag_filter: false,
+            max_include: 1,
+            max_exclude: 10,
+            exclude_only_kinds: vec![BrowseKind::Category],
         },
         "xvideos" => BrowseOptions {
             sorts: o(&[
@@ -861,6 +867,7 @@ pub fn tube_browse_options(site_id: &str) -> BrowseOptions {
             category_groups: xvideos_tag_groups(),
             include_exclude: false,
             category_tag_filter: false,
+            ..Default::default()
         },
         "xnxx" => BrowseOptions {
             sorts: o(&[("hits", "Most viewed"), ("random", "Random")]),
@@ -878,6 +885,7 @@ pub fn tube_browse_options(site_id: &str) -> BrowseOptions {
             category_groups: xnxx_tag_groups(),
             include_exclude: false,
             category_tag_filter: false,
+            ..Default::default()
         },
         "xhamster" => BrowseOptions {
             sorts: o(&[
@@ -900,6 +908,7 @@ pub fn tube_browse_options(site_id: &str) -> BrowseOptions {
             category_groups: xhamster_tag_groups(),
             include_exclude: false,
             category_tag_filter: false,
+            ..Default::default()
         },
         "youporn" => BrowseOptions {
             sorts: o(&[
@@ -1189,6 +1198,23 @@ fn pornhub_filtered(url: String, query: &BrowseQuery) -> String {
         _ => ("", ""),
     };
     let hd = if ok(&f.quality) == "hd" { "1" } else { "" };
+    // Category filters are numeric `c=` ids (the category index's slugs).
+    // One required category on searches only (category pages ignore it);
+    // up to 10 exclusions, dash-separated as the site's own UI sends them.
+    let ids = |v: &Option<String>, max: usize| {
+        crate::models::split_tags(v.as_deref().unwrap_or(""))
+            .into_iter()
+            .filter(|id| !id.is_empty() && id.len() <= 6 && id.bytes().all(|b| b.is_ascii_digit()))
+            .take(max)
+            .collect::<Vec<_>>()
+            .join("-")
+    };
+    let include = if query.kind == BrowseKind::Category {
+        String::new()
+    } else {
+        ids(&f.include, 1)
+    };
+    let exclude = ids(&f.exclude, 10);
     crate::sites::urls::with_query(
         &url,
         &[
@@ -1197,6 +1223,8 @@ fn pornhub_filtered(url: String, query: &BrowseQuery) -> String {
             ("min_duration", min),
             ("max_duration", max),
             ("hd", hd),
+            ("filter_category", &include),
+            ("exclude_category", &exclude),
         ],
     )
 }
@@ -2223,6 +2251,22 @@ mod category_tests {
         assert_eq!(
             ph,
             "https://www.pornhub.com/video/search?search=milf&o=mv&t=w&min_duration=30&hd=1"
+        );
+        // One required category + dash-separated excludes on a search.
+        let f = [("include", "29,8"), ("exclude", "35,8,x&y=1")];
+        let ph = pornhub_filtered(
+            build_pornhub_search_url(&q(BrowseKind::Search, "redhead", 2, &f)),
+            &q(BrowseKind::Search, "redhead", 2, &f),
+        );
+        assert_eq!(
+            ph,
+            "https://www.pornhub.com/video/search?search=redhead&page=2&filter_category=29&exclude_category=35-8"
+        );
+        // Category pages ignore `filter_category`; only excludes are sent.
+        let cat = q(BrowseKind::Category, "29", 1, &f);
+        assert_eq!(
+            pornhub_filtered(build_pornhub_category_url(&cat), &cat),
+            "https://www.pornhub.com/video?c=29&exclude_category=35-8"
         );
     }
 

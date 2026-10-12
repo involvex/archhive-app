@@ -497,6 +497,12 @@ function BrowseDetailPage() {
                   siteId={site}
                   filters={filters}
                   onFiltersChange={setFilters}
+                  maxInclude={
+                    siteInfo.browse_options.exclude_only_kinds?.includes(kind as BrowseKind)
+                      ? 0
+                      : siteInfo.browse_options.max_include || Infinity
+                  }
+                  maxExclude={siteInfo.browse_options.max_exclude || Infinity}
                 />
               </div>
             )}

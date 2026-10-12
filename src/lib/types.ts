@@ -64,6 +64,12 @@ export interface BrowseOptions {
   include_exclude?: boolean;
   /** Category listings can be narrowed to one tag (BrowseFilters.tag). */
   category_tag_filter?: boolean;
+  /** Most required categories (`include`); 0 / omitted = no limit. */
+  max_include?: number;
+  /** Most excluded categories (`exclude`); 0 / omitted = no limit. */
+  max_exclude?: number;
+  /** Kinds whose listings take only `exclude`, not `include`. */
+  exclude_only_kinds?: BrowseKind[];
 }
 
 /** Mirrors `models::BrowseFilters`: option ids, omitted = site default. */

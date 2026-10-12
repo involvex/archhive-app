@@ -15,6 +15,24 @@ interface CategoryIncludeExcludeProps {
   siteId: string;
   filters: BrowseFilters;
   onFiltersChange: (f: BrowseFilters) => void;
+  /** Most required categories here (0 = this listing can't require any). */
+  maxInclude?: number;
+  /** Most excluded categories. */
+  maxExclude?: number;
+}
+
+type ChipState = "include" | "exclude" | "none";
+
+/** Next state when a chip is tapped: neutral → include → exclude → neutral,
+ *  skipping states that are unavailable or already full. */
+export function nextChipState(
+  state: ChipState,
+  canInclude: boolean,
+  canExclude: boolean,
+): ChipState {
+  if (state === "none") return canInclude ? "include" : canExclude ? "exclude" : "none";
+  if (state === "include") return canExclude ? "exclude" : "none";
+  return "none";
 }
 
 /**
@@ -27,6 +45,8 @@ export function CategoryIncludeExclude({
   siteId,
   filters,
   onFiltersChange,
+  maxInclude = Infinity,
+  maxExclude = Infinity,
 }: CategoryIncludeExcludeProps) {
   const [open, setOpen] = useState(false);
   const [categories, setCategories] = useState<SiteCategory[]>([]);
@@ -65,23 +85,25 @@ export function CategoryIncludeExclude({
   }, [categories, find]);
 
   function cycle(slug: string) {
-    let inc = include;
-    let exc = exclude;
-    if (inc.includes(slug)) {
-      inc = inc.filter((s) => s !== slug);
-      exc = [...exc, slug];
-    } else if (exc.includes(slug)) {
-      exc = exc.filter((s) => s !== slug);
-    } else {
-      inc = [...inc, slug];
-    }
-    const next = {
+    const state: ChipState = include.includes(slug)
+      ? "include"
+      : exclude.includes(slug)
+        ? "exclude"
+        : "none";
+    const next = nextChipState(state, include.length < maxInclude, exclude.length < maxExclude);
+    if (next === state) return;
+    const inc = next === "include" ? [...include, slug] : include.filter((s) => s !== slug);
+    const exc = next === "exclude" ? [...exclude, slug] : exclude.filter((s) => s !== slug);
+    const draftNext = {
       include: inc.length ? inc.join(",") : undefined,
       exclude: exc.length ? exc.join(",") : undefined,
     };
-    setDraft(next);
+    setDraft(draftNext);
     window.clearTimeout(commitTimer.current);
-    commitTimer.current = window.setTimeout(() => onFiltersChange({ ...filters, ...next }), 900);
+    commitTimer.current = window.setTimeout(
+      () => onFiltersChange({ ...filters, ...draftNext }),
+      900,
+    );
   }
 
   const summary =
@@ -110,7 +132,11 @@ export function CategoryIncludeExclude({
       {open && (
         <div className="space-y-2 border-t border-[var(--color-border)] p-2">
           <p className="text-[11px] text-[var(--color-muted-foreground)]">
-            Tap once to require a category, twice to exclude it, again to clear.
+            {maxInclude > 0
+              ? "Tap once to require a category, twice to exclude it, again to clear."
+              : "Tap to exclude a category, again to clear."}
+            {maxInclude > 0 && maxInclude < Infinity && ` Up to ${maxInclude} required.`}
+            {maxExclude < Infinity && ` Up to ${maxExclude} excluded.`}
           </p>
           <Input
             className="h-8 text-xs"
@@ -139,7 +165,9 @@ export function CategoryIncludeExclude({
                       ? "Required — tap to exclude"
                       : state === "exclude"
                         ? "Excluded — tap to clear"
-                        : "Tap to require"
+                        : maxInclude > 0
+                          ? "Tap to require"
+                          : "Tap to exclude"
                   }
                   className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs transition ${
                     state === "include"
