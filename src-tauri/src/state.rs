@@ -1072,35 +1072,79 @@ impl AppState {
         Ok(crate::models::BatchUpdateScenesResult { updated })
     }
 
-    /// A site's category / tag index, cached in memory for six hours.
+    /// A site's category / tag index — or one `group` of a grouped index
+    /// (e.g. XVIDEOS letter "a") — cached in memory for six hours and on disk
+    /// for a week, so the large per-letter indexes are fetched rarely.
     pub async fn list_site_categories(
         &self,
         site_id: &str,
+        group: Option<&str>,
     ) -> AppResult<Vec<crate::models::SiteCategory>> {
         use std::collections::HashMap;
         use std::sync::LazyLock;
-        use std::time::{Duration, Instant};
+        use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
         type Cache = HashMap<String, (Instant, Vec<crate::models::SiteCategory>)>;
         static CACHE: LazyLock<std::sync::Mutex<Cache>> =
             LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
-        const TTL: Duration = Duration::from_secs(6 * 3600);
+        const MEMORY_TTL: Duration = Duration::from_secs(6 * 3600);
+        const DISK_TTL_SECS: u64 = 7 * 24 * 3600;
 
-        if let Some((at, cats)) = CACHE.lock().ok().and_then(|c| c.get(site_id).cloned()) {
-            if at.elapsed() < TTL {
-                return Ok(cats);
-            }
-        }
         let adapter = self
             .sites
             .get(site_id)
             .ok_or_else(|| crate::error::AppError::NotFound(format!("site {site_id}")))?;
-        if !adapter.browse_options().has_categories {
-            return Ok(Vec::new());
+        let options = adapter.browse_options();
+        let group = group.map(str::trim).filter(|g| !g.is_empty());
+        if let Some(g) = group {
+            if !options.category_groups.iter().any(|o| o.id == g) {
+                return Err(crate::error::AppError::InvalidInput(format!(
+                    "unknown category group {g:?} for {site_id}"
+                )));
+            }
         }
-        let cats = adapter.list_categories(&self.site_ctx).await?;
+        let key = format!("{site_id}|{}", group.unwrap_or(""));
+        if let Some((at, cats)) = CACHE.lock().ok().and_then(|c| c.get(&key).cloned()) {
+            if at.elapsed() < MEMORY_TTL {
+                return Ok(cats);
+            }
+        }
+
+        // Disk cache: <data>/tag-index/<site>__<group>.json
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let disk_path = self
+            .data_dir
+            .join("tag-index")
+            .join(format!("{site_id}__{}.json", group.unwrap_or("all")));
+        if let Ok(raw) = std::fs::read_to_string(&disk_path) {
+            if let Ok((fetched_at, cats)) =
+                serde_json::from_str::<(u64, Vec<crate::models::SiteCategory>)>(&raw)
+            {
+                if now.saturating_sub(fetched_at) < DISK_TTL_SECS && !cats.is_empty() {
+                    if let Ok(mut c) = CACHE.lock() {
+                        c.insert(key, (Instant::now(), cats.clone()));
+                    }
+                    return Ok(cats);
+                }
+            }
+        }
+
+        let cats = match group {
+            Some(g) => adapter.list_category_group(&self.site_ctx, g).await?,
+            None if options.has_categories => adapter.list_categories(&self.site_ctx).await?,
+            None => Vec::new(),
+        };
         if !cats.is_empty() {
             if let Ok(mut c) = CACHE.lock() {
-                c.insert(site_id.to_string(), (Instant::now(), cats.clone()));
+                c.insert(key, (Instant::now(), cats.clone()));
+            }
+            if let Some(dir) = disk_path.parent() {
+                let _ = std::fs::create_dir_all(dir);
+            }
+            if let Ok(json) = serde_json::to_string(&(now, &cats)) {
+                let _ = std::fs::write(&disk_path, json);
             }
         }
         Ok(cats)

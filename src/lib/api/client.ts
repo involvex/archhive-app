@@ -285,11 +285,12 @@ export const api = {
   },
 
   /** A site's category / tag index (empty when the site has none). */
-  async listSiteCategories(siteId: string): Promise<SiteCategory[]> {
+  async listSiteCategories(siteId: string, group?: string): Promise<SiteCategory[]> {
+    const qs = group ? `?group=${encodeURIComponent(group)}` : "";
     return localOrRemote<SiteCategory[]>(
       "list_site_categories",
-      { siteId },
-      `/api/sites/${encodeURIComponent(siteId)}/categories`,
+      { siteId, group: group ?? null },
+      `/api/sites/${encodeURIComponent(siteId)}/categories${qs}`,
     );
   },
 

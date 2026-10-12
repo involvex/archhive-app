@@ -145,6 +145,15 @@ pub trait SiteAdapter: Send + Sync {
         Ok(Vec::new())
     }
 
+    /// One section of a grouped index (`browse_options().category_groups`).
+    async fn list_category_group(
+        &self,
+        _ctx: &SiteContext,
+        _group: &str,
+    ) -> AppResult<Vec<SiteCategory>> {
+        Ok(Vec::new())
+    }
+
     async fn browse(&self, ctx: &SiteContext, query: BrowseQuery) -> AppResult<BrowsePage>;
 
     async fn resolve_download(

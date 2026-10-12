@@ -433,10 +433,11 @@ async fn browse(
 async fn site_categories(
     State(state): State<ApiState>,
     Path(id): Path<String>,
+    Query(params): Query<std::collections::HashMap<String, String>>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     let cats = state
         .app
-        .list_site_categories(&id)
+        .list_site_categories(&id, params.get("group").map(String::as_str))
         .await
         .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
     Ok(Json(serde_json::json!(cats)))

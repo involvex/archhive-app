@@ -4,7 +4,7 @@ import { Bookmark, BookmarkCheck, EyeOff, LayoutGrid, List, Search } from "lucid
 import { api, browseFiltersKey } from "@/lib/api/client";
 import { useSiteInfo } from "@/lib/sites/useSiteInfo";
 import { siteHasCategories } from "@/lib/sites/catalog";
-import { loadSiteCategories } from "@/components/SiteCategoryBrowser";
+import { groupForText, loadSiteCategories } from "@/components/SiteCategoryBrowser";
 import {
   applyLocalFilters,
   BrowseFilterBar,
@@ -12,7 +12,13 @@ import {
   type LocalFilters,
 } from "@/components/BrowseFilterBar";
 import { normalizeBrowseInput } from "@/lib/browse/normalize";
-import type { BrowseFilters, BrowseKind, BrowseOrientation, MediaItem } from "@/lib/types";
+import type {
+  BrowseFilters,
+  BrowseKind,
+  BrowseOrientation,
+  MediaItem,
+  SiteCategory,
+} from "@/lib/types";
 import { SceneCard, type CardItem } from "@/components/SceneCard";
 import { BrowseItemDetailsDialog } from "@/components/BrowseItemDetailsDialog";
 import { UrlPlayerDialog } from "@/components/UrlPlayerDialog";
@@ -90,24 +96,45 @@ function BrowseDetailPage() {
   const siteInfo = useSiteInfo(site);
   const [filters, setFilters] = useState<BrowseFilters>(cached?.filters ?? {});
   const [localFilters, setLocalFilters] = useState<LocalFilters>(EMPTY_LOCAL_FILTERS);
-  // Tag autocomplete: the site's tag/category index (cached per session).
-  const [tagSuggestions, setTagSuggestions] = useState<string[]>([]);
+  // Tag autocomplete from the site's tag index. Grouped indexes (XVIDEOS:
+  // ~50k tags split by first letter) load only the group being typed.
+  const [tagIndex, setTagIndex] = useState<SiteCategory[]>([]);
   const suggestTags =
     (kind === "tag" || kind === "category") &&
     site !== "pornhub" &&
     Boolean(siteInfo && siteHasCategories(siteInfo));
+  const tagGroups = siteInfo?.browse_options?.category_groups ?? [];
+  // Suggest for the tag being typed (after the last comma when combining).
+  const typedTag = querySlug.split(",").pop()?.trim().toLowerCase() ?? "";
+  const tagGroup = groupForText(typedTag, tagGroups);
+  const tagGroupKey = tagGroups.length > 0 ? (tagGroup ?? "") : "all";
   useEffect(() => {
-    if (!suggestTags) return;
+    if (!suggestTags || (tagGroups.length > 0 && !tagGroup)) return;
     let cancelled = false;
-    loadSiteCategories(site)
+    loadSiteCategories(site, false, tagGroup)
       .then((cats) => {
-        if (!cancelled) setTagSuggestions(cats.map((c) => c.slug));
+        if (!cancelled) setTagIndex(cats);
       })
       .catch(() => {});
     return () => {
       cancelled = true;
     };
-  }, [site, suggestTags]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [site, suggestTags, tagGroupKey]);
+  const tagSuggestions = useMemo(() => {
+    if (!typedTag) return [];
+    const prefix = querySlug.includes(",")
+      ? `${querySlug.slice(0, querySlug.lastIndexOf(",") + 1)}`
+      : "";
+    return tagIndex
+      .filter(
+        (c) =>
+          c.slug.toLowerCase().startsWith(typedTag) || c.name.toLowerCase().startsWith(typedTag),
+      )
+      .sort((a, b) => (b.count ?? 0) - (a.count ?? 0))
+      .slice(0, 50)
+      .map((c) => `${prefix}${c.slug}`);
+  }, [tagIndex, typedTag, querySlug]);
   const filtersKey = browseFiltersKey(filters);
   const [loading, setLoading] = useState(false);
   const [initial, setInitial] = useState(!cached?.items?.length);

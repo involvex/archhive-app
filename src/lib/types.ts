@@ -58,6 +58,8 @@ export interface BrowseOptions {
   has_categories: boolean;
   /** Tags one URL can intersect exactly (a slug of `a,b`); 0 = word search only. */
   combine_tags?: number;
+  /** Index sections loaded one at a time (e.g. XVIDEOS letters 0-9, A–Z). */
+  category_groups?: FilterOption[];
 }
 
 /** Mirrors `models::BrowseFilters`: option ids, omitted = site default. */

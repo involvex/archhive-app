@@ -49,6 +49,14 @@ macro_rules! ytdlp_tube_adapter {
                 tube_list_categories(ctx, $id, $base).await
             }
 
+            async fn list_category_group(
+                &self,
+                ctx: &SiteContext,
+                group: &str,
+            ) -> AppResult<Vec<SiteCategory>> {
+                tube_list_category_group(ctx, $id, $base, group).await
+            }
+
             async fn browse(&self, ctx: &SiteContext, query: BrowseQuery) -> AppResult<BrowsePage> {
                 let url = tube_browse_url($id, $base, &query);
                 let html = ctx.fetch_html(&url, $id).await.unwrap_or_default();
@@ -132,6 +140,78 @@ macro_rules! ytdlp_tube_adapter {
 /// No practical cap on tag indexes: XVIDEOS / XNXX list ~2,000 tags and a
 /// popularity cut-off hid most rare ones (e.g. late-alphabet tags).
 pub(crate) const ALL_CATEGORIES: usize = 5000;
+
+/// XVIDEOS splits its full tag index by first character: /tags/09, /tags/a …
+/// /tags/z (each the top 2,000 tags for that letter, ~50k in total); the
+/// plain /tags page only has the overall top ~2,000.
+fn xvideos_tag_groups() -> Vec<FilterOption> {
+    std::iter::once(FilterOption::new("09", "0-9"))
+        .chain(
+            ('a'..='z')
+                .map(|c| FilterOption::new(&c.to_string(), &c.to_ascii_uppercase().to_string())),
+        )
+        .collect()
+}
+
+async fn tube_list_category_group(
+    ctx: &SiteContext,
+    site_id: &str,
+    base: &str,
+    group: &str,
+) -> AppResult<Vec<SiteCategory>> {
+    if site_id != "xvideos" || !xvideos_tag_groups().iter().any(|g| g.id == group) {
+        return Ok(Vec::new());
+    }
+    let html = ctx
+        .fetch_html(&format!("{base}/tags/{group}"), site_id)
+        .await?;
+    Ok(parse_xvideos_tag_letter(&html))
+}
+
+/// Entries on an XVIDEOS letter page:
+/// `<li><a href="/tags/<slug>"><b><name> </b><span class="navbadge…"><n,nnn></span>`.
+/// The A–Z navigation links have no count badge, so they are not matched.
+fn parse_xvideos_tag_letter(html: &str) -> Vec<SiteCategory> {
+    use std::sync::LazyLock;
+    static RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+        regex::Regex::new(
+            r#"<li><a href="/tags/([^"/?#]+)"><b>([^<]*)</b><span class="navbadge[^"]*">([\d,.]+)</span>"#,
+        )
+        .expect("xvideos tag letter regex")
+    });
+    let mut seen = std::collections::HashSet::new();
+    RE.captures_iter(html)
+        .filter_map(|c| {
+            let slug = c.get(1)?.as_str().to_string();
+            if !seen.insert(slug.clone()) {
+                return None;
+            }
+            let name = html_escape_decode(c.get(2)?.as_str().trim());
+            Some(SiteCategory {
+                name: if name.is_empty() { slug.clone() } else { name },
+                slug,
+                kind: BrowseKind::Tag,
+                thumbnail: None,
+                count: c
+                    .get(3)?
+                    .as_str()
+                    .chars()
+                    .filter(char::is_ascii_digit)
+                    .collect::<String>()
+                    .parse()
+                    .ok(),
+            })
+        })
+        .collect()
+}
+
+fn html_escape_decode(s: &str) -> String {
+    s.replace("&amp;", "&")
+        .replace("&#039;", "'")
+        .replace("&quot;", "\"")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+}
 
 /// Category / tag index for the macro-generated tube adapters.
 async fn tube_list_categories(
@@ -598,6 +678,7 @@ pub fn tube_browse_options(site_id: &str) -> BrowseOptions {
             filter_kinds: vec![BrowseKind::Search, BrowseKind::Tag, BrowseKind::Category],
             has_categories: true,
             combine_tags: 2,
+            category_groups: Vec::new(),
         },
         "xvideos" => BrowseOptions {
             sorts: o(&[
@@ -626,6 +707,7 @@ pub fn tube_browse_options(site_id: &str) -> BrowseOptions {
             filter_kinds: search,
             has_categories: true,
             combine_tags: 5,
+            category_groups: xvideos_tag_groups(),
         },
         "xnxx" => BrowseOptions {
             sorts: o(&[("hits", "Most viewed"), ("random", "Random")]),
@@ -640,6 +722,7 @@ pub fn tube_browse_options(site_id: &str) -> BrowseOptions {
             filter_kinds: vec![BrowseKind::Search, BrowseKind::Tag, BrowseKind::Category],
             has_categories: true,
             combine_tags: 0,
+            category_groups: Vec::new(),
         },
         "xhamster" => BrowseOptions {
             sorts: o(&[
@@ -659,6 +742,7 @@ pub fn tube_browse_options(site_id: &str) -> BrowseOptions {
             filter_kinds: vec![BrowseKind::Search, BrowseKind::Tag, BrowseKind::Category],
             has_categories: true,
             combine_tags: 0,
+            category_groups: Vec::new(),
         },
         "youporn" => BrowseOptions {
             sorts: o(&[
@@ -1926,6 +2010,19 @@ mod category_tests {
             ph,
             "https://www.pornhub.com/video/search?search=milf&o=mv&t=w&min_duration=30&hd=1"
         );
+    }
+
+    #[test]
+    fn parses_xvideos_tag_letter_page() {
+        let html = r#"<ul><li><a href="/tags/z">Z</a></li>
+          <li><a href="/tags/zorra"><b>zorra </b><span class="navbadge default">14,021</span></a></li>
+          <li><a href="/tags/z-asian"><b>z-asian </b><span class="navbadge default">30,913</span></a></li>
+          <li><a href="/tags/zorra"><b>zorra </b><span class="navbadge default">14,021</span></a></li></ul>"#;
+        let tags = parse_xvideos_tag_letter(html);
+        assert_eq!(tags.len(), 2);
+        assert_eq!(tags[0].slug, "zorra");
+        assert_eq!(tags[0].count, Some(14_021));
+        assert_eq!(xvideos_tag_groups().len(), 27);
     }
 
     #[test]

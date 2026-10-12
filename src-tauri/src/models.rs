@@ -161,6 +161,10 @@ pub struct BrowseOptions {
     /// search instead (relevance-ranked, not a strict match).
     #[serde(default)]
     pub combine_tags: u8,
+    /// Index sections fetched one at a time (e.g. XVIDEOS `/tags/a`), for
+    /// tag sets too large to load at once. Empty = one flat list.
+    #[serde(default)]
+    pub category_groups: Vec<FilterOption>,
 }
 
 /// Separator for combined tags in a Tag/Category slug (`milf,anal`). Tag slugs
