@@ -19,7 +19,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Bookmark, Flame, History, Radio, RefreshCw, X, Zap, ZapOff } from "lucide-react";
 import { useSavedSearches } from "@/lib/hooks/useSavedSearches";
-import { useTrending } from "@/lib/hooks/useTrending";
+import { clearTrendingCache, useTrending } from "@/lib/hooks/useTrending";
 import { useDownloads } from "@/lib/hooks/useDownloads";
 import { useRefreshGuard } from "@/lib/hooks/useRefreshGuard";
 import { NewMatchesCard } from "@/components/NewMatchesCard";
@@ -159,7 +159,11 @@ function FeedPage() {
   }, [handleRefresh]);
 
   const { containerRef, pullDistance, refreshing } = usePullToRefresh({
-    onRefresh: handleRefresh,
+    // An explicit pull bypasses the 10-minute trending cache.
+    onRefresh: () => {
+      clearTrendingCache();
+      return handleRefresh();
+    },
     disabled: false,
   });
 

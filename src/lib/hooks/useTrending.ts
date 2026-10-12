@@ -6,6 +6,36 @@ import type { MediaItem } from "@/lib/types";
  *  fire 10 parallel page fetches (metered data + host rate limiting). */
 const TRENDING_CONCURRENCY = 3;
 const TRENDING_PER_SITE = 10;
+/** Reuse a site's trending row for this long before scraping it again. */
+const TRENDING_FRESH_MS = 10 * 60 * 1000;
+
+/** Session cache shared by /browse and /feed, plus in-flight de-duplication so
+ *  two loads started together (e.g. Feed's mount refresh and this hook's own
+ *  effect) share one request per site. */
+const trendingCache = new Map<string, { at: number; items: MediaItem[] }>();
+const trendingInflight = new Map<string, Promise<MediaItem[]>>();
+
+/** Drop cached trending rows; the next load scrapes again (pull-to-refresh). */
+export function clearTrendingCache(): void {
+  trendingCache.clear();
+}
+
+function fetchTrendingSite(id: string): Promise<MediaItem[]> {
+  const hit = trendingCache.get(id);
+  if (hit && Date.now() - hit.at < TRENDING_FRESH_MS) return Promise.resolve(hit.items);
+  const pending = trendingInflight.get(id);
+  if (pending) return pending;
+  const request = api
+    .browse(id, "search", "trending", 1)
+    .then((page) => {
+      const items = page.items.slice(0, TRENDING_PER_SITE);
+      trendingCache.set(id, { at: Date.now(), items });
+      return items;
+    })
+    .finally(() => trendingInflight.delete(id));
+  trendingInflight.set(id, request);
+  return request;
+}
 
 export interface UseTrendingResult {
   /** siteId -> items. Only sites that responded are present. */
@@ -29,8 +59,9 @@ export interface UseTrendingResult {
  *  - a monotonically increasing request id discards stale responses, so a fast
  *    second load (e.g. rapid pull-to-refresh) can't be overwritten by a slow
  *    first one;
- *  - results are memoised per site for the session via the browse cache, so
- *    repeated refreshes don't re-scrape unless the cache is stale.
+ *  - results are cached per site for {@link TRENDING_FRESH_MS} and concurrent
+ *    loads share requests, so revisiting /browse or /feed doesn't re-scrape;
+ *    pull-to-refresh calls {@link clearTrendingCache} first.
  */
 export function useTrending(enabledSiteIds: string[]): UseTrendingResult {
   const [trending, setTrending] = useState<Record<string, MediaItem[]>>({});
@@ -65,8 +96,7 @@ export function useTrending(enabledSiteIds: string[]): UseTrendingResult {
         const id = queue.shift();
         if (id === undefined) return;
         try {
-          const page = await api.browse(id, "search", "trending", 1);
-          next[id] = page.items.slice(0, TRENDING_PER_SITE);
+          next[id] = await fetchTrendingSite(id);
         } catch {
           failed.push(id);
         }

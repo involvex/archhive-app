@@ -371,10 +371,13 @@ impl SiteAdapter for PornhubAdapter {
         })
     }
     async fn resolve_stream_url(&self, ctx: &SiteContext, url: &str) -> AppResult<String> {
-        // Prefer a progressive MP4 (works through the loopback Referer proxy).
-        // Fall back to proxied HLS (playlist + segments rewritten by the proxy).
+        // yt-dlp first: it is what successfully downloads PornHub on-device.
+        // The in-house page extractor is a mobile fallback. Either way the
+        // CDN URL goes through the loopback proxy, which adds the Referer
+        // that HTML5 <video> cannot send.
+        let ytdlp = self.resolve_stream_url_ytdlp(ctx, url).await;
         #[cfg(mobile)]
-        {
+        if ytdlp.is_err() {
             if let Ok(Some(stream_url)) =
                 crate::sites::extractors::pornhub::extract_download_url(ctx, url).await
             {
@@ -394,7 +397,17 @@ impl SiteAdapter for PornhubAdapter {
                 ));
             }
         }
+        let stream_url = ytdlp?;
+        Ok(maybe_loopback_proxy(
+            ctx,
+            &stream_url,
+            "https://www.pornhub.com/",
+        ))
+    }
+}
 
+impl PornhubAdapter {
+    async fn resolve_stream_url_ytdlp(&self, ctx: &SiteContext, url: &str) -> AppResult<String> {
         let runner = crate::sites::yt_dlp::SidecarRunner::new(ctx.app().clone());
         let cookies = ctx.cookie_file_for_site(self.id());
         let mut args = vec![
@@ -410,17 +423,11 @@ impl SiteAdapter for PornhubAdapter {
             args.push(cookies.to_string_lossy().to_string());
         }
         let raw = runner.run_capture_for_stream_url("yt-dlp", &args).await?;
-        let stream_url = raw
-            .lines()
+        raw.lines()
             .map(str::trim)
             .find(|line| !line.is_empty())
-            .ok_or_else(|| crate::error::AppError::Other("No stream URL resolved".to_string()))?
-            .to_string();
-        Ok(maybe_loopback_proxy(
-            ctx,
-            &stream_url,
-            "https://www.pornhub.com/",
-        ))
+            .map(str::to_string)
+            .ok_or_else(|| crate::error::AppError::Other("No stream URL resolved".to_string()))
     }
 }
 

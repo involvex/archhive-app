@@ -55,7 +55,13 @@ export function useLanConnection(pollMs = 15000): LanConnectionStatus {
       setFailedAttempts(0);
       setLastConnectedAt(lastOkRef.current);
       const authNote =
-        h.auth_required === true ? " (token required)" : h.auth_required === false ? " (open)" : "";
+        h.loopback === true
+          ? " (on-device)"
+          : h.auth_required === true
+            ? " (token required)"
+            : h.auth_required === false
+              ? " (open)"
+              : "";
       setMessage(`Connected to ArcHive v${h.version}${authNote}`);
     } catch (e) {
       setHealth(null);
