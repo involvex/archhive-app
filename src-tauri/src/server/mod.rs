@@ -22,6 +22,8 @@ struct ApiState {
     app: Arc<AppState>,
     token: String,
     lan_auth_enabled: bool,
+    /// Bound to 127.0.0.1 only (mobile on-device engine), not a LAN host.
+    loopback: bool,
 }
 
 #[derive(Deserialize)]
@@ -128,6 +130,7 @@ impl LanServer {
             app,
             token: token.clone(),
             lan_auth_enabled,
+            loopback,
         };
         let api_router = Router::new()
             .route("/api/health", get(health))
@@ -372,12 +375,18 @@ async fn health(State(state): State<ApiState>) -> Json<serde_json::Value> {
     let settings = state.app.get_settings().ok();
     let library_path = settings.as_ref().map(|s| s.library_path.clone());
     let port = settings.as_ref().map(|s| s.lan_port).unwrap_or(8787);
-    let ip = crate::discovery::local_ipv4_for_mdns();
-    let lan_url = format!("http://{ip}:{port}");
+    // The mobile loopback server is only reachable on-device: never advertise
+    // a LAN address for it.
+    let lan_url = if state.loopback {
+        format!("http://127.0.0.1:{port}")
+    } else {
+        format!("http://{}:{port}", crate::discovery::local_ipv4_for_mdns())
+    };
     Json(serde_json::json!({
         "status": h.status,
         "version": h.version,
-        "lan": true,
+        "lan": !state.loopback,
+        "loopback": state.loopback,
         "auth_required": state.lan_auth_enabled && !state.token.is_empty(),
         "library_path": library_path,
         "lan_url": lan_url,

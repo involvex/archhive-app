@@ -11,6 +11,7 @@ pub mod browse_fallback;
 pub mod extractors;
 pub mod listing;
 pub mod registry;
+pub mod throttle;
 pub mod urls;
 pub mod yt_dlp;
 
@@ -82,7 +83,18 @@ impl SiteContext {
                 req = req.header(*k, *v);
             }
         }
+        throttle::acquire(url).await?;
         let resp = req.send().await?;
+        if resp.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            let retry_after = resp
+                .headers()
+                .get(reqwest::header::RETRY_AFTER)
+                .and_then(|v| v.to_str().ok());
+            throttle::note_rate_limited(url, retry_after);
+            return Err(AppError::Site(format!(
+                "{site_id} is rate limiting requests (HTTP 429); wait a minute and retry"
+            )));
+        }
         if !resp.status().is_success() {
             return Err(AppError::Site(format!("HTTP {} for {url}", resp.status())));
         }

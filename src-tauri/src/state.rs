@@ -17,6 +17,17 @@ use tauri::Emitter;
 use tauri_plugin_shell::ShellExt;
 use tracing;
 
+/// Phones only run the 127.0.0.1 loopback server (on-device engine); never
+/// expose the API on the network from a mobile device.
+fn refuse_lan_hosting_on_mobile() -> AppResult<()> {
+    if cfg!(mobile) {
+        return Err(crate::error::AppError::Other(
+            "LAN hosting is only available in the desktop app".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 pub struct AppState {
     pub db: Arc<Database>,
     pub data_dir: PathBuf,
@@ -911,6 +922,7 @@ impl AppState {
     }
 
     pub async fn ensure_lan_server(self: &Arc<Self>, port: u16) -> AppResult<String> {
+        refuse_lan_hosting_on_mobile()?;
         let open_dev = std::env::var("ARCHIVE_AUTO_LAN").ok().as_deref() == Some("1");
 
         {
@@ -989,6 +1001,7 @@ impl AppState {
     }
 
     pub async fn regenerate_lan_server(self: &Arc<Self>, port: u16) -> AppResult<String> {
+        refuse_lan_hosting_on_mobile()?;
         self.stop_lan_server()?;
         let mut settings = self.get_settings()?;
         settings.lan_token = None;

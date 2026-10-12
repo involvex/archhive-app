@@ -32,7 +32,7 @@ import {
 import { isMobileDevice } from "@/lib/tauri";
 import { usePullToRefresh } from "@/lib/hooks/usePullToRefresh";
 import { useSavedSearches } from "@/lib/hooks/useSavedSearches";
-import { useTrending } from "@/lib/hooks/useTrending";
+import { clearTrendingCache, useTrending } from "@/lib/hooks/useTrending";
 import { useRefreshGuard } from "@/lib/hooks/useRefreshGuard";
 import { NewMatchesCard } from "@/components/NewMatchesCard";
 
@@ -229,7 +229,11 @@ function BrowsePage() {
   const { refresh: handleRefresh } = useRefreshGuard(browseRefresh);
 
   const { containerRef, pullDistance, refreshing } = usePullToRefresh({
-    onRefresh: handleRefresh,
+    // An explicit pull bypasses the 10-minute trending cache.
+    onRefresh: () => {
+      clearTrendingCache();
+      return handleRefresh();
+    },
     disabled: false,
   });
 

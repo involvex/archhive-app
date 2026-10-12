@@ -275,6 +275,8 @@ export interface HealthResponse {
   version: string;
   auth_required?: boolean;
   lan?: boolean;
+  /** True for the phone's 127.0.0.1-only on-device server (not a LAN host). */
+  loopback?: boolean;
   library_path?: string;
   lan_url?: string;
 }
