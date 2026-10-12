@@ -275,7 +275,8 @@ function FeedPage() {
                     onClick={() => {
                       navigate({
                         to: "/browse/$site/$kind/$slug",
-                        params: { site: s.site_id, kind: s.kind, slug: encodeURIComponent(s.slug) },
+                        params: { site: s.site_id, kind: s.kind, slug: s.slug },
+                        search: { orientation: s.orientation, ...s.filters },
                       });
                     }}
                   >
@@ -421,7 +422,7 @@ function FeedPage() {
                                 params: {
                                   site: item.site_id,
                                   kind: "search",
-                                  slug: encodeURIComponent(item.title),
+                                  slug: item.title,
                                 },
                               });
                             }}

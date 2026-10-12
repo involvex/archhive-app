@@ -14,6 +14,8 @@ import {
   type LocalFilters,
 } from "@/components/BrowseFilterBar";
 import { normalizeBrowseInput } from "@/lib/browse/normalize";
+import { filtersFromSearch, parseBrowseSearch } from "@/lib/browse/searchParams";
+import { toast } from "react-hot-toast";
 import type {
   BrowseFilters,
   BrowseKind,
@@ -34,17 +36,15 @@ import { usePullToRefresh } from "@/lib/hooks/usePullToRefresh";
 import { browseCacheKey, useBrowseStore } from "@/lib/stores/browse";
 import { PORNHUB_CATEGORIES } from "@/lib/sites/pornhub-categories";
 
-const ORIENTATIONS: readonly BrowseOrientation[] = ["straight", "gay", "lesbian", "transgender"];
-
 export const Route = createFileRoute("/browse/$site/$kind/$slug")({
   component: BrowseDetailPage,
-  validateSearch: (search: Record<string, unknown>): { orientation?: BrowseOrientation } => {
-    const o = search.orientation;
-    return typeof o === "string" && (ORIENTATIONS as readonly string[]).includes(o)
-      ? { orientation: o as BrowseOrientation }
-      : {};
-  },
+  // Orientation plus site-side filters, so saved searches reopen as saved.
+  validateSearch: parseBrowseSearch,
 });
+
+function errorText(e: unknown): string {
+  return e instanceof Error ? e.message : String(e ?? "");
+}
 
 function normalizeInitialSlug(rawSlug: string): string {
   if (rawSlug === "example") return "";
@@ -64,7 +64,10 @@ function BrowseDetailPage() {
   const cleanSlug = normalizeInitialSlug(slug);
   const browseSlug =
     site === "pornhub" && kind === "category" ? normalizePornhubCategorySlug(cleanSlug) : cleanSlug;
-  const { orientation: initialOrientation } = Route.useSearch();
+  const routeSearch = Route.useSearch();
+  const initialOrientation = routeSearch.orientation;
+  const initialFilters = useMemo(() => filtersFromSearch(routeSearch), [routeSearch]);
+  const initialFiltersKey = browseFiltersKey(initialFilters);
   const [orientation, setOrientation] = useState<BrowseOrientation>(
     initialOrientation ?? "straight",
   );
@@ -83,10 +86,10 @@ function BrowseDetailPage() {
       browseCacheKey({
         site,
         kind,
-        slug: browseSlug,
+        slug: `${browseSlug}${initialFiltersKey}`,
         orientation: initialOrientation,
       }),
-    [site, kind, browseSlug, initialOrientation],
+    [site, kind, browseSlug, initialOrientation, initialFiltersKey],
   );
   const cached = useBrowseStore((s) => s.caches[cacheKey]);
   const setCache = useBrowseStore((s) => s.set);
@@ -96,7 +99,7 @@ function BrowseDetailPage() {
   const [hasMore, setHasMore] = useState(cached?.hasMore ?? false);
   const [querySlug, setQuerySlug] = useState(cached?.querySlug ?? browseSlug);
   const siteInfo = useSiteInfo(site);
-  const [filters, setFilters] = useState<BrowseFilters>(cached?.filters ?? {});
+  const [filters, setFilters] = useState<BrowseFilters>(cached?.filters ?? initialFilters);
   const [localFilters, setLocalFilters] = useState<LocalFilters>(EMPTY_LOCAL_FILTERS);
   // Tag autocomplete from the site's tag index. Grouped indexes (XVIDEOS:
   // ~50k tags split by first letter) load only the group being typed.
@@ -190,7 +193,8 @@ function BrowseDetailPage() {
         setCacheAgeSecs(result.cache_age_secs ?? null);
         setInitial(false);
       } catch (e) {
-        const msg = e instanceof Error ? e.message : "Browse failed";
+        // Tauri rejects with plain strings, not Error objects.
+        const msg = errorText(e) || "Browse failed";
         setError(msg.replace(/^site error:\s*/i, ""));
         if (!append) setItems([]);
         console.error(e);
@@ -247,7 +251,7 @@ function BrowseDetailPage() {
     await api.queueDownload(item.url, site, item.title);
   }
 
-  // #28: detect whether this exact search is already saved.
+  // #28: detect whether this exact search (incl. sort / filters) is already saved.
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setSavedId(null);
@@ -259,12 +263,13 @@ function BrowseDetailPage() {
             s.site_id === site &&
             s.kind === (kind as BrowseKind) &&
             s.slug === browseSlug &&
-            (s.orientation ?? undefined) === (isPornhubAnimal ? orientation : undefined),
+            (s.orientation ?? undefined) === (isPornhubAnimal ? orientation : undefined) &&
+            browseFiltersKey(s.filters) === filtersKey,
         );
         setSavedId(match?.id ?? null);
       })
       .catch(() => {});
-  }, [site, kind, browseSlug, orientation, isPornhubAnimal]);
+  }, [site, kind, browseSlug, orientation, isPornhubAnimal, filtersKey]);
 
   async function toggleSavedSearch() {
     if (savingSearch) return;
@@ -275,16 +280,19 @@ function BrowseDetailPage() {
         setSavedId(null);
       } else {
         const saved = await api.saveSearch({
-          name: `${site} ${kind}: ${browseSlug}`,
+          name: `${siteInfo?.display_name ?? site} ${kind}: ${browseSlug}${filtersKey ? " (filtered)" : ""}`,
           site_id: site,
           kind: kind as BrowseKind,
           slug: browseSlug,
           orientation: isPornhubAnimal ? orientation : undefined,
+          filters: filtersKey ? filters : undefined,
         });
         setSavedId(saved.id);
+        toast.success("Saved — find it under Browse → Saved searches");
       }
     } catch (e) {
       console.error(e);
+      toast.error(`Could not ${savedId ? "remove" : "save"} search: ${errorText(e)}`);
     } finally {
       setSavingSearch(false);
     }

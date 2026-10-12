@@ -1014,6 +1014,9 @@ pub struct SavedSearch {
     pub slug: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub orientation: Option<BrowseOrientation>,
+    /// Sort / filters of the saved listing (site defaults when empty).
+    #[serde(default, skip_serializing_if = "BrowseFilters::is_empty")]
+    pub filters: BrowseFilters,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_checked_at: Option<String>,
     pub new_count: u32,
@@ -1030,6 +1033,8 @@ pub struct SaveSearchRequest {
     pub slug: String,
     #[serde(default)]
     pub orientation: Option<BrowseOrientation>,
+    #[serde(default)]
+    pub filters: BrowseFilters,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

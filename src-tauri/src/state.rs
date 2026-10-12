@@ -1999,7 +1999,7 @@ impl AppState {
                 &search.slug,
                 1,
                 search.orientation,
-                Default::default(),
+                search.filters.clone(),
             )
             .await?;
         let previous = self.db.saved_search_keys(id)?;

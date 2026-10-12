@@ -418,7 +418,7 @@ function BrowsePage() {
                           params: {
                             site: item.site_id,
                             kind: "search",
-                            slug: encodeURIComponent(item.title),
+                            slug: item.title,
                           },
                         });
                       }}
@@ -547,7 +547,7 @@ function BrowsePage() {
                     setSearchInput(r.slug);
                     navigate({
                       to: "/browse/$site/$kind/$slug",
-                      params: { site: r.site, kind: r.kind, slug: encodeURIComponent(r.slug) },
+                      params: { site: r.site, kind: r.kind, slug: r.slug },
                     });
                   }}
                 >
@@ -621,9 +621,12 @@ function BrowsePage() {
                     type="button"
                     className="flex min-w-0 flex-1 items-center gap-2 text-left"
                     onClick={() => {
+                      // The router encodes params itself; pre-encoding broke
+                      // combined slugs ("milf,anal" → "milf%252Canal").
                       navigate({
                         to: "/browse/$site/$kind/$slug",
-                        params: { site: s.site_id, kind: s.kind, slug: encodeURIComponent(s.slug) },
+                        params: { site: s.site_id, kind: s.kind, slug: s.slug },
+                        search: { orientation: s.orientation, ...s.filters },
                       });
                     }}
                   >

@@ -553,6 +553,7 @@ export const api = {
     kind: BrowseKind;
     slug: string;
     orientation?: BrowseOrientation;
+    filters?: BrowseFilters;
   }): Promise<SavedSearch> {
     if (shouldUseRemoteApi()) {
       return remoteFetch<SavedSearch>("/api/saved-searches", {
