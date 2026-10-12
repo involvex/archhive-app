@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Layers, RefreshCw, Search, X } from "lucide-react";
 import { api } from "@/lib/api/client";
-import type { SiteCategory } from "@/lib/types";
+import type { FilterOption, SiteCategory } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -15,15 +15,29 @@ const cache = new Map<string, SiteCategory[]>();
  *  them as a word search, where more words just dilute relevance). */
 const MAX_SEARCH_COMBINE = 4;
 
-/** Cached category list for a site (shared with browse-page autocomplete). */
-export async function loadSiteCategories(siteId: string, force = false): Promise<SiteCategory[]> {
+/** Cached category list for a site, or one group of a grouped index
+ *  (shared with browse-page autocomplete). */
+export async function loadSiteCategories(
+  siteId: string,
+  force = false,
+  group?: string,
+): Promise<SiteCategory[]> {
+  const key = `${siteId}|${group ?? ""}`;
   if (!force) {
-    const hit = cache.get(siteId);
+    const hit = cache.get(key);
     if (hit) return hit;
   }
-  const list = await api.listSiteCategories(siteId);
-  cache.set(siteId, list);
+  const list = await api.listSiteCategories(siteId, group);
+  cache.set(key, list);
   return list;
+}
+
+/** Group id holding tags that start with `text` ("09" for digits/other). */
+export function groupForText(text: string, groups: FilterOption[]): string | undefined {
+  const first = text.trim().charAt(0).toLowerCase();
+  if (!first || groups.length === 0) return undefined;
+  if (groups.some((g) => g.id === first)) return first;
+  return groups.find((g) => g.id === "09")?.id;
 }
 
 function formatCount(n?: number): string {
@@ -38,6 +52,8 @@ interface SiteCategoryBrowserProps {
   siteName: string;
   /** Tags one URL can intersect exactly (`BrowseOptions.combine_tags`). */
   combineTags?: number;
+  /** Grouped index sections (`BrowseOptions.category_groups`). */
+  groups?: FilterOption[];
 }
 
 /** Category / tag index for a site, fetched from the backend adapter. */
@@ -45,10 +61,13 @@ export function SiteCategoryBrowser({
   siteId,
   siteName,
   combineTags = 0,
+  groups = [],
 }: SiteCategoryBrowserProps) {
   const navigate = useNavigate();
+  // "" = the site's main (popular) index; otherwise a group id such as "a".
+  const [group, setGroup] = useState("");
   const [categories, setCategories] = useState<SiteCategory[] | null>(
-    () => cache.get(siteId) ?? null,
+    () => cache.get(`${siteId}|`) ?? null,
   );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -62,21 +81,26 @@ export function SiteCategoryBrowser({
       setLoading(true);
       setError("");
       try {
-        setCategories(await loadSiteCategories(siteId, force));
+        setCategories(await loadSiteCategories(siteId, force, group || undefined));
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e) || "Could not load categories");
       } finally {
         setLoading(false);
       }
     },
-    [siteId],
+    [siteId, group],
   );
 
   useEffect(() => {
-    if (cache.has(siteId)) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    const hit = cache.get(`${siteId}|${group}`);
+    if (hit) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setCategories(hit);
+      return;
+    }
+    setCategories(null);
     void load();
-  }, [siteId, load]);
+  }, [siteId, group, load]);
 
   const visible = useMemo(() => {
     const q = filter.trim().toLowerCase();
@@ -144,6 +168,24 @@ export function SiteCategoryBrowser({
         </Button>
       </CardHeader>
       <CardContent className="space-y-3">
+        {groups.length > 0 && (
+          <div className="flex gap-1 overflow-x-auto pb-1 scrollbar-hide">
+            {[{ id: "", label: "Popular" }, ...groups].map((g) => (
+              <button
+                key={g.id || "popular"}
+                type="button"
+                onClick={() => setGroup(g.id)}
+                className={`shrink-0 rounded-md px-2.5 py-1 text-xs font-medium ${
+                  group === g.id
+                    ? "bg-[var(--color-primary)] text-[var(--color-primary-foreground)]"
+                    : "bg-[var(--color-secondary)] hover:bg-[var(--color-muted)]"
+                }`}
+              >
+                {g.label}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative min-w-40 flex-1 sm:max-w-sm">
             <Search className="absolute left-2 top-2.5 h-4 w-4 text-[var(--color-muted-foreground)]" />

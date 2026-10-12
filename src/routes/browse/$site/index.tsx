@@ -60,6 +60,7 @@ function SiteHubPage() {
           siteId={site.id}
           siteName={site.display_name}
           combineTags={site.browse_options?.combine_tags ?? 0}
+          groups={site.browse_options?.category_groups ?? []}
         />
       )}
 

@@ -58,8 +58,9 @@ pub async fn browse(
 pub async fn list_site_categories(
     state: State<'_, Arc<AppState>>,
     site_id: String,
+    group: Option<String>,
 ) -> CmdResult<Vec<crate::models::SiteCategory>> {
-    map_err(state.list_site_categories(&site_id).await)
+    map_err(state.list_site_categories(&site_id, group.as_deref()).await)
 }
 
 #[tauri::command]
