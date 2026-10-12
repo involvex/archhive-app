@@ -546,14 +546,23 @@ pub async fn open_scene_with_default(
     state: State<'_, Arc<AppState>>,
     id: String,
 ) -> CmdResult<()> {
-    use tauri_plugin_opener::OpenerExt;
     let scene = map_err(state.get_scene(&id))?;
     let path = scene
         .path
         .ok_or_else(|| "Scene has no file on disk".to_string())?;
-    app.opener()
-        .open_path(&path, None::<&str>)
-        .map_err(|e| e.to_string())
+    // The opener plugin's open_path does nothing useful on Android (needs a
+    // content:// URI); hand the file to other apps via our FileProvider.
+    #[cfg(target_os = "android")]
+    {
+        map_err(crate::mobile::ytdlp_bridge::open_file(&app, &path))
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        use tauri_plugin_opener::OpenerExt;
+        app.opener()
+            .open_path(&path, None::<&str>)
+            .map_err(|e| e.to_string())
+    }
 }
 
 #[tauri::command]

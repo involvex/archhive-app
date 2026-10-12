@@ -1,4 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { toast } from "react-hot-toast";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api/client";
 import { sceneThumbUrl, isVideoScene } from "@/lib/mediaUrl";
@@ -23,6 +24,11 @@ import { useIsLandscape } from "@/lib/hooks/useMediaQuery";
 import { vibrateTick } from "@/lib/haptics";
 import { registerShortcut, unregisterShortcut } from "@/lib/shortcuts/registry";
 import { Film, Database, LayoutGrid, List, RefreshCw, X, Zap } from "lucide-react";
+
+/** Tauri rejects with plain strings; Error objects carry `.message`. */
+function errorText(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
+}
 
 export const Route = createFileRoute("/library/scenes/")({
   validateSearch: (
@@ -416,8 +422,10 @@ function ScenesPage() {
         rename_file: true,
       });
       handleSaved(updated);
+      toast.success("File renamed");
     } catch (e) {
       console.error(e);
+      toast.error(`Rename failed: ${errorText(e)}`);
     }
   }
 
@@ -425,8 +433,12 @@ function ScenesPage() {
     try {
       const updated = await api.probeSceneMetadata(scene.id);
       handleSaved(updated);
+      toast.success(
+        updated.thumb ? "Thumbnail regenerated" : "Probed, but no thumbnail was produced",
+      );
     } catch (e) {
       console.error(e);
+      toast.error(`Thumbnail failed: ${errorText(e)}`);
     }
   }
 
@@ -1057,8 +1069,14 @@ function ScenesPage() {
           if (idx >= 0) setPlayerIndex(idx);
           setPlayerScene(s);
         }}
-        onOpenExplorer={(s) => void api.openSceneInExplorer(s.id).catch(console.error)}
-        onOpenDefault={(s) => void api.openSceneWithDefault(s.id).catch(console.error)}
+        onOpenExplorer={(s) =>
+          void api.openSceneInExplorer(s.id).catch((e) => toast.error(errorText(e)))
+        }
+        onOpenDefault={(s) =>
+          void api
+            .openSceneWithDefault(s.id)
+            .catch((e) => toast.error(`Could not open: ${errorText(e)}`))
+        }
         onRenameFile={(s) => void renameFileToTitle(s)}
         onRegenThumb={(s) => void regenerateThumb(s)}
         onDelete={(s) => setDeleteTarget(s)}

@@ -2733,27 +2733,42 @@ impl Database {
         let new_notes = notes.unwrap_or(existing.notes.as_deref().unwrap_or(""));
         let mut new_path = existing.path.clone();
 
+        let mut new_thumb: Option<String> = None;
         if rename_file {
-            if let Some(ref old_path) = existing.path {
-                let old = std::path::Path::new(old_path);
-                if old.exists() {
-                    let ext = old.extension().and_then(|e| e.to_str()).unwrap_or("mp4");
-                    let safe: String = new_title
-                        .chars()
-                        .map(|c| {
-                            if c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == ' ' {
-                                c
-                            } else {
-                                '_'
-                            }
-                        })
-                        .collect();
-                    let safe = safe.trim().replace(' ', "_");
-                    let parent = old.parent().unwrap_or_else(|| std::path::Path::new("."));
-                    let target = parent.join(format!("{safe}.{ext}"));
-                    if target != old {
-                        std::fs::rename(old, &target)?;
-                        new_path = Some(target.to_string_lossy().to_string());
+            let old_path = existing
+                .path
+                .as_deref()
+                .ok_or_else(|| AppError::InvalidInput("scene has no file to rename".into()))?;
+            let old = std::path::Path::new(old_path);
+            if !old.is_file() {
+                return Err(AppError::NotFound(format!("file not found: {old_path}")));
+            }
+            let ext = old.extension().and_then(|e| e.to_str()).unwrap_or("mp4");
+            let target = old.with_file_name(format!("{}.{ext}", safe_file_stem(new_title)));
+            if target != old {
+                // fs::rename silently replaces an existing file; never clobber
+                // another video that already has this name.
+                if target.exists() {
+                    return Err(AppError::InvalidInput(format!(
+                        "a file named {} already exists",
+                        target.file_name().and_then(|n| n.to_str()).unwrap_or("")
+                    )));
+                }
+                std::fs::rename(old, &target)
+                    .map_err(|e| AppError::Other(format!("could not rename {old_path}: {e}")))?;
+                new_path = Some(target.to_string_lossy().to_string());
+                // Keep the `<stem>.jpg` thumbnail sidecar next to the video.
+                if let Some(thumb) = existing.thumb.as_deref() {
+                    let thumb = std::path::Path::new(thumb);
+                    if thumb.parent() == old.parent()
+                        && thumb.file_stem() == old.file_stem()
+                        && thumb.is_file()
+                    {
+                        let thumb_ext = thumb.extension().and_then(|e| e.to_str()).unwrap_or("jpg");
+                        let thumb_target = target.with_extension(thumb_ext);
+                        if !thumb_target.exists() && std::fs::rename(thumb, &thumb_target).is_ok() {
+                            new_thumb = Some(thumb_target.to_string_lossy().to_string());
+                        }
                     }
                 }
             }
@@ -2764,8 +2779,8 @@ impl Database {
             .lock()
             .map_err(|e| AppError::Other(e.to_string()))?;
         conn.execute(
-            "UPDATE scenes SET title = ?2, path = COALESCE(?3, path), notes = ?4, rating = COALESCE(?5, rating) WHERE id = ?1",
-            params![id, new_title, new_path, new_notes, rating],
+            "UPDATE scenes SET title = ?2, path = COALESCE(?3, path), notes = ?4, rating = COALESCE(?5, rating), thumb = COALESCE(?6, thumb) WHERE id = ?1",
+            params![id, new_title, new_path, new_notes, rating, new_thumb],
         )?;
         drop(conn);
 
@@ -2983,6 +2998,27 @@ fn parse_status(s: &str) -> DownloadStatus {
     }
 }
 
+/// File-name stem for "rename file to match title": ASCII letters, digits,
+/// `-` and `_` kept, everything else `_`, spaces collapsed to `_`.
+fn safe_file_stem(title: &str) -> String {
+    let safe: String = title
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == ' ' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let safe = safe.trim().replace(' ', "_");
+    if safe.is_empty() {
+        "untitled".to_string()
+    } else {
+        safe
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3003,6 +3039,64 @@ mod tests {
             None,
         )
         .unwrap()
+    }
+
+    #[test]
+    fn rename_file_moves_thumb_and_never_overwrites() {
+        let dir = tempdir().unwrap();
+        let db = Database::new(dir.path().to_path_buf()).unwrap();
+        let video = dir.path().join("abc123.mp4");
+        let thumb = dir.path().join("abc123.jpg");
+        std::fs::write(&video, b"v").unwrap();
+        std::fs::write(&thumb, b"t").unwrap();
+        let id = db
+            .insert_scene(
+                "abc123",
+                Some(video.to_str().unwrap()),
+                None,
+                &[],
+                &[],
+                Some(thumb.to_str().unwrap()),
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+
+        let scene = db
+            .update_scene(&id, Some("My Clip!"), None, None, true, None, None)
+            .unwrap();
+        let renamed = dir.path().join("My_Clip_.mp4");
+        assert_eq!(scene.path.as_deref(), renamed.to_str());
+        assert!(renamed.is_file() && !video.exists());
+        assert!(dir.path().join("My_Clip_.jpg").is_file());
+
+        // A second scene renamed to the same title must not clobber the first.
+        let other = dir.path().join("other.mp4");
+        std::fs::write(&other, b"o").unwrap();
+        let id2 = db
+            .insert_scene(
+                "other",
+                Some(other.to_str().unwrap()),
+                None,
+                &[],
+                &[],
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+        let err = db
+            .update_scene(&id2, Some("My Clip!"), None, None, true, None, None)
+            .unwrap_err();
+        assert!(err.to_string().contains("already exists"));
+        assert_eq!(std::fs::read(&renamed).unwrap(), b"v");
+        assert!(other.is_file());
     }
 
     #[test]
