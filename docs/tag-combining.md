@@ -2,9 +2,10 @@
 
 What each site can **strictly** combine in one listing, i.e. results that must
 match _every_ term, versus what only works as a relevance-ranked word search.
-Everything below was verified against the live sites (October 2026) by
-comparing result sets; URL schemes change, so re-check before relying on an
-entry for automation.
+Everything marked strict was verified against the live sites (October 2026)
+by opening result videos and reading **their own** tag / category lists (not
+titles, and not the site-wide menus on video pages). URL schemes change, so
+re-check before relying on an entry for automation.
 
 **Strict** = the site intersects the terms (each result has all of them).
 **Word search** = the terms are keywords; results are ranked by relevance and
@@ -14,7 +15,7 @@ are not guaranteed to match every term.
 
 | Site     | Tag + tag                   | Category + category   | Search + category                    | Exclude                |
 | -------- | --------------------------- | --------------------- | ------------------------------------ | ---------------------- |
-| XVIDEOS  | ✅ strict, up to 5          | ❌                    | ❌                                   | ❌ (`-tag` is ignored) |
+| XVIDEOS  | ❌ (keyword search)         | ❌                    | ❌                                   | ❌ (`-tag` is ignored) |
 | PornHub  | ❌ (word search)            | ✅ strict, exactly 2  | ❌                                   | ❌                     |
 | Eporner  | ❌ (word search)            | ✅ strict, any number | ✅ strict (search/tag + categories)  | ✅ categories          |
 | xHamster | ❌ (word search)            | ❌                    | ❌                                   | ❌                     |
@@ -32,13 +33,17 @@ titles/tags, not a site query.
 
 ## XVIDEOS
 
-- **Tags — strict, up to 5.** `/tags/milf+anal+big-tits` returns videos tagged
-  with all of them; paging is `/tags/milf+anal/2`.
-  - Tag pages ignore sort, date, length and quality filters. When any of those
-    is set, the app runs the tags as a word search (`/?k=milf+anal&sort=…`)
-    instead, which is **not** strict.
-  - `/tags/milf/anal` is not a combination — it redirects to the `anal` tag.
-  - Excluding with `-tag` (`/tags/milf+anal+-lesbian`) is ignored by the site.
+- **No strict tag matching — not even for a single multi-word tag.** Tag pages
+  are a keyword search over titles and tags:
+  - `/tags/petite-brunette` lists **73,466** videos — more than `petite`
+    (46,462) or `brunette` (50,095) alone, which a real tag could not. Of 8
+    results opened, **none** carried a `petite-brunette` tag, only 2 had both
+    `petite` and `brunette` tags, and some matched only through the title.
+  - `/tags/milf+anal` and `/tags/redhead+big-tits+milf` behave the same: results
+    were missing one or more of the tags (none of the 5 checked had all three).
+  - `/tags/milf/anal` just redirects to the `anal` tag; `-tag` exclusion
+    (`/tags/milf+anal+-lesbian`) is ignored.
+  - Single-word tags (`/tags/milf`) are the closest to a real tag listing.
 - **Categories** (`/c/Femdom-235`, ~38 of them) cannot be combined with each
   other, with tags, or with a search: `?c=`, `?tag=` and `?k=` on a category
   page are ignored, `/c/X/tags/Y` is a 404. Category pages do support sort /
@@ -46,14 +51,16 @@ titles/tags, not a site query.
 - **Search + tag**: not possible (`/?k=…&tag=…` and `/tags/x?k=…` ignore the
   extra parameter).
 
-**In the app:** tag browser → **Combine** → pick up to 5 tags → _Browse N
-together_. Leave Sort/Length/Quality on the site default to keep it strict.
-Combine is hidden on the Categories tab.
+**In the app:** Combine runs a word search (`/?k=milf+anal`); results are
+relevance-ranked, not strict. Use the **Filter results** box to drop loaded
+results by word.
 
 ## PornHub
 
 - **Categories — strict, exactly 2, straight only.**
   `/video/incategories/milf/anal` (paging `?page=N`, sort `&o=mv` etc. work).
+  Verified: 10 of 10 results (from the page's `#incategoryVideos` grid) list
+  both MILF and Anal in their own categories.
   - Three categories (`/incategories/a/b/c`) → 404.
   - The gay / lesbian / trans sections have no such page (404).
 - **Search + category**: not possible (`filter_category` on a search is
@@ -70,6 +77,9 @@ _Browse 2 together_. On other orientations Combine runs a word search.
   `/cat/japanese/?include=milf`).
   - Paging and sort: the page number goes **before** the sort segment —
     `/tag/redhead/2/longest/?include=milf`. (`/longest/2/` redirects to page 1.)
+  - Verified: 8 of 8 `?include=milf` results and 5 of 5
+    `?include=milf&exclude=anal` results had the right categories on their
+    own pages.
   - Only **categories** (the ~86 on `/cats/`) work in `include`/`exclude`;
     tag slugs (`femdom`, `pantyhose`) are silently dropped.
 - **Tag + tag**: not strict. Every multi-tag form (`/tag/redhead+milf/`,
@@ -145,7 +155,7 @@ normal search with all the words).
 ## How the app decides
 
 Each site advertises `BrowseOptions.combine_tags` (how many tags one URL can
-intersect exactly: XVIDEOS 5, PornHub 2, others 0) and `include_exclude`
+intersect exactly: PornHub 2, others 0) and `include_exclude`
 (Eporner). A combined tag slug is sent as `a,b,…`; when the count exceeds the
 site's exact limit, `AppState::browse` turns it into a word search, and the
 results page shows a note that the combination is not exact.
