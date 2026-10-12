@@ -141,16 +141,23 @@ macro_rules! ytdlp_tube_adapter {
 /// popularity cut-off hid most rare ones (e.g. late-alphabet tags).
 pub(crate) const ALL_CATEGORIES: usize = 5000;
 
+/// Group id for XVIDEOS' ~38 categories (/c/<Name>-<id>), listed apart from
+/// its tags; categories cannot be combined with tags in one URL.
+const XV_CATEGORIES_GROUP: &str = "categories";
+
 /// XVIDEOS splits its full tag index by first character: /tags/09, /tags/a …
 /// /tags/z (each the top 2,000 tags for that letter, ~50k in total); the
 /// plain /tags page only has the overall top ~2,000.
 fn xvideos_tag_groups() -> Vec<FilterOption> {
-    std::iter::once(FilterOption::new("09", "0-9"))
-        .chain(
-            ('a'..='z')
-                .map(|c| FilterOption::new(&c.to_string(), &c.to_ascii_uppercase().to_string())),
-        )
-        .collect()
+    [
+        FilterOption::new(XV_CATEGORIES_GROUP, "Categories"),
+        FilterOption::new("09", "0-9"),
+    ]
+    .into_iter()
+    .chain(
+        ('a'..='z').map(|c| FilterOption::new(&c.to_string(), &c.to_ascii_uppercase().to_string())),
+    )
+    .collect()
 }
 
 async fn tube_list_category_group(
@@ -161,6 +168,10 @@ async fn tube_list_category_group(
 ) -> AppResult<Vec<SiteCategory>> {
     if site_id != "xvideos" || !xvideos_tag_groups().iter().any(|g| g.id == group) {
         return Ok(Vec::new());
+    }
+    if group == XV_CATEGORIES_GROUP {
+        let html = ctx.fetch_html(&format!("{base}/"), site_id).await?;
+        return Ok(parse_xvideos_categories(&html));
     }
     let html = ctx
         .fetch_html(&format!("{base}/tags/{group}"), site_id)
@@ -203,6 +214,31 @@ fn parse_xvideos_tag_letter(html: &str) -> Vec<SiteCategory> {
             })
         })
         .collect()
+}
+
+/// `<a href="/c/Asian_Woman-32">Asian</a>` → slug `Asian_Woman-32`, name `Asian`.
+fn parse_xvideos_categories(html: &str) -> Vec<SiteCategory> {
+    use std::sync::LazyLock;
+    static RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+        regex::Regex::new(r#"<a href="/c/([A-Za-z0-9_]+-\d+)">([^<]+)</a>"#)
+            .expect("xvideos category regex")
+    });
+    let mut seen = std::collections::HashSet::new();
+    let mut out: Vec<SiteCategory> = RE
+        .captures_iter(html)
+        .filter_map(|c| {
+            let slug = c.get(1)?.as_str().to_string();
+            seen.insert(slug.clone()).then(|| SiteCategory {
+                name: html_escape_decode(c.get(2).map_or("", |m| m.as_str()).trim()),
+                slug,
+                kind: BrowseKind::Category,
+                thumbnail: None,
+                count: None,
+            })
+        })
+        .collect();
+    out.sort_by_key(|c| c.name.to_lowercase());
+    out
 }
 
 fn html_escape_decode(s: &str) -> String {
@@ -704,7 +740,7 @@ pub fn tube_browse_options(site_id: &str) -> BrowseOptions {
                 ("20min_more", "20+ min"),
             ]),
             qualities: o(&[("hd", "HD"), ("1080P", "1080p+")]),
-            filter_kinds: search,
+            filter_kinds: vec![BrowseKind::Search, BrowseKind::Tag, BrowseKind::Category],
             has_categories: true,
             combine_tags: 5,
             category_groups: xvideos_tag_groups(),
@@ -798,7 +834,55 @@ fn tube_base_url(site_id: &str, base: &str, query: &BrowseQuery) -> String {
             }
             BrowseKind::Channel => format!("{base}/channels/{slug}"),
             BrowseKind::Model => format!("{base}/models/{slug}"),
-            BrowseKind::Category => format!("{base}/c/{slug}"),
+            // Categories cannot be intersected on XVIDEOS: search their names.
+            BrowseKind::Category if query.slug.contains(',') => {
+                let words: Vec<String> = crate::models::split_tags(&query.slug)
+                    .iter()
+                    .map(|c| {
+                        let name = c.rsplit_once('-').map_or(c.as_str(), |(n, id)| {
+                            if id.chars().all(|d| d.is_ascii_digit()) {
+                                n
+                            } else {
+                                c.as_str()
+                            }
+                        });
+                        name.replace(['_', '-'], " ")
+                    })
+                    .collect();
+                format!("{base}/?k={}", query_slug(&words.join(" ")))
+            }
+            // /c/[s:<sort>/][d:<length>/][q:<quality>/]<Name>-<id>[/<page-1>]
+            BrowseKind::Category => {
+                let f = &query.filters;
+                let pick = |v: &Option<String>, ok: &[&str]| {
+                    v.as_deref().filter(|x| ok.contains(x)).map(str::to_string)
+                };
+                let mut path = format!("{base}/c/");
+                if let Some(s) = pick(&f.sort, &["uploaddate", "rating", "views", "length"]) {
+                    path.push_str(&format!("s:{s}/"));
+                }
+                if let Some(d) = pick(
+                    &f.duration,
+                    &["1-3min", "3-10min", "10-20min", "20min_more"],
+                ) {
+                    path.push_str(&format!("d:{d}/"));
+                }
+                if let Some(q) = pick(&f.quality, &["hd", "1080P"]) {
+                    path.push_str(&format!("q:{q}/"));
+                }
+                // Keep the canonical case (Asian_Woman-32); path_slug lowercases
+                // and the site only redirects bare category URLs back.
+                let cat = query.slug.trim();
+                let valid = !cat.is_empty()
+                    && cat
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-');
+                path.push_str(if valid { cat } else { &slug });
+                if query.page > 1 {
+                    path.push_str(&format!("/{}", query.page - 1));
+                }
+                path
+            }
             BrowseKind::Video => {
                 if query.slug.starts_with("http") {
                     query.slug.clone()
@@ -2022,7 +2106,33 @@ mod category_tests {
         assert_eq!(tags.len(), 2);
         assert_eq!(tags[0].slug, "zorra");
         assert_eq!(tags[0].count, Some(14_021));
-        assert_eq!(xvideos_tag_groups().len(), 27);
+        assert_eq!(xvideos_tag_groups().len(), 28);
+        let cats = parse_xvideos_categories(
+            r#"<li><a href="/c/Femdom-235">Femdom</a></li><li><a href="/c/Asian_Woman-32">Asian</a></li>"#,
+        );
+        assert_eq!(cats.len(), 2);
+        assert_eq!(
+            (cats[0].name.as_str(), cats[0].slug.as_str()),
+            ("Asian", "Asian_Woman-32")
+        );
+        let url = tube_browse_url(
+            "xvideos",
+            "https://www.xvideos.com",
+            &q(
+                BrowseKind::Category,
+                "Femdom-235",
+                3,
+                &[
+                    ("sort", "uploaddate"),
+                    ("duration", "10-20min"),
+                    ("period", "week"),
+                ],
+            ),
+        );
+        assert_eq!(
+            url,
+            "https://www.xvideos.com/c/s:uploaddate/d:10-20min/Femdom-235/2"
+        );
     }
 
     #[test]

@@ -106,7 +106,11 @@ function BrowseDetailPage() {
   const tagGroups = siteInfo?.browse_options?.category_groups ?? [];
   // Suggest for the tag being typed (after the last comma when combining).
   const typedTag = querySlug.split(",").pop()?.trim().toLowerCase() ?? "";
-  const tagGroup = groupForText(typedTag, tagGroups);
+  // XVIDEOS keeps categories (/c/…) in their own group, separate from tags.
+  const tagGroup =
+    kind === "category" && tagGroups.some((g) => g.id === "categories")
+      ? "categories"
+      : groupForText(typedTag, tagGroups);
   const tagGroupKey = tagGroups.length > 0 ? (tagGroup ?? "") : "all";
   useEffect(() => {
     if (!suggestTags || (tagGroups.length > 0 && !tagGroup)) return;

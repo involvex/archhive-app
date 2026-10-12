@@ -113,6 +113,8 @@ export function SiteCategoryBrowser({
   }, [categories, filter, order]);
 
   const kindLabel = categories?.every((c) => c.kind === "tag") ? "Tags" : "Categories";
+  // XVIDEOS categories (/c/…) cannot be combined; only its tags can.
+  const canCombine = !(groups.length > 0 && group === "categories");
   const exact = combineTags > 1;
   const maxPick = exact ? combineTags : MAX_SEARCH_COMBINE;
   const isSelected = (c: SiteCategory) => selected.some((s) => s.slug === c.slug);
@@ -213,21 +215,23 @@ export function SiteCategoryBrowser({
               </button>
             ))}
           </div>
-          <Button
-            size="sm"
-            variant={combining ? "default" : "outline"}
-            onClick={() => {
-              setCombining((v) => !v);
-              setSelected([]);
-            }}
-            title="Select several tags and browse videos matching them together"
-          >
-            <Layers className="h-4 w-4" />
-            Combine
-          </Button>
+          {canCombine && (
+            <Button
+              size="sm"
+              variant={combining ? "default" : "outline"}
+              onClick={() => {
+                setCombining((v) => !v);
+                setSelected([]);
+              }}
+              title="Select several tags and browse videos matching them together"
+            >
+              <Layers className="h-4 w-4" />
+              Combine
+            </Button>
+          )}
         </div>
 
-        {combining && (
+        {combining && canCombine && (
           <div className="space-y-2 rounded-md border border-[var(--color-border)] p-2">
             <p className="text-xs text-[var(--color-muted-foreground)]">
               {exact
@@ -291,7 +295,7 @@ export function SiteCategoryBrowser({
                 )}
               </>
             );
-            return combining ? (
+            return combining && canCombine ? (
               <button
                 key={`${c.kind}:${c.slug}`}
                 type="button"
