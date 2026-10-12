@@ -1,0 +1,399 @@
+//! Generic "video grid" parser shared by HTML-scraped tube adapters.
+//!
+//! Listing pages usually link each video several times: a thumbnail anchor
+//! (image + duration/quality badges, no text title) and a title anchor (text
+//! and/or `title=`). Taking only the first anchor per URL yields badge text
+//! such as "1080p" as the title, or drops the card entirely when the first
+//! anchor has no usable text. Instead, every anchor that points at the same
+//! video is merged into one card, and the best title/thumbnail/duration
+//! across all of them wins.
+
+use crate::models::MediaItem;
+use regex::Regex;
+use scraper::{ElementRef, Html, Node, Selector};
+use std::collections::HashMap;
+use std::sync::LazyLock;
+use uuid::Uuid;
+
+/// Upper bound on cards returned from one listing page.
+pub const MAX_LISTING_ITEMS: usize = 60;
+
+static DURATION_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\b(?:(\d{1,2}):)?(\d{1,2}):(\d{2})\b").expect("duration regex"));
+static MINUTES_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)\b(\d{1,3})\s*min\b").expect("minutes regex"));
+static EDGE_DURATION_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)^(?:\d{1,2}:)?\d{1,2}:\d{2}\s*[-:|]?\s*|\s*[-:|]?\s*(?:(?:\d{1,2}:)?\d{1,2}:\d{2}|\d{1,3}\s*min)$")
+        .expect("edge duration regex")
+});
+static BADGE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)^(?:\d{3,4}p(?:\s*\d{2})?|[48]k|hd|uhd|fhd|vr|new|premium|cc|\d+\s*fps|[\d\s.,:%kmb]+|views?)(?:\s*(?:cc|hd|vr))*$")
+        .expect("badge regex")
+});
+static WS_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s+").expect("ws regex"));
+
+/// How a site's listing page should be read.
+pub struct ListingSpec<'a> {
+    pub site_id: &'a str,
+    /// Site origin used to absolutize relative hrefs / image paths.
+    pub base: &'a str,
+    /// CSS selector matching every candidate video anchor.
+    pub anchor_selector: &'a str,
+    /// Returns true when an href points at a single video page.
+    pub is_video_href: &'a dyn Fn(&str) -> bool,
+    /// Generic titles to discard (site nav links etc.).
+    pub is_junk_title: &'a dyn Fn(&str) -> bool,
+}
+
+#[derive(Default)]
+struct Card {
+    title: Option<(u8, String)>,
+    thumbnail: Option<String>,
+    duration: Option<u32>,
+}
+
+/// Parse a listing page into media items, merging duplicate anchors per video.
+pub fn parse_listing(html: &str, spec: &ListingSpec<'_>) -> Vec<MediaItem> {
+    let document = Html::parse_document(html);
+    let (Ok(anchor_sel), Ok(img_sel)) = (
+        Selector::parse(spec.anchor_selector),
+        Selector::parse("img"),
+    ) else {
+        return Vec::new();
+    };
+
+    let mut order: Vec<String> = Vec::new();
+    let mut cards: HashMap<String, Card> = HashMap::new();
+
+    for el in document.select(&anchor_sel) {
+        let Some(href) = el.value().attr("href") else {
+            continue;
+        };
+        if !(spec.is_video_href)(href) {
+            continue;
+        }
+        let url = absolutize(spec.base, href.split('#').next().unwrap_or(href));
+        if !cards.contains_key(&url) {
+            if order.len() >= MAX_LISTING_ITEMS {
+                continue;
+            }
+            order.push(url.clone());
+        }
+        let card = cards.entry(url).or_default();
+
+        let imgs: Vec<ElementRef<'_>> = el.select(&img_sel).collect();
+        let mut candidates: Vec<(u8, Option<&str>)> = vec![
+            (4, el.value().attr("title")),
+            (4, el.value().attr("aria-label")),
+            (3, el.value().attr("data-title")),
+        ];
+        for img in &imgs {
+            candidates.push((2, img.value().attr("alt")));
+            candidates.push((2, img.value().attr("title")));
+        }
+        let text = visible_text(&el);
+        candidates.push((1, Some(text.as_str())));
+        for (score, raw) in candidates {
+            let Some(raw) = raw else { continue };
+            if card.title.as_ref().is_some_and(|(s, _)| *s >= score) {
+                continue;
+            }
+            if let Some(t) = clean_listing_title(raw, spec.is_junk_title) {
+                card.title = Some((score, t));
+            }
+        }
+
+        if card.thumbnail.is_none() {
+            card.thumbnail = el
+                .value()
+                .attr("data-mediumthumb")
+                .or_else(|| el.value().attr("data-thumb"))
+                .and_then(|s| usable_image_url(spec.base, s))
+                .or_else(|| imgs.iter().find_map(|img| image_from_img(spec.base, img)));
+        }
+        if card.duration.is_none() {
+            card.duration = parse_duration_text(&text);
+        }
+    }
+
+    order
+        .into_iter()
+        .filter_map(|url| {
+            let card = cards.remove(&url)?;
+            let title = card
+                .title
+                .map(|(_, t)| t)
+                .or_else(|| title_from_url_slug(&url))?;
+            Some(MediaItem {
+                id: Uuid::new_v4().to_string(),
+                title,
+                url,
+                thumbnail: card.thumbnail,
+                duration: card.duration,
+                site_id: spec.site_id.to_string(),
+                performers: vec![],
+                tags: vec![],
+                description: None,
+                channel: None,
+                is_live: None,
+                viewers: None,
+                age: None,
+                gender: None,
+                stream_url: None,
+                embed_url: None,
+            })
+        })
+        .collect()
+}
+
+/// Text content of an element, skipping `<noscript>`, `<script>` and `<style>`
+/// subtrees (xHamster ships its `<img>` markup inside `<noscript>`, which the
+/// parser exposes as raw text).
+pub fn visible_text(el: &ElementRef<'_>) -> String {
+    let mut out = String::new();
+    for node in el.descendants() {
+        let Node::Text(text) = node.value() else {
+            continue;
+        };
+        let hidden = node.ancestors().any(|a| {
+            a.value()
+                .as_element()
+                .is_some_and(|e| matches!(e.name(), "noscript" | "script" | "style"))
+        });
+        if !hidden {
+            out.push_str(text);
+            out.push(' ');
+        }
+    }
+    WS_RE.replace_all(out.trim(), " ").into_owned()
+}
+
+/// Normalize a title candidate; `None` when it is a badge, duration, nav label
+/// or leaked markup rather than a real title.
+pub fn clean_listing_title(raw: &str, is_junk: &dyn Fn(&str) -> bool) -> Option<String> {
+    let unescaped = crate::sites::urls::html_unescape(raw);
+    let mut t = WS_RE.replace_all(unescaped.trim(), " ").into_owned();
+    // Strip leading/trailing durations ("05:45 Title", "Title 10 min").
+    loop {
+        let stripped = EDGE_DURATION_RE.replace(&t, "").trim().to_string();
+        if stripped == t {
+            break;
+        }
+        t = stripped;
+    }
+    if t.chars().count() < 3 || t.starts_with('<') || t.contains("src=\"") {
+        return None;
+    }
+    if BADGE_RE.is_match(&t) || is_junk(&t) {
+        return None;
+    }
+    Some(t)
+}
+
+/// Plain text from an HTML fragment (tags removed, entities decoded,
+/// whitespace collapsed).
+pub fn strip_html_tags(fragment: &str) -> String {
+    let doc = Html::parse_fragment(fragment);
+    let text: String = doc.root_element().text().collect::<Vec<_>>().join(" ");
+    let text = crate::sites::urls::html_unescape(&text);
+    WS_RE.replace_all(text.trim(), " ").into_owned()
+}
+
+/// First duration-looking token in card text, in seconds.
+pub fn parse_duration_text(text: &str) -> Option<u32> {
+    if let Some(c) = DURATION_RE.captures(text) {
+        let h: u32 = c.get(1).and_then(|m| m.as_str().parse().ok()).unwrap_or(0);
+        let m: u32 = c.get(2)?.as_str().parse().ok()?;
+        let s: u32 = c.get(3)?.as_str().parse().ok()?;
+        if s < 60 {
+            return Some(h * 3600 + m * 60 + s);
+        }
+    }
+    MINUTES_RE
+        .captures(text)
+        .and_then(|c| c.get(1)?.as_str().parse::<u32>().ok())
+        .map(|m| m * 60)
+}
+
+/// Human title from the last URL path segment (`/video.abc/some_title` →
+/// "Some title"). Trailing id tokens such as `-xhZ1D1q` / `-4861165` are dropped.
+pub fn title_from_url_slug(url: &str) -> Option<String> {
+    let parsed = url::Url::parse(url).ok()?;
+    let seg = parsed.path().trim_end_matches('/').rsplit('/').find(|s| {
+        s.chars().any(|c| c.is_ascii_alphabetic())
+            && s.len() > 3
+            && !matches!(
+                s.to_ascii_lowercase().as_str(),
+                "watch" | "video" | "videos" | "view_video.php" | "embed"
+            )
+    })?;
+    let mut words: Vec<&str> = seg
+        .split(['-', '_', '+'])
+        .filter(|w| !w.is_empty())
+        .collect();
+    if words.len() > 1
+        && words
+            .last()
+            .is_some_and(|w| w.chars().any(|c| c.is_ascii_digit()))
+    {
+        words.pop();
+    }
+    if words.len() < 2 && words.first().is_some_and(|w| w.starts_with("video")) {
+        return None;
+    }
+    let joined = words.join(" ");
+    let mut chars = joined.chars();
+    let first = chars.next()?;
+    let title: String = first.to_uppercase().chain(chars).collect();
+    (title.chars().count() >= 3).then_some(title)
+}
+
+pub fn absolutize(base: &str, href: &str) -> String {
+    if href.starts_with("http://") || href.starts_with("https://") {
+        href.to_string()
+    } else if let Some(rest) = href.strip_prefix("//") {
+        format!("https://{rest}")
+    } else if href.starts_with('/') {
+        format!("{}{href}", base.trim_end_matches('/'))
+    } else {
+        format!("{}/{href}", base.trim_end_matches('/'))
+    }
+}
+
+fn usable_image_url(base: &str, raw: &str) -> Option<String> {
+    let s = raw.trim();
+    if s.is_empty()
+        || s.starts_with("data:")
+        || s.contains("lightbox-blank")
+        || s.contains("blank.gif")
+        || s.ends_with("/placeholder.png")
+    {
+        return None;
+    }
+    Some(absolutize(base, s))
+}
+
+fn image_from_img(base: &str, img: &ElementRef<'_>) -> Option<String> {
+    let v = img.value();
+    [
+        "data-mediumthumb",
+        "data-src",
+        "data-thumb",
+        "data-original",
+        "data-poster",
+        "data-thumb_url",
+        "src",
+    ]
+    .iter()
+    .find_map(|attr| v.attr(attr).and_then(|s| usable_image_url(base, s)))
+    .or_else(|| {
+        v.attr("srcset")
+            .and_then(|s| s.split(',').next())
+            .and_then(|s| s.split_whitespace().next())
+            .and_then(|s| usable_image_url(base, s))
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn no_junk(_: &str) -> bool {
+        false
+    }
+
+    fn spec<'a>(
+        is_video: &'a dyn Fn(&str) -> bool,
+        junk: &'a dyn Fn(&str) -> bool,
+    ) -> ListingSpec<'a> {
+        ListingSpec {
+            site_id: "test",
+            base: "https://example.com",
+            anchor_selector: "a[href]",
+            is_video_href: is_video,
+            is_junk_title: junk,
+        }
+    }
+
+    #[test]
+    fn merges_thumbnail_and_title_anchors() {
+        let html = r#"
+          <div class="thumb-block">
+            <a href="/video.abc/some_slug"><img src="blank.gif" data-src="//cdn.example.com/t.jpg"/>
+              <span class="video-hd-mark">1080p</span></a>
+            <p class="title"><a href="/video.abc/some_slug" title="Real Title">Real Title <span>10 min</span></a></p>
+          </div>"#;
+        let is_video = |h: &str| h.contains("/video.");
+        let items = parse_listing(html, &spec(&is_video, &no_junk));
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].title, "Real Title");
+        assert_eq!(items[0].url, "https://example.com/video.abc/some_slug");
+        assert_eq!(
+            items[0].thumbnail.as_deref(),
+            Some("https://cdn.example.com/t.jpg")
+        );
+        assert_eq!(items[0].duration, Some(600));
+    }
+
+    #[test]
+    fn keeps_card_when_first_anchor_has_no_text() {
+        let html = r#"
+          <a href="/watch/1/"><img alt="Image Alt Title" data-src="https://c/x.jpg"/><span>05:45</span></a>
+          <a href="/watch/1/"><span>Text Title</span></a>
+          <a href="/watch/2/"><img data-src="https://c/y.jpg"/></a>
+          <a href="/watch/2/"> Second Video </a>"#;
+        let is_video = |h: &str| h.contains("/watch/");
+        let items = parse_listing(html, &spec(&is_video, &no_junk));
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].title, "Image Alt Title");
+        assert_eq!(items[0].duration, Some(345));
+        assert_eq!(items[1].title, "Second Video");
+    }
+
+    #[test]
+    fn ignores_noscript_markup_text() {
+        let html = r#"<a href="https://example.com/videos/a-b-xh12" aria-label="Aria Title">
+            <noscript><img src="https://c/z.webp" alt="x"/></noscript> 12:07</a>"#;
+        let is_video = |h: &str| h.contains("/videos/");
+        let items = parse_listing(html, &spec(&is_video, &no_junk));
+        assert_eq!(items[0].title, "Aria Title");
+        assert_eq!(items[0].duration, Some(727));
+    }
+
+    #[test]
+    fn rejects_badges_and_durations() {
+        for bad in [
+            "1080p", "720pCC", "360p CC", "HD", "4K", "12:34", "10 min", "584K",
+        ] {
+            assert_eq!(clean_listing_title(bad, &no_junk), None, "{bad}");
+        }
+        assert_eq!(
+            clean_listing_title("05:47 Some &amp; Title", &no_junk).as_deref(),
+            Some("Some & Title")
+        );
+    }
+
+    #[test]
+    fn strips_room_subject_markup() {
+        assert_eq!(
+            strip_html_tags(r#"hi &amp; welcome <a href="/tag/new/">#new</a>  <b>x</b>"#),
+            "hi & welcome #new x"
+        );
+    }
+
+    #[test]
+    fn slug_title_fallback() {
+        assert_eq!(
+            title_from_url_slug("https://xhamster.com/videos/willing-housewife-xhZ1D1q").as_deref(),
+            Some("Willing housewife")
+        );
+        assert_eq!(
+            title_from_url_slug("https://www.xvideos.com/video.abc123/sexy_amateur").as_deref(),
+            Some("Sexy amateur")
+        );
+        assert_eq!(
+            title_from_url_slug("https://www.youporn.com/watch/205140451/"),
+            None
+        );
+    }
+}

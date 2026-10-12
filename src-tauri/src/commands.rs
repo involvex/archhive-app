@@ -395,6 +395,27 @@ pub fn save_site_cookies(
     map_err(state.save_site_cookies(&site_id, &cookies))
 }
 
+/// Open the in-app login browser for a site and return the cookies captured
+/// once the user finishes (the frontend stores them via `save_site_cookies`,
+/// which also covers Remote LAN hosts). Async: reading webview cookies from a
+/// synchronous command deadlocks on Windows.
+#[tauri::command]
+pub async fn cookie_login(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    site_id: String,
+) -> CmdResult<crate::cookie_login::CookieLoginResult> {
+    let (display_name, base_url) = map_err(state.site_login_info(&site_id))?;
+    let target = crate::cookie_login::login_target(&site_id, &base_url);
+    map_err(crate::cookie_login::capture(&app, &site_id, &display_name, &target).await)
+}
+
+/// Desktop: save (`save = true`) or cancel the open login window.
+#[tauri::command]
+pub fn cookie_login_finish(app: AppHandle, save: bool) -> CmdResult<()> {
+    map_err(crate::cookie_login::finish(&app, save))
+}
+
 #[tauri::command]
 pub fn delete_site_cookies(state: State<'_, Arc<AppState>>, site_id: String) -> CmdResult<()> {
     map_err(state.delete_site_cookies(&site_id))

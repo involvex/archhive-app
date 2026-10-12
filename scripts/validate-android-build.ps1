@@ -36,6 +36,7 @@ $sharePlugin = Join-Path $gen "app\src\main\java\com\archhive\app\ShareIntentPlu
 $mainActivity = Join-Path $gen "app\src\main\java\com\archhive\app\MainActivity.kt"
 $fgService = Join-Path $gen "app\src\main\java\com\archhive\app\DownloadForegroundService.kt"
 $resumeWorker = Join-Path $gen "app\src\main\java\com\archhive\app\PendingResumeWorker.kt"
+$cookieBrowser = Join-Path $gen "app\src\main\java\com\archhive\app\CookieBrowserPlugin.kt"
 $gradle = Join-Path $gen "app\build.gradle.kts"
 $proguard = Join-Path $gen "app\proguard-rules.pro"
 $manifest = Join-Path $gen "app\src\main\AndroidManifest.xml"
@@ -55,6 +56,9 @@ if (-not (Test-Path $fgService)) {
 }
 if (-not (Test-Path $resumeWorker)) {
     Add-Fail "Missing PendingResumeWorker.kt"
+}
+if (-not (Test-Path $cookieBrowser)) {
+    Add-Fail "Missing CookieBrowserPlugin.kt (run scripts/apply-android-patches.ps1)"
 }
 
 if (-not (Test-Path $gradle)) {

@@ -6,7 +6,6 @@ use crate::sites::browse_fallback::ytdlp_browse_fallback;
 use crate::sites::urls::{path_slug, query_slug};
 use crate::sites::{SiteAdapter, SiteContext};
 use async_trait::async_trait;
-use uuid::Uuid;
 
 macro_rules! ytdlp_tube_adapter {
     ($struct_name:ident, $id:expr, $name:expr, $base:expr) => {
@@ -601,185 +600,25 @@ fn pornhub_category_id_for_slug(slug: &str, _orientation: BrowseOrientation) -> 
 }
 
 fn parse_video_links(html: &str, base: &str, site_id: &str) -> AppResult<Vec<MediaItem>> {
-    use scraper::{Html, Selector};
-    let document = Html::parse_document(html);
-    let selectors: &[&str] = match site_id {
-        "pornhub" => &[
-            ".ph-pornstar-videos-list .pcVideoListItem a[href*='view_video']",
-            ".pcVideoListItem a[href*='view_video']",
-            "a[href*='view_video.php']",
-            "a[href*='view_video?']",
-        ],
-        "xvideos" => &[
-            // Modern XVideos IDs look like /video.abc123/slug — not /videos-i-like nav links.
-            "div.thumb-block a[href*='/video.']",
-            "div.mozaique a[href*='/video.']",
-            "a[href*='/video.']",
-        ],
-        "xhamster" => &[
-            "a[href*='/videos/'][href*='-']",
-            ".thumb-list__item a[href*='/videos/']",
-            "a.video-thumb__image-container[href*='/videos/']",
-        ],
-        "youporn" => &[
-            "a[href*='/watch/']",
-            ".video-box a[href*='/watch/']",
-            ".videoList a[href*='/watch/']",
-        ],
-        "xnxx" => &[
-            "div.mozaique a[href*='/video-']",
-            "div.thumb-block a[href*='/video-']",
-            "a[href*='/video-']",
-        ],
-        _ => &[
-            "a[href*='/video.']",
-            "a[href*='/videos/']",
-            "a[href*='/watch/']",
-        ],
+    let anchor_selector = match site_id {
+        "pornhub" => "a[href*='view_video']",
+        "xvideos" => "a[href*='/video.']",
+        "xhamster" => "a[href*='/videos/']",
+        "youporn" => "a[href*='/watch/']",
+        "xnxx" => "a[href*='/video-']",
+        _ => "a[href*='/video.'], a[href*='/videos/'], a[href*='/watch/']",
     };
-    let mut items = Vec::new();
-    let mut seen = std::collections::HashSet::new();
-
-    for sel_str in selectors {
-        let Ok(sel) = Selector::parse(sel_str) else {
-            continue;
-        };
-        for el in document.select(&sel) {
-            let Some(href) = el.value().attr("href") else {
-                continue;
-            };
-            if !is_site_video_href(site_id, href) {
-                continue;
-            }
-            let url = if href.starts_with("http") {
-                href.to_string()
-            } else if href.starts_with("//") {
-                format!("https:{href}")
-            } else {
-                format!("{base}{href}")
-            };
-            if !seen.insert(url.clone()) {
-                continue;
-            }
-            let title = {
-                // 1) <a title="..."> — works for PornHub.
-                let from_a_title = el
-                    .value()
-                    .attr("title")
-                    .filter(|s| !s.is_empty())
-                    .map(|s| s.to_string());
-                // 2) <img title="..."> — YouPorn puts the real title on the thumbnail img.
-                let from_img_title = from_a_title.clone().or_else(|| {
-                    let img_sel = Selector::parse("img").ok();
-                    img_sel
-                        .as_ref()
-                        .and_then(|sel| {
-                            el.select(sel)
-                                .find_map(|img| img.value().attr("title").filter(|t| !t.is_empty()))
-                        })
-                        .map(|s| s.to_string())
-                });
-                // 3) <b> child text — YouPorn fallback.
-                let from_b = from_img_title.clone().or_else(|| {
-                    let b_sel = Selector::parse("b").ok();
-                    b_sel
-                        .as_ref()
-                        .and_then(|sel| {
-                            el.select(sel).find_map(|b| {
-                                let t = b.text().collect::<String>().trim().to_string();
-                                if !t.is_empty() && !is_junk_nav_title(&t) {
-                                    Some(t)
-                                } else {
-                                    None
-                                }
-                            })
-                        })
-                        .map(|s| s.to_string())
-                });
-                // 4) Last resort: strip duration patterns from full text.
-                from_b.unwrap_or_else(|| {
-                    crate::sites::urls::strip_duration_from_title(
-                        el.text().collect::<String>().trim(),
-                    )
-                })
-            };
-            let title = crate::sites::urls::html_unescape(&title);
-            if title.is_empty() || is_junk_nav_title(&title) {
-                continue;
-            }
-            let img_sel = Selector::parse("img").ok();
-            let thumbnail = match site_id {
-                "pornhub" => el
-                    .value()
-                    .attr("data-mediumthumb")
-                    .map(|s| s.to_string())
-                    .or_else(|| {
-                        img_sel.as_ref().and_then(|sel| {
-                            el.select(sel).find_map(|img| {
-                                img.value()
-                                    .attr("data-src")
-                                    .or_else(|| img.value().attr("src"))
-                                    .map(|s| {
-                                        if s.starts_with("http") {
-                                            s.to_string()
-                                        } else {
-                                            format!("{base}{s}")
-                                        }
-                                    })
-                            })
-                        })
-                    }),
-                "xvideos" | "xhamster" | "youporn" | "xnxx" => img_sel.as_ref().and_then(|sel| {
-                    el.select(sel).find_map(|img| {
-                        img.value()
-                            .attr("data-src")
-                            .or_else(|| img.value().attr("data-thumb"))
-                            .or_else(|| img.value().attr("data-original"))
-                            .or_else(|| img.value().attr("src"))
-                            .filter(|s| !s.starts_with("data:"))
-                            .map(|s| {
-                                if s.starts_with("http") || s.starts_with("//") {
-                                    if s.starts_with("//") {
-                                        format!("https:{s}")
-                                    } else {
-                                        s.to_string()
-                                    }
-                                } else {
-                                    format!("{base}{s}")
-                                }
-                            })
-                    })
-                }),
-                _ => None,
-            };
-            items.push(MediaItem {
-                id: Uuid::new_v4().to_string(),
-                title,
-                url,
-                thumbnail,
-                duration: None,
-                site_id: site_id.to_string(),
-                performers: vec![],
-                tags: vec![],
-                description: None,
-                channel: None,
-                is_live: None,
-                viewers: None,
-                age: None,
-                gender: None,
-                stream_url: None,
-                embed_url: None,
-            });
-            if items.len() >= 40 {
-                break;
-            }
-        }
-        if items.len() >= 20 {
-            break;
-        }
-    }
-
-    Ok(items)
+    let is_video_href = |href: &str| is_site_video_href(site_id, href);
+    Ok(crate::sites::listing::parse_listing(
+        html,
+        &crate::sites::listing::ListingSpec {
+            site_id,
+            base,
+            anchor_selector,
+            is_video_href: &is_video_href,
+            is_junk_title: &is_junk_nav_title,
+        },
+    ))
 }
 
 fn is_site_video_href(site_id: &str, href: &str) -> bool {
@@ -794,7 +633,12 @@ fn is_site_video_href(site_id: &str, href: &str) -> bool {
                 && !lower.contains("/profiles/")
         }
         "xhamster" => {
-            lower.contains("/videos/")
+            // Single videos live at /videos/<slug>-<id>; hubs such as
+            // /creators/videos/... or /videos/best are listings.
+            lower
+                .rsplit("xhamster.com")
+                .next()
+                .is_some_and(|path| path.starts_with("/videos/"))
                 && !lower.contains("/videos/best")
                 && !lower.contains("/videos/newest")
                 && !lower.contains("/categories/")

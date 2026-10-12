@@ -226,6 +226,14 @@ export interface CookieSiteInfo {
   updated_at: string;
 }
 
+/** Mirrors `cookie_login::CookieLoginResult` (src-tauri/src/cookie_login.rs). */
+export interface CookieLoginResult {
+  site_id: string;
+  /** Netscape cookie file captured by the in-app login browser. */
+  netscape: string;
+  count: number;
+}
+
 export interface HealthResponse {
   status: string;
   version: string;

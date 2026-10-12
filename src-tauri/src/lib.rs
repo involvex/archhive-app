@@ -1,4 +1,5 @@
 mod commands;
+mod cookie_login;
 mod db;
 mod discovery;
 mod downloads;
@@ -179,6 +180,8 @@ pub fn run() {
     #[cfg(mobile)]
     let builder = builder.plugin(mobile::share::init());
 
+    let builder = builder.plugin(cookie_login::init());
+
     let builder = builder.setup(|app| {
         let data_dir = app
             .path()
@@ -288,6 +291,8 @@ pub fn run() {
             commands::merge_duplicates,
             commands::list_cookie_sites,
             commands::save_site_cookies,
+            commands::cookie_login,
+            commands::cookie_login_finish,
             commands::delete_site_cookies,
             commands::export_settings_backup,
             commands::import_settings_backup,

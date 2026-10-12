@@ -2,7 +2,19 @@
 
 ArcHive stores cookies encrypted per site for browse and yt-dlp downloads.
 
-## Recommended: Cookie-Editor extension
+## Recommended: Log in with browser (desktop + Android)
+
+1. In **Settings → Cookies**, select the site (or open a cookie-required site in Browse).
+2. Press **Log in with browser**. ArcHive opens the site in its own browser:
+   - **Desktop:** a separate window. Log in, then press **Save cookies** in ArcHive (or just close the window).
+   - **Android:** a full-screen browser with **Cancel** / **Save cookies** buttons at the top. The system back button navigates back inside the page.
+3. The captured cookies, including HttpOnly session cookies that page scripts cannot read, are converted to Netscape format and stored in the vault (on the LAN host when the app is in Remote LAN mode).
+
+Android does not let one app read another app's cookies (for example Chrome's), so the login has to happen inside ArcHive. Google sign-in may refuse embedded browsers; for YouTube, import cookies with Cookie-Editor instead.
+
+Implementation: `src-tauri/src/cookie_login.rs` (desktop window + Android bridge) and `src-tauri/android-overlays/CookieBrowserPlugin.kt` (installed by `scripts/patch-android-ytdlp.ps1` / `.sh`).
+
+## Cookie-Editor extension
 
 1. Install [Cookie-Editor](https://chromewebstore.google.com/detail/cookie-editor/hlkenndednhfkekhgcdicdfddnkalmdm) (Chrome, Edge, Brave) or the Firefox equivalent.
 2. Log in on the target site (PornHub, xHamster, etc.).
@@ -30,6 +42,8 @@ Export or build a Netscape cookie file and paste into the Netscape textarea → 
 | xhamster | xhamster.com, xhamster.desi |
 | xvideos  | xvideos.com                 |
 | thisvid  | thisvid.com                 |
+
+Lines exported as `#HttpOnly_<domain>` are treated as cookies, not comments.
 
 ## Security
 

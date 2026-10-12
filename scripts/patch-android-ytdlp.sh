@@ -45,6 +45,10 @@ if [[ -f "$OVERLAYS/PendingResumeWorker.kt" ]]; then
   cp "$OVERLAYS/PendingResumeWorker.kt" "$PLUGIN_DEST_DIR/PendingResumeWorker.kt"
   echo "Installed PendingResumeWorker.kt"
 fi
+if [[ -f "$OVERLAYS/CookieBrowserPlugin.kt" ]]; then
+  cp "$OVERLAYS/CookieBrowserPlugin.kt" "$PLUGIN_DEST_DIR/CookieBrowserPlugin.kt"
+  echo "Installed CookieBrowserPlugin.kt"
+fi
 
 if ! grep -q 'youtubedl-android:library' "$GRADLE"; then
   python3 - "$GRADLE" "$YOUTUBE_DL_ANDROID_VERSION" "$WORK_RUNTIME_KTX_VERSION" <<'PY'
@@ -107,6 +111,12 @@ else
   } > "$PROGUARD.tmp"
   mv "$PROGUARD.tmp" "$PROGUARD"
   echo "Wrote ProGuard keep rules to $PROGUARD"
+fi
+
+# Projects patched before the cookie login browser existed: add its keeps.
+if ! grep -q 'CookieBrowserPlugin' "$PROGUARD"; then
+  printf '\n-keep class com.archhive.app.CookieBrowserPlugin { *; }\n-keep class com.archhive.app.CookieBrowserPlugin$OpenArgs { *; }\n' >> "$PROGUARD"
+  echo "Added CookieBrowserPlugin ProGuard keeps."
 fi
 
 echo "Android YtDlp overlay patch complete (youtubedl-android $YOUTUBE_DL_ANDROID_VERSION)."

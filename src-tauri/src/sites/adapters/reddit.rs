@@ -38,6 +38,13 @@ impl SiteAdapter for RedditAdapter {
                 Err(_) => Vec::new(),
             };
         }
+        if items.is_empty() {
+            return Err(crate::error::AppError::Site(
+                "No Reddit posts found. Reddit now hides listings from logged-out visitors: \
+                 use Settings → Cookies → Log in for Reddit, then try again."
+                    .to_string(),
+            ));
+        }
         let has_more = items.len() >= 25;
         Ok(BrowsePage {
             items,

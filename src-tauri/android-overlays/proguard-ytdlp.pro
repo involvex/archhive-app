@@ -8,6 +8,8 @@
     *;
 }
 -keep class com.archhive.app.DownloadForegroundService { *; }
+-keep class com.archhive.app.CookieBrowserPlugin { *; }
+-keep class com.archhive.app.CookieBrowserPlugin$OpenArgs { *; }
 -keep class com.archhive.app.PendingResumeWorker { *; }
 -keepclassmembers class com.archhive.app.PendingResumeWorker {
     <init>(android.content.Context, androidx.work.WorkerParameters);

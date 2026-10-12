@@ -2,7 +2,6 @@ use crate::error::{AppError, AppResult};
 use crate::models::{BrowseKind, BrowsePage, BrowseQuery, DownloadPlan, DownloadTool, MediaItem};
 use crate::sites::{SiteAdapter, SiteContext};
 use async_trait::async_trait;
-use uuid::Uuid;
 
 pub struct RedgifsAdapter;
 
@@ -21,31 +20,41 @@ impl SiteAdapter for RedgifsAdapter {
     }
 
     fn supported_kinds(&self) -> Vec<BrowseKind> {
-        vec![BrowseKind::Tag, BrowseKind::Search, BrowseKind::Video]
+        vec![
+            BrowseKind::Search,
+            BrowseKind::Tag,
+            BrowseKind::Model,
+            BrowseKind::Video,
+        ]
     }
 
     async fn browse(&self, ctx: &SiteContext, query: BrowseQuery) -> AppResult<BrowsePage> {
-        let url = match query.kind {
-            BrowseKind::Tag => format!("https://www.redgifs.com/tags/{}", query.slug),
-            BrowseKind::Search => format!("https://www.redgifs.com/search/{}", query.slug),
-            BrowseKind::Livestream => {
-                if query.slug.starts_with("http") {
-                    query.slug.clone()
-                } else {
-                    format!("https://www.redgifs.com/watch/{}", query.slug)
-                }
+        use crate::sites::extractors::redgifs;
+        const PAGE_SIZE: u32 = 40;
+        let slug = query.slug.trim();
+        let (items, pages) = match query.kind {
+            BrowseKind::Video | BrowseKind::Livestream => {
+                let item = redgifs::extract_info(ctx, slug).await?;
+                (vec![item], Some(1))
+            }
+            BrowseKind::Model | BrowseKind::Channel => {
+                let user = slug
+                    .trim_end_matches('/')
+                    .rsplit("/users/")
+                    .next()
+                    .unwrap_or(slug);
+                redgifs::user_gifs(ctx, user, query.page, PAGE_SIZE).await?
             }
             _ => {
-                if query.slug.starts_with("http") {
-                    query.slug.clone()
-                } else {
-                    format!("https://www.redgifs.com/watch/{}", query.slug)
-                }
+                // Empty query → trending feed; tag slugs use hyphens.
+                let text = slug.replace('-', " ");
+                redgifs::search(ctx, &text, "trending", query.page, PAGE_SIZE).await?
             }
         };
-        let html = ctx.fetch_html(&url, "redgifs").await?;
-        let items = parse_redgifs(&html)?;
-        let has_more = items.len() >= 20;
+        if items.is_empty() {
+            return Err(AppError::Site("No RedGifs results for this query.".into()));
+        }
+        let has_more = pages.map_or(items.len() as u32 >= PAGE_SIZE, |p| query.page < p);
         Ok(BrowsePage {
             items,
             page: query.page,
@@ -137,45 +146,4 @@ impl SiteAdapter for RedgifsAdapter {
             initial_status: None,
         })
     }
-}
-
-fn parse_redgifs(html: &str) -> AppResult<Vec<MediaItem>> {
-    use scraper::{Html, Selector};
-    let document = Html::parse_document(html);
-    let sel = Selector::parse("a[href*='/watch/']").unwrap();
-    let mut items = Vec::new();
-    for el in document.select(&sel) {
-        let Some(href) = el.value().attr("href") else {
-            continue;
-        };
-        let url = if href.starts_with("http") {
-            href.to_string()
-        } else {
-            format!("https://www.redgifs.com{href}")
-        };
-        items.push(MediaItem {
-            id: Uuid::new_v4().to_string(),
-            title: crate::sites::urls::html_unescape(
-                url.split('/').next_back().unwrap_or("redgif"),
-            ),
-            url,
-            thumbnail: None,
-            duration: None,
-            site_id: "redgifs".to_string(),
-            performers: vec![],
-            tags: vec![],
-            description: None,
-            channel: None,
-            is_live: None,
-            viewers: None,
-            age: None,
-            gender: None,
-            stream_url: None,
-            embed_url: None,
-        });
-        if items.len() >= 30 {
-            break;
-        }
-    }
-    Ok(items)
 }
