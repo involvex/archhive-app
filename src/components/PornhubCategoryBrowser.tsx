@@ -7,6 +7,7 @@ import {
   categoryBrowseSlug,
   mergeCategoryCatalog,
   PORNHUB_CATEGORIES,
+  PORNHUB_LANGUAGES,
   PORNHUB_ORIENTATIONS,
   type BrowseOrientation,
   type PornhubCategory,
@@ -186,6 +187,23 @@ export function PornhubCategoryBrowser() {
         )}
         {refreshStatus && (
           <p className="text-xs text-[var(--color-muted-foreground)]">{refreshStatus}</p>
+        )}
+        {orientation === "straight" && !combining && (
+          <div className="space-y-1">
+            <p className="text-xs text-[var(--color-muted-foreground)]">Language in videos</p>
+            <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-hide">
+              {PORNHUB_LANGUAGES.map((l) => (
+                <Link
+                  key={l.slug}
+                  to="/browse/$site/$kind/$slug"
+                  params={{ site: "pornhub", kind: "category", slug: l.slug }}
+                  className="shrink-0 rounded-full bg-[var(--color-secondary)] px-3 py-1 text-xs hover:bg-[var(--color-muted)]"
+                >
+                  {l.name}
+                </Link>
+              ))}
+            </div>
+          </div>
         )}
         <Input
           placeholder="Filter categories…"
