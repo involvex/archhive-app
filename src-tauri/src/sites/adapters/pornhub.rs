@@ -166,6 +166,15 @@ async fn tube_list_category_group(
     base: &str,
     group: &str,
 ) -> AppResult<Vec<SiteCategory>> {
+    if site_id == "xhamster" {
+        if !xhamster_tag_groups().iter().any(|g| g.id == group) {
+            return Ok(Vec::new());
+        }
+        let html = ctx
+            .fetch_html(&format!("{base}/categories-{group}"), site_id)
+            .await?;
+        return Ok(parse_xhamster_tag_letter(&html));
+    }
     if site_id != "xvideos" || !xvideos_tag_groups().iter().any(|g| g.id == group) {
         return Ok(Vec::new());
     }
@@ -177,6 +186,52 @@ async fn tube_list_category_group(
         .fetch_html(&format!("{base}/tags/{group}"), site_id)
         .await?;
     Ok(parse_xvideos_tag_letter(&html))
+}
+
+/// xHamster's A–Z tag index: /categories-0 ("#") and /categories-a … -z,
+/// up to 2,000 tags each (no further paging).
+fn xhamster_tag_groups() -> Vec<FilterOption> {
+    std::iter::once(FilterOption::new("0", "0-9"))
+        .chain(
+            ('a'..='z')
+                .map(|c| FilterOption::new(&c.to_string(), &c.to_ascii_uppercase().to_string())),
+        )
+        .collect()
+}
+
+/// `<a … href="https://xhamster.com/tags/<slug>" data-role="tag-link">…
+/// <span …><!--…-->Name<!--…--></span>` (Svelte comment markers inside).
+fn parse_xhamster_tag_letter(html: &str) -> Vec<SiteCategory> {
+    use std::sync::LazyLock;
+    static RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+        regex::Regex::new(
+            r#"href="https://xhamster\.com/tags/([a-z0-9-]+)" data-role="tag-link">(.*?)</span>"#,
+        )
+        .expect("xhamster tag letter regex")
+    });
+    static MARKUP: LazyLock<regex::Regex> =
+        LazyLock::new(|| regex::Regex::new(r"<!--.*?-->|<[^>]+>").expect("markup"));
+    let mut seen = std::collections::HashSet::new();
+    RE.captures_iter(html)
+        .filter_map(|c| {
+            let slug = c.get(1)?.as_str().to_string();
+            if !seen.insert(slug.clone()) {
+                return None;
+            }
+            let name = html_escape_decode(MARKUP.replace_all(c.get(2)?.as_str(), "").trim());
+            Some(SiteCategory {
+                name: if name.is_empty() {
+                    slug.replace('-', " ")
+                } else {
+                    name
+                },
+                slug,
+                kind: BrowseKind::Tag,
+                thumbnail: None,
+                count: None,
+            })
+        })
+        .collect()
 }
 
 /// Entries on an XVIDEOS letter page:
@@ -638,7 +693,9 @@ fn tube_browse_url(site_id: &str, base: &str, query: &BrowseQuery) -> String {
             )
         }
         "xhamster" => {
-            let category = query.kind == BrowseKind::Category;
+            // Category and single-tag pages carry sort in the path.
+            let category = query.kind == BrowseKind::Category
+                || (query.kind == BrowseKind::Tag && !query.slug.contains(','));
             let sort = opt(&f.sort);
             // Categories: "/hd" path + ?quality=1080p|2160p (720p is plain /hd).
             let quality = match (category, opt(&f.quality).as_str()) {
@@ -781,7 +838,7 @@ pub fn tube_browse_options(site_id: &str) -> BrowseOptions {
             filter_kinds: vec![BrowseKind::Search, BrowseKind::Tag, BrowseKind::Category],
             has_categories: true,
             combine_tags: 0,
-            category_groups: Vec::new(),
+            category_groups: xhamster_tag_groups(),
             include_exclude: false,
         },
         "youporn" => BrowseOptions {
@@ -897,21 +954,41 @@ fn tube_base_url(site_id: &str, base: &str, query: &BrowseQuery) -> String {
             BrowseKind::Livestream => format!("{base}/live/{slug}"),
         },
         "xhamster" => match query.kind {
-            BrowseKind::Search | BrowseKind::Tag => {
+            // Single tags have real listing pages (/tags/<slug>) that page and
+            // sort like categories; combined tags fall back to search.
+            BrowseKind::Search | BrowseKind::Tag
+                if query.kind == BrowseKind::Search || query.slug.contains(',') =>
+            {
                 let page = if query.page > 1 {
                     format!("?page={}", query.page)
                 } else {
                     String::new()
                 };
-                format!("{base}/search/{slug}{page}")
+                let words = if query.slug.contains(',') {
+                    // xHamster's own multi-word links use '+' (/search/redhead+milf).
+                    query_slug(
+                        &crate::models::split_tags(&query.slug)
+                            .join(" ")
+                            .replace('-', " "),
+                    )
+                } else {
+                    slug.clone()
+                };
+                format!("{base}/search/{words}{page}")
             }
             BrowseKind::Channel => format!("{base}/channels/{slug}"),
             BrowseKind::Model => format!("{base}/pornstars/{slug}"),
-            BrowseKind::Category => {
-                // Category listings take sort / HD as path segments:
-                // /categories/<slug>/[newest|best]/[hd]/<page>
+            // (Search always takes the arm above; listed for exhaustiveness.)
+            BrowseKind::Category | BrowseKind::Tag | BrowseKind::Search => {
+                // Category and tag listings take sort / HD as path segments:
+                // /categories|tags/<slug>/[newest|best]/[hd]/<page>
                 let f = &query.filters;
-                let mut path = format!("{base}/categories/{slug}");
+                let section = if query.kind == BrowseKind::Tag {
+                    "tags"
+                } else {
+                    "categories"
+                };
+                let mut path = format!("{base}/{section}/{slug}");
                 if let Some(sort @ ("newest" | "best")) = f.sort.as_deref() {
                     path.push('/');
                     path.push_str(sort);
@@ -2139,6 +2216,38 @@ mod category_tests {
             url,
             "https://www.xvideos.com/c/s:uploaddate/d:10-20min/Femdom-235/2"
         );
+    }
+
+    #[test]
+    fn xhamster_tag_index_and_tag_pages() {
+        let html = r#"<div class="item"><!----><a class="root-23e38 primary-23e38" href="https://xhamster.com/tags/a-family-affair" data-role="tag-link"><!----><span class="primary-fda7e"><!--[--><!--[!--><!---->A Family Affair<!----><!--]--><!----><!--]--><!----></span></a></div>"#;
+        let tags = parse_xhamster_tag_letter(html);
+        assert_eq!(tags.len(), 1);
+        assert_eq!(
+            (tags[0].slug.as_str(), tags[0].name.as_str()),
+            ("a-family-affair", "A Family Affair")
+        );
+        assert_eq!(xhamster_tag_groups().len(), 27);
+        let url = tube_browse_url(
+            "xhamster",
+            "https://xhamster.com",
+            &q(
+                BrowseKind::Tag,
+                "a-family-affair",
+                2,
+                &[("sort", "newest"), ("duration", "10-30")],
+            ),
+        );
+        assert_eq!(
+            url,
+            "https://xhamster.com/tags/a-family-affair/newest/2?min-duration=10&max-duration=30"
+        );
+        let combined = tube_browse_url(
+            "xhamster",
+            "https://xhamster.com",
+            &q(BrowseKind::Tag, "milf,big-tits", 1, &[]),
+        );
+        assert_eq!(combined, "https://xhamster.com/search/milf+big+tits");
     }
 
     #[test]
