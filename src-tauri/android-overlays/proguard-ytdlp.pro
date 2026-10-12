@@ -15,6 +15,12 @@
     <init>(android.content.Context, androidx.work.WorkerParameters);
 }
 
+# Plugin argument classes (YtDlpPlugin$Args, $MediaArgs, CookieBrowserPlugin$OpenArgs, ...):
+# Tauri builds them reflectively from JSON via Jackson, so R8 must keep their
+# no-arg constructors and fields. Without this, release builds fail with
+# "Cannot construct instance of YtDlpPlugin$Args (no Creators ...)".
+-keep class com.archhive.app.**Args { *; }
+
 # Tauri plugin framework (annotations + Plugin base used by register_android_plugin)
 -keep class app.tauri.** { *; }
 -keep @app.tauri.annotation.TauriPlugin class * { *; }

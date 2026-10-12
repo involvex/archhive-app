@@ -176,6 +176,15 @@ if ($proguardNow -notmatch 'CookieBrowserPlugin') {
     Write-Host "Added CookieBrowserPlugin ProGuard keeps."
 }
 
+# Projects patched before the plugin Args keep existed: R8 stripped the
+# nested *Args classes, breaking every yt-dlp invoke in release builds.
+$proguardNow = Get-Content $proguardPath -Raw
+if ($proguardNow -notmatch [regex]::Escape('com.archhive.app.**Args')) {
+    $argsKeep = "-keep class com.archhive.app.**Args { *; }`r`n"
+    Set-Content -Path $proguardPath -Value ($proguardNow.TrimEnd() + "`r`n" + $argsKeep) -NoNewline
+    Write-Host "Added plugin Args ProGuard keeps."
+}
+
 Write-Host "Android YtDlp overlay patch complete (youtubedl-android $YoutubeDlAndroidVersion)."
 
 # Remove stale Linux BtbN ffmpeg/ffprobe assets left from older tauri.android.conf.json
