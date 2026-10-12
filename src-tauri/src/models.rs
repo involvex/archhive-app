@@ -95,6 +95,10 @@ pub struct BrowseFilters {
     /// Categories to leave out (comma-separated slugs, e.g. Eporner `?exclude=`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exclude: Option<String>,
+    /// One tag narrowing a category listing (sites with
+    /// `BrowseOptions::category_tag_filter`, e.g. ThisVid `?tag=`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
 }
 
 impl BrowseFilters {
@@ -105,6 +109,7 @@ impl BrowseFilters {
             && self.quality.is_none()
             && self.include.is_none()
             && self.exclude.is_none()
+            && self.tag.is_none()
     }
 
     /// Stable cache-key suffix (empty when no filter is set).
@@ -126,6 +131,9 @@ impl BrowseFilters {
                 self.exclude.as_deref().unwrap_or("")
             ));
         }
+        if let Some(tag) = &self.tag {
+            key.push_str(&format!("|t={tag}"));
+        }
         key
     }
 
@@ -139,6 +147,7 @@ impl BrowseFilters {
             quality: f(self.quality),
             include: f(self.include),
             exclude: f(self.exclude),
+            tag: f(self.tag),
         }
     }
 }
@@ -188,6 +197,9 @@ pub struct BrowseOptions {
     /// (`BrowseFilters::include` / `exclude`).
     #[serde(default)]
     pub include_exclude: bool,
+    /// Category listings can be narrowed to one tag (`BrowseFilters::tag`).
+    #[serde(default)]
+    pub category_tag_filter: bool,
 }
 
 /// Separator for combined tags in a Tag/Category slug (`milf,anal`). Tag slugs

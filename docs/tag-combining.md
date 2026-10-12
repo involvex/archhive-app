@@ -121,7 +121,10 @@ a keyword match.
 - **Search + category**: not strict. `/search/?q=wife&category=amateurs`
   reorders the results but still returns other categories.
 
-**In the app:** not wired up yet — combining ThisVid tags runs a word search.
+**In the app:** open a ThisVid category, type a tag in **Narrow by tag**
+(autocomplete from ThisVid's A–Z tag index) and tap Apply — a strict
+category + tag listing, with sort and paging. Combining several ThisVid tags
+in the tag browser still runs a word search.
 
 ## YouPorn
 

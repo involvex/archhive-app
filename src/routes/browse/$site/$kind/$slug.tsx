@@ -6,6 +6,7 @@ import { useSiteInfo } from "@/lib/sites/useSiteInfo";
 import { siteHasCategories } from "@/lib/sites/catalog";
 import { groupForText, loadSiteCategories } from "@/components/SiteCategoryBrowser";
 import { CategoryIncludeExclude } from "@/components/CategoryIncludeExclude";
+import { CategoryTagNarrow } from "@/components/CategoryTagNarrow";
 import {
   applyLocalFilters,
   BrowseFilterBar,
@@ -499,6 +500,16 @@ function BrowseDetailPage() {
                 />
               </div>
             )}
+          {kind === "category" && siteInfo?.browse_options?.category_tag_filter && (
+            <div className="mt-2">
+              <CategoryTagNarrow
+                siteId={site}
+                groups={siteInfo.browse_options.category_groups ?? []}
+                filters={filters}
+                onFiltersChange={setFilters}
+              />
+            </div>
+          )}
         </div>
       </div>
 

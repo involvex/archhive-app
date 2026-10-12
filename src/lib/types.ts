@@ -62,6 +62,8 @@ export interface BrowseOptions {
   category_groups?: FilterOption[];
   /** Results can require / exclude categories (BrowseFilters.include/exclude). */
   include_exclude?: boolean;
+  /** Category listings can be narrowed to one tag (BrowseFilters.tag). */
+  category_tag_filter?: boolean;
 }
 
 /** Mirrors `models::BrowseFilters`: option ids, omitted = site default. */
@@ -74,6 +76,8 @@ export interface BrowseFilters {
   include?: string;
   /** Comma-separated category slugs to leave out. */
   exclude?: string;
+  /** One tag narrowing a category listing (ThisVid `?tag=`). */
+  tag?: string;
 }
 
 /** Mirrors `models::SiteCategory`. */
