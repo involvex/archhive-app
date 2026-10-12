@@ -61,6 +61,24 @@ impl SiteAdapter for EpornerAdapter {
         ))
     }
 
+    /// "tags" = the top 500 tags on /cats/; a…z = /cats/<L>/ (500 each).
+    async fn list_category_group(
+        &self,
+        ctx: &SiteContext,
+        group: &str,
+    ) -> AppResult<Vec<SiteCategory>> {
+        if !eporner_tag_groups().iter().any(|g| g.id == group) {
+            return Ok(Vec::new());
+        }
+        let url = if group == "tags" {
+            format!("{BASE}/cats/")
+        } else {
+            format!("{BASE}/cats/{}/", group.to_ascii_uppercase())
+        };
+        let html = ctx.fetch_html(&url, self.id()).await?;
+        Ok(parse_tag_index(&html))
+    }
+
     async fn browse(&self, ctx: &SiteContext, query: BrowseQuery) -> AppResult<BrowsePage> {
         // Video kind: return a single MediaItem pointing at the video page.
         // yt-dlp handles URL resolution in resolve_stream_url; this listing
@@ -99,7 +117,11 @@ impl SiteAdapter for EpornerAdapter {
 
         // Category include/exclude only exists on the HTML listing pages
         // (/tag/<q>/[<page>/][<sort>/]?include=a,b&exclude=c), not the API.
-        if query.filters.include.is_some() || query.filters.exclude.is_some() {
+        // Tags (/tag/<slug>/, case-sensitive slugs such as czech-ouQ9EM84)
+        // are browsed on their exact tag page; include/exclude needs the
+        // HTML listing too (the API has neither).
+        let exact_tag = query.kind == BrowseKind::Tag && !query.slug.contains(',');
+        if exact_tag || query.filters.include.is_some() || query.filters.exclude.is_some() {
             let url = build_filtered_html_url(&query);
             info!("[eporner] browse (include/exclude): {url}");
             let html = ctx.fetch_html(&url, self.id()).await?;
@@ -267,6 +289,18 @@ fn build_api_url(query: &BrowseQuery) -> String {
 fn build_filtered_html_url(query: &BrowseQuery) -> String {
     let base = match query.kind {
         BrowseKind::Category => format!("{BASE}/cat/{}/", path_slug(&query.slug)),
+        // Tag slugs keep their case; lowercasing turns them into a 404.
+        BrowseKind::Tag
+            if !query.slug.contains(',')
+                && !query.slug.trim().is_empty()
+                && query
+                    .slug
+                    .trim()
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '-') =>
+        {
+            format!("{BASE}/tag/{}/", query.slug.trim())
+        }
         _ => {
             let q = crate::models::split_tags(&query.slug).join(" ");
             let q = if q.trim().is_empty() {
@@ -368,6 +402,47 @@ fn parse_clock(s: &str) -> Option<u32> {
         .try_fold(0u32, |acc, part| Some(acc * 60 + part.parse::<u32>().ok()?))
 }
 
+/// Tag index sections: "tags" (top 500 on /cats/) and one per letter.
+fn eporner_tag_groups() -> Vec<crate::models::FilterOption> {
+    use crate::models::FilterOption;
+    std::iter::once(FilterOption::new("tags", "Tags"))
+        .chain(
+            ('a'..='z')
+                .map(|c| FilterOption::new(&c.to_string(), &c.to_ascii_uppercase().to_string())),
+        )
+        .collect()
+}
+
+/// `<a href="/tag/<slug>/">name</a><span>12,341</span>` (counts may read
+/// "20,000+").
+fn parse_tag_index(html: &str) -> Vec<SiteCategory> {
+    use std::sync::LazyLock;
+    static RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+        regex::Regex::new(r#"<a href="/tag/([A-Za-z0-9-]+)/">([^<]+)</a><span>([\d,+]+)</span>"#)
+            .expect("eporner tag index regex")
+    });
+    let mut seen = std::collections::HashSet::new();
+    RE.captures_iter(html)
+        .filter_map(|c| {
+            let slug = c.get(1)?.as_str().to_string();
+            seen.insert(slug.clone()).then(|| SiteCategory {
+                name: html_escape::decode_html_entities(c.get(2).map_or("", |m| m.as_str()))
+                    .trim()
+                    .to_string(),
+                slug,
+                kind: BrowseKind::Tag,
+                thumbnail: None,
+                count: c[3]
+                    .chars()
+                    .filter(char::is_ascii_digit)
+                    .collect::<String>()
+                    .parse()
+                    .ok(),
+            })
+        })
+        .collect()
+}
+
 /// API `order` values (verified against the v2 search endpoint).
 fn eporner_options() -> BrowseOptions {
     let o = |id: &str, label: &str| FilterOption::new(id, label);
@@ -384,6 +459,7 @@ fn eporner_options() -> BrowseOptions {
         filter_kinds: vec![BrowseKind::Search, BrowseKind::Tag, BrowseKind::Category],
         has_categories: true,
         include_exclude: true,
+        category_groups: eporner_tag_groups(),
         ..Default::default()
     }
 }
@@ -482,6 +558,29 @@ fn parse_api_json(body: &str, page: u32, site_id: &str) -> Option<BrowsePage> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tag_index_and_exact_tag_urls() {
+        let tags = parse_tag_index(
+            r#"<li><a href="/tag/18/">18</a><span>20,000+</span></li><li><a href="/tag/czech-ouQ9EM84/">czech</a><span>12,341</span></li><a href="/cat/milf/">MILF</a>"#,
+        );
+        assert_eq!(tags.len(), 2);
+        assert_eq!(tags[0].count, Some(20_000));
+        assert_eq!(tags[1].slug, "czech-ouQ9EM84");
+        assert_eq!(eporner_tag_groups().len(), 27);
+        let mut q = BrowseQuery {
+            kind: BrowseKind::Tag,
+            slug: "czech-ouQ9EM84".into(),
+            page: 2,
+            orientation: None,
+            filters: Default::default(),
+        };
+        q.filters.sort = Some("longest".into());
+        assert_eq!(
+            build_filtered_html_url(&q),
+            "https://www.eporner.com/tag/czech-ouQ9EM84/2/longest/"
+        );
+    }
 
     #[test]
     fn filtered_html_url_and_listing() {
