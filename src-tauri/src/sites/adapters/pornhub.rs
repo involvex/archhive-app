@@ -854,7 +854,10 @@ pub fn tube_browse_options(site_id: &str) -> BrowseOptions {
             qualities: o(&[("hd", "HD"), ("1080P", "1080p+")]),
             filter_kinds: vec![BrowseKind::Search, BrowseKind::Tag, BrowseKind::Category],
             has_categories: true,
-            combine_tags: 5,
+            // /tags/a+b is a keyword search over titles and tags, not a tag
+            // intersection (verified on result pages), so combined tags run as
+            // a word search.
+            combine_tags: 0,
             category_groups: xvideos_tag_groups(),
             include_exclude: false,
             category_tag_filter: false,
@@ -919,20 +922,6 @@ fn tube_base_url(site_id: &str, base: &str, query: &BrowseQuery) -> String {
     let q = query_slug(&query.slug);
     match site_id {
         "xvideos" => match query.kind {
-            // Combined tags (`a,b`): /tags/a+b is an exact intersection, but
-            // tag pages ignore sort/filters — use the word search then.
-            BrowseKind::Tag if query.slug.contains(',') && query.filters.is_empty() => {
-                let tags = crate::models::split_tags(&query.slug)
-                    .iter()
-                    .map(|t| path_slug(t))
-                    .collect::<Vec<_>>()
-                    .join("+");
-                if query.page > 1 {
-                    format!("{base}/tags/{tags}/{}", query.page)
-                } else {
-                    format!("{base}/tags/{tags}")
-                }
-            }
             BrowseKind::Search | BrowseKind::Tag => {
                 let page = if query.page > 1 {
                     format!("&p={}", query.page.saturating_sub(1))
@@ -2323,14 +2312,8 @@ mod category_tests {
 
     #[test]
     fn combined_tag_urls() {
-        // XVIDEOS: exact intersection via /tags/a+b when no filters are set…
-        let xv = tube_browse_url(
-            "xvideos",
-            "https://www.xvideos.com",
-            &q(BrowseKind::Tag, "milf,big-tits", 2, &[]),
-        );
-        assert_eq!(xv, "https://www.xvideos.com/tags/milf+big-tits/2");
-        // …and the word search when sort/filters are (tag pages ignore them).
+        // XVIDEOS: combined tags are a word search (its /tags/a+b pages are
+        // keyword matches, not tag intersections).
         let xv = tube_browse_url(
             "xvideos",
             "https://www.xvideos.com",
