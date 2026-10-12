@@ -77,8 +77,8 @@ if (-not (Test-Path $gradle)) {
     if ($gradleText -notmatch 'useLegacyPackaging\s*=\s*true') {
         Add-Fail "build.gradle.kts missing jniLibs.useLegacyPackaging = true (youtubedl-android cannot init without extracted native libs)"
     }
-    if ($gradleText -notmatch 'manifestPlaceholders\["usesCleartextTraffic"\]\s*=\s*"true"') {
-        Add-Fail "build.gradle.kts missing usesCleartextTraffic=true placeholder (LAN HTTP)"
+    if ($gradleText -match 'manifestPlaceholders\["usesCleartextTraffic"\]\s*=\s*"false"') {
+        Add-Fail "build.gradle.kts still sets usesCleartextTraffic=false (release WebView cannot reach the 127.0.0.1 media server)"
     }
 }
 

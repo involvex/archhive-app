@@ -457,6 +457,45 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
         }
     }
 
+    /**
+     * Open a local file in another app (video player, gallery, …) via
+     * ACTION_VIEW. Android forbids file:// URIs across apps, so the file is
+     * shared through the app's FileProvider (`${applicationId}.fileprovider`).
+     */
+    @Command
+    fun openFile(invoke: Invoke) {
+        val args = invoke.parseArgs(OpenFileArgs::class.java)
+        val ret = JSObject()
+        try {
+            val file = File(args.path)
+            if (!file.isFile) {
+                ret.put("ok", false)
+                ret.put("message", "File not found: ${args.path}")
+                invoke.resolve(ret)
+                return
+            }
+            val uri = androidx.core.content.FileProvider.getUriForFile(
+                activity,
+                "${activity.packageName}.fileprovider",
+                file,
+            )
+            val mime = args.mime.ifBlank {
+                android.webkit.MimeTypeMap.getSingleton()
+                    .getMimeTypeFromExtension(file.extension.lowercase()) ?: "video/*"
+            }
+            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW)
+                .setDataAndType(uri, mime)
+                .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            activity.startActivity(android.content.Intent.createChooser(intent, "Open with"))
+            ret.put("ok", true)
+        } catch (e: Throwable) {
+            Log.w("YtDlpPlugin", "openFile failed for ${args.path}", e)
+            ret.put("ok", false)
+            ret.put("message", e.message ?: e.javaClass.simpleName)
+        }
+        invoke.resolve(ret)
+    }
+
     /** Schedule WorkManager to wake the app when network is available. */
     @Command
     fun schedulePendingResume(invoke: Invoke) {
@@ -508,5 +547,10 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
 
     class ResumeArgs @JvmOverloads constructor(
         var requireUnmetered: Boolean = false,
+    )
+
+    class OpenFileArgs @JvmOverloads constructor(
+        var path: String = "",
+        var mime: String = "",
     )
 }

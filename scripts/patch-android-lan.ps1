@@ -13,10 +13,14 @@ if (-not (Test-Path $GradlePath)) {
 }
 
 $content = Get-Content $GradlePath -Raw
-if ($content -notmatch 'manifestPlaceholders\["usesCleartextTraffic"\] = "true"') {
-    $content = $content -replace 'manifestPlaceholders\["usesCleartextTraffic"\] = "false"', 'manifestPlaceholders\["usesCleartextTraffic"\] = "true"'
+# The generated defaultConfig sets "false" and only the debug build type sets
+# "true", so test for a remaining "false" (not for any "true"): otherwise
+# release APKs keep cleartext off and the WebView cannot reach the on-device
+# 127.0.0.1 media server or a Remote LAN host.
+if ($content -match 'manifestPlaceholders\["usesCleartextTraffic"\] = "false"') {
+    $content = $content -replace 'manifestPlaceholders\["usesCleartextTraffic"\] = "false"', 'manifestPlaceholders["usesCleartextTraffic"] = "true"'
     Set-Content -Path $GradlePath -Value $content -NoNewline
-    Write-Host "Patched $GradlePath for cleartext HTTP (Remote LAN)."
+    Write-Host "Patched $GradlePath for cleartext HTTP (loopback media server + Remote LAN)."
 } else {
     Write-Host "Android LAN cleartext patch already applied."
 }

@@ -52,6 +52,14 @@ if (Test-Path $cookieBrowserSrc) {
     Copy-Item -Path $cookieBrowserSrc -Destination (Join-Path $pluginDestDir "CookieBrowserPlugin.kt") -Force
     Write-Host "Installed CookieBrowserPlugin.kt"
 }
+# FileProvider roots: shared storage + app-private dirs ("Open with default app").
+$filePathsSrc = Join-Path $Overlays "file_paths.xml"
+$filePathsDest = Join-Path $GenAndroid "app\src\main\res\xml\file_paths.xml"
+if (Test-Path $filePathsSrc) {
+    New-Item -ItemType Directory -Force -Path (Split-Path $filePathsDest) | Out-Null
+    Copy-Item -Path $filePathsSrc -Destination $filePathsDest -Force
+}
+
 
 # Ensure youtubedl-android + WorkManager dependencies
 $gradle = Get-Content $gradlePath -Raw
