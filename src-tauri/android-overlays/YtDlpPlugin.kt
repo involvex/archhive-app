@@ -27,6 +27,8 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
     @Volatile private var ffmpegPath: String? = null
     @Volatile private var ffprobePath: String? = null
     @Volatile private var ffmpegLibDir: String? = null
+    /** Last init failure, surfaced in "not initialized" responses for diagnosis. */
+    @Volatile private var initError: String? = null
 
     /**
      * Lazily initialize YoutubeDL + FFmpeg (idempotent, thread-safe).
@@ -52,8 +54,14 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
             true
         } catch (e: Exception) {
             Log.e("YtDlpPlugin", "Failed to init YoutubeDL", e)
+            initError = "${e.javaClass.simpleName}: ${e.message ?: ""}"
             false
         }
+    }
+
+    private fun notInitialized(what: String): String {
+        val cause = initError ?: return "$what not initialized"
+        return "$what not initialized ($cause)"
     }
 
     /** FFmpeg.init is async; wait until libavdevice appears in the unpacked tree. */
@@ -182,7 +190,7 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
             val ret = JSObject()
             if (!ensureInitialized()) {
                 ret.put("ok", false)
-                ret.put("message", "YoutubeDL/FFmpeg not initialized")
+                ret.put("message", notInitialized("YoutubeDL/FFmpeg"))
                 invoke.resolve(ret)
                 return@launch
             }
@@ -251,7 +259,7 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
             if (!ensureInitialized()) {
                 val ret = JSObject()
                 ret.put("stdout", "")
-                ret.put("stderr", "YoutubeDL/FFmpeg not initialized")
+                ret.put("stderr", notInitialized("YoutubeDL/FFmpeg"))
                 ret.put("exitCode", -1)
                 invoke.resolve(ret)
                 return@launch
@@ -296,7 +304,7 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
         if (!ensureInitialized()) {
             val ret = JSObject()
             ret.put("stdout", "")
-            ret.put("stderr", "YoutubeDL not initialized")
+            ret.put("stderr", notInitialized("YoutubeDL"))
             ret.put("exitCode", -1)
             invoke.resolve(ret)
             return
@@ -361,7 +369,7 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
         if (!ensureInitialized()) {
             val ret = JSObject()
             ret.put("success", false)
-            ret.put("message", "YoutubeDL not initialized")
+            ret.put("message", notInitialized("YoutubeDL"))
             invoke.resolve(ret)
             return
         }

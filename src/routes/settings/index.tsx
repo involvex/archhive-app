@@ -1878,8 +1878,10 @@ function SettingsPage() {
                   <>
                     {engineStatus === "missing" && (
                       <p className="text-xs text-red-400">
-                        No versions reported at all — the YtDlpPlugin overlay is likely missing from
-                        this APK (stale <code>gen/android</code> or skipped overlay). Run{" "}
+                        No versions reported at all — youtubedl-android did not initialize. Usually
+                        the YtDlp overlay is missing from this APK (stale <code>gen/android</code>)
+                        or the APK was packaged without extracted native libs (
+                        <code>jniLibs.useLegacyPackaging</code>, set by the overlay patch). Run{" "}
                         <code>bun run android:regen</code>, then rebuild with{" "}
                         <code>bun run build:apk</code>. See docs/mobile-android.md.
                       </p>
