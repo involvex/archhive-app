@@ -470,8 +470,12 @@ impl SiteAdapter for PornhubAdapter {
                 // PornHub retired /categories/<slug> (404); browse by numeric
                 // `c=` id resolved from the live catalog instead.
                 let mut q = query.clone();
-                if !q.slug.contains(',') && !q.slug.chars().all(|c| c.is_ascii_digit()) {
-                    let orientation = q.orientation.unwrap_or(BrowseOrientation::Straight);
+                let orientation = q.orientation.unwrap_or(BrowseOrientation::Straight);
+                // Trans categories browse by slug (/incategories/<slug>/transgender).
+                let by_slug =
+                    orientation == BrowseOrientation::Transgender && !is_trans_hub_slug(&q.slug);
+                if !by_slug && !q.slug.contains(',') && !q.slug.chars().all(|c| c.is_ascii_digit())
+                {
                     if let Some(id) = resolve_category_id(ctx, &q.slug, orientation).await {
                         q.slug = id.to_string();
                     }
@@ -500,7 +504,16 @@ impl SiteAdapter for PornhubAdapter {
             }
         };
         assert_pornhub_url(&url)?;
-        let html = ctx.fetch_html(&url, self.id()).await?;
+        let html = match ctx.fetch_html(&url, self.id()).await {
+            // Not every category pair has a page; fall back to a word search.
+            Err(e) if url.contains("/incategories/") && e.to_string().contains("HTTP 404") => {
+                let fallback = incategories_search_fallback(&url).ok_or(e)?;
+                let fallback = pornhub_filtered(fallback, &query);
+                assert_pornhub_url(&fallback)?;
+                ctx.fetch_html(&fallback, self.id()).await?
+            }
+            other => other?,
+        };
         let mut items = parse_video_links(&html, PH_BASE, self.id())?;
         if items.is_empty() {
             items = match ytdlp_browse_fallback(ctx, self.id(), &url, query.page, 24).await {
@@ -1262,18 +1275,35 @@ fn build_pornhub_category_url(query: &BrowseQuery) -> String {
     // Two combined categories: /video/incategories/a/b (straight only; the
     // orientation hubs 404 and three or more categories 404 as well).
     let combined = crate::models::split_tags(&query.slug);
-    if combined.len() > 1 {
-        if orientation == BrowseOrientation::Straight && combined.len() == 2 {
-            let page = (query.page > 1).then(|| query.page.to_string());
-            return crate::sites::urls::with_query(
-                &format!(
-                    "{PH_BASE}/video/incategories/{}/{}",
-                    path_slug(&combined[0]),
-                    path_slug(&combined[1])
-                ),
-                &[("page", page.as_deref().unwrap_or(""))],
-            );
+    // Trans has no category index of its own: a trans category is the
+    // straight category intersected with Transgender (/incategories/x/transgender).
+    if orientation == BrowseOrientation::Transgender
+        && combined.len() == 1
+        && !is_trans_hub_slug(&combined[0])
+        && !combined[0].chars().all(|c| c.is_ascii_digit())
+    {
+        return incategories_url("", &combined[0], "transgender", query.page);
+    }
+    if combined.len() == 2 {
+        // Straight and gay intersect exactly two categories; gay catalog
+        // slugs carry a `-gay` suffix the incategories path drops.
+        match orientation {
+            BrowseOrientation::Straight => {
+                return incategories_url("", &combined[0], &combined[1], query.page);
+            }
+            BrowseOrientation::Gay => {
+                let strip = |s: &str| s.strip_suffix("-gay").unwrap_or(s).to_string();
+                return incategories_url(
+                    "/gay",
+                    &strip(&combined[0]),
+                    &strip(&combined[1]),
+                    query.page,
+                );
+            }
+            _ => {}
         }
+    }
+    if combined.len() > 1 {
         let words = combined.join(" ").replace('-', " ");
         let root = match orientation {
             BrowseOrientation::Straight | BrowseOrientation::Transgender => PH_BASE.to_string(),
@@ -1313,6 +1343,49 @@ fn build_pornhub_category_url(query: &BrowseQuery) -> String {
         "{root}/video/search?search={search}{}",
         page_amp(query.page)
     )
+}
+
+fn is_trans_hub_slug(slug: &str) -> bool {
+    matches!(slug, "transgender" | "trans" | "shemale" | "83")
+}
+
+/// `/[gay/]video/incategories/a/b[?page=N]` — a strict two-category listing.
+fn incategories_url(prefix: &str, a: &str, b: &str, page: u32) -> String {
+    let page = (page > 1).then(|| page.to_string());
+    crate::sites::urls::with_query(
+        &format!(
+            "{PH_BASE}{prefix}/video/incategories/{}/{}",
+            path_slug(a),
+            path_slug(b)
+        ),
+        &[("page", page.as_deref().unwrap_or(""))],
+    )
+}
+
+/// Word-search URL used when PornHub has no page for a category pair
+/// (e.g. `/incategories/bbw/transgender` is a 404).
+fn incategories_search_fallback(url: &str) -> Option<String> {
+    let parsed = url::Url::parse(url).ok()?;
+    let segs: Vec<&str> = parsed.path_segments()?.collect();
+    let i = segs.iter().position(|s| *s == "incategories")?;
+    let words: Vec<String> = segs[i + 1..]
+        .iter()
+        .map(|s| s.strip_suffix("-gay").unwrap_or(s).replace('-', " "))
+        .collect();
+    let prefix = if segs.first() == Some(&"gay") {
+        "/gay"
+    } else {
+        ""
+    };
+    let page = parsed
+        .query_pairs()
+        .find(|(k, _)| k == "page")
+        .map(|(_, v)| format!("&page={v}"))
+        .unwrap_or_default();
+    Some(format!(
+        "{PH_BASE}{prefix}/video/search?search={}{page}",
+        query_slug(&words.join(" "))
+    ))
 }
 
 /// Slug → PornHub `c=` id from the live category catalog (embedded JSON on
@@ -1493,6 +1566,33 @@ pub fn categories_page_url(orientation: BrowseOrientation) -> String {
         BrowseOrientation::Lesbian => format!("{PH_BASE}/lesbian/categories"),
         BrowseOrientation::Transgender => format!("{PH_BASE}/transgender/categories"),
     }
+}
+
+/// Straight catalog re-tagged for the trans section: the Transgender
+/// category itself becomes an "All trans" entry at the top.
+pub fn trans_catalog(
+    straight: Vec<crate::models::PornhubCategoryEntry>,
+) -> Vec<crate::models::PornhubCategoryEntry> {
+    let hub = straight.iter().find(|c| c.slug == "transgender").cloned();
+    let mut out: Vec<_> = straight
+        .into_iter()
+        .filter(|c| c.slug != "transgender")
+        .map(|mut c| {
+            c.orientation = BrowseOrientation::Transgender;
+            c
+        })
+        .collect();
+    out.insert(
+        0,
+        crate::models::PornhubCategoryEntry {
+            name: "All trans".into(),
+            slug: "transgender".into(),
+            orientation: BrowseOrientation::Transgender,
+            category_id: Some(83),
+            video_count: hub.and_then(|h| h.video_count),
+        },
+    );
+    out
 }
 
 pub fn parse_pornhub_categories(
@@ -2373,15 +2473,69 @@ mod category_tests {
             "https://www.xvideos.com/?k=milf+big+tits&sort=uploaddate"
         );
 
-        // PornHub: two straight categories intersect; other cases search.
+        // PornHub: two straight or gay categories intersect; others search.
         let ph = build_pornhub_category_url(&q(BrowseKind::Category, "milf,anal", 3, &[]));
         assert_eq!(ph, format!("{PH_BASE}/video/incategories/milf/anal?page=3"));
-        let mut gay = q(BrowseKind::Category, "amateur,bareback", 1, &[]);
+        let mut gay = q(BrowseKind::Category, "amateur-gay,bareback-gay", 1, &[]);
         gay.orientation = Some(BrowseOrientation::Gay);
         assert_eq!(
             build_pornhub_category_url(&gay),
-            format!("{PH_BASE}/gay/video/search?search=amateur+bareback")
+            format!("{PH_BASE}/gay/video/incategories/amateur/bareback")
         );
+        let mut lesbian = q(BrowseKind::Category, "milf,anal", 1, &[]);
+        lesbian.orientation = Some(BrowseOrientation::Lesbian);
+        assert_eq!(
+            build_pornhub_category_url(&lesbian),
+            format!("{PH_BASE}/lesbian/video/search?search=milf+anal")
+        );
+    }
+
+    #[test]
+    fn trans_category_urls() {
+        let trans = |slug: &str, page: u32| {
+            let mut t = q(BrowseKind::Category, slug, page, &[]);
+            t.orientation = Some(BrowseOrientation::Transgender);
+            build_pornhub_category_url(&t)
+        };
+        // A trans category is <category> ∩ Transgender.
+        assert_eq!(
+            trans("milf", 2),
+            format!("{PH_BASE}/video/incategories/milf/transgender?page=2")
+        );
+        // The hub itself is category 83.
+        assert_eq!(trans("83", 1), format!("{PH_BASE}/video?c=83"));
+        // Missing pairs fall back to a word search, keeping the page.
+        assert_eq!(
+            incategories_search_fallback(&trans("bbw", 3)).as_deref(),
+            Some("https://www.pornhub.com/video/search?search=bbw+transgender&page=3")
+        );
+        assert_eq!(
+            incategories_search_fallback(&format!(
+                "{PH_BASE}/gay/video/incategories/amateur/big-dick"
+            ))
+            .as_deref(),
+            Some("https://www.pornhub.com/gay/video/search?search=amateur+big+dick")
+        );
+    }
+
+    #[test]
+    fn trans_catalog_retags_straight_list() {
+        use crate::models::PornhubCategoryEntry;
+        let entry = |slug: &str, id: u32| PornhubCategoryEntry {
+            name: slug.into(),
+            slug: slug.into(),
+            orientation: BrowseOrientation::Straight,
+            category_id: Some(id),
+            video_count: Some(10),
+        };
+        let out = trans_catalog(vec![entry("milf", 29), entry("transgender", 83)]);
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].name, "All trans");
+        assert_eq!(out[0].video_count, Some(10));
+        assert_eq!(out[1].slug, "milf");
+        assert!(out
+            .iter()
+            .all(|c| c.orientation == BrowseOrientation::Transgender));
     }
 
     #[test]

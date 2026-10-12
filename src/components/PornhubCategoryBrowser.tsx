@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Layers, RefreshCw, X } from "lucide-react";
 import { api } from "@/lib/api/client";
@@ -15,6 +15,13 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
+/** The trans section's "All trans" entry (category 83), pinned on top. */
+const isTransHub = (c: PornhubCategory) =>
+  c.orientation === "transgender" && c.slug === "transgender";
+
+/** Live catalog per orientation, kept for the session. */
+const liveCache = new Map<BrowseOrientation, PornhubCategory[]>();
+
 /**
  * PornHub category picker. Selecting a category opens the full browse page
  * (sort / filters / infinite scroll) with the orientation carried in the URL.
@@ -22,15 +29,17 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 export function PornhubCategoryBrowser() {
   const [orientation, setOrientation] = useState<BrowseOrientation>("straight");
   const [filter, setFilter] = useState("");
-  const [liveCatalog, setLiveCatalog] = useState<PornhubCategory[] | null>(null);
+  const [liveCatalog, setLiveCatalog] = useState<PornhubCategory[] | null>(
+    () => liveCache.get("straight") ?? null,
+  );
   const [refreshing, setRefreshing] = useState(false);
   const [refreshStatus, setRefreshStatus] = useState("");
   const navigate = useNavigate();
   const [combining, setCombining] = useState(false);
   const [selected, setSelected] = useState<PornhubCategory[]>([]);
-  // PornHub intersects exactly two straight categories
-  // (/video/incategories/a/b); other orientations run as a word search.
-  const exact = orientation === "straight";
+  // PornHub intersects exactly two straight or gay categories
+  // (/[gay/]video/incategories/a/b); other orientations run as a word search.
+  const exact = orientation === "straight" || orientation === "gay";
   const maxPick = exact ? 2 : 4;
 
   function toggle(cat: PornhubCategory) {
@@ -44,31 +53,52 @@ export function PornhubCategoryBrowser() {
   }
 
   const categories = useMemo(() => {
-    const base = liveCatalog ?? categoriesForOrientation(orientation);
-    const list = base.filter((c) => c.orientation === orientation);
+    const live = liveCatalog?.filter((c) => c.orientation === orientation);
+    const list = live?.length ? live : categoriesForOrientation(orientation);
     const q = filter.trim().toLowerCase();
     if (!q) return list;
     return list.filter((c) => c.name.toLowerCase().includes(q));
   }, [orientation, filter, liveCatalog]);
 
-  async function refreshCategories() {
-    setRefreshing(true);
-    setRefreshStatus("");
-    try {
-      const live = await api.listPornhubCategories(orientation);
-      const staticForOrientation = PORNHUB_CATEGORIES.filter((c) => c.orientation === orientation);
-      const merged = mergeCategoryCatalog(staticForOrientation, live);
-      setLiveCatalog((prev) => {
-        const others = (prev ?? PORNHUB_CATEGORIES).filter((c) => c.orientation !== orientation);
-        return [...others, ...merged];
-      });
-      setRefreshStatus(`Updated ${merged.length} categories from PornHub.`);
-    } catch (e) {
-      setRefreshStatus(e instanceof Error ? e.message : "Refresh failed — import cookies first.");
-    } finally {
-      setRefreshing(false);
-    }
-  }
+  const refreshCategories = useCallback(
+    async (force: boolean) => {
+      const cached = liveCache.get(orientation);
+      if (cached && !force) {
+        setLiveCatalog(cached);
+        return;
+      }
+      setRefreshing(true);
+      setRefreshStatus("");
+      try {
+        const live = await api.listPornhubCategories(orientation);
+        const staticForOrientation = PORNHUB_CATEGORIES.filter(
+          (c) => c.orientation === orientation,
+        );
+        // Live entries win; static ones only fill gaps (e.g. offline).
+        const merged = (
+          live.length
+            ? mergeCategoryCatalog([], live)
+            : mergeCategoryCatalog(staticForOrientation, live)
+        ).sort((a, b) => Number(isTransHub(b)) - Number(isTransHub(a)));
+        liveCache.set(orientation, merged);
+        setLiveCatalog(merged);
+        if (force) setRefreshStatus(`Loaded ${merged.length} categories from PornHub.`);
+      } catch (e) {
+        setRefreshStatus(
+          `${e instanceof Error ? e.message : String(e)} — showing the built-in list. Import PornHub cookies if this persists.`,
+        );
+      } finally {
+        setRefreshing(false);
+      }
+    },
+    [orientation],
+  );
+
+  useEffect(() => {
+    // Load (or reuse) the live catalog whenever the orientation changes.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void refreshCategories(false);
+  }, [refreshCategories]);
 
   return (
     <Card>
@@ -94,12 +124,12 @@ export function PornhubCategoryBrowser() {
           <Button
             size="sm"
             variant="outline"
-            onClick={() => void refreshCategories()}
+            onClick={() => void refreshCategories(true)}
             disabled={refreshing}
             className="ml-auto"
           >
             <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} />
-            Refresh counts
+            Refresh
           </Button>
           <Button
             size="sm"

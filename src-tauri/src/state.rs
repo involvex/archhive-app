@@ -1154,12 +1154,21 @@ impl AppState {
         &self,
         orientation: crate::models::BrowseOrientation,
     ) -> AppResult<Vec<crate::models::PornhubCategoryEntry>> {
-        let url = crate::sites::adapters::pornhub::categories_page_url(orientation);
+        use crate::models::BrowseOrientation;
+        use crate::sites::adapters::pornhub;
+        // Trans has no index of its own (/transgender/categories is a 404):
+        // offer the straight catalog, browsed as <category> ∩ Transgender.
+        let source = match orientation {
+            BrowseOrientation::Transgender => BrowseOrientation::Straight,
+            o => o,
+        };
+        let url = pornhub::categories_page_url(source);
         let html = self.site_ctx.fetch_html(&url, "pornhub").await?;
-        Ok(crate::sites::adapters::pornhub::parse_pornhub_categories(
-            &html,
-            orientation,
-        ))
+        let list = pornhub::parse_pornhub_categories(&html, source);
+        if orientation != BrowseOrientation::Transgender {
+            return Ok(list);
+        }
+        Ok(pornhub::trans_catalog(list))
     }
 
     pub fn find_duplicates(&self) -> AppResult<Vec<DuplicateGroup>> {
