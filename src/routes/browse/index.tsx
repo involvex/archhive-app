@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api/client";
 import { getCapabilities } from "@/lib/runtime";
 import { getPluginBrowseSites } from "@/lib/plugins/loader";
-import { mergeSiteLists } from "@/lib/sites/catalog";
+import { mergeSiteLists, siteHasCategories } from "@/lib/sites/catalog";
 import { useSettingsStore } from "@/lib/stores/settings";
 import type { BrowseOrientation, PornhubCategoryEntry, SiteInfo } from "@/lib/types";
 import { SceneCard } from "@/components/SceneCard";
@@ -107,6 +107,8 @@ function BrowsePage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void reloadSites();
   }, [reloadSites]);
+
+  const selectedSiteInfo = sites.find((s) => s.id === selectedSite);
 
   const handleSearch = useCallback(() => {
     let slug = searchInput.trim();
@@ -335,6 +337,20 @@ function BrowsePage() {
               </button>
             ))}
           </div>
+
+          {selectedSiteInfo && siteHasCategories(selectedSiteInfo) && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="w-full sm:w-auto"
+              onClick={() =>
+                navigate({ to: "/browse/$site", params: { site: selectedSiteInfo.id } })
+              }
+            >
+              <Tags className="h-4 w-4 mr-1.5" />
+              {selectedSiteInfo.display_name} categories
+            </Button>
+          )}
         </CardContent>
       </Card>
 

@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { mergeSiteLists, SITE_CATALOG } from "@/lib/sites/catalog";
+import { mergeSiteLists, siteHasCategories, SITE_CATALOG } from "@/lib/sites/catalog";
 import { useSiteInfo } from "@/lib/sites/useSiteInfo";
 import { PornhubCategoryBrowser } from "@/components/PornhubCategoryBrowser";
 import { SiteCategoryBrowser } from "@/components/SiteCategoryBrowser";
@@ -55,7 +55,7 @@ function SiteHubPage() {
 
       {site.id === "pornhub" && <PornhubCategoryBrowser />}
 
-      {site.id !== "pornhub" && site.browse_options?.has_categories && (
+      {site.id !== "pornhub" && siteHasCategories(site) && (
         <SiteCategoryBrowser siteId={site.id} siteName={site.display_name} />
       )}
 
