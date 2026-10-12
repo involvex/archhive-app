@@ -97,7 +97,7 @@ export function EnrichDialog({ scene, open, onClose, onApplied }: EnrichDialogPr
           setStatus("No fingerprint match — try a title search below.");
         }
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : "Query failed");
+        if (!cancelled) setError(e instanceof Error ? e.message : String(e) || "Query failed");
       } finally {
         if (!cancelled) setQuerying(false);
       }
@@ -118,7 +118,7 @@ export function EnrichDialog({ scene, open, onClose, onApplied }: EnrichDialogPr
       setSelectedId(matches[0]?.stash_id ?? null);
       if (matches.length === 0) setStatus("No matches for that title.");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Search failed");
+      setError(e instanceof Error ? e.message : String(e) || "Search failed");
     } finally {
       setQuerying(false);
     }
@@ -144,7 +144,7 @@ export function EnrichDialog({ scene, open, onClose, onApplied }: EnrichDialogPr
       setStatus("Applied. You can submit fingerprints so others can match this file.");
       onApplied(updated);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Apply failed");
+      setError(e instanceof Error ? e.message : String(e) || "Apply failed");
     } finally {
       setApplying(false);
     }
@@ -157,7 +157,7 @@ export function EnrichDialog({ scene, open, onClose, onApplied }: EnrichDialogPr
       const result = await api.submitStashdbFingerprints(scene.id, endpointId || undefined);
       setStatus(`Submitted ${result.submitted} fingerprint(s) — thanks!`);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Submit failed");
+      setError(e instanceof Error ? e.message : String(e) || "Submit failed");
     } finally {
       setSubmitting(false);
     }
