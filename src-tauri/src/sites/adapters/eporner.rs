@@ -3,7 +3,7 @@ use crate::models::{
     BrowseKind, BrowseOptions, BrowseOrientation, BrowsePage, BrowseQuery, DownloadPlan,
     DownloadTool, FilterOption, MediaItem, SiteCategory,
 };
-use crate::sites::urls::query_slug;
+use crate::sites::urls::{path_slug, query_slug};
 use crate::sites::{SiteAdapter, SiteContext};
 use async_trait::async_trait;
 use tracing::info;
@@ -93,6 +93,23 @@ impl SiteAdapter for EpornerAdapter {
                 page: query.page,
                 has_more: false,
                 total: Some(1),
+                ..Default::default()
+            });
+        }
+
+        // Category include/exclude only exists on the HTML listing pages
+        // (/tag/<q>/[<page>/][<sort>/]?include=a,b&exclude=c), not the API.
+        if query.filters.include.is_some() || query.filters.exclude.is_some() {
+            let url = build_filtered_html_url(&query);
+            info!("[eporner] browse (include/exclude): {url}");
+            let html = ctx.fetch_html(&url, self.id()).await?;
+            let items = parse_listing_html(&html, self.id());
+            let has_more = items.len() >= 30;
+            return Ok(BrowsePage {
+                items,
+                page: query.page,
+                has_more,
+                total: None,
                 ..Default::default()
             });
         }
@@ -244,6 +261,113 @@ fn build_api_url(query: &BrowseQuery) -> String {
     url
 }
 
+/// HTML listing URL with category include/exclude. The page number goes
+/// before the sort segment (/tag/redhead/2/longest/); the reverse order
+/// redirects back to page 1.
+fn build_filtered_html_url(query: &BrowseQuery) -> String {
+    let base = match query.kind {
+        BrowseKind::Category => format!("{BASE}/cat/{}/", path_slug(&query.slug)),
+        _ => {
+            let q = crate::models::split_tags(&query.slug).join(" ");
+            let q = if q.trim().is_empty() {
+                "all".to_string()
+            } else {
+                q
+            };
+            format!("{BASE}/tag/{}/", path_slug(&q.replace(' ', "-")))
+        }
+    };
+    let mut url = base;
+    if query.page > 1 {
+        url.push_str(&format!("{}/", query.page));
+    }
+    let sort = match query.filters.sort.as_deref() {
+        Some("latest") => Some("recent"),
+        Some("most-popular") => Some("most-viewed"),
+        Some(s @ ("top-rated" | "top-weekly" | "top-monthly" | "longest" | "shortest")) => Some(s),
+        _ => None,
+    };
+    if let Some(sort) = sort {
+        url.push_str(&format!("{sort}/"));
+    }
+    // Category slugs only ([a-z0-9-]); anything else is dropped.
+    let clean = |v: &Option<String>| {
+        v.as_deref()
+            .map(crate::models::split_tags)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|c| c.to_ascii_lowercase())
+            .filter(|c| c.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '-'))
+            .collect::<Vec<_>>()
+            .join(",")
+    };
+    crate::sites::urls::with_query(
+        &url,
+        &[
+            ("include", &clean(&query.filters.include)),
+            ("exclude", &clean(&query.filters.exclude)),
+        ],
+    )
+}
+
+/// Video cards on Eporner HTML listings:
+/// `<div class="mb…" data-id=…><a href="/video-<id>/<slug>/"><img src="<thumb>" …>`
+/// `<p class="mbtit"><a …>Title</a></p>… <span class="mbtim" …>MM:SS</span>`.
+fn parse_listing_html(html: &str, site_id: &str) -> Vec<MediaItem> {
+    use std::sync::LazyLock;
+    static HREF: LazyLock<regex::Regex> = LazyLock::new(|| {
+        regex::Regex::new(r#"href="(/video-([A-Za-z0-9]+)/[^"]*)""#).expect("href")
+    });
+    static TITLE: LazyLock<regex::Regex> = LazyLock::new(|| {
+        regex::Regex::new(r#"<p class="mbtit"><a [^>]*>([^<]+)</a>"#).expect("title")
+    });
+    static THUMB: LazyLock<regex::Regex> =
+        LazyLock::new(|| regex::Regex::new(r#"<img [^>]*src="(https://[^"]+)""#).expect("thumb"));
+    static DUR: LazyLock<regex::Regex> =
+        LazyLock::new(|| regex::Regex::new(r#"class="mbtim"[^>]*>([\d:]+)<"#).expect("duration"));
+    // Card wrappers are class="mb" / class="mb hdy"; inner divs (mbimg,
+    // mbunder, …) share the prefix, so split on the exact class token.
+    static CARD: LazyLock<regex::Regex> =
+        LazyLock::new(|| regex::Regex::new(r#"<div class="mb[ "]"#).expect("card"));
+    let mut seen = std::collections::HashSet::new();
+    CARD.split(html)
+        .skip(1)
+        .filter_map(|block| {
+            let href = HREF.captures(block)?;
+            let id = href.get(2)?.as_str().to_string();
+            if !seen.insert(id.clone()) {
+                return None;
+            }
+            let title = TITLE.captures(block)?.get(1)?.as_str();
+            let url = format!("{BASE}{}", href.get(1)?.as_str());
+            Some(MediaItem {
+                id: url.clone(),
+                title: html_escape::decode_html_entities(title).trim().to_string(),
+                url,
+                thumbnail: THUMB.captures(block).map(|c| c[1].to_string()),
+                duration: DUR.captures(block).and_then(|c| parse_clock(&c[1])),
+                site_id: site_id.to_string(),
+                performers: vec![],
+                tags: vec![],
+                description: None,
+                channel: None,
+                is_live: None,
+                viewers: None,
+                age: None,
+                gender: None,
+                stream_url: None,
+                embed_url: None,
+            })
+        })
+        .collect()
+}
+
+/// "675:17" / "1:02:03" → seconds.
+fn parse_clock(s: &str) -> Option<u32> {
+    s.split(':')
+        .try_fold(0u32, |acc, part| Some(acc * 60 + part.parse::<u32>().ok()?))
+}
+
 /// API `order` values (verified against the v2 search endpoint).
 fn eporner_options() -> BrowseOptions {
     let o = |id: &str, label: &str| FilterOption::new(id, label);
@@ -259,6 +383,7 @@ fn eporner_options() -> BrowseOptions {
         ],
         filter_kinds: vec![BrowseKind::Search, BrowseKind::Tag, BrowseKind::Category],
         has_categories: true,
+        include_exclude: true,
         ..Default::default()
     }
 }
@@ -357,6 +482,33 @@ fn parse_api_json(body: &str, page: u32, site_id: &str) -> Option<BrowsePage> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn filtered_html_url_and_listing() {
+        let mut q = BrowseQuery {
+            kind: BrowseKind::Search,
+            slug: "redhead".into(),
+            page: 2,
+            orientation: None,
+            filters: Default::default(),
+        };
+        q.filters.sort = Some("longest".into());
+        q.filters.include = Some("milf, big-tits".into());
+        q.filters.exclude = Some("anal,<script>".into());
+        assert_eq!(
+            build_filtered_html_url(&q),
+            "https://www.eporner.com/tag/redhead/2/longest/?include=milf%2Cbig-tits&exclude=anal"
+        );
+        let html = r#"<div class="mb hdy" data-id="1"><div class="mbimg"><a href="/video-R7ZATY8jOpO/stepsons/"><img src="https://static-ca-cdn.eporner.com/t/1_240.jpg" alt="x" /></a></div><div class="mbunder"><p class="mbtit"><a href="/video-R7ZATY8jOpO/stepsons/">Stepsons &amp; Co</a></p><p class="mbstats"><span class="mbtim" title="Duration">675:17</span></p></div></div>"#;
+        let items = parse_listing_html(html, "eporner");
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].title, "Stepsons & Co");
+        assert_eq!(items[0].duration, Some(675 * 60 + 17));
+        assert_eq!(
+            items[0].url,
+            "https://www.eporner.com/video-R7ZATY8jOpO/stepsons/"
+        );
+    }
 
     #[test]
     fn build_api_url_uses_query_param() {

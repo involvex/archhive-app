@@ -5,6 +5,7 @@ import { api, browseFiltersKey } from "@/lib/api/client";
 import { useSiteInfo } from "@/lib/sites/useSiteInfo";
 import { siteHasCategories } from "@/lib/sites/catalog";
 import { groupForText, loadSiteCategories } from "@/components/SiteCategoryBrowser";
+import { CategoryIncludeExclude } from "@/components/CategoryIncludeExclude";
 import {
   applyLocalFilters,
   BrowseFilterBar,
@@ -484,6 +485,16 @@ function BrowseDetailPage() {
             local={localFilters}
             onLocalChange={setLocalFilters}
           />
+          {siteInfo?.browse_options?.include_exclude &&
+            siteInfo.browse_options.filter_kinds.includes(kind as BrowseKind) && (
+              <div className="mt-2">
+                <CategoryIncludeExclude
+                  siteId={site}
+                  filters={filters}
+                  onFiltersChange={setFilters}
+                />
+              </div>
+            )}
         </div>
       </div>
 

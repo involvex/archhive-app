@@ -88,6 +88,13 @@ pub struct BrowseFilters {
     pub duration: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quality: Option<String>,
+    /// Categories results must have (comma-separated slugs; sites with
+    /// `BrowseOptions::include_exclude`, e.g. Eporner `?include=`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include: Option<String>,
+    /// Categories to leave out (comma-separated slugs, e.g. Eporner `?exclude=`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exclude: Option<String>,
 }
 
 impl BrowseFilters {
@@ -96,6 +103,8 @@ impl BrowseFilters {
             && self.period.is_none()
             && self.duration.is_none()
             && self.quality.is_none()
+            && self.include.is_none()
+            && self.exclude.is_none()
     }
 
     /// Stable cache-key suffix (empty when no filter is set).
@@ -103,13 +112,21 @@ impl BrowseFilters {
         if self.is_empty() {
             return String::new();
         }
-        format!(
+        let mut key = format!(
             "|s={}|p={}|d={}|q={}",
             self.sort.as_deref().unwrap_or(""),
             self.period.as_deref().unwrap_or(""),
             self.duration.as_deref().unwrap_or(""),
             self.quality.as_deref().unwrap_or("")
-        )
+        );
+        if self.include.is_some() || self.exclude.is_some() {
+            key.push_str(&format!(
+                "|i={}|x={}",
+                self.include.as_deref().unwrap_or(""),
+                self.exclude.as_deref().unwrap_or("")
+            ));
+        }
+        key
     }
 
     /// Normalize empty strings (from query params / UI) to `None`.
@@ -120,6 +137,8 @@ impl BrowseFilters {
             period: f(self.period),
             duration: f(self.duration),
             quality: f(self.quality),
+            include: f(self.include),
+            exclude: f(self.exclude),
         }
     }
 }
@@ -165,6 +184,10 @@ pub struct BrowseOptions {
     /// tag sets too large to load at once. Empty = one flat list.
     #[serde(default)]
     pub category_groups: Vec<FilterOption>,
+    /// Results can be narrowed to / exclude categories from the site's index
+    /// (`BrowseFilters::include` / `exclude`).
+    #[serde(default)]
+    pub include_exclude: bool,
 }
 
 /// Separator for combined tags in a Tag/Category slug (`milf,anal`). Tag slugs

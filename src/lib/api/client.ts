@@ -206,10 +206,23 @@ async function localOrRemote<T>(
 
 /** Mirrors `BrowseFilters::cache_key` in models.rs. */
 export function browseFiltersKey(filters?: BrowseFilters): string {
-  if (!filters || !(filters.sort || filters.period || filters.duration || filters.quality)) {
+  if (
+    !filters ||
+    !(
+      filters.sort ||
+      filters.period ||
+      filters.duration ||
+      filters.quality ||
+      filters.include ||
+      filters.exclude
+    )
+  ) {
     return "";
   }
-  return `|s=${filters.sort ?? ""}|p=${filters.period ?? ""}|d=${filters.duration ?? ""}|q=${filters.quality ?? ""}`;
+  const base = `|s=${filters.sort ?? ""}|p=${filters.period ?? ""}|d=${filters.duration ?? ""}|q=${filters.quality ?? ""}`;
+  return filters.include || filters.exclude
+    ? `${base}|i=${filters.include ?? ""}|x=${filters.exclude ?? ""}`
+    : base;
 }
 
 export interface ScanProgress {

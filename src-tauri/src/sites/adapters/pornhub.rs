@@ -715,6 +715,7 @@ pub fn tube_browse_options(site_id: &str) -> BrowseOptions {
             has_categories: true,
             combine_tags: 2,
             category_groups: Vec::new(),
+            include_exclude: false,
         },
         "xvideos" => BrowseOptions {
             sorts: o(&[
@@ -744,6 +745,7 @@ pub fn tube_browse_options(site_id: &str) -> BrowseOptions {
             has_categories: true,
             combine_tags: 5,
             category_groups: xvideos_tag_groups(),
+            include_exclude: false,
         },
         "xnxx" => BrowseOptions {
             sorts: o(&[("hits", "Most viewed"), ("random", "Random")]),
@@ -759,6 +761,7 @@ pub fn tube_browse_options(site_id: &str) -> BrowseOptions {
             has_categories: true,
             combine_tags: 0,
             category_groups: Vec::new(),
+            include_exclude: false,
         },
         "xhamster" => BrowseOptions {
             sorts: o(&[
@@ -779,6 +782,7 @@ pub fn tube_browse_options(site_id: &str) -> BrowseOptions {
             has_categories: true,
             combine_tags: 0,
             category_groups: Vec::new(),
+            include_exclude: false,
         },
         "youporn" => BrowseOptions {
             sorts: o(&[
@@ -1988,6 +1992,8 @@ mod category_tests {
                 period: get("period"),
                 duration: get("duration"),
                 quality: get("quality"),
+                include: get("include"),
+                exclude: get("exclude"),
             },
         }
     }
