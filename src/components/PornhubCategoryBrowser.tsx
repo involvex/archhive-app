@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
-import { Link } from "@tanstack/react-router";
-import { RefreshCw } from "lucide-react";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { Layers, RefreshCw, X } from "lucide-react";
 import { api } from "@/lib/api/client";
 import {
   categoriesForOrientation,
@@ -25,6 +25,23 @@ export function PornhubCategoryBrowser() {
   const [liveCatalog, setLiveCatalog] = useState<PornhubCategory[] | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshStatus, setRefreshStatus] = useState("");
+  const navigate = useNavigate();
+  const [combining, setCombining] = useState(false);
+  const [selected, setSelected] = useState<PornhubCategory[]>([]);
+  // PornHub intersects exactly two straight categories
+  // (/video/incategories/a/b); other orientations run as a word search.
+  const exact = orientation === "straight";
+  const maxPick = exact ? 2 : 4;
+
+  function toggle(cat: PornhubCategory) {
+    setSelected((prev) =>
+      prev.some((c) => c.slug === cat.slug)
+        ? prev.filter((c) => c.slug !== cat.slug)
+        : prev.length >= maxPick
+          ? prev
+          : [...prev, cat],
+    );
+  }
 
   const categories = useMemo(() => {
     const base = liveCatalog ?? categoriesForOrientation(orientation);
@@ -68,6 +85,7 @@ export function PornhubCategoryBrowser() {
               onClick={() => {
                 setOrientation(o.id);
                 setFilter("");
+                setSelected([]);
               }}
             >
               {o.label}
@@ -83,7 +101,59 @@ export function PornhubCategoryBrowser() {
             <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} />
             Refresh counts
           </Button>
+          <Button
+            size="sm"
+            variant={combining ? "default" : "outline"}
+            onClick={() => {
+              setCombining((v) => !v);
+              setSelected([]);
+            }}
+            title="Select several categories and browse videos in all of them"
+          >
+            <Layers className="h-3.5 w-3.5" />
+            Combine
+          </Button>
         </div>
+        {combining && (
+          <div className="space-y-2 rounded-md border border-[var(--color-border)] p-2">
+            <p className="text-xs text-[var(--color-muted-foreground)]">
+              {exact
+                ? "Pick 2 — PornHub shows videos in both categories."
+                : `Pick up to ${maxPick} — combined categories run as a word search for this orientation.`}
+            </p>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {selected.map((c) => (
+                <button
+                  key={c.slug}
+                  type="button"
+                  onClick={() => toggle(c)}
+                  className="inline-flex items-center gap-1 rounded-full bg-[var(--color-primary)] px-3 py-1 text-xs text-[var(--color-primary-foreground)]"
+                >
+                  {c.name}
+                  <X className="h-3 w-3" />
+                </button>
+              ))}
+              <Button
+                size="sm"
+                className="ml-auto"
+                disabled={selected.length === 0}
+                onClick={() =>
+                  void navigate({
+                    to: "/browse/$site/$kind/$slug",
+                    params: {
+                      site: "pornhub",
+                      kind: "category",
+                      slug: selected.map((c) => c.slug).join(","),
+                    },
+                    search: { orientation },
+                  })
+                }
+              >
+                Browse {selected.length > 1 ? `${selected.length} together` : ""}
+              </Button>
+            </div>
+          </div>
+        )}
         {refreshStatus && (
           <p className="text-xs text-[var(--color-muted-foreground)]">{refreshStatus}</p>
         )}
@@ -95,19 +165,38 @@ export function PornhubCategoryBrowser() {
         <ul className="max-h-[60vh] overflow-y-auto rounded-md border border-[var(--color-border)] divide-y divide-[var(--color-border)]">
           {categories.map((cat) => (
             <li key={`${cat.orientation}-${cat.slug}-${cat.categoryId ?? ""}`}>
-              <Link
-                to="/browse/$site/$kind/$slug"
-                params={{ site: "pornhub", kind: "category", slug: categoryBrowseSlug(cat) }}
-                search={{ orientation: cat.orientation }}
-                className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-[var(--color-muted)]"
-              >
-                <span>{cat.name}</span>
-                {cat.videoCount != null && (
-                  <span className="text-xs text-[var(--color-muted-foreground)]">
-                    {cat.videoCount.toLocaleString()}
-                  </span>
-                )}
-              </Link>
+              {combining ? (
+                <button
+                  type="button"
+                  onClick={() => toggle(cat)}
+                  className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-[var(--color-muted)] ${
+                    selected.some((c) => c.slug === cat.slug)
+                      ? "bg-[var(--color-muted)] font-medium"
+                      : ""
+                  }`}
+                >
+                  <span>{cat.name}</span>
+                  {cat.videoCount != null && (
+                    <span className="text-xs text-[var(--color-muted-foreground)]">
+                      {cat.videoCount.toLocaleString()}
+                    </span>
+                  )}
+                </button>
+              ) : (
+                <Link
+                  to="/browse/$site/$kind/$slug"
+                  params={{ site: "pornhub", kind: "category", slug: categoryBrowseSlug(cat) }}
+                  search={{ orientation: cat.orientation }}
+                  className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-[var(--color-muted)]"
+                >
+                  <span>{cat.name}</span>
+                  {cat.videoCount != null && (
+                    <span className="text-xs text-[var(--color-muted-foreground)]">
+                      {cat.videoCount.toLocaleString()}
+                    </span>
+                  )}
+                </Link>
+              )}
             </li>
           ))}
         </ul>

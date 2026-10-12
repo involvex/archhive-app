@@ -156,6 +156,23 @@ pub struct BrowseOptions {
     /// True when `list_site_categories` returns entries for this site.
     #[serde(default)]
     pub has_categories: bool,
+    /// How many tags/categories one URL can intersect exactly (a tag/category
+    /// slug of `a,b,…`). Beyond this — or 0 — combined tags are run as a word
+    /// search instead (relevance-ranked, not a strict match).
+    #[serde(default)]
+    pub combine_tags: u8,
+}
+
+/// Separator for combined tags in a Tag/Category slug (`milf,anal`). Tag slugs
+/// themselves never contain commas.
+pub const TAG_SEPARATOR: char = ',';
+
+/// `"milf, anal,"` → `["milf", "anal"]`.
+pub fn split_tags(slug: &str) -> Vec<String> {
+    slug.split(TAG_SEPARATOR)
+        .map(|t| t.trim().to_string())
+        .filter(|t| !t.is_empty())
+        .collect()
 }
 
 /// One entry of a site's category / tag index.

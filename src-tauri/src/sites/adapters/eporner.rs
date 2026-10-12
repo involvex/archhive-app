@@ -56,7 +56,7 @@ impl SiteAdapter for EpornerAdapter {
                 anchor_selector: "a[href^='/cat/'][title]",
                 slug_from_href: &slug,
                 kind: BrowseKind::Category,
-                max: 300,
+                max: crate::sites::adapters::pornhub::ALL_CATEGORIES,
             },
         ))
     }

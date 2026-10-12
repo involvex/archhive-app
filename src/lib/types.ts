@@ -56,6 +56,8 @@ export interface BrowseOptions {
   /** Browse kinds the filters apply to. */
   filter_kinds: BrowseKind[];
   has_categories: boolean;
+  /** Tags one URL can intersect exactly (a slug of `a,b`); 0 = word search only. */
+  combine_tags?: number;
 }
 
 /** Mirrors `models::BrowseFilters`: option ids, omitted = site default. */
