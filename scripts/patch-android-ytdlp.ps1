@@ -150,6 +150,24 @@ if (Test-Path $proguardPath) {
     Write-Host "Created $proguardPath with YtDlp keep rules"
 }
 
+# Projects patched before these rules existed: add the library keeps that
+# stop R8 from breaking YoutubeDL.init / FFmpeg.init in release builds.
+$proguardNow = Get-Content $proguardPath -Raw
+if ($proguardNow -notmatch 'org\.apache\.commons\.compress') {
+    $libKeeps = @"
+-keep class org.apache.commons.compress.** { *; }
+-keep class org.apache.commons.io.** { *; }
+-keep class com.fasterxml.jackson.** { *; }
+-keepattributes Signature,*Annotation*,InnerClasses,EnclosingMethod
+-dontwarn org.apache.commons.compress.**
+-dontwarn org.apache.commons.io.**
+-dontwarn com.fasterxml.jackson.**
+"@
+    $proguardNow = $proguardNow.TrimEnd() + "`r`n" + $libKeeps
+    Set-Content -Path $proguardPath -Value $proguardNow -NoNewline
+    Write-Host "Added youtubedl-android library ProGuard keeps."
+}
+
 # Projects patched before the cookie login browser existed: add its keeps.
 $proguardNow = Get-Content $proguardPath -Raw
 if ($proguardNow -notmatch 'CookieBrowserPlugin') {
