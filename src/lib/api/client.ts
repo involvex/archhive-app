@@ -214,15 +214,18 @@ export function browseFiltersKey(filters?: BrowseFilters): string {
       filters.duration ||
       filters.quality ||
       filters.include ||
-      filters.exclude
+      filters.exclude ||
+      filters.tag
     )
   ) {
     return "";
   }
   const base = `|s=${filters.sort ?? ""}|p=${filters.period ?? ""}|d=${filters.duration ?? ""}|q=${filters.quality ?? ""}`;
-  return filters.include || filters.exclude
-    ? `${base}|i=${filters.include ?? ""}|x=${filters.exclude ?? ""}`
-    : base;
+  const withCats =
+    filters.include || filters.exclude
+      ? `${base}|i=${filters.include ?? ""}|x=${filters.exclude ?? ""}`
+      : base;
+  return filters.tag ? `${withCats}|t=${filters.tag}` : withCats;
 }
 
 export interface ScanProgress {

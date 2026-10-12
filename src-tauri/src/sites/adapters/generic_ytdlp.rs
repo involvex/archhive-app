@@ -130,9 +130,26 @@ async fn browse_thisvid(ctx: &SiteContext, query: &BrowseQuery) -> AppResult<Bro
             _ => format!("{BASE}/search/?q={}", query_slug(&query.slug)),
         }
     };
+    // Category pages can be narrowed to one tag: /categories/<c>/?tag=<t>
+    // (verified strict: every result is in the category and has the tag).
+    let tag = if query.kind == BrowseKind::Category {
+        query
+            .filters
+            .tag
+            .as_deref()
+            .map(str::trim)
+            .filter(|t| !t.is_empty() && t.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'))
+            .unwrap_or("")
+            .to_ascii_lowercase()
+    } else {
+        String::new()
+    };
     let url = crate::sites::urls::with_query(
         &url,
-        &[("sort_by", &crate::sites::adapters::thothub::kvs_sort(query))],
+        &[
+            ("sort_by", &crate::sites::adapters::thothub::kvs_sort(query)),
+            ("tag", &tag),
+        ],
     );
     let items = parse_thisvid(&ctx.fetch_html(&url, "thisvid").await?);
     if items.is_empty() {
@@ -146,6 +163,36 @@ async fn browse_thisvid(ctx: &SiteContext, query: &BrowseQuery) -> AppResult<Bro
         total: None,
         ..Default::default()
     })
+}
+
+/// `<a href="https://thisvid.com/tags/abdl/" title="ABDL" class="selective">`.
+fn parse_thisvid_tag_index(html: &str) -> Vec<crate::models::SiteCategory> {
+    use std::sync::LazyLock;
+    static RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+        regex::Regex::new(
+            r#"<a href="https://thisvid\.com/tags/([a-z0-9-]+)/" title="([^"]*)" class="selective">"#,
+        )
+        .expect("thisvid tag index regex")
+    });
+    let mut seen = std::collections::HashSet::new();
+    RE.captures_iter(html)
+        .filter_map(|c| {
+            let slug = c.get(1)?.as_str().to_string();
+            if !seen.insert(slug.clone()) {
+                return None;
+            }
+            let name = html_escape::decode_html_entities(c.get(2)?.as_str())
+                .trim()
+                .to_string();
+            Some(crate::models::SiteCategory {
+                name: if name.is_empty() { slug.clone() } else { name },
+                slug,
+                kind: BrowseKind::Tag,
+                thumbnail: None,
+                count: None,
+            })
+        })
+        .collect()
 }
 
 fn parse_thisvid(html: &str) -> Vec<MediaItem> {
@@ -191,10 +238,23 @@ impl SiteAdapter for GenericYtDlpAdapter {
 
     fn browse_options(&self) -> crate::models::BrowseOptions {
         if self.site_id == "thisvid" {
-            crate::sites::adapters::thothub::kvs_browse_options(
-                vec![BrowseKind::Search, BrowseKind::Tag, BrowseKind::Category],
-                true,
-            )
+            crate::models::BrowseOptions {
+                // Tag index sections: /tags/?section=a … z.
+                category_groups: ('a'..='z')
+                    .map(|c| {
+                        crate::models::FilterOption::new(
+                            &c.to_string(),
+                            &c.to_ascii_uppercase().to_string(),
+                        )
+                    })
+                    .collect(),
+                // /categories/<c>/?tag=<t> is a strict category ∩ tag listing.
+                category_tag_filter: true,
+                ..crate::sites::adapters::thothub::kvs_browse_options(
+                    vec![BrowseKind::Search, BrowseKind::Tag, BrowseKind::Category],
+                    true,
+                )
+            }
         } else {
             crate::models::BrowseOptions::default()
         }
@@ -222,6 +282,25 @@ impl SiteAdapter for GenericYtDlpAdapter {
                 max: crate::sites::adapters::pornhub::ALL_CATEGORIES,
             },
         ))
+    }
+
+    /// ThisVid tag index section (/tags/?section=<letter>).
+    async fn list_category_group(
+        &self,
+        ctx: &SiteContext,
+        group: &str,
+    ) -> AppResult<Vec<crate::models::SiteCategory>> {
+        let valid = group.len() == 1 && group.chars().all(|c| c.is_ascii_lowercase());
+        if self.site_id != "thisvid" || !valid {
+            return Ok(Vec::new());
+        }
+        let html = ctx
+            .fetch_html(
+                &format!("https://thisvid.com/tags/?section={group}"),
+                self.site_id,
+            )
+            .await?;
+        Ok(parse_thisvid_tag_index(&html))
     }
 
     async fn browse(
@@ -512,5 +591,21 @@ impl SiteAdapter for GenericYtDlpAdapter {
             referer: None,
             initial_status: None,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn parses_thisvid_tag_index() {
+        let html = r#"<li><a href="https://thisvid.com/tags/abdl/" title="ABDL" class="selective"><strong>ABDL</strong></a></li>
+            <li><a href="https://thisvid.com/tags/abdl-boy/" title="Abdl boy" class="selective"><strong>Abdl boy</strong></a></li>
+            <a href="https://thisvid.com/tags/abdl/" title="ABDL" class="selective">"#;
+        let tags = super::parse_thisvid_tag_index(html);
+        assert_eq!(tags.len(), 2);
+        assert_eq!(
+            (tags[1].slug.as_str(), tags[1].name.as_str()),
+            ("abdl-boy", "Abdl boy")
+        );
     }
 }

@@ -33,5 +33,6 @@ describe("browseFiltersKey", () => {
     expect(browseFiltersKey({ include: "milf", exclude: "anal" })).toBe(
       "|s=|p=|d=|q=|i=milf|x=anal",
     );
+    expect(browseFiltersKey({ tag: "anal" })).toBe("|s=|p=|d=|q=|t=anal");
   });
 });

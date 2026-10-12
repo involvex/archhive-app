@@ -116,7 +116,8 @@ export function BrowseFilterBar({
       filters.duration ||
       filters.quality ||
       filters.include ||
-      filters.exclude,
+      filters.exclude ||
+      filters.tag,
     ) || Boolean(local.text || local.duration);
 
   return (
