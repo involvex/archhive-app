@@ -43,6 +43,13 @@ titles/tags, not a site query.
     were missing one or more of the tags (none of the 5 checked had all three).
   - `/tags/milf/anal` just redirects to the `anal` tag; `-tag` exclusion
     (`/tags/milf+anal+-lesbian`) is ignored.
+  - The counts confirm it. Results-page counts: `milf` 48,587, `anal` 59,259,
+    `milf+anal` **40,951** — that would make 84% of all MILF videos also anal;
+    a real intersection would be a small fraction of either. `petite-brunette`
+    (= `petite+brunette`) shows 26,078 against `petite` 32,679 (80%). The
+    tag-index badges are worse: `milf-anal` 122,495 is larger than `milf`
+    (73,089) and `anal` (95,337) put together. The search box is OR-like:
+    `/?k=milf` 82,413 → `/?k=milf+anal` 135,138.
   - Single-word tags (`/tags/milf`) are the closest to a real tag listing.
 - **Categories** (`/c/Femdom-235`, ~38 of them) cannot be combined with each
   other, with tags, or with a search: `?c=`, `?tag=` and `?k=` on a category
