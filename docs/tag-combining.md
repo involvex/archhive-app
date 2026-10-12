@@ -16,7 +16,7 @@ are not guaranteed to match every term.
 | Site     | Tag + tag                   | Category + category   | Search + category                    | Exclude                |
 | -------- | --------------------------- | --------------------- | ------------------------------------ | ---------------------- |
 | XVIDEOS  | ❌ (keyword search)         | ❌                    | ❌                                   | ❌ (`-tag` is ignored) |
-| PornHub  | ❌ (word search)            | ✅ strict, exactly 2  | ❌                                   | ❌                     |
+| PornHub  | ❌ (word search)            | ✅ strict, exactly 2  | ✅ strict, 1 category                | ✅ up to 10 categories |
 | Eporner  | ❌ (word search)            | ✅ strict, any number | ✅ strict (search/tag + categories)  | ✅ categories          |
 | xHamster | ❌ (word search)            | ❌                    | ❌                                   | ❌                     |
 | XNXX     | ❌ (word search)            | — (no categories)     | ❌                                   | ❌                     |
@@ -70,12 +70,32 @@ results by word.
   both MILF and Anal in their own categories.
   - Three categories (`/incategories/a/b/c`) → 404.
   - The gay / lesbian / trans sections have no such page (404).
-- **Search + category**: not possible (`filter_category` on a search is
-  ignored; `?search=` on a category page is a 404).
+- **Search + 1 category, minus up to 10 categories — strict.** The search
+  page's own filter (the category include / exclude lists) uses numeric
+  category ids:
+  `/video/search?search=redhead&filter_category=29&exclude_category=35-8`
+  (29 MILF, 35 Anal, 8 Big Tits).
+  - Verified: 8 of 8 results list MILF and neither Anal nor Big Tits in their
+    own categories; the same holds on page 2 with a sort (`&o=mv&page=2`).
+  - Several exclusions are **dash**-separated (`35-8`), at most 10. A comma
+    (`35,8`) keeps only the first one.
+  - Only **one** `filter_category`.
+  - `?search=` on a category page is a 404.
+- **Category page minus categories — strict.** `exclude_category` also works
+  on category listings, `/video?c=29&exclude_category=8` (8 of 8 MILF results
+  without Big Tits, where the unfiltered page is mostly Big Tits), and on
+  `/video/incategories/milf/anal?exclude_category=8`. `filter_category` is
+  ignored on category pages, and `incategories` only takes slugs (ids 404).
 - **Tags**: no tag-intersection URL; multiple tags are a word search.
 
-**In the app:** PornHub category picker → **Combine** → pick 2 (Straight) →
-_Browse 2 together_. On other orientations Combine runs a word search.
+**In the app:**
+
+- Two categories: PornHub category picker → **Combine** → pick 2 (Straight) →
+  _Browse 2 together_. On other orientations Combine runs a word search.
+- Search + categories: run a search, open the **Categories** panel under the
+  filters, tap a category once to require it (one at most), and tap others
+  twice to exclude them (up to 10).
+- On a category page the same panel only excludes.
 
 ## Eporner
 
@@ -162,7 +182,9 @@ normal search with all the words).
 ## How the app decides
 
 Each site advertises `BrowseOptions.combine_tags` (how many tags one URL can
-intersect exactly: PornHub 2, others 0) and `include_exclude`
-(Eporner). A combined tag slug is sent as `a,b,…`; when the count exceeds the
+intersect exactly: PornHub 2, others 0) and `include_exclude` (Eporner,
+PornHub). `max_include` / `max_exclude` cap the panel (PornHub 1 / 10), and
+`exclude_only_kinds` lists listings that take only exclusions (PornHub
+category pages). A combined tag slug is sent as `a,b,…`; when the count exceeds the
 site's exact limit, `AppState::browse` turns it into a word search, and the
 results page shows a note that the combination is not exact.

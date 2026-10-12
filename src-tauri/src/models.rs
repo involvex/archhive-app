@@ -200,6 +200,15 @@ pub struct BrowseOptions {
     /// Category listings can be narrowed to one tag (`BrowseFilters::tag`).
     #[serde(default)]
     pub category_tag_filter: bool,
+    /// Most categories `BrowseFilters::include` may hold (0 = no limit).
+    #[serde(default)]
+    pub max_include: u8,
+    /// Most categories `BrowseFilters::exclude` may hold (0 = no limit).
+    #[serde(default)]
+    pub max_exclude: u8,
+    /// Listing kinds that take only `exclude`, not `include`.
+    #[serde(default)]
+    pub exclude_only_kinds: Vec<BrowseKind>,
 }
 
 /// Separator for combined tags in a Tag/Category slug (`milf,anal`). Tag slugs
