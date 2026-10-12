@@ -64,12 +64,22 @@ results by word.
 
 ## PornHub
 
-- **Categories — strict, exactly 2, straight only.**
+- **Categories — strict, exactly 2 (straight, gay and trans).**
   `/video/incategories/milf/anal` (paging `?page=N`, sort `&o=mv` etc. work).
   Verified: 10 of 10 results (from the page's `#incategoryVideos` grid) list
   both MILF and Anal in their own categories.
   - Three categories (`/incategories/a/b/c`) → 404.
-  - The gay / lesbian / trans sections have no such page (404).
+  - Gay: `/gay/video/incategories/amateur/bareback` (catalog slugs without
+    their `-gay` suffix). Verified: 8 of 8 results list both categories.
+  - Trans has no category index of its own (`/transgender/categories` is a
+    404); a trans category is `/video/incategories/<category>/transgender`.
+    Verified: 8 of 8 `milf/transgender` results list both MILF and
+    Transgender. Most of the 111 straight categories have such a page; a few
+    pairs (BBW, Casting, Bisexual Male, Scissoring, Described Video) are 404s,
+    and the app falls back to a word search for those.
+  - Lesbian "categories" are not categories: every entry on
+    `/lesbian/categories` links to a search (`/lesbian/video/search?search=anal`),
+    so lesbian combinations are word searches.
 - **Search + 1 category, minus up to 10 categories — strict.** The search
   page's own filter (the category include / exclude lists) uses numeric
   category ids:
@@ -90,8 +100,11 @@ results by word.
 
 **In the app:**
 
-- Two categories: PornHub category picker → **Combine** → pick 2 (Straight) →
-  _Browse 2 together_. On other orientations Combine runs a word search.
+- Two categories: PornHub category picker → **Combine** → pick 2 (Straight or
+  Gay) → _Browse 2 together_. On Lesbian and Trans, Combine runs a word search.
+- The picker loads PornHub's live catalog (111 straight, 53 gay, 73 lesbian
+  entries). The **Trans** tab lists the straight categories, each opened as
+  that category ∩ Transgender; _All trans_ is the whole trans section.
 - Search + categories: run a search, open the **Categories** panel under the
   filters, tap a category once to require it (one at most), and tap others
   twice to exclude them (up to 10).
