@@ -472,8 +472,9 @@ impl SiteAdapter for PornhubAdapter {
                 let mut q = query.clone();
                 let orientation = q.orientation.unwrap_or(BrowseOrientation::Straight);
                 // Trans categories browse by slug (/incategories/<slug>/transgender).
-                let by_slug =
-                    orientation == BrowseOrientation::Transgender && !is_trans_hub_slug(&q.slug);
+                let by_slug = q.slug.starts_with("language-")
+                    || (orientation == BrowseOrientation::Transgender
+                        && !is_trans_hub_slug(&q.slug));
                 if !by_slug && !q.slug.contains(',') && !q.slug.chars().all(|c| c.is_ascii_digit())
                 {
                     if let Some(id) = resolve_category_id(ctx, &q.slug, orientation).await {
@@ -1274,6 +1275,14 @@ fn build_pornhub_category_url(query: &BrowseQuery) -> String {
     let orientation = query.orientation.unwrap_or(BrowseOrientation::Straight);
     // Two combined categories: /video/incategories/a/b (straight only; the
     // orientation hubs 404 and three or more categories 404 as well).
+    // "Language in videos" listings: /language/<name>.
+    if let Some(lang) = query
+        .slug
+        .strip_prefix("language-")
+        .filter(|l| !l.is_empty() && l.bytes().all(|b| b.is_ascii_lowercase()))
+    {
+        return format!("{PH_BASE}/language/{lang}{}", page_query(query.page));
+    }
     let combined = crate::models::split_tags(&query.slug);
     // Trans has no category index of its own: a trans category is the
     // straight category intersected with Transgender (/incategories/x/transgender).
@@ -2501,6 +2510,11 @@ mod category_tests {
         assert_eq!(
             trans("milf", 2),
             format!("{PH_BASE}/video/incategories/milf/transgender?page=2")
+        );
+        // Spoken-language listings.
+        assert_eq!(
+            trans("language-german", 2),
+            format!("{PH_BASE}/language/german?page=2")
         );
         // The hub itself is category 83.
         assert_eq!(trans("83", 1), format!("{PH_BASE}/video?c=83"));
