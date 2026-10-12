@@ -12,14 +12,19 @@ are not guaranteed to match every term.
 
 ## Summary
 
-| Site     | Tag + tag                   | Category + category   | Search + category                   | Exclude                |
-| -------- | --------------------------- | --------------------- | ----------------------------------- | ---------------------- |
-| XVIDEOS  | ✅ strict, up to 5          | ❌                    | ❌                                  | ❌ (`-tag` is ignored) |
-| PornHub  | ❌ (word search)            | ✅ strict, exactly 2  | ❌                                  | ❌                     |
-| Eporner  | ❌ (word search)            | ✅ strict, any number | ✅ strict (search/tag + categories) | ✅ categories          |
-| xHamster | ❌ (word search)            | ❌                    | ❌                                  | ❌                     |
-| XNXX     | ❌ (word search)            | — (no categories)     | ❌                                  | ❌                     |
-| Others   | not supported (word search) | not supported         | not supported                       | not supported          |
+| Site     | Tag + tag                   | Category + category   | Search + category                    | Exclude                |
+| -------- | --------------------------- | --------------------- | ------------------------------------ | ---------------------- |
+| XVIDEOS  | ✅ strict, up to 5          | ❌                    | ❌                                   | ❌ (`-tag` is ignored) |
+| PornHub  | ❌ (word search)            | ✅ strict, exactly 2  | ❌                                   | ❌                     |
+| Eporner  | ❌ (word search)            | ✅ strict, any number | ✅ strict (search/tag + categories)  | ✅ categories          |
+| xHamster | ❌ (word search)            | ❌                    | ❌                                   | ❌                     |
+| XNXX     | ❌ (word search)            | — (no categories)     | ❌                                   | ❌                     |
+| ThisVid  | ❌ (one tag only)           | ❌                    | ❌ (search + category is not strict) | ❌                     |
+| YouPorn  | ❌ (word search)            | ❌                    | ❌                                   | ❌                     |
+| Others   | not supported (word search) | not supported         | not supported                        | not supported          |
+
+ThisVid's one strict combination — **one category + one tag** — does not fit
+the columns above; see its section.
 
 On every site, the in-app **Filter results** box (`word`, `-word`) can further
 narrow the _loaded_ results on the device; that is a local text filter on
@@ -102,11 +107,37 @@ a keyword match.
 
 **In the app:** Combine runs a word search.
 
+## ThisVid
+
+- **Category + one tag — strict.** `/categories/amateurs/?tag=anal` (or the
+  other way round, `/tags/anal/?category=amateurs`) returns only videos in that
+  category **and** with that tag. Checked by opening result pages: every one
+  listed both (amateurs + anal, asian + massage). Paging works
+  (`/categories/amateurs/2/?tag=anal`).
+- **Only one tag.** `?tag=anal&tag=bdsm` keeps just the last tag; comma or `+`
+  lists (`?tag=anal,bdsm`) are 404s; `?tag[]=…` is a server error.
+- **Tag + tag**: no. `/tags/anal/?tag=bdsm` _replaces_ the tag (results are
+  bdsm, not anal); `/tags/a,b/`, `/tags/a+b/`, `/tags/a/b/` are 404s.
+- **Search + category**: not strict. `/search/?q=wife&category=amateurs`
+  reorders the results but still returns other categories.
+
+**In the app:** not wired up yet — combining ThisVid tags runs a word search.
+
+## YouPorn
+
+- **No strict combination.** `/category/milf/anal/` is a 403; `category_id=` and
+  `tag=` on search, tag or category pages are stripped by a redirect.
+- Its "porn tags" are search aliases: `/porntags/redhead-milf/` returns exactly
+  the same videos as `/search/?query=redhead+milf`, and `/porntags/redhead/`
+  the same as `/search/?query=redhead`.
+
+**In the app:** Combine runs a word search.
+
 ## Other sites
 
-YouPorn, ThisVid, ThotHub, RedGifs, Reddit and the cam sites were **not tested**
-for combined queries. In the app, combining tags on them runs a word search
-(the site's normal search with all the words).
+ThotHub, RedGifs, Reddit and the cam sites were **not tested** for combined
+queries. In the app, combining tags on them runs a word search (the site's
+normal search with all the words).
 
 ## How the app decides
 
