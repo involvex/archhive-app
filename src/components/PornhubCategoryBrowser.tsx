@@ -1,4 +1,6 @@
-import { useCallback, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { Link } from "@tanstack/react-router";
+import { RefreshCw } from "lucide-react";
 import { api } from "@/lib/api/client";
 import {
   categoriesForOrientation,
@@ -9,38 +11,20 @@ import {
   type BrowseOrientation,
   type PornhubCategory,
 } from "@/lib/sites/pornhub-categories";
-import type { MediaItem } from "@/lib/types";
-import { SceneCard } from "@/components/SceneCard";
-import { BrowseItemDetailsDialog } from "@/components/BrowseItemDetailsDialog";
-import { UrlPlayerDialog } from "@/components/UrlPlayerDialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { SkeletonGrid } from "@/components/SkeletonGrid";
-import { ErrorState } from "@/components/ErrorState";
-import { EmptyState } from "@/components/EmptyState";
-import { RefreshCw, Search } from "lucide-react";
-import { browseCacheKey, useBrowseStore } from "@/lib/stores/browse";
-import { useInfiniteScroll } from "@/lib/hooks/useInfiniteScroll";
 
+/**
+ * PornHub category picker. Selecting a category opens the full browse page
+ * (sort / filters / infinite scroll) with the orientation carried in the URL.
+ */
 export function PornhubCategoryBrowser() {
   const [orientation, setOrientation] = useState<BrowseOrientation>("straight");
   const [filter, setFilter] = useState("");
-  const [selected, setSelected] = useState<PornhubCategory | null>(null);
-  const [items, setItems] = useState<MediaItem[]>([]);
-  const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [initial, setInitial] = useState(true);
-  const [error, setError] = useState("");
   const [liveCatalog, setLiveCatalog] = useState<PornhubCategory[] | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshStatus, setRefreshStatus] = useState("");
-  const [infoItem, setInfoItem] = useState<MediaItem | null>(null);
-  const [watchItem, setWatchItem] = useState<MediaItem | null>(null);
-
-  const setCache = useBrowseStore((s) => s.set);
-  const getCache = useBrowseStore((s) => s.get);
 
   const categories = useMemo(() => {
     const base = liveCatalog ?? categoriesForOrientation(orientation);
@@ -49,56 +33,6 @@ export function PornhubCategoryBrowser() {
     if (!q) return list;
     return list.filter((c) => c.name.toLowerCase().includes(q));
   }, [orientation, filter, liveCatalog]);
-
-  const load = useCallback(
-    async (cat: PornhubCategory, p: number, append = false) => {
-      setLoading(true);
-      setError("");
-      try {
-        const slug = categoryBrowseSlug(cat);
-        const result = await api.browse("pornhub", "category", slug, p, cat.orientation);
-        setItems((prev) => {
-          const out = append ? [...prev, ...result.items] : result.items;
-          setCache(
-            browseCacheKey({
-              site: "pornhub",
-              kind: "category",
-              orientation: cat.orientation,
-              categoryKey: slug,
-            }),
-            {
-              items: out,
-              page: p,
-              hasMore: result.has_more,
-              querySlug: slug,
-              orientation: cat.orientation,
-              categoryKey: slug,
-            },
-          );
-          return out;
-        });
-        setHasMore(result.has_more);
-        setPage(p);
-        setSelected(cat);
-        setInitial(false);
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : "Browse failed";
-        setError(msg.replace(/^site error:\s*/i, ""));
-        if (!append) setItems([]);
-      } finally {
-        setLoading(false);
-      }
-    },
-    [setCache],
-  );
-
-  const loadMore = useCallback(() => {
-    if (selected && !loading && hasMore) {
-      void load(selected, page + 1, true);
-    }
-  }, [selected, loading, hasMore, page, load]);
-
-  const { sentinelRef } = useInfiniteScroll(loadMore, hasMore, loading);
 
   async function refreshCategories() {
     setRefreshing(true);
@@ -119,146 +53,65 @@ export function PornhubCategoryBrowser() {
     }
   }
 
-  async function handleDownload(item: MediaItem) {
-    await api.queueDownload(item.url, "pornhub", item.title);
-  }
-
   return (
-    <div className="space-y-4">
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Categories</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex flex-wrap gap-2">
-            {PORNHUB_ORIENTATIONS.map((o) => (
-              <Button
-                key={o.id}
-                size="sm"
-                variant={orientation === o.id ? "default" : "outline"}
-                onClick={() => {
-                  setOrientation(o.id);
-                  setSelected(null);
-                  setItems([]);
-                  setFilter("");
-                  setInitial(true);
-                  setError("");
-                }}
-              >
-                {o.label}
-              </Button>
-            ))}
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Categories</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex flex-wrap gap-2">
+          {PORNHUB_ORIENTATIONS.map((o) => (
             <Button
+              key={o.id}
               size="sm"
-              variant="outline"
-              onClick={() => void refreshCategories()}
-              disabled={refreshing}
-              className="ml-auto"
+              variant={orientation === o.id ? "default" : "outline"}
+              onClick={() => {
+                setOrientation(o.id);
+                setFilter("");
+              }}
             >
-              <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} />
-              Refresh counts
+              {o.label}
             </Button>
-          </div>
-          {refreshStatus && (
-            <p className="text-xs text-[var(--color-muted-foreground)]">{refreshStatus}</p>
-          )}
-          <Input
-            placeholder="Filter categories…"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-          />
-          <ul className="max-h-48 overflow-y-auto rounded-md border border-[var(--color-border)] divide-y divide-[var(--color-border)]">
-            {categories.map((cat) => (
-              <li key={`${cat.orientation}-${cat.slug}-${cat.categoryId ?? ""}`}>
-                <button
-                  type="button"
-                  className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-[var(--color-muted)]"
-                  onClick={() => {
-                    const key = browseCacheKey({
-                      site: "pornhub",
-                      kind: "category",
-                      orientation: cat.orientation,
-                      categoryKey: categoryBrowseSlug(cat),
-                    });
-                    const cached = getCache(key);
-                    if (cached && cached.items.length > 0) {
-                      setSelected(cat);
-                      setItems(cached.items);
-                      setPage(cached.page);
-                      setHasMore(cached.hasMore);
-                      setError("");
-                      setInitial(false);
-                      return;
-                    }
-                    setInitial(true);
-                    void load(cat, 1);
-                  }}
-                >
-                  <span>{cat.name}</span>
-                  {cat.videoCount != null && (
-                    <span className="text-xs text-[var(--color-muted-foreground)]">
-                      {cat.videoCount.toLocaleString()}
-                    </span>
-                  )}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </CardContent>
-      </Card>
-
-      {selected && (
-        <p className="text-sm text-[var(--color-muted-foreground)]">
-          Showing: <strong>{selected.name}</strong> ({orientation})
-        </p>
-      )}
-
-      {error && (
-        <ErrorState message={error} onRetry={() => selected && void load(selected, page, false)} />
-      )}
-
-      {loading && initial && items.length === 0 && <SkeletonGrid count={12} cols={3} />}
-
-      {!loading && !error && items.length === 0 && !initial && selected && (
-        <EmptyState
-          icon={<Search className="h-8 w-8" />}
-          title="No videos found"
-          description="Import PornHub cookies in Settings to unlock more results."
-        />
-      )}
-
-      <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
-        {items.map((item) => (
-          <SceneCard
-            key={item.id}
-            item={item}
-            onDownload={(i) => void handleDownload(i)}
-            onInfo={setInfoItem}
-            onWatch={setWatchItem}
-          />
-        ))}
-      </div>
-
-      {hasMore && <div ref={sentinelRef} className="h-4" />}
-
-      {loading && !initial && items.length > 0 && (
-        <div className="flex justify-center py-4 text-xs text-[var(--color-muted-foreground)]">
-          Loading more...
+          ))}
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => void refreshCategories()}
+            disabled={refreshing}
+            className="ml-auto"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} />
+            Refresh counts
+          </Button>
         </div>
-      )}
-
-      <BrowseItemDetailsDialog
-        item={infoItem}
-        open={infoItem !== null}
-        onClose={() => setInfoItem(null)}
-      />
-      <UrlPlayerDialog
-        item={watchItem}
-        playlist={items}
-        open={watchItem !== null}
-        onClose={() => setWatchItem(null)}
-        onSelectItem={setWatchItem}
-      />
-    </div>
+        {refreshStatus && (
+          <p className="text-xs text-[var(--color-muted-foreground)]">{refreshStatus}</p>
+        )}
+        <Input
+          placeholder="Filter categories…"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+        />
+        <ul className="max-h-[60vh] overflow-y-auto rounded-md border border-[var(--color-border)] divide-y divide-[var(--color-border)]">
+          {categories.map((cat) => (
+            <li key={`${cat.orientation}-${cat.slug}-${cat.categoryId ?? ""}`}>
+              <Link
+                to="/browse/$site/$kind/$slug"
+                params={{ site: "pornhub", kind: "category", slug: categoryBrowseSlug(cat) }}
+                search={{ orientation: cat.orientation }}
+                className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-[var(--color-muted)]"
+              >
+                <span>{cat.name}</span>
+                {cat.videoCount != null && (
+                  <span className="text-xs text-[var(--color-muted-foreground)]">
+                    {cat.videoCount.toLocaleString()}
+                  </span>
+                )}
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </CardContent>
+    </Card>
   );
 }

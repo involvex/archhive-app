@@ -232,7 +232,18 @@ impl SiteAdapter for PornhubAdapter {
 
     async fn browse(&self, ctx: &SiteContext, query: BrowseQuery) -> AppResult<BrowsePage> {
         let url = match query.kind {
-            BrowseKind::Category => pornhub_filtered(build_pornhub_category_url(&query), &query),
+            BrowseKind::Category => {
+                // PornHub retired /categories/<slug> (404); browse by numeric
+                // `c=` id resolved from the live catalog instead.
+                let mut q = query.clone();
+                if !q.slug.chars().all(|c| c.is_ascii_digit()) {
+                    let orientation = q.orientation.unwrap_or(BrowseOrientation::Straight);
+                    if let Some(id) = resolve_category_id(ctx, &q.slug, orientation).await {
+                        q.slug = id.to_string();
+                    }
+                }
+                pornhub_filtered(build_pornhub_category_url(&q), &q)
+            }
             BrowseKind::Search | BrowseKind::Tag => {
                 pornhub_filtered(build_pornhub_search_url(&query), &query)
             }
@@ -882,34 +893,93 @@ fn assert_pornhub_url(url: &str) -> AppResult<()> {
 fn build_pornhub_category_url(query: &BrowseQuery) -> String {
     let orientation = query.orientation.unwrap_or(BrowseOrientation::Straight);
     let slug = path_slug(&query.slug);
+    // /transgender/video… paths 404 now; trans browsing uses the main index.
+    let prefix = match orientation {
+        BrowseOrientation::Transgender => "",
+        o => orientation_path(o),
+    };
+    let root = if prefix.is_empty() {
+        PH_BASE.to_string()
+    } else {
+        format!("{PH_BASE}/{prefix}")
+    };
 
     let category_id = if query.slug.chars().all(|c| c.is_ascii_digit()) {
         Some(query.slug.clone())
     } else {
         pornhub_category_id_for_slug(&slug, orientation).map(|id| id.to_string())
     };
-
     if let Some(id) = category_id {
-        let prefix = orientation_path(orientation);
-        if prefix.is_empty() {
-            return format!("{PH_BASE}/video?c={id}{}", page_amp(query.page));
-        }
-        return format!("{PH_BASE}/{prefix}/video?c={id}{}", page_amp(query.page));
+        return format!("{root}/video?c={id}{}", page_amp(query.page));
     }
 
-    let prefix = orientation_path(orientation);
-    if prefix.is_empty() {
-        return format!("{PH_BASE}/categories/{slug}{}", page_query(query.page));
-    }
-    // Slug-only paths under gay/lesbian/trans category hubs often have no video grid.
-    // Use orientation search instead. Route through query_slug (hyphens → spaces
-    // first) so `&`/unicode in a slug can't break the query string — identical
-    // output to the old `replace('-', "+")` for plain `[a-z0-9-]` slugs.
+    // Unknown slug: search for it. Route through query_slug (hyphens → spaces
+    // first) so `&`/unicode in a slug can't break the query string.
     let search = query_slug(&slug.replace('-', " "));
     format!(
-        "{PH_BASE}/{prefix}/video/search?search={search}{}",
+        "{root}/video/search?search={search}{}",
         page_amp(query.page)
     )
+}
+
+/// Slug → PornHub `c=` id from the live category catalog (embedded JSON on
+/// /categories, /gay/categories, /lesbian/categories), cached for 12 hours.
+/// Gay slugs carry a `-gay` suffix there ("amateur" → "amateur-gay").
+async fn resolve_category_id(
+    ctx: &SiteContext,
+    slug: &str,
+    orientation: BrowseOrientation,
+) -> Option<u32> {
+    use std::collections::HashMap;
+    use std::sync::{LazyLock, Mutex};
+    use std::time::{Duration, Instant};
+    type Catalog = HashMap<String, u32>;
+    static CACHE: LazyLock<Mutex<HashMap<String, (Instant, Catalog)>>> =
+        LazyLock::new(|| Mutex::new(HashMap::new()));
+    const TTL: Duration = Duration::from_secs(12 * 3600);
+
+    let slug = slug.trim().to_ascii_lowercase();
+    let catalogs: &[BrowseOrientation] = match orientation {
+        BrowseOrientation::Gay => &[BrowseOrientation::Gay],
+        BrowseOrientation::Lesbian => &[BrowseOrientation::Lesbian, BrowseOrientation::Straight],
+        _ => &[BrowseOrientation::Straight],
+    };
+    for &catalog in catalogs {
+        let key = format!("{catalog:?}");
+        let cached = CACHE
+            .lock()
+            .ok()
+            .and_then(|c| c.get(&key).cloned())
+            .filter(|(at, _)| at.elapsed() < TTL)
+            .map(|(_, m)| m);
+        let map = match cached {
+            Some(m) => m,
+            None => {
+                let html = ctx
+                    .fetch_html(&categories_page_url(catalog), "pornhub")
+                    .await
+                    .ok()?;
+                let m: Catalog = parse_pornhub_categories(&html, catalog)
+                    .into_iter()
+                    .filter_map(|c| Some((c.slug.to_ascii_lowercase(), c.category_id?)))
+                    .collect();
+                if !m.is_empty() {
+                    if let Ok(mut c) = CACHE.lock() {
+                        c.insert(key, (Instant::now(), m.clone()));
+                    }
+                }
+                m
+            }
+        };
+        if let Some(id) = map
+            .get(&slug)
+            .or_else(|| map.get(&format!("{slug}-gay")))
+            .copied()
+        {
+            return Some(id);
+        }
+    }
+    None
 }
 
 /// Known PornHub `c=` ids for human-readable category slugs (mirrors frontend catalog).
@@ -923,6 +993,18 @@ fn pornhub_category_id_for_slug(slug: &str, _orientation: BrowseOrientation) -> 
 
 fn parse_video_links(html: &str, base: &str, site_id: &str) -> AppResult<Vec<MediaItem>> {
     let anchor_selector = match site_id {
+        // Scope to the result grid when present: the page header carries
+        // "hottest" / recommended / playlist dropdowns full of unrelated videos.
+        "pornhub" if html.contains("id=\"videoSearchResult\"") => {
+            "#videoSearchResult a[href*='view_video']"
+        }
+        "pornhub" if html.contains("id=\"videoCategory\"") => {
+            "#videoCategory a[href*='view_video']"
+        }
+        // Pornstar / model / channel pages: their grids share this class.
+        "pornhub" if html.contains("search-video-thumbs") => {
+            "ul.search-video-thumbs a[href*='view_video']"
+        }
         "pornhub" => "a[href*='view_video']",
         "xvideos" => "a[href*='/video.']",
         "xhamster" => "a[href*='/videos/']",
@@ -995,7 +1077,8 @@ fn is_site_video_href(site_id: &str, href: &str) -> bool {
 
 fn is_pornhub_video_href(href: &str) -> bool {
     let lower = href.to_lowercase();
-    if !lower.contains("view_video") {
+    // `pkey=` marks a playlist "Play All" link, not a single video card.
+    if !lower.contains("view_video") || lower.contains("pkey=") {
         return false;
     }
     let skip = [
@@ -1524,15 +1607,51 @@ mod category_tests {
     }
 
     #[test]
-    fn straight_slug_keeps_categories_path() {
+    fn pornhub_listing_scopes_to_result_grid() {
+        let html = r#"
+          <ul id="hottestMenuSection"><li><a href="/view_video.php?viewkey=hot1" title="Header promo">x</a></li></ul>
+          <ul id="videoSearchResult">
+            <li><a href="/view_video.php?viewkey=res1" title="Real result">x</a></li>
+            <li><a class="playAllLink" href="/view_video.php?viewkey=res2&pkey=99">Play All</a></li>
+          </ul>"#;
+        let items = parse_video_links(html, PH_BASE, "pornhub").unwrap();
+        let titles: Vec<_> = items.iter().map(|i| i.title.as_str()).collect();
+        assert_eq!(titles, ["Real result"]);
+    }
+
+    #[test]
+    fn unresolved_straight_slug_searches() {
+        // /categories/<slug> 404s now; unresolved slugs fall back to search.
         let url = build_pornhub_category_url(&BrowseQuery {
             filters: Default::default(),
             kind: BrowseKind::Category,
             slug: "big-tits".into(),
-            page: 1,
+            page: 2,
             orientation: Some(BrowseOrientation::Straight),
         });
-        assert_eq!(url, format!("{PH_BASE}/categories/big-tits"));
+        assert_eq!(
+            url,
+            format!("{PH_BASE}/video/search?search=big+tits&page=2")
+        );
+    }
+
+    #[test]
+    fn trans_category_avoids_dead_prefix() {
+        let q = |slug: &str| BrowseQuery {
+            filters: Default::default(),
+            kind: BrowseKind::Category,
+            slug: slug.into(),
+            page: 1,
+            orientation: Some(BrowseOrientation::Transgender),
+        };
+        assert_eq!(
+            build_pornhub_category_url(&q("83")),
+            format!("{PH_BASE}/video?c=83")
+        );
+        assert_eq!(
+            build_pornhub_category_url(&q("shemale")),
+            format!("{PH_BASE}/video/search?search=shemale")
+        );
     }
 
     #[test]
