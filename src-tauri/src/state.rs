@@ -131,6 +131,40 @@ impl AppState {
         filters: crate::models::BrowseFilters,
     ) -> AppResult<crate::models::BrowsePage> {
         let filters = filters.normalized();
+        // Combined tags (`a,b`): sites that cannot intersect that many tags
+        // in one URL get a word search for all of them instead.
+        let combined;
+        let (kind, slug) = {
+            let tags = crate::models::split_tags(slug);
+            let combinable = self
+                .sites
+                .get(site_id)
+                .map(|a| a.browse_options().combine_tags as usize)
+                .unwrap_or(0);
+            if matches!(kind, BrowseKind::Tag | BrowseKind::Category) && tags.len() > 1 {
+                if tags.len() <= combinable {
+                    combined = tags.join(",");
+                } else {
+                    combined = tags
+                        .iter()
+                        .map(|t| t.replace('-', " "))
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    return Box::pin(self.browse(
+                        site_id,
+                        BrowseKind::Search,
+                        &combined,
+                        page,
+                        orientation,
+                        filters,
+                    ))
+                    .await;
+                }
+                (kind, combined.as_str())
+            } else {
+                (kind, slug)
+            }
+        };
         // When site is "custom" but the slug is a known site URL, auto-detect
         // the correct adapter so users don't need to manually select the site.
         let effective_site_id = if site_id == "custom" && slug.starts_with("http") {

@@ -219,7 +219,7 @@ impl SiteAdapter for GenericYtDlpAdapter {
                 anchor_selector: "a[href*='/categories/']",
                 slug_from_href: &slug,
                 kind: BrowseKind::Category,
-                max: 300,
+                max: crate::sites::adapters::pornhub::ALL_CATEGORIES,
             },
         ))
     }

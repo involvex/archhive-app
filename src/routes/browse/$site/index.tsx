@@ -56,7 +56,11 @@ function SiteHubPage() {
       {site.id === "pornhub" && <PornhubCategoryBrowser />}
 
       {site.id !== "pornhub" && siteHasCategories(site) && (
-        <SiteCategoryBrowser siteId={site.id} siteName={site.display_name} />
+        <SiteCategoryBrowser
+          siteId={site.id}
+          siteName={site.display_name}
+          combineTags={site.browse_options?.combine_tags ?? 0}
+        />
       )}
 
       {advancedKinds.length > 0 && (

@@ -129,6 +129,10 @@ macro_rules! ytdlp_tube_adapter {
     };
 }
 
+/// No practical cap on tag indexes: XVIDEOS / XNXX list ~2,000 tags and a
+/// popularity cut-off hid most rare ones (e.g. late-alphabet tags).
+pub(crate) const ALL_CATEGORIES: usize = 5000;
+
 /// Category / tag index for the macro-generated tube adapters.
 async fn tube_list_categories(
     ctx: &SiteContext,
@@ -137,27 +141,33 @@ async fn tube_list_categories(
 ) -> AppResult<Vec<SiteCategory>> {
     use crate::sites::listing::{parse_category_index, segment_after, CategorySpec};
     let (path, selector, prefix, kind, max) = match site_id {
-        "xvideos" => ("/tags", "a[href^='/tags/']", "/tags/", BrowseKind::Tag, 400),
+        "xvideos" => (
+            "/tags",
+            "a[href^='/tags/']",
+            "/tags/",
+            BrowseKind::Tag,
+            ALL_CATEGORIES,
+        ),
         "xnxx" => (
             "/tags",
             "a[href^='/search/']",
             "/search/",
             BrowseKind::Tag,
-            400,
+            ALL_CATEGORIES,
         ),
         "xhamster" => (
             "/categories",
             "a[href*='/categories/']",
             "/categories/",
             BrowseKind::Category,
-            300,
+            ALL_CATEGORIES,
         ),
         "youporn" => (
             "/categories/",
             "a[href*='/category/']",
             "/category/",
             BrowseKind::Category,
-            300,
+            ALL_CATEGORIES,
         ),
         _ => return Ok(Vec::new()),
     };
@@ -236,7 +246,7 @@ impl SiteAdapter for PornhubAdapter {
                 // PornHub retired /categories/<slug> (404); browse by numeric
                 // `c=` id resolved from the live catalog instead.
                 let mut q = query.clone();
-                if !q.slug.chars().all(|c| c.is_ascii_digit()) {
+                if !q.slug.contains(',') && !q.slug.chars().all(|c| c.is_ascii_digit()) {
                     let orientation = q.orientation.unwrap_or(BrowseOrientation::Straight);
                     if let Some(id) = resolve_category_id(ctx, &q.slug, orientation).await {
                         q.slug = id.to_string();
@@ -587,6 +597,7 @@ pub fn tube_browse_options(site_id: &str) -> BrowseOptions {
             qualities: o(&[("hd", "HD only")]),
             filter_kinds: vec![BrowseKind::Search, BrowseKind::Tag, BrowseKind::Category],
             has_categories: true,
+            combine_tags: 2,
         },
         "xvideos" => BrowseOptions {
             sorts: o(&[
@@ -614,6 +625,7 @@ pub fn tube_browse_options(site_id: &str) -> BrowseOptions {
             qualities: o(&[("hd", "HD"), ("1080P", "1080p+")]),
             filter_kinds: search,
             has_categories: true,
+            combine_tags: 5,
         },
         "xnxx" => BrowseOptions {
             sorts: o(&[("hits", "Most viewed"), ("random", "Random")]),
@@ -627,6 +639,7 @@ pub fn tube_browse_options(site_id: &str) -> BrowseOptions {
             qualities: o(&[("hd-only", "HD"), ("fullhd", "Full HD")]),
             filter_kinds: vec![BrowseKind::Search, BrowseKind::Tag, BrowseKind::Category],
             has_categories: true,
+            combine_tags: 0,
         },
         "xhamster" => BrowseOptions {
             sorts: o(&[
@@ -645,6 +658,7 @@ pub fn tube_browse_options(site_id: &str) -> BrowseOptions {
             qualities: o(&[("720p", "720p+"), ("1080p", "1080p+"), ("2160p", "4K")]),
             filter_kinds: vec![BrowseKind::Search, BrowseKind::Tag, BrowseKind::Category],
             has_categories: true,
+            combine_tags: 0,
         },
         "youporn" => BrowseOptions {
             sorts: o(&[
@@ -667,11 +681,34 @@ fn tube_base_url(site_id: &str, base: &str, query: &BrowseQuery) -> String {
     let q = query_slug(&query.slug);
     match site_id {
         "xvideos" => match query.kind {
+            // Combined tags (`a,b`): /tags/a+b is an exact intersection, but
+            // tag pages ignore sort/filters — use the word search then.
+            BrowseKind::Tag if query.slug.contains(',') && query.filters.is_empty() => {
+                let tags = crate::models::split_tags(&query.slug)
+                    .iter()
+                    .map(|t| path_slug(t))
+                    .collect::<Vec<_>>()
+                    .join("+");
+                if query.page > 1 {
+                    format!("{base}/tags/{tags}/{}", query.page)
+                } else {
+                    format!("{base}/tags/{tags}")
+                }
+            }
             BrowseKind::Search | BrowseKind::Tag => {
                 let page = if query.page > 1 {
                     format!("&p={}", query.page.saturating_sub(1))
                 } else {
                     String::new()
+                };
+                let q = if query.slug.contains(',') {
+                    query_slug(
+                        &crate::models::split_tags(&query.slug)
+                            .join(" ")
+                            .replace('-', " "),
+                    )
+                } else {
+                    q
                 };
                 format!("{base}/?k={q}{page}")
             }
@@ -899,6 +936,32 @@ fn assert_pornhub_url(url: &str) -> AppResult<()> {
 
 fn build_pornhub_category_url(query: &BrowseQuery) -> String {
     let orientation = query.orientation.unwrap_or(BrowseOrientation::Straight);
+    // Two combined categories: /video/incategories/a/b (straight only; the
+    // orientation hubs 404 and three or more categories 404 as well).
+    let combined = crate::models::split_tags(&query.slug);
+    if combined.len() > 1 {
+        if orientation == BrowseOrientation::Straight && combined.len() == 2 {
+            let page = (query.page > 1).then(|| query.page.to_string());
+            return crate::sites::urls::with_query(
+                &format!(
+                    "{PH_BASE}/video/incategories/{}/{}",
+                    path_slug(&combined[0]),
+                    path_slug(&combined[1])
+                ),
+                &[("page", page.as_deref().unwrap_or(""))],
+            );
+        }
+        let words = combined.join(" ").replace('-', " ");
+        let root = match orientation {
+            BrowseOrientation::Straight | BrowseOrientation::Transgender => PH_BASE.to_string(),
+            o => format!("{PH_BASE}/{}", orientation_path(o)),
+        };
+        return format!(
+            "{root}/video/search?search={}{}",
+            query_slug(&words),
+            page_amp(query.page)
+        );
+    }
     let slug = path_slug(&query.slug);
     // /transgender/video… paths 404 now; trans browsing uses the main index.
     let prefix = match orientation {
@@ -1862,6 +1925,42 @@ mod category_tests {
         assert_eq!(
             ph,
             "https://www.pornhub.com/video/search?search=milf&o=mv&t=w&min_duration=30&hd=1"
+        );
+    }
+
+    #[test]
+    fn combined_tag_urls() {
+        // XVIDEOS: exact intersection via /tags/a+b when no filters are set…
+        let xv = tube_browse_url(
+            "xvideos",
+            "https://www.xvideos.com",
+            &q(BrowseKind::Tag, "milf,big-tits", 2, &[]),
+        );
+        assert_eq!(xv, "https://www.xvideos.com/tags/milf+big-tits/2");
+        // …and the word search when sort/filters are (tag pages ignore them).
+        let xv = tube_browse_url(
+            "xvideos",
+            "https://www.xvideos.com",
+            &q(
+                BrowseKind::Tag,
+                "milf,big-tits",
+                1,
+                &[("sort", "uploaddate")],
+            ),
+        );
+        assert_eq!(
+            xv,
+            "https://www.xvideos.com/?k=milf+big+tits&sort=uploaddate"
+        );
+
+        // PornHub: two straight categories intersect; other cases search.
+        let ph = build_pornhub_category_url(&q(BrowseKind::Category, "milf,anal", 3, &[]));
+        assert_eq!(ph, format!("{PH_BASE}/video/incategories/milf/anal?page=3"));
+        let mut gay = q(BrowseKind::Category, "amateur,bareback", 1, &[]);
+        gay.orientation = Some(BrowseOrientation::Gay);
+        assert_eq!(
+            build_pornhub_category_url(&gay),
+            format!("{PH_BASE}/gay/video/search?search=amateur+bareback")
         );
     }
 

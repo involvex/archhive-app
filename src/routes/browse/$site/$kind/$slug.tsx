@@ -3,6 +3,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Bookmark, BookmarkCheck, EyeOff, LayoutGrid, List, Search } from "lucide-react";
 import { api, browseFiltersKey } from "@/lib/api/client";
 import { useSiteInfo } from "@/lib/sites/useSiteInfo";
+import { siteHasCategories } from "@/lib/sites/catalog";
+import { loadSiteCategories } from "@/components/SiteCategoryBrowser";
 import {
   applyLocalFilters,
   BrowseFilterBar,
@@ -88,6 +90,24 @@ function BrowseDetailPage() {
   const siteInfo = useSiteInfo(site);
   const [filters, setFilters] = useState<BrowseFilters>(cached?.filters ?? {});
   const [localFilters, setLocalFilters] = useState<LocalFilters>(EMPTY_LOCAL_FILTERS);
+  // Tag autocomplete: the site's tag/category index (cached per session).
+  const [tagSuggestions, setTagSuggestions] = useState<string[]>([]);
+  const suggestTags =
+    (kind === "tag" || kind === "category") &&
+    site !== "pornhub" &&
+    Boolean(siteInfo && siteHasCategories(siteInfo));
+  useEffect(() => {
+    if (!suggestTags) return;
+    let cancelled = false;
+    loadSiteCategories(site)
+      .then((cats) => {
+        if (!cancelled) setTagSuggestions(cats.map((c) => c.slug));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [site, suggestTags]);
   const filtersKey = browseFiltersKey(filters);
   const [loading, setLoading] = useState(false);
   const [initial, setInitial] = useState(!cached?.items?.length);
@@ -376,7 +396,10 @@ function BrowseDetailPage() {
         )}
         <div className="mt-3 flex gap-2 max-w-md">
           <Input
-            placeholder={`Enter ${kind} slug...`}
+            placeholder={
+              suggestTags ? `Type a ${kind} (comma-separate to combine)` : `Enter ${kind} slug...`
+            }
+            list={suggestTags ? "browse-tag-suggestions" : undefined}
             value={querySlug}
             onChange={(e) => {
               let val = e.target.value;
@@ -406,7 +429,21 @@ function BrowseDetailPage() {
           >
             Browse
           </Button>
+          {suggestTags && (
+            <datalist id="browse-tag-suggestions">
+              {tagSuggestions.map((t) => (
+                <option key={t} value={t} />
+              ))}
+            </datalist>
+          )}
         </div>
+        {querySlug.includes(",") &&
+          (siteInfo?.browse_options?.combine_tags ?? 0) <
+            querySlug.split(",").filter((t) => t.trim()).length && (
+            <p className="mt-1 text-xs text-[var(--color-muted-foreground)]">
+              This site can&apos;t match all these tags exactly — results come from a word search.
+            </p>
+          )}
         <div className="mt-3">
           <BrowseFilterBar
             options={siteInfo?.browse_options}
