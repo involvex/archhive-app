@@ -98,6 +98,26 @@ if ($gradle -notmatch 'youtubedl-android ships native libs') {
     }
 }
 
+# youtubedl-android unpacks libpython.zip.so / libffmpeg.zip.so from the
+# installed native library dir at runtime. Modern AGP keeps .so files
+# compressed-in-APK (extractNativeLibs=false), so YoutubeDL.init / FFmpeg.init
+# fail with "not initialized". Legacy packaging extracts them on install.
+if ($gradle -notmatch 'useLegacyPackaging') {
+    $legacy = @"
+    packaging {
+        // youtubedl-android needs extracted native libs (libpython.zip.so etc.)
+        jniLibs.useLegacyPackaging = true
+    }
+"@
+    if ($gradle -match '(?m)^android \{') {
+        $gradle = $gradle -replace '(?m)^(android \{)', "`$1`r`n$legacy"
+        $changed = $true
+        Write-Host "Enabled jniLibs.useLegacyPackaging (extractNativeLibs) for youtubedl-android"
+    } else {
+        Write-Warning "Could not find android block in $gradlePath (useLegacyPackaging not set)"
+    }
+}
+
 if ($changed) {
     Set-Content -Path $gradlePath -Value $gradle -NoNewline
 } else {

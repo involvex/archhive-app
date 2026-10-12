@@ -98,6 +98,28 @@ if [[ ! -f "$PROGUARD_OVERLAY" ]]; then
   exit 1
 fi
 
+# youtubedl-android unpacks libpython.zip.so / libffmpeg.zip.so from the installed
+# native library dir; modern AGP leaves .so files inside the APK
+# (extractNativeLibs=false) and YoutubeDL.init fails. Use legacy packaging.
+if ! grep -q 'useLegacyPackaging' "$GRADLE"; then
+  python3 - "$GRADLE" <<'PY'
+import re, sys
+from pathlib import Path
+path = Path(sys.argv[1])
+text = path.read_text()
+block = '''    packaging {
+        // youtubedl-android needs extracted native libs (libpython.zip.so etc.)
+        jniLibs.useLegacyPackaging = true
+    }
+'''
+new, n = re.subn(r'(?m)^(android \{)\n', lambda m: m.group(1) + "\n" + block, text, count=1)
+if n == 0:
+    raise SystemExit("Could not find android block for useLegacyPackaging")
+path.write_text(new)
+print("Enabled jniLibs.useLegacyPackaging (extractNativeLibs) for youtubedl-android")
+PY
+fi
+
 if [[ -f "$PROGUARD" ]] && grep -q 'YtDlpPlugin' "$PROGUARD"; then
   echo "ProGuard YtDlp keep rules already present."
 else

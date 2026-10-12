@@ -74,6 +74,9 @@ if (-not (Test-Path $gradle)) {
     if ($gradleText -notmatch 'work-runtime-ktx') {
         Add-Warn "build.gradle.kts missing work-runtime-ktx (PendingResumeWorker)"
     }
+    if ($gradleText -notmatch 'useLegacyPackaging\s*=\s*true') {
+        Add-Fail "build.gradle.kts missing jniLibs.useLegacyPackaging = true (youtubedl-android cannot init without extracted native libs)"
+    }
     if ($gradleText -notmatch 'manifestPlaceholders\["usesCleartextTraffic"\]\s*=\s*"true"') {
         Add-Fail "build.gradle.kts missing usesCleartextTraffic=true placeholder (LAN HTTP)"
     }
