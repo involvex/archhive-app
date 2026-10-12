@@ -4,7 +4,7 @@ use crate::db::migrations::{
     MIGRATION_001, MIGRATION_002, MIGRATION_003, MIGRATION_004, MIGRATION_005, MIGRATION_006,
     MIGRATION_007, MIGRATION_008, MIGRATION_009, MIGRATION_010, MIGRATION_011, MIGRATION_012,
     MIGRATION_013, MIGRATION_014, MIGRATION_015, MIGRATION_016, MIGRATION_017, MIGRATION_018,
-    MIGRATION_019,
+    MIGRATION_019, MIGRATION_020,
 };
 use crate::error::{AppError, AppResult};
 use crate::models::{
@@ -165,6 +165,9 @@ impl Database {
         // MD5 fingerprints + purge of SHA-256 junk previously stored as oshash.
         if !column_exists(&conn, "scenes", "md5") {
             conn.execute_batch(MIGRATION_019)?;
+        }
+        if !column_exists(&conn, "saved_searches", "filters") {
+            conn.execute_batch(MIGRATION_020)?;
         }
         // Backfill the default StashDB endpoint for DBs created before it
         // existed (fresh DBs get it via AppSettings::default).
@@ -1069,6 +1072,15 @@ impl Database {
             BrowseOrientation::Lesbian => "lesbian",
             BrowseOrientation::Transgender => "transgender",
         });
+        let filters = req.filters.clone().normalized();
+        let filters_json = if filters.is_empty() {
+            None
+        } else {
+            Some(
+                serde_json::to_string(&filters)
+                    .map_err(|e| AppError::Other(format!("filters serialize: {e}")))?,
+            )
+        };
         let conn = self
             .conn
             .lock()
@@ -1076,8 +1088,8 @@ impl Database {
         let id = uuid::Uuid::new_v4().to_string();
         let created_at = chrono::Utc::now().to_rfc3339();
         conn.execute(
-            "INSERT INTO saved_searches (id, name, site_id, kind, slug, orientation, last_checked_at, last_item_keys, new_count, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, '[]', 0, ?7)",
+            "INSERT INTO saved_searches (id, name, site_id, kind, slug, orientation, last_checked_at, last_item_keys, new_count, created_at, filters)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, '[]', 0, ?7, ?8)",
             rusqlite::params![
                 id,
                 name,
@@ -1085,7 +1097,8 @@ impl Database {
                 kind_str,
                 req.slug.trim(),
                 orientation_str,
-                created_at
+                created_at,
+                filters_json
             ],
         )?;
         Ok(crate::models::SavedSearch {
@@ -1095,6 +1108,7 @@ impl Database {
             kind: req.kind,
             slug: req.slug.trim().to_string(),
             orientation: req.orientation,
+            filters,
             last_checked_at: None,
             new_count: 0,
             auto_queue: false,
@@ -1134,6 +1148,11 @@ impl Database {
             new_count: row.get::<_, i64>(8).unwrap_or(0).max(0) as u32,
             auto_queue: row.get::<_, i64>(10).unwrap_or(0) != 0,
             created_at: row.get(9)?,
+            // Unreadable filter JSON degrades to the site defaults.
+            filters: row
+                .get::<_, Option<String>>(11)?
+                .and_then(|j| serde_json::from_str(&j).ok())
+                .unwrap_or_default(),
         })
     }
 
@@ -1143,7 +1162,7 @@ impl Database {
             .lock()
             .map_err(|e| AppError::Other(e.to_string()))?;
         let mut stmt = conn.prepare(
-            "SELECT id, name, site_id, kind, slug, orientation, last_checked_at, last_item_keys, new_count, created_at, auto_queue
+            "SELECT id, name, site_id, kind, slug, orientation, last_checked_at, last_item_keys, new_count, created_at, auto_queue, filters
              FROM saved_searches ORDER BY created_at DESC",
         )?;
         let rows = stmt.query_map([], Self::map_saved_search_row)?;
@@ -1157,7 +1176,7 @@ impl Database {
             .map_err(|e| AppError::Other(e.to_string()))?;
         let row = conn
             .query_row(
-                "SELECT id, name, site_id, kind, slug, orientation, last_checked_at, last_item_keys, new_count, created_at, auto_queue
+                "SELECT id, name, site_id, kind, slug, orientation, last_checked_at, last_item_keys, new_count, created_at, auto_queue, filters
                  FROM saved_searches WHERE id = ?1",
                 rusqlite::params![id],
                 Self::map_saved_search_row,
@@ -3177,9 +3196,20 @@ mod tests {
                 kind: crate::models::BrowseKind::Tag,
                 slug: "abc".to_string(),
                 orientation: None,
+                filters: crate::models::BrowseFilters {
+                    sort: Some("mv".into()),
+                    exclude: Some("35".into()),
+                    period: Some("  ".into()),
+                    ..Default::default()
+                },
             })
             .unwrap();
         assert_eq!(saved.name, "test");
+        // Filters round-trip (blank values dropped).
+        let stored = db.get_saved_search(&saved.id).unwrap().unwrap();
+        assert_eq!(stored.filters.sort.as_deref(), Some("mv"));
+        assert_eq!(stored.filters.exclude.as_deref(), Some("35"));
+        assert_eq!(stored.filters.period, None);
         assert!(!saved.auto_queue);
         assert_eq!(saved.new_count, 0);
 
@@ -3191,6 +3221,7 @@ mod tests {
                 kind: crate::models::BrowseKind::Tag,
                 slug: "abc".to_string(),
                 orientation: None,
+                filters: Default::default(),
             })
             .is_err());
 

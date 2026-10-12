@@ -453,6 +453,8 @@ export interface SavedSearch {
   kind: BrowseKind;
   slug: string;
   orientation?: BrowseOrientation;
+  /** Sort / filters of the saved listing (omitted = site defaults). */
+  filters?: BrowseFilters;
   last_checked_at?: string;
   new_count: number;
   auto_queue: boolean;
