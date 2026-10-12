@@ -28,7 +28,7 @@ export function StashboxSettingsCard() {
     try {
       setEndpoints(await api.listStashboxEndpoints());
     } catch (e) {
-      setStatus(e instanceof Error ? e.message : "Failed to load endpoints");
+      setStatus(e instanceof Error ? e.message : String(e) || "Failed to load endpoints");
     } finally {
       setLoading(false);
     }
@@ -61,7 +61,7 @@ export function StashboxSettingsCard() {
       );
       await refresh();
     } catch (e) {
-      setStatus(e instanceof Error ? e.message : "Save failed");
+      setStatus(e instanceof Error ? e.message : String(e) || "Save failed");
     } finally {
       setBusy(false);
     }
@@ -75,7 +75,7 @@ export function StashboxSettingsCard() {
       const account = await api.testStashboxEndpoint(id);
       setStatus(`Connected as ${account}.`);
     } catch (e) {
-      setStatus(e instanceof Error ? e.message : "Connection test failed");
+      setStatus(e instanceof Error ? e.message : String(e) || "Connection test failed");
     } finally {
       setTestingId(null);
     }
@@ -87,7 +87,7 @@ export function StashboxSettingsCard() {
       await api.deleteStashboxEndpoint(id);
       await refresh();
     } catch (e) {
-      setStatus(e instanceof Error ? e.message : "Delete failed");
+      setStatus(e instanceof Error ? e.message : String(e) || "Delete failed");
     }
   }
 
