@@ -1364,3 +1364,61 @@ pub fn open_storage_access_settings(app: AppHandle) -> CmdResult<()> {
         &app,
     ))
 }
+
+// ---- Online library (local copy of listing results) ----
+
+#[tauri::command]
+pub fn query_online_items(
+    state: State<'_, Arc<AppState>>,
+    query: crate::models::OnlineQuery,
+) -> CmdResult<crate::models::OnlinePage> {
+    map_err(state.db.query_online_items(&query))
+}
+
+#[tauri::command]
+pub fn online_tag_counts(
+    state: State<'_, Arc<AppState>>,
+    search_id: Option<String>,
+    limit: Option<u32>,
+) -> CmdResult<Vec<crate::models::OnlineTagCount>> {
+    map_err(
+        state
+            .db
+            .online_tag_counts(search_id.as_deref(), limit.unwrap_or(400)),
+    )
+}
+
+#[tauri::command]
+pub fn online_search_info(
+    state: State<'_, Arc<AppState>>,
+) -> CmdResult<Vec<crate::models::OnlineSearchInfo>> {
+    map_err(state.db.online_search_info())
+}
+
+#[tauri::command]
+pub async fn update_online_search(
+    state: State<'_, Arc<AppState>>,
+    id: String,
+    pages: Option<u32>,
+) -> CmdResult<crate::models::OnlineUpdateResult> {
+    state
+        .update_online_search(&id, pages.unwrap_or(3))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn fetch_online_details(
+    state: State<'_, Arc<AppState>>,
+    keys: Vec<String>,
+) -> CmdResult<Vec<crate::models::OnlineItem>> {
+    state
+        .fetch_online_details(&keys)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn clear_online_history(state: State<'_, Arc<AppState>>) -> CmdResult<u32> {
+    map_err(state.db.clear_online_history())
+}

@@ -712,24 +712,7 @@ fn merge_lists(lists: Vec<Vec<MediaItem>>, by_duration: bool) -> Vec<MediaItem> 
     out
 }
 
-/// Same video under another URL: XVideos / XNXX list a video once per title
-/// translation (`/video.ID/english_slug`, `/video.ID/original_slug`).
-fn video_key(url: &str) -> String {
-    let rest = url.split("://").nth(1).unwrap_or(url);
-    let rest = rest.split('#').next().unwrap_or(rest);
-    let (host, path) = rest.split_once('/').unwrap_or((rest, ""));
-    let host = host.to_ascii_lowercase();
-    let host = host.trim_start_matches("www.");
-    if host_matches(host, "xvideos.com") || host_matches(host, "xnxx.com") {
-        let id = path.split(['/', '?']).next().unwrap_or("");
-        if id.starts_with("video") {
-            return format!("{host}/{id}");
-        }
-    }
-    format!("{host}/{}", path.trim_end_matches('/'))
-}
-
-/// Drop repeats: the same video (see [`video_key`]) or the same title with
+/// Drop repeats: the same video (see [`crate::sites::urls::video_key`]) or the same title with
 /// the same length (one upload mirrored on several sources).
 fn dedupe(items: Vec<MediaItem>) -> Vec<MediaItem> {
     let mut keys = std::collections::HashSet::new();
@@ -737,7 +720,7 @@ fn dedupe(items: Vec<MediaItem>) -> Vec<MediaItem> {
     items
         .into_iter()
         .filter_map(|mut i| {
-            let key = video_key(&i.url);
+            let key = crate::sites::urls::video_key(&i.url);
             let title: String = i
                 .title
                 .to_lowercase()

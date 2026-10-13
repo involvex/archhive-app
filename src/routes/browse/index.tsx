@@ -25,6 +25,7 @@ import {
   Bookmark,
   RefreshCw,
   Trash2,
+  Globe,
   X,
   Zap,
   ZapOff,
@@ -619,14 +620,10 @@ function BrowsePage() {
                   <button
                     type="button"
                     className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                    title="Open the saved results (Online library)"
                     onClick={() => {
-                      // The router encodes params itself; pre-encoding broke
-                      // combined slugs ("milf,anal" → "milf%252Canal").
-                      navigate({
-                        to: "/browse/$site/$kind/$slug",
-                        params: { site: s.site_id, kind: s.kind, slug: s.slug },
-                        search: { orientation: s.orientation, ...s.filters },
-                      });
+                      // Saved searches open from the local copy; Live asks the site.
+                      navigate({ to: "/library/online", search: { search: s.id } });
                     }}
                   >
                     <span className="min-w-0 flex-1">
@@ -644,6 +641,23 @@ function BrowsePage() {
                     )}
                   </button>
                   <div className="flex shrink-0 items-center gap-1">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      title="Open live on the site"
+                      aria-label={`Open ${s.name} live on the site`}
+                      onClick={() => {
+                        // The router encodes params itself; pre-encoding broke
+                        // combined slugs ("milf,anal" → "milf%252Canal").
+                        navigate({
+                          to: "/browse/$site/$kind/$slug",
+                          params: { site: s.site_id, kind: s.kind, slug: s.slug },
+                          search: { orientation: s.orientation, ...s.filters },
+                        });
+                      }}
+                    >
+                      <Globe className="h-3.5 w-3.5" />
+                    </Button>
                     <Button
                       size="sm"
                       variant="ghost"

@@ -497,3 +497,23 @@ https://cdn.example/chunklist_3_video.m3u8
         );
     }
 }
+
+/// Stable key for "the same video" across URL variants: lowercase host
+/// without `www.`, no fragment or trailing slash. XVideos / XNXX list a video
+/// once per title translation (`/video.ID/english_slug`,
+/// `/video.ID/original_slug`), so only the id segment counts there.
+pub fn video_key(url: &str) -> String {
+    let rest = url.split("://").nth(1).unwrap_or(url);
+    let rest = rest.split('#').next().unwrap_or(rest);
+    let (host, path) = rest.split_once('/').unwrap_or((rest, ""));
+    let host = host.to_ascii_lowercase();
+    let host = host.trim_start_matches("www.");
+    let is = |d: &str| host == d || host.ends_with(&format!(".{d}"));
+    if is("xvideos.com") || is("xnxx.com") {
+        let id = path.split(['/', '?']).next().unwrap_or("");
+        if id.starts_with("video") {
+            return format!("{host}/{id}");
+        }
+    }
+    format!("{host}/{}", path.trim_end_matches('/'))
+}

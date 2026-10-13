@@ -642,3 +642,60 @@ export interface RehashResult {
   rehashed: number;
   errors: number;
 }
+
+// ---- Online library (mirrors OnlineItem etc. in models.rs) ----
+
+/** One video seen in a site listing, kept locally. */
+export interface OnlineItem {
+  key: string;
+  url: string;
+  site_id: string;
+  title: string;
+  thumbnail?: string;
+  duration?: number;
+  channel?: string;
+  performers: string[];
+  tags: string[];
+  first_seen: string;
+  last_seen: string;
+  /** When tags / performers were fetched from the video's own page. */
+  details_at?: string;
+}
+
+export interface OnlineQuery {
+  search_id?: string;
+  text?: string;
+  include_tags?: string[];
+  exclude_tags?: string[];
+  /** Seconds. */
+  min_duration?: number;
+  max_duration?: number;
+  sort?: "site" | "newest" | "longest" | "shortest" | "title";
+  missing_details?: boolean;
+  limit?: number;
+  offset?: number;
+}
+
+export interface OnlinePage {
+  items: OnlineItem[];
+  total: number;
+}
+
+export interface OnlineTagCount {
+  tag: string;
+  count: number;
+}
+
+export interface OnlineSearchInfo {
+  search_id: string;
+  item_count: number;
+  updated_at?: string;
+}
+
+export interface OnlineUpdateResult {
+  pages: number;
+  seen: number;
+  new_items: number;
+  total: number;
+  stopped?: string;
+}

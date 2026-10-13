@@ -1336,3 +1336,97 @@ mod tests {
         assert_eq!(req.collection_type, CollectionType::Collection);
     }
 }
+
+/// One video seen in a site listing, kept in the local "Online" library so
+/// saved searches and past results can be browsed without the site.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct OnlineItem {
+    pub key: String,
+    pub url: String,
+    pub site_id: String,
+    pub title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thumbnail: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub channel: Option<String>,
+    #[serde(default)]
+    pub performers: Vec<String>,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    pub first_seen: String,
+    pub last_seen: String,
+    /// When tags / performers were fetched from the video's own page.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub details_at: Option<String>,
+}
+
+/// Filter / sort for the Online library (all local, no site requests).
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct OnlineQuery {
+    /// Only items of this saved search.
+    #[serde(default)]
+    pub search_id: Option<String>,
+    /// Words that must all appear in title, channel, performers or tags.
+    #[serde(default)]
+    pub text: Option<String>,
+    /// Each must be a tag of the item, or a word in its title.
+    #[serde(default)]
+    pub include_tags: Vec<String>,
+    /// None may be a tag of the item or a word in its title.
+    #[serde(default)]
+    pub exclude_tags: Vec<String>,
+    /// Seconds.
+    #[serde(default)]
+    pub min_duration: Option<u32>,
+    #[serde(default)]
+    pub max_duration: Option<u32>,
+    /// "site" (saved search order), "newest", "longest", "shortest", "title".
+    #[serde(default)]
+    pub sort: Option<String>,
+    /// Only items whose tags were not fetched yet.
+    #[serde(default)]
+    pub missing_details: bool,
+    #[serde(default)]
+    pub limit: u32,
+    #[serde(default)]
+    pub offset: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct OnlinePage {
+    pub items: Vec<OnlineItem>,
+    pub total: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OnlineTagCount {
+    pub tag: String,
+    pub count: u32,
+}
+
+/// Library state of one saved search.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OnlineSearchInfo {
+    pub search_id: String,
+    pub item_count: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct OnlineUpdateResult {
+    /// Site pages fetched.
+    pub pages: u32,
+    /// Items on those pages.
+    pub seen: u32,
+    /// Items new to this saved search.
+    pub new_items: u32,
+    /// Items in the saved search now.
+    pub total: u32,
+    /// Why it stopped before the requested page count (end of results, an
+    /// error).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stopped: Option<String>,
+}

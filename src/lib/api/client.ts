@@ -56,6 +56,12 @@ import type {
   SettingsBackupImportResult,
   StashBoxEndpoint,
   StashSceneMatch,
+  OnlineItem,
+  OnlinePage,
+  OnlineQuery,
+  OnlineSearchInfo,
+  OnlineTagCount,
+  OnlineUpdateResult,
   StashPerformerMatch,
   ApplyStashMatchRequest,
   SubmitFingerprintsResult,
@@ -303,6 +309,61 @@ export const api = {
   },
 
   /** A site's category / tag index (empty when the site has none). */
+  // ---- Online library: local copy of listing results ----
+
+  async queryOnlineItems(query: OnlineQuery): Promise<OnlinePage> {
+    return localOrRemote<OnlinePage>("query_online_items", { query }, "/api/online/query", {
+      method: "POST",
+      body: JSON.stringify(query),
+    });
+  },
+
+  async onlineTagCounts(searchId?: string, limit = 400): Promise<OnlineTagCount[]> {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (searchId) params.set("search_id", searchId);
+    return localOrRemote<OnlineTagCount[]>(
+      "online_tag_counts",
+      { searchId: searchId ?? null, limit },
+      `/api/online/tags?${params}`,
+    );
+  },
+
+  async onlineSearchInfo(): Promise<OnlineSearchInfo[]> {
+    return localOrRemote<OnlineSearchInfo[]>(
+      "online_search_info",
+      undefined,
+      "/api/online/searches",
+    );
+  },
+
+  /** Fetch `pages` pages of a saved search from the site (slowly). */
+  async updateOnlineSearch(id: string, pages: number): Promise<OnlineUpdateResult> {
+    return localOrRemote<OnlineUpdateResult>(
+      "update_online_search",
+      { id, pages },
+      `/api/online/searches/${encodeURIComponent(id)}/update`,
+      { method: "POST", body: JSON.stringify({ pages }) },
+    );
+  },
+
+  /** Tags / performers from each video's own page (max 25 per call). */
+  async fetchOnlineDetails(keys: string[]): Promise<OnlineItem[]> {
+    return localOrRemote<OnlineItem[]>("fetch_online_details", { keys }, "/api/online/details", {
+      method: "POST",
+      body: JSON.stringify({ keys }),
+    });
+  },
+
+  async clearOnlineHistory(): Promise<number> {
+    if (shouldUseRemoteApi()) {
+      const res = await remoteFetch<{ removed: number }>("/api/online/history", {
+        method: "DELETE",
+      });
+      return res.removed;
+    }
+    return localInvoke<number>("clear_online_history");
+  },
+
   /** Category / tag index from the app's cache; `refresh` asks the site again. */
   async listSiteCategories(
     siteId: string,

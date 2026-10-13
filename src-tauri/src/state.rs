@@ -213,6 +213,12 @@ impl AppState {
                     &page_data,
                     86_400,
                 );
+                // Every result seen goes into the local Online library.
+                if kind != BrowseKind::Livestream {
+                    if let Err(e) = self.db.record_online_items(&page_data.items, None) {
+                        tracing::warn!("[online] could not record results: {e}");
+                    }
+                }
                 Ok(page_data)
             }
             Err(e) => {
@@ -2249,6 +2255,90 @@ impl AppState {
                 }
             }
         });
+    }
+
+    /// Fetch `pages` pages of a saved search into its Online library slice,
+    /// one after another at the normal per-site pace. Stops at the end of
+    /// the results or at the first refusal (a cached fallback page counts).
+    pub async fn update_online_search(
+        &self,
+        id: &str,
+        pages: u32,
+    ) -> AppResult<crate::models::OnlineUpdateResult> {
+        static RUNNING: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+        let _guard = RUNNING.lock().await;
+        let search = self
+            .db
+            .get_saved_search(id)?
+            .ok_or_else(|| crate::error::AppError::NotFound(format!("saved search {id}")))?;
+        let mut result = crate::models::OnlineUpdateResult::default();
+        for page in 1..=pages.clamp(1, 20) {
+            let fetched = self
+                .browse(
+                    &search.site_id,
+                    search.kind,
+                    &search.slug,
+                    page,
+                    search.orientation,
+                    search.filters.clone(),
+                )
+                .await;
+            let data = match fetched {
+                Ok(d) if !d.from_cache => d,
+                Ok(_) => {
+                    result.stopped = Some("the site refused the request".into());
+                    break;
+                }
+                Err(e) if page == 1 => return Err(e),
+                Err(e) => {
+                    result.stopped = Some(e.to_string());
+                    break;
+                }
+            };
+            result.pages += 1;
+            result.seen += data.items.len() as u32;
+            result.new_items += self
+                .db
+                .record_online_items(&data.items, Some((id, (page as i64 - 1) * 1000)))?;
+            if !data.has_more || data.items.is_empty() {
+                result.stopped = Some("end of results".into());
+                break;
+            }
+        }
+        self.db.mark_online_search_updated(id)?;
+        result.total = self
+            .db
+            .query_online_items(&crate::models::OnlineQuery {
+                search_id: Some(id.to_string()),
+                limit: 1,
+                ..Default::default()
+            })?
+            .total;
+        Ok(result)
+    }
+
+    /// Tags / performers / channel for Online library items from each
+    /// video's own page (for xPomelo results: the linked site). Requests go
+    /// out one at a time at the per-site pace; failures are skipped.
+    pub async fn fetch_online_details(
+        &self,
+        keys: &[String],
+    ) -> AppResult<Vec<crate::models::OnlineItem>> {
+        let mut out = Vec::new();
+        for key in keys.iter().take(25) {
+            let Some(item) = self.db.get_online_item(key)? else {
+                continue;
+            };
+            match self.resolve_media_details(&item.url).await {
+                Ok(details) => {
+                    if let Some(updated) = self.db.set_online_item_details(key, &details)? {
+                        out.push(updated);
+                    }
+                }
+                Err(e) => tracing::warn!("[online] details for {} failed: {e}", item.url),
+            }
+        }
+        Ok(out)
     }
 
     /// Re-run a saved search (page 1) and diff against the stored snapshot.

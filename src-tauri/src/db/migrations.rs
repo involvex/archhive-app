@@ -283,3 +283,42 @@ UPDATE scenes SET oshash = NULL WHERE oshash IS NOT NULL AND length(oshash) != 1
 pub const MIGRATION_020: &str = r#"
 ALTER TABLE saved_searches ADD COLUMN filters TEXT;
 "#;
+
+/// Local "Online" library: every listing result seen, which saved search
+/// it belongs to, and tag rows for include / exclude lookups.
+pub const MIGRATION_021: &str = r#"
+CREATE TABLE IF NOT EXISTS online_items (
+    key TEXT PRIMARY KEY,
+    url TEXT NOT NULL,
+    site_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    thumbnail TEXT,
+    duration INTEGER,
+    channel TEXT,
+    performers TEXT NOT NULL DEFAULT '[]',
+    tags TEXT NOT NULL DEFAULT '[]',
+    first_seen TEXT NOT NULL,
+    last_seen TEXT NOT NULL,
+    details_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_online_items_last_seen ON online_items(last_seen);
+CREATE INDEX IF NOT EXISTS idx_online_items_duration ON online_items(duration);
+CREATE TABLE IF NOT EXISTS online_item_tags (
+    item_key TEXT NOT NULL,
+    tag TEXT NOT NULL,
+    PRIMARY KEY (item_key, tag)
+);
+CREATE INDEX IF NOT EXISTS idx_online_item_tags_tag ON online_item_tags(tag);
+CREATE TABLE IF NOT EXISTS saved_search_items (
+    search_id TEXT NOT NULL,
+    item_key TEXT NOT NULL,
+    rank INTEGER NOT NULL,
+    first_seen TEXT NOT NULL,
+    PRIMARY KEY (search_id, item_key)
+);
+CREATE INDEX IF NOT EXISTS idx_saved_search_items_key ON saved_search_items(item_key);
+CREATE TABLE IF NOT EXISTS online_search_updates (
+    search_id TEXT PRIMARY KEY,
+    updated_at TEXT NOT NULL
+);
+"#;

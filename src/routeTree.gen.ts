@@ -23,6 +23,7 @@ import { Route as SettingsIndexRouteImport } from './routes/settings/index'
 import { Route as BrowseSiteIndexRouteImport } from './routes/browse/$site/index'
 import { Route as LibraryCollectionsIndexRouteImport } from './routes/library/collections/index'
 import { Route as LibraryHistoryIndexRouteImport } from './routes/library/history/index'
+import { Route as LibraryOnlineIndexRouteImport } from './routes/library/online/index'
 import { Route as LibraryPerformersIndexRouteImport } from './routes/library/performers/index'
 import { Route as LibraryPerformersPerformerIdRouteImport } from './routes/library/performers/$performerId'
 import { Route as LibraryScenesIndexRouteImport } from './routes/library/scenes/index'
@@ -101,6 +102,11 @@ const LibraryHistoryIndexRoute = LibraryHistoryIndexRouteImport.update({
   path: '/library/history/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LibraryOnlineIndexRoute = LibraryOnlineIndexRouteImport.update({
+  id: '/library/online/',
+  path: '/library/online/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LibraryPerformersIndexRoute = LibraryPerformersIndexRouteImport.update({
   id: '/library/performers/',
   path: '/library/performers/',
@@ -156,6 +162,7 @@ export interface FileRoutesByFullPath {
   '/browse/$site/': typeof BrowseSiteIndexRoute
   '/library/collections/': typeof LibraryCollectionsIndexRoute
   '/library/history/': typeof LibraryHistoryIndexRoute
+  '/library/online/': typeof LibraryOnlineIndexRoute
   '/library/performers/': typeof LibraryPerformersIndexRoute
   '/library/scenes/': typeof LibraryScenesIndexRoute
   '/library/tags/': typeof LibraryTagsIndexRoute
@@ -179,6 +186,7 @@ export interface FileRoutesByTo {
   '/browse/$site': typeof BrowseSiteIndexRoute
   '/library/collections': typeof LibraryCollectionsIndexRoute
   '/library/history': typeof LibraryHistoryIndexRoute
+  '/library/online': typeof LibraryOnlineIndexRoute
   '/library/performers': typeof LibraryPerformersIndexRoute
   '/library/scenes': typeof LibraryScenesIndexRoute
   '/library/tags': typeof LibraryTagsIndexRoute
@@ -203,6 +211,7 @@ export interface FileRoutesById {
   '/browse/$site/': typeof BrowseSiteIndexRoute
   '/library/collections/': typeof LibraryCollectionsIndexRoute
   '/library/history/': typeof LibraryHistoryIndexRoute
+  '/library/online/': typeof LibraryOnlineIndexRoute
   '/library/performers/': typeof LibraryPerformersIndexRoute
   '/library/scenes/': typeof LibraryScenesIndexRoute
   '/library/tags/': typeof LibraryTagsIndexRoute
@@ -228,6 +237,7 @@ export interface FileRouteTypes {
     | '/browse/$site/'
     | '/library/collections/'
     | '/library/history/'
+    | '/library/online/'
     | '/library/performers/'
     | '/library/scenes/'
     | '/library/tags/'
@@ -251,6 +261,7 @@ export interface FileRouteTypes {
     | '/browse/$site'
     | '/library/collections'
     | '/library/history'
+    | '/library/online'
     | '/library/performers'
     | '/library/scenes'
     | '/library/tags'
@@ -274,6 +285,7 @@ export interface FileRouteTypes {
     | '/browse/$site/'
     | '/library/collections/'
     | '/library/history/'
+    | '/library/online/'
     | '/library/performers/'
     | '/library/scenes/'
     | '/library/tags/'
@@ -298,6 +310,7 @@ export interface RootRouteChildren {
   BrowseSiteIndexRoute: typeof BrowseSiteIndexRoute
   LibraryCollectionsIndexRoute: typeof LibraryCollectionsIndexRoute
   LibraryHistoryIndexRoute: typeof LibraryHistoryIndexRoute
+  LibraryOnlineIndexRoute: typeof LibraryOnlineIndexRoute
   LibraryPerformersIndexRoute: typeof LibraryPerformersIndexRoute
   LibraryScenesIndexRoute: typeof LibraryScenesIndexRoute
   LibraryTagsIndexRoute: typeof LibraryTagsIndexRoute
@@ -404,6 +417,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LibraryHistoryIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/library/online/': {
+      id: '/library/online/'
+      path: '/library/online'
+      fullPath: '/library/online/'
+      preLoaderRoute: typeof LibraryOnlineIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/library/performers/': {
       id: '/library/performers/'
       path: '/library/performers'
@@ -474,6 +494,7 @@ const rootRouteChildren: RootRouteChildren = {
   BrowseSiteIndexRoute: BrowseSiteIndexRoute,
   LibraryCollectionsIndexRoute: LibraryCollectionsIndexRoute,
   LibraryHistoryIndexRoute: LibraryHistoryIndexRoute,
+  LibraryOnlineIndexRoute: LibraryOnlineIndexRoute,
   LibraryPerformersIndexRoute: LibraryPerformersIndexRoute,
   LibraryScenesIndexRoute: LibraryScenesIndexRoute,
   LibraryTagsIndexRoute: LibraryTagsIndexRoute,

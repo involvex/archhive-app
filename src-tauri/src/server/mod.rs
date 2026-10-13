@@ -262,6 +262,12 @@ impl LanServer {
             .route("/api/stashbox/endpoints/{id}", delete(delete_stashbox_lan))
             .route("/api/stashbox/endpoints/{id}/test", post(test_stashbox_lan))
             .route("/api/stashbox/query", post(query_stashdb_lan))
+            .route("/api/online/query", post(online_query_lan))
+            .route("/api/online/tags", get(online_tags_lan))
+            .route("/api/online/searches", get(online_searches_lan))
+            .route("/api/online/searches/{id}/update", post(online_update_lan))
+            .route("/api/online/details", post(online_details_lan))
+            .route("/api/online/history", delete(online_clear_lan))
             .route("/api/stashbox/unenriched", get(list_unenriched_lan))
             .route(
                 "/api/stashbox/search-scenes",
@@ -1002,7 +1008,10 @@ async fn proxy_remote_media(
     // Thumbnails: answered from memory when seen before, so grids that
     // re-render (tab switches, scrolling back) don't refetch them.
     if range.is_none() {
-        if let Some((ctype, body)) = proxy_image_cache_get(url) {
+        let disk_dir = state.app.data_dir.join("thumb-cache");
+        if let Some((ctype, body)) =
+            proxy_image_cache_get(url).or_else(|| proxy_image_disk_get(&disk_dir, url))
+        {
             return Ok(image_response(StatusCode::OK, &ctype, body));
         }
     }
@@ -1068,6 +1077,7 @@ async fn proxy_remote_media(
             .map_err(|_| StatusCode::BAD_GATEWAY)?;
         drop(permit);
         proxy_image_cache_put(url, &content_type, body.clone());
+        proxy_image_disk_put(&state.app.data_dir.join("thumb-cache"), url, &body);
         return Ok(image_response(status, &content_type, body));
     }
     drop(permit);
@@ -1149,6 +1159,40 @@ static PROXY_IMAGES: std::sync::LazyLock<std::sync::Mutex<ImageCache>> =
     std::sync::LazyLock::new(Default::default);
 const PROXY_IMAGE_CACHE_ENTRIES: usize = 1500;
 const PROXY_IMAGE_MAX_BYTES: usize = 512 * 1024;
+
+/// Thumbnails also live on disk (`<data>/thumb-cache/<sha256>`), so the
+/// Online library shows them after a restart without asking the site.
+fn proxy_image_disk_path(dir: &std::path::Path, url: &str) -> std::path::PathBuf {
+    use sha2::{Digest, Sha256};
+    let hash = Sha256::digest(url.as_bytes());
+    dir.join(hash.iter().map(|b| format!("{b:02x}")).collect::<String>())
+}
+
+fn sniff_image_type(body: &[u8]) -> &'static str {
+    match body {
+        [0xFF, 0xD8, ..] => "image/jpeg",
+        [0x89, b'P', b'N', b'G', ..] => "image/png",
+        [b'G', b'I', b'F', ..] => "image/gif",
+        [b'R', b'I', b'F', b'F', _, _, _, _, b'W', b'E', b'B', b'P', ..] => "image/webp",
+        _ => "image/jpeg",
+    }
+}
+
+fn proxy_image_disk_get(dir: &std::path::Path, url: &str) -> Option<(String, axum::body::Bytes)> {
+    let body = std::fs::read(proxy_image_disk_path(dir, url)).ok()?;
+    let ctype = sniff_image_type(&body).to_string();
+    let body = axum::body::Bytes::from(body);
+    proxy_image_cache_put(url, &ctype, body.clone());
+    Some((ctype, body))
+}
+
+fn proxy_image_disk_put(dir: &std::path::Path, url: &str, body: &[u8]) {
+    if body.len() > PROXY_IMAGE_MAX_BYTES {
+        return;
+    }
+    let _ = std::fs::create_dir_all(dir);
+    let _ = std::fs::write(proxy_image_disk_path(dir, url), body);
+}
 
 fn proxy_image_cache_get(url: &str) -> Option<(String, axum::body::Bytes)> {
     PROXY_IMAGES.lock().ok()?.0.get(url).cloned()
@@ -2053,4 +2097,91 @@ mod referer_tests {
         assert_eq!(site("https://pornhub.com.evil.example/"), None);
         assert_eq!(site("not a url"), None);
     }
+}
+
+// ---- Online library ----
+
+async fn online_query_lan(
+    State(state): State<ApiState>,
+    Json(q): Json<crate::models::OnlineQuery>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let page = state
+        .app
+        .db
+        .query_online_items(&q)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(serde_json::json!(page)))
+}
+
+async fn online_tags_lan(
+    State(state): State<ApiState>,
+    Query(params): Query<std::collections::HashMap<String, String>>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let limit = params
+        .get("limit")
+        .and_then(|l| l.parse().ok())
+        .unwrap_or(400);
+    let tags = state
+        .app
+        .db
+        .online_tag_counts(params.get("search_id").map(String::as_str), limit)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(serde_json::json!(tags)))
+}
+
+async fn online_searches_lan(
+    State(state): State<ApiState>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let info = state
+        .app
+        .db
+        .online_search_info()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(serde_json::json!(info)))
+}
+
+#[derive(Deserialize)]
+struct OnlineUpdateBody {
+    pages: Option<u32>,
+}
+
+async fn online_update_lan(
+    State(state): State<ApiState>,
+    Path(id): Path<String>,
+    Json(body): Json<OnlineUpdateBody>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let result = state
+        .app
+        .update_online_search(&id, body.pages.unwrap_or(3))
+        .await
+        .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
+    Ok(Json(serde_json::json!(result)))
+}
+
+#[derive(Deserialize)]
+struct OnlineDetailsBody {
+    keys: Vec<String>,
+}
+
+async fn online_details_lan(
+    State(state): State<ApiState>,
+    Json(body): Json<OnlineDetailsBody>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let items = state
+        .app
+        .fetch_online_details(&body.keys)
+        .await
+        .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
+    Ok(Json(serde_json::json!(items)))
+}
+
+async fn online_clear_lan(
+    State(state): State<ApiState>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let removed = state
+        .app
+        .db
+        .clear_online_history()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(serde_json::json!({ "removed": removed })))
 }
