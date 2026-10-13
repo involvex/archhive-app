@@ -63,6 +63,9 @@ macro_rules! ytdlp_tube_adapter {
                 let mut items = parse_video_links(&html, $base, $id).unwrap_or_default();
                 // Drop obvious nav junk so we fall through to yt-dlp.
                 items.retain(|i| !is_junk_nav_title(&i.title));
+                if $id == "xhamster" {
+                    fill_from_xhamster_initials(&html, &mut items);
+                }
                 if items.is_empty() {
                     items = match ytdlp_browse_fallback(ctx, $id, &url, query.page, 24).await {
                         Ok(fallback) => fallback,
@@ -250,6 +253,95 @@ fn parse_xnxx_tag_letter(html: &str) -> Vec<SiteCategory> {
 
 /// xHamster's A–Z tag index: /categories-0 ("#") and /categories-a … -z,
 /// up to 2,000 tags each (no further paging).
+/// xHamster renders only the first handful of result cards with real
+/// `<img>`/duration markup; the rest are filled in client-side from the
+/// `window.initials` JSON. Fill missing thumbnails / durations (and titles)
+/// from every video object in that JSON, matched by page URL.
+fn fill_from_xhamster_initials(html: &str, items: &mut [MediaItem]) {
+    if items
+        .iter()
+        .all(|i| i.thumbnail.is_some() && i.duration.is_some())
+    {
+        return;
+    }
+    let Some(start) = html.find("window.initials") else {
+        return;
+    };
+    let rest = &html[start..];
+    let Some(json_start) = rest.find('{') else {
+        return;
+    };
+    let json = &rest[json_start..];
+    let end = json.find("</script>").unwrap_or(json.len());
+    let json = json[..end].trim_end().trim_end_matches(';');
+    let Ok(root) = serde_json::from_str::<serde_json::Value>(json) else {
+        return;
+    };
+
+    #[derive(Default)]
+    struct Info {
+        thumb: Option<String>,
+        duration: Option<u32>,
+        title: Option<String>,
+    }
+    fn key(url: &str) -> String {
+        url.trim_end_matches('/').to_ascii_lowercase()
+    }
+    fn walk(v: &serde_json::Value, out: &mut std::collections::HashMap<String, Info>) {
+        match v {
+            serde_json::Value::Object(map) => {
+                if let Some(page) = map.get("pageURL").and_then(|p| p.as_str()) {
+                    if page.contains("/videos/") {
+                        let thumb = ["thumbURL", "imageURL"]
+                            .iter()
+                            .find_map(|k| map.get(*k).and_then(|t| t.as_str()))
+                            .map(str::to_string);
+                        let entry = out.entry(key(page)).or_default();
+                        entry.thumb = entry.thumb.take().or(thumb);
+                        entry.duration = entry.duration.or_else(|| {
+                            map.get("duration")
+                                .and_then(|d| d.as_u64())
+                                .map(|d| d as u32)
+                        });
+                        entry.title = entry.title.take().or_else(|| {
+                            map.get("title")
+                                .and_then(|t| t.as_str())
+                                .map(str::to_string)
+                        });
+                    }
+                }
+                for child in map.values() {
+                    walk(child, out);
+                }
+            }
+            serde_json::Value::Array(list) => {
+                for child in list {
+                    walk(child, out);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut info = std::collections::HashMap::new();
+    walk(&root, &mut info);
+    for item in items.iter_mut() {
+        let Some(found) = info.get(&key(&item.url)) else {
+            continue;
+        };
+        if item.thumbnail.is_none() {
+            item.thumbnail = found.thumb.clone();
+        }
+        if item.duration.is_none() {
+            item.duration = found.duration;
+        }
+        if item.title.trim().is_empty() || item.title == "Untitled" {
+            if let Some(t) = &found.title {
+                item.title = t.clone();
+            }
+        }
+    }
+}
+
 fn xhamster_tag_groups() -> Vec<FilterOption> {
     std::iter::once(FilterOption::new("0", "0-9"))
         .chain(
@@ -2436,6 +2528,37 @@ mod category_tests {
         );
         assert_eq!(tags[0].count, Some(30_913));
         assert_eq!(xnxx_tag_groups().len(), 27);
+    }
+
+    #[test]
+    fn xhamster_initials_fill_lazy_cards() {
+        let html = r#"<script>window.initials={"searchResult":{"videoThumbProps":[
+            {"pageURL":"https:\/\/xhamster.com\/videos\/a-xh1","duration":552,"title":"A",
+             "thumbURL":"https:\/\/ic-vt-nss.xhcdn.com\/a\/1.webp"}]}};</script>"#;
+        let mut items = vec![MediaItem {
+            id: "1".into(),
+            title: "A".into(),
+            url: "https://xhamster.com/videos/a-xh1".into(),
+            thumbnail: None,
+            duration: None,
+            site_id: "xhamster".into(),
+            performers: vec![],
+            tags: vec![],
+            description: None,
+            channel: None,
+            is_live: None,
+            viewers: None,
+            age: None,
+            gender: None,
+            stream_url: None,
+            embed_url: None,
+        }];
+        fill_from_xhamster_initials(html, &mut items);
+        assert_eq!(
+            items[0].thumbnail.as_deref(),
+            Some("https://ic-vt-nss.xhcdn.com/a/1.webp")
+        );
+        assert_eq!(items[0].duration, Some(552));
     }
 
     #[test]
