@@ -311,6 +311,7 @@ pub fn run() {
             commands::open_scene_with_default,
             commands::batch_update_scenes,
             commands::list_pornhub_categories,
+            commands::set_player_fullscreen,
             commands::probe_scene_metadata,
             commands::probe_library_durations,
             commands::ffmpeg_status,

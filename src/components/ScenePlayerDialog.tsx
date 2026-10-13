@@ -22,6 +22,8 @@ import { getCapabilities, hasLocalBackend } from "@/lib/runtime";
 import { useRecentlyViewedStore } from "@/lib/stores/recentlyViewed";
 import { api } from "@/lib/api/client";
 import { HlsVideoPlayer } from "@/components/HlsVideoPlayer";
+import { cn } from "@/lib/utils";
+import { APP_FULLSCREEN_CLASS, usePlayerFullscreen } from "@/lib/hooks/usePlayerFullscreen";
 import { ExtLink } from "@/components/ExtLink";
 import type { Scene, WatchProgress } from "@/lib/types";
 import { Button } from "@/components/ui/button";
@@ -98,7 +100,8 @@ function ScenePlayerBody({
   const hintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Q40: fullscreen container (double-tap middle zone + action-bar button).
   const playerContainerRef = useRef<HTMLDivElement | null>(null);
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  const fullscreen = usePlayerFullscreen(playerContainerRef);
+  const isFullscreen = fullscreen.isFullscreen;
 
   function flashGestureHint(label: string) {
     setGestureHint(label);
@@ -107,36 +110,12 @@ function ScenePlayerBody({
   }
 
   // Q40: double-tap the middle third (or the action-bar button) toggles
-  // fullscreen. Desktop Fullscreen API with an iOS-Safari video fallback.
+  // fullscreen. Shared hook: HTML Fullscreen API where it works, app-level
+  // fullscreen + immersive Android window in the phone app.
   function toggleFullscreen() {
-    const el = playerContainerRef.current;
-    const video = videoRef.current as
-      | (HTMLVideoElement & {
-          webkitEnterFullscreen?: () => void;
-        })
-      | null;
-    try {
-      if (document.fullscreenElement) {
-        void document.exitFullscreen().catch(() => {});
-        flashGestureHint("Exited fullscreen");
-      } else if (el?.requestFullscreen) {
-        void el.requestFullscreen().catch(() => {});
-        flashGestureHint("Fullscreen");
-      } else {
-        video?.webkitEnterFullscreen?.();
-      }
-    } catch {
-      /* fullscreen unsupported — ignore */
-    }
+    flashGestureHint(isFullscreen ? "Exited fullscreen" : "Fullscreen");
+    fullscreen.toggle();
   }
-
-  useEffect(() => {
-    function onFullscreenChange() {
-      setIsFullscreen(document.fullscreenElement != null);
-    }
-    document.addEventListener("fullscreenchange", onFullscreenChange);
-    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
-  }, []);
 
   useEffect(() => {
     return () => {
@@ -415,7 +394,10 @@ function ScenePlayerBody({
         {webPlayable ? (
           <div
             ref={playerContainerRef}
-            className="relative touch-pan-y select-none"
+            className={cn(
+              "relative touch-pan-y select-none",
+              fullscreen.appFullscreen && APP_FULLSCREEN_CLASS,
+            )}
             onTouchStart={handleVideoTouchStart}
             onTouchMove={handleVideoTouchMove}
             onTouchEnd={handleVideoTouchEnd}
@@ -424,6 +406,7 @@ function ScenePlayerBody({
               ref={videoRef}
               src={mediaSrc}
               key={mediaSrc}
+              fullscreenButton={false}
               controls
               playsInline
               preload="metadata"

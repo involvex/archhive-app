@@ -131,6 +131,13 @@ macro_rules! ytdlp_tube_adapter {
                     .find(|line| !line.is_empty())
                     .ok_or_else(|| crate::error::AppError::Other("No stream URL resolved".to_string()))?
                     .to_string();
+                // YouPorn's CDN (Aylo, like PornHub) never starts in the
+                // phone's WebView although downloads work: play it through
+                // the loopback proxy, which fetches with the site Referer and
+                // a browser User-Agent like the downloader does.
+                if $id == "youporn" {
+                    return Ok(maybe_loopback_proxy(ctx, &stream_url, "https://www.youporn.com/"));
+                }
                 Ok(stream_url)
             }
         }

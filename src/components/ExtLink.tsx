@@ -17,6 +17,10 @@ interface ExtLinkProps {
  * the opener plugin instead of a dead `target="_blank"` navigation.
  */
 export function ExtLink({ href, className, children, title }: ExtLinkProps) {
+  // Scraped URLs land here; only real web links become clickable.
+  if (!/^https?:\/\//i.test(href.trim())) {
+    return <span className={className}>{children}</span>;
+  }
   function onClick(e: MouseEvent<HTMLAnchorElement>) {
     e.preventDefault();
     void openExternal(href).catch(console.error);
