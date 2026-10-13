@@ -152,11 +152,51 @@ impl SiteAdapter for XpomeloAdapter {
     }
 
     async fn browse(&self, ctx: &SiteContext, query: BrowseQuery) -> AppResult<BrowsePage> {
-        let url = listing_url(&query);
-        tracing::info!("[xpomelo] browse: {url}");
-        let html = fetch(ctx, &url, query.orientation).await?;
-        let cards = parse_listing(&html);
-        let has_more = cards.len() >= 40 || html.contains(&format!("page={}", query.page + 1));
+        // A range ("10m+") is several of the site's buckets: fetch the same
+        // page of each and merge them.
+        let buckets = duration_buckets(query.filters.duration.as_deref());
+        let queries: Vec<BrowseQuery> = if buckets.len() > 1 {
+            buckets
+                .iter()
+                .map(|b| {
+                    let mut q = query.clone();
+                    q.filters.duration = Some((*b).to_string());
+                    q
+                })
+                .collect()
+        } else {
+            let mut q = query.clone();
+            q.filters.duration = buckets.first().map(|b| (*b).to_string());
+            vec![q]
+        };
+        let pages = futures_util::future::join_all(queries.iter().map(|q| async move {
+            let url = listing_url(q);
+            tracing::info!("[xpomelo] browse: {url}");
+            let html = fetch(ctx, &url, q.orientation).await?;
+            let cards = parse_listing(&html);
+            let more = cards.len() >= 40 || html.contains(&format!("page={}", q.page + 1));
+            AppResult::Ok((cards, more))
+        }))
+        .await;
+        let mut lists = Vec::new();
+        let mut has_more = false;
+        let mut first_err = None;
+        for page in pages {
+            match page {
+                Ok((cards, more)) => {
+                    has_more |= more;
+                    lists.push(cards);
+                }
+                Err(e) => first_err = first_err.or(Some(e)),
+            }
+        }
+        if lists.is_empty() {
+            return Err(
+                first_err.unwrap_or_else(|| AppError::Site("xPomelo returned nothing".into()))
+            );
+        }
+        let by_duration = query.filters.sort.as_deref() == Some("duration");
+        let cards = dedupe(merge_lists(lists, by_duration));
         // The default ("Free sites") hides paysites and unsupported sources;
         // picking a source (or "All") shows them.
         let keep_hidden = query.filters.source.is_some();
@@ -244,11 +284,18 @@ fn xpomelo_options() -> BrowseOptions {
             o("duration", "Longest"),
         ],
         periods: vec![o("30", "Past month"), o("365", "Past year")],
+        // xPomelo's own values are buckets (10m = 10–19:59); the ranges are
+        // merged from several bucket listings (`duration_buckets`).
         durations: vec![
-            o("1m", "1+ min"),
-            o("5m", "5+ min"),
-            o("10m", "10+ min"),
-            o("20m", "20+ min"),
+            o("-10m", "Under 10 min"),
+            o("1m", "1–5 min"),
+            o("5m", "5–10 min"),
+            o("10m", "10–20 min"),
+            o("10m-30m", "10–30 min"),
+            o("20m", "20–30 min"),
+            o("5m+", "5+ min"),
+            o("10m+", "10+ min"),
+            o("20m+", "20+ min"),
             o("30m", "30+ min"),
         ],
         qualities: vec![o("hd", "HD"), o("4k", "4K")],
@@ -478,10 +525,7 @@ fn listing_url(query: &BrowseQuery) -> String {
         &[
             ("sort", &pick(&f.sort, &["date", "duration", "views"])),
             ("date", &pick(&f.period, &["30", "365"])),
-            (
-                "duration",
-                &pick(&f.duration, &["1m", "5m", "10m", "20m", "30m"]),
-            ),
+            ("duration", &pick(&f.duration, DURATION_BUCKETS)),
             ("quality", &pick(&f.quality, &["hd", "4k"])),
             ("site", source),
             ("page", &page),
@@ -532,6 +576,101 @@ fn host_of(url: &str) -> String {
 
 fn host_matches(host: &str, domain: &str) -> bool {
     host == domain || host.ends_with(&format!(".{domain}"))
+}
+
+/// xPomelo's `duration` values; each is a bucket up to the next one
+/// (`10m` = 10:00–19:59), `30m` is open-ended.
+const DURATION_BUCKETS: &[&str] = &["1m", "5m", "10m", "20m", "30m"];
+
+/// Buckets for a duration filter: one bucket ("10m"), from ("10m+"),
+/// under ("-10m") or a range ("10m-30m", upper bound exclusive).
+fn duration_buckets(value: Option<&str>) -> Vec<&'static str> {
+    let Some(v) = value.map(str::trim).filter(|v| !v.is_empty()) else {
+        return vec![];
+    };
+    if let Some(b) = DURATION_BUCKETS.iter().find(|b| **b == v) {
+        return vec![b];
+    }
+    let mins = |s: &str| s.trim().trim_end_matches('m').parse::<u32>().ok();
+    let (lo, hi) = if let Some(from) = v.strip_suffix('+') {
+        (mins(from), Some(u32::MAX))
+    } else if let Some(under) = v.strip_prefix('-') {
+        (Some(0), mins(under))
+    } else if let Some((a, b)) = v.split_once('-') {
+        (mins(a), mins(b))
+    } else {
+        (None, None)
+    };
+    let (Some(lo), Some(hi)) = (lo, hi) else {
+        return vec![];
+    };
+    DURATION_BUCKETS
+        .iter()
+        .filter(|b| mins(b).is_some_and(|start| start >= lo && start < hi))
+        .copied()
+        .collect()
+}
+
+/// Interleave bucket listings (longest first when sorting by duration).
+fn merge_lists(lists: Vec<Vec<MediaItem>>, by_duration: bool) -> Vec<MediaItem> {
+    let mut iters: Vec<_> = lists.into_iter().map(Vec::into_iter).collect();
+    let mut out = Vec::new();
+    loop {
+        let before = out.len();
+        out.extend(iters.iter_mut().filter_map(Iterator::next));
+        if out.len() == before {
+            break;
+        }
+    }
+    if by_duration {
+        out.sort_by_key(|i| std::cmp::Reverse(i.duration.unwrap_or(0)));
+    }
+    out
+}
+
+/// Same video under another URL: XVideos / XNXX list a video once per title
+/// translation (`/video.ID/english_slug`, `/video.ID/original_slug`).
+fn video_key(url: &str) -> String {
+    let rest = url.split("://").nth(1).unwrap_or(url);
+    let rest = rest.split('#').next().unwrap_or(rest);
+    let (host, path) = rest.split_once('/').unwrap_or((rest, ""));
+    let host = host.to_ascii_lowercase();
+    let host = host.trim_start_matches("www.");
+    if host_matches(host, "xvideos.com") || host_matches(host, "xnxx.com") {
+        let id = path.split(['/', '?']).next().unwrap_or("");
+        if id.starts_with("video") {
+            return format!("{host}/{id}");
+        }
+    }
+    format!("{host}/{}", path.trim_end_matches('/'))
+}
+
+/// Drop repeats: the same video (see [`video_key`]) or the same title with
+/// the same length (one upload mirrored on several sources).
+fn dedupe(items: Vec<MediaItem>) -> Vec<MediaItem> {
+    let mut keys = std::collections::HashSet::new();
+    let mut titles = std::collections::HashSet::new();
+    items
+        .into_iter()
+        .filter_map(|mut i| {
+            let key = video_key(&i.url);
+            let title: String = i
+                .title
+                .to_lowercase()
+                .chars()
+                .filter(|c| c.is_alphanumeric())
+                .collect();
+            let same_title = i
+                .duration
+                .filter(|_| title.len() >= 8)
+                .is_some_and(|d| !titles.insert((title, d)));
+            if !keys.insert(key.clone()) || same_title {
+                return None;
+            }
+            i.id = key;
+            Some(i)
+        })
+        .collect()
 }
 
 /// Result cards: `<div class="qy-mod-li " data-id="…">` with
@@ -698,6 +837,75 @@ mod tests {
         assert_eq!(items[0].channel.as_deref(), Some("Pornhub"));
         assert_eq!(items[1].site_id, "xpomelo");
         assert_eq!(items[1].duration, Some(3723));
+    }
+
+    #[test]
+    fn duration_ranges_map_to_buckets() {
+        assert_eq!(duration_buckets(None), Vec::<&str>::new());
+        assert_eq!(duration_buckets(Some("10m")), ["10m"]);
+        assert_eq!(duration_buckets(Some("10m+")), ["10m", "20m", "30m"]);
+        assert_eq!(duration_buckets(Some("5m+")), ["5m", "10m", "20m", "30m"]);
+        assert_eq!(duration_buckets(Some("-10m")), ["1m", "5m"]);
+        assert_eq!(duration_buckets(Some("10m-30m")), ["10m", "20m"]);
+        assert_eq!(duration_buckets(Some("bogus")), Vec::<&str>::new());
+        // Every option the filter bar offers resolves to something.
+        for o in xpomelo_options().durations {
+            assert!(!duration_buckets(Some(&o.id)).is_empty(), "{}", o.id);
+        }
+    }
+
+    #[test]
+    fn translated_and_mirrored_duplicates_dropped() {
+        let item = |url: &str, title: &str, d: u32| MediaItem {
+            id: url.into(),
+            title: title.into(),
+            url: url.into(),
+            duration: Some(d),
+            ..Default::default()
+        };
+        let items = dedupe(merge_lists(
+            vec![
+                vec![
+                    item(
+                        "https://www.xvideos.com/video.oiplkcmcc89/minha_madrasta",
+                        "My stepmother",
+                        630,
+                    ),
+                    item(
+                        "https://www.pornhub.com/view_video.php?viewkey=a",
+                        "Same Upload Here",
+                        900,
+                    ),
+                ],
+                vec![
+                    item(
+                        "https://www.xvideos.com/video.oiplkcmcc89/my_stepmother",
+                        "My stepmother",
+                        630,
+                    ),
+                    item(
+                        "https://spankbang.com/x/video/same",
+                        "Same upload here!",
+                        900,
+                    ),
+                    item(
+                        "https://spankbang.com/y/video/other",
+                        "Same upload here!",
+                        901,
+                    ),
+                ],
+            ],
+            false,
+        ));
+        let ids: Vec<&str> = items.iter().map(|i| i.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            [
+                "xvideos.com/video.oiplkcmcc89",
+                "pornhub.com/view_video.php?viewkey=a",
+                "spankbang.com/y/video/other"
+            ]
+        );
     }
 
     #[test]

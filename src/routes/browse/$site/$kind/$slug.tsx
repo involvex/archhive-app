@@ -204,7 +204,12 @@ function BrowseDetailPage() {
           isPornhubAnimal ? orientation : undefined,
           filters,
         );
-        setItems((prev) => (append ? [...prev, ...result.items] : result.items));
+        setItems((prev) => {
+          if (!append) return result.items;
+          // Sites repeat items across pages; keep the first copy.
+          const seen = new Set(prev.map((i) => i.id));
+          return [...prev, ...result.items.filter((i) => !seen.has(i.id))];
+        });
         setHasMore(result.has_more);
         setPage(p);
         setFromCache(Boolean(result.from_cache));

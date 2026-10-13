@@ -22,7 +22,7 @@ pub enum BrowseOrientation {
     Transgender,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct MediaItem {
     pub id: String,
     pub title: String,
