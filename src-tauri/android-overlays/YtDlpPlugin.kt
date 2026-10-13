@@ -496,6 +496,48 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
         invoke.resolve(ret)
     }
 
+    /**
+     * Video fullscreen. wry's WebChromeClient cancels HTML5 fullscreen
+     * (onShowCustomView), so the web player expands itself and asks for an
+     * immersive window here: system bars hidden (swipe to peek) and, for
+     * landscape video, a sensor-landscape orientation lock.
+     */
+    @Command
+    fun setImmersive(invoke: Invoke) {
+        val args = invoke.parseArgs(ImmersiveArgs::class.java)
+        activity.runOnUiThread {
+            val ret = JSObject()
+            try {
+                val window = activity.window
+                val controller = androidx.core.view.WindowCompat.getInsetsController(
+                    window,
+                    window.decorView,
+                )
+                if (args.enabled) {
+                    controller.systemBarsBehavior =
+                        androidx.core.view.WindowInsetsControllerCompat
+                            .BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                    controller.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+                    activity.requestedOrientation = if (args.landscape) {
+                        android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                    } else {
+                        android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                    }
+                } else {
+                    controller.show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+                    activity.requestedOrientation =
+                        android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                }
+                ret.put("ok", true)
+            } catch (e: Throwable) {
+                Log.w("YtDlpPlugin", "setImmersive failed", e)
+                ret.put("ok", false)
+                ret.put("message", e.message ?: e.javaClass.simpleName)
+            }
+            invoke.resolve(ret)
+        }
+    }
+
     /** Schedule WorkManager to wake the app when network is available. */
     @Command
     fun schedulePendingResume(invoke: Invoke) {
@@ -547,6 +589,11 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
 
     class ResumeArgs @JvmOverloads constructor(
         var requireUnmetered: Boolean = false,
+    )
+
+    class ImmersiveArgs @JvmOverloads constructor(
+        var enabled: Boolean = false,
+        var landscape: Boolean = true,
     )
 
     class OpenFileArgs @JvmOverloads constructor(

@@ -3,6 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { api } from "@/lib/api/client";
 import type { MediaItem } from "@/lib/types";
 import { Button } from "@/components/ui/button";
+import { ExtLink } from "@/components/ExtLink";
 import { X, ChevronDown, ChevronUp } from "lucide-react";
 
 interface BrowseItemDetailsDialogProps {
@@ -224,7 +225,11 @@ function BrowseItemDetailsBody({ item, onClose }: { item: MediaItem; onClose: ()
         />
         <div>
           <dt className="text-xs text-[var(--color-muted-foreground)]">URL</dt>
-          <dd className="break-all text-xs text-[var(--color-muted-foreground)]">{data.url}</dd>
+          <dd className="break-all text-xs">
+            <ExtLink href={data.url} title="Open in browser">
+              {data.url}
+            </ExtLink>
+          </dd>
         </div>
       </dl>
 

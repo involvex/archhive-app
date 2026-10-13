@@ -398,3 +398,37 @@ pub fn cancel_pending_resume(app: &AppHandle) {
         let _ = app;
     }
 }
+
+/// Immersive video fullscreen on Android: hide the system bars and (for
+/// landscape video) lock to sensor-landscape. No-op elsewhere — desktop and
+/// browsers use the HTML Fullscreen API.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+pub fn set_immersive(app: &AppHandle, enabled: bool, landscape: bool) -> AppResult<()> {
+    #[cfg(target_os = "android")]
+    {
+        use serde_json::json;
+        with_plugin_state(app, |state| {
+            let response: PluginResponse = state
+                .handle()?
+                .run_mobile_plugin(
+                    "setImmersive",
+                    json!({ "enabled": enabled, "landscape": landscape }),
+                )
+                .map_err(|e| AppError::Other(format!("setImmersive failed: {e}")))?;
+            if response.ok.unwrap_or(false) {
+                Ok(())
+            } else {
+                Err(AppError::Other(
+                    response
+                        .message
+                        .unwrap_or_else(|| "setImmersive failed".into()),
+                ))
+            }
+        })
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = (app, enabled, landscape);
+        Ok(())
+    }
+}

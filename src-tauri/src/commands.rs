@@ -1314,3 +1314,12 @@ pub async fn load_demo_scene(state: State<'_, Arc<AppState>>) -> CmdResult<Strin
         job.id
     ))
 }
+
+/// Phone video fullscreen: immersive window (system bars hidden) and an
+/// optional landscape lock. A no-op on desktop, which uses the HTML API.
+#[tauri::command]
+pub fn set_player_fullscreen(app: AppHandle, enabled: bool, landscape: bool) -> CmdResult<()> {
+    map_err(crate::mobile::ytdlp_bridge::set_immersive(
+        &app, enabled, landscape,
+    ))
+}
