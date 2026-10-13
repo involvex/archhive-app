@@ -34,7 +34,13 @@ const SITE_ICONS = new Set([
   "twitter",
 ]);
 
-export function SiteAvatar({ site, size = "md" }: { site?: SiteInfo; size?: "sm" | "md" }) {
+export function SiteAvatar({
+  site,
+  size = "md",
+}: {
+  site?: Pick<SiteInfo, "id" | "display_name">;
+  size?: "sm" | "md";
+}) {
   const [broken, setBroken] = useState(false);
   const cls = size === "sm" ? "h-6 w-6 text-[11px]" : "h-10 w-10 text-sm";
   if (site && SITE_ICONS.has(site.id) && !broken) {

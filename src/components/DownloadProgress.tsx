@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Pause, Play, RotateCcw, Trash2, XCircle } from "lucide-react";
 import { vibrateTick } from "@/lib/haptics";
 import { cn } from "@/lib/utils";
+import { SiteAvatar } from "@/components/SitePicker";
 
 interface DownloadProgressRowProps {
   job: DownloadJob;
@@ -165,9 +166,12 @@ export function DownloadProgressRow({
           )}
         </div>
       )}
-      <div className="flex items-start justify-between gap-2">
+      <div className="flex items-start justify-between gap-2.5">
+        <SiteAvatar site={{ id: job.adapter, display_name: job.adapter }} size="sm" />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium">{job.title || job.url}</p>
+          <p className="line-clamp-2 text-sm font-medium leading-snug break-all sm:break-normal">
+            {job.title || job.url}
+          </p>
           <p className={`text-xs capitalize ${display.color}`}>
             {display.label}
             {queuePosition != null && (
@@ -214,7 +218,14 @@ export function DownloadProgressRow({
           )}
         </div>
       </div>
-      {showProgress && <Progress value={job.progress} />}
+      {showProgress && (
+        <div className="flex items-center gap-2">
+          <Progress value={job.progress} className="h-2 flex-1" />
+          <span className="w-10 shrink-0 text-right text-xs tabular-nums text-[var(--color-muted-foreground)]">
+            {Math.round(job.progress)}%
+          </span>
+        </div>
+      )}
       {job.error && <p className="text-xs text-red-400">{job.error}</p>}
     </div>
   );

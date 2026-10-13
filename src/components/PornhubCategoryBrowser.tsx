@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { Layers, RefreshCw, X } from "lucide-react";
+import { Check, Layers, RefreshCw, Search } from "lucide-react";
 import { api } from "@/lib/api/client";
 import {
   categoriesForOrientation,
@@ -14,7 +14,7 @@ import {
 } from "@/lib/sites/pornhub-categories";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { CombineBar } from "@/components/CombineBar";
 
 /** The trans section's "All trans" entry (category 83), pinned on top. */
 const isTransHub = (c: PornhubCategory) =>
@@ -102,153 +102,164 @@ export function PornhubCategoryBrowser() {
   }, [refreshCategories]);
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">Categories</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="flex flex-wrap gap-2">
-          {PORNHUB_ORIENTATIONS.map((o) => (
-            <Button
-              key={o.id}
-              size="sm"
-              variant={orientation === o.id ? "default" : "outline"}
-              onClick={() => {
-                setOrientation(o.id);
-                setFilter("");
-                setSelected([]);
-              }}
-            >
-              {o.label}
-            </Button>
-          ))}
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => void refreshCategories(true)}
-            disabled={refreshing}
-            className="ml-auto"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} />
-            Refresh
-          </Button>
-          <Button
-            size="sm"
-            variant={combining ? "default" : "outline"}
+    <section className="space-y-3">
+      <div className="flex items-center gap-2">
+        <h3 className="min-w-0 flex-1 truncate text-base font-semibold">
+          Categories
+          <span className="ml-2 text-xs font-normal text-[var(--color-muted-foreground)]">
+            {categories.length}
+          </span>
+        </h3>
+        <Button
+          size="sm"
+          variant={combining ? "default" : "outline"}
+          onClick={() => {
+            setCombining((v) => !v);
+            setSelected([]);
+          }}
+          title="Select several categories and browse videos in all of them"
+        >
+          <Layers className="h-4 w-4" />
+          Combine
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => void refreshCategories(true)}
+          disabled={refreshing}
+          title="Reload from PornHub"
+          aria-label="Reload categories"
+        >
+          <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+        </Button>
+      </div>
+
+      <div className="grid grid-cols-4 gap-1.5 sm:flex">
+        {PORNHUB_ORIENTATIONS.map((o) => (
+          <button
+            key={o.id}
+            type="button"
             onClick={() => {
-              setCombining((v) => !v);
+              setOrientation(o.id);
+              setFilter("");
               setSelected([]);
             }}
-            title="Select several categories and browse videos in all of them"
+            className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
+              orientation === o.id
+                ? "bg-[var(--color-primary)] text-[var(--color-primary-foreground)]"
+                : "bg-[var(--color-secondary)] hover:bg-[var(--color-muted)]"
+            }`}
           >
-            <Layers className="h-3.5 w-3.5" />
-            Combine
-          </Button>
-        </div>
-        {combining && (
-          <div className="space-y-2 rounded-md border border-[var(--color-border)] p-2">
-            <p className="text-xs text-[var(--color-muted-foreground)]">
-              {exact
-                ? "Pick 2 — PornHub shows videos in both categories."
-                : `Pick up to ${maxPick} — combined categories run as a word search for this orientation.`}
-            </p>
-            <div className="flex flex-wrap items-center gap-1.5">
-              {selected.map((c) => (
-                <button
-                  key={c.slug}
-                  type="button"
-                  onClick={() => toggle(c)}
-                  className="inline-flex items-center gap-1 rounded-full bg-[var(--color-primary)] px-3 py-1 text-xs text-[var(--color-primary-foreground)]"
-                >
-                  {c.name}
-                  <X className="h-3 w-3" />
-                </button>
-              ))}
-              <Button
-                size="sm"
-                className="ml-auto"
-                disabled={selected.length === 0}
-                onClick={() =>
-                  void navigate({
-                    to: "/browse/$site/$kind/$slug",
-                    params: {
-                      site: "pornhub",
-                      kind: "category",
-                      slug: selected.map((c) => c.slug).join(","),
-                    },
-                    search: { orientation },
-                  })
-                }
+            {o.label}
+          </button>
+        ))}
+      </div>
+
+      {refreshStatus && (
+        <p className="text-xs text-[var(--color-muted-foreground)]">{refreshStatus}</p>
+      )}
+
+      {orientation === "straight" && !combining && (
+        <div className="space-y-1">
+          <p className="text-xs text-[var(--color-muted-foreground)]">Language in videos</p>
+          <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-hide">
+            {PORNHUB_LANGUAGES.map((l) => (
+              <Link
+                key={l.slug}
+                to="/browse/$site/$kind/$slug"
+                params={{ site: "pornhub", kind: "category", slug: l.slug }}
+                className="shrink-0 rounded-full bg-[var(--color-secondary)] px-3 py-1.5 text-xs hover:bg-[var(--color-muted)]"
               >
-                Browse {selected.length > 1 ? `${selected.length} together` : ""}
-              </Button>
-            </div>
+                {l.name}
+              </Link>
+            ))}
           </div>
-        )}
-        {refreshStatus && (
-          <p className="text-xs text-[var(--color-muted-foreground)]">{refreshStatus}</p>
-        )}
-        {orientation === "straight" && !combining && (
-          <div className="space-y-1">
-            <p className="text-xs text-[var(--color-muted-foreground)]">Language in videos</p>
-            <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-hide">
-              {PORNHUB_LANGUAGES.map((l) => (
-                <Link
-                  key={l.slug}
-                  to="/browse/$site/$kind/$slug"
-                  params={{ site: "pornhub", kind: "category", slug: l.slug }}
-                  className="shrink-0 rounded-full bg-[var(--color-secondary)] px-3 py-1 text-xs hover:bg-[var(--color-muted)]"
-                >
-                  {l.name}
-                </Link>
-              ))}
-            </div>
-          </div>
-        )}
+        </div>
+      )}
+
+      <div className="relative">
+        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-[var(--color-muted-foreground)]" />
         <Input
-          placeholder="Filter categories…"
+          className="h-9 pl-8"
+          placeholder="Find a category…"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
         />
-        <ul className="max-h-[60vh] overflow-y-auto rounded-md border border-[var(--color-border)] divide-y divide-[var(--color-border)]">
-          {categories.map((cat) => (
+      </div>
+
+      <ul
+        className={`overflow-hidden rounded-xl border border-[var(--color-border)] divide-y divide-[var(--color-border)] ${combining ? "mb-24" : ""}`}
+      >
+        {categories.map((cat) => {
+          const picked = selected.some((c) => c.slug === cat.slug);
+          const row = (
+            <>
+              <span className="flex min-w-0 items-center gap-2">
+                {combining && (
+                  <span
+                    className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border ${
+                      picked
+                        ? "border-[var(--color-primary)] bg-[var(--color-primary)] text-[var(--color-primary-foreground)]"
+                        : "border-[var(--color-border)]"
+                    }`}
+                  >
+                    {picked && <Check className="h-3.5 w-3.5" />}
+                  </span>
+                )}
+                <span className="truncate">{cat.name}</span>
+              </span>
+              {cat.videoCount != null && (
+                <span className="shrink-0 text-xs tabular-nums text-[var(--color-muted-foreground)]">
+                  {cat.videoCount.toLocaleString()}
+                </span>
+              )}
+            </>
+          );
+          const rowClass =
+            "flex min-h-12 w-full items-center justify-between gap-3 px-3 text-left text-sm hover:bg-[var(--color-muted)] active:bg-[var(--color-muted)]";
+          return (
             <li key={`${cat.orientation}-${cat.slug}-${cat.categoryId ?? ""}`}>
               {combining ? (
-                <button
-                  type="button"
-                  onClick={() => toggle(cat)}
-                  className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-[var(--color-muted)] ${
-                    selected.some((c) => c.slug === cat.slug)
-                      ? "bg-[var(--color-muted)] font-medium"
-                      : ""
-                  }`}
-                >
-                  <span>{cat.name}</span>
-                  {cat.videoCount != null && (
-                    <span className="text-xs text-[var(--color-muted-foreground)]">
-                      {cat.videoCount.toLocaleString()}
-                    </span>
-                  )}
+                <button type="button" onClick={() => toggle(cat)} className={rowClass}>
+                  {row}
                 </button>
               ) : (
                 <Link
                   to="/browse/$site/$kind/$slug"
                   params={{ site: "pornhub", kind: "category", slug: categoryBrowseSlug(cat) }}
                   search={{ orientation: cat.orientation }}
-                  className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-[var(--color-muted)]"
+                  className={rowClass}
                 >
-                  <span>{cat.name}</span>
-                  {cat.videoCount != null && (
-                    <span className="text-xs text-[var(--color-muted-foreground)]">
-                      {cat.videoCount.toLocaleString()}
-                    </span>
-                  )}
+                  {row}
                 </Link>
               )}
             </li>
-          ))}
-        </ul>
-      </CardContent>
-    </Card>
+          );
+        })}
+      </ul>
+
+      {combining && (
+        <CombineBar
+          selected={selected.map((c) => ({ key: c.slug, label: c.name }))}
+          hint={
+            exact
+              ? "Tap 2 categories — PornHub shows videos in both."
+              : `Tap up to ${maxPick} — combined categories run as a word search here.`
+          }
+          onRemove={(slug) => setSelected((prev) => prev.filter((c) => c.slug !== slug))}
+          onBrowse={() =>
+            void navigate({
+              to: "/browse/$site/$kind/$slug",
+              params: {
+                site: "pornhub",
+                kind: "category",
+                slug: selected.map((c) => c.slug).join(","),
+              },
+              search: { orientation },
+            })
+          }
+        />
+      )}
+    </section>
   );
 }
