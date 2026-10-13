@@ -184,9 +184,23 @@ impl SiteAdapter for XpomeloAdapter {
         _ctx: &SiteContext,
         item: &MediaItem,
     ) -> AppResult<DownloadPlan> {
+        // Many sources report no uploader: file under the source site's name
+        // (`AnySex/…`) rather than yt-dlp's literal "NA".
+        let folder: String = item
+            .channel
+            .as_deref()
+            .unwrap_or("xPomelo")
+            .chars()
+            .filter(|c| c.is_alphanumeric() || matches!(c, ' ' | '-' | '_' | '.'))
+            .collect();
+        let folder = if folder.trim().is_empty() {
+            "xPomelo".to_string()
+        } else {
+            folder
+        };
         Ok(DownloadPlan {
             url: item.url.clone(),
-            output_template: "%(uploader)s/%(title)s.%(ext)s".to_string(),
+            output_template: format!("%(uploader|{folder})s/%(title)s.%(ext)s"),
             tool: DownloadTool::YtDlp,
             title: Some(item.title.clone()),
             performers: item.performers.clone(),

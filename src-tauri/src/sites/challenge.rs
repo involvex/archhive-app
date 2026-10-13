@@ -28,7 +28,8 @@ pub fn is_bot_block(err: &str) -> bool {
     .any(|m| e.contains(m))
 }
 
-/// Page title of a Cloudflare / DDoS-Guard interstitial.
+/// Page title of a Cloudflare / DDoS-Guard interstitial (desktop window).
+#[cfg_attr(not(desktop), allow(dead_code))]
 pub fn is_challenge_title(title: &str) -> bool {
     let t = title.to_ascii_lowercase();
     [

@@ -15,6 +15,7 @@
 //! Cloudflare ties the clearance cookie to the User-Agent it was issued to.
 #![cfg_attr(not(desktop), allow(dead_code))]
 
+#[cfg(desktop)]
 use crate::error::{AppError, AppResult};
 use crate::vault::CookieVault;
 use std::path::PathBuf;

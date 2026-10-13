@@ -335,11 +335,10 @@ mod platform {
     ) -> AppResult<Vec<CapturedCookie>> {
         use std::sync::atomic::{AtomicBool, Ordering};
         use std::sync::Arc;
-        const CHECK_LABEL: &str = "bot-check";
-
-        if let Some(existing) = app.get_webview_window(CHECK_LABEL) {
-            let _ = existing.destroy();
-        }
+        // A fresh label per window: destroying the previous one is async, so
+        // reusing a label can fail with "webview already exists".
+        static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let label = format!("bot-check-{}", SEQ.fetch_add(1, Ordering::Relaxed));
         let start: url::Url = url
             .parse()
             .map_err(|e| AppError::InvalidInput(format!("bad URL: {e}")))?;
@@ -347,7 +346,7 @@ mod platform {
         let loaded = Arc::new(AtomicBool::new(false));
         let closed = Arc::new(AtomicBool::new(false));
         let (t, l) = (title.clone(), loaded.clone());
-        let window = WebviewWindowBuilder::new(app, CHECK_LABEL, WebviewUrl::External(start))
+        let window = WebviewWindowBuilder::new(app, &label, WebviewUrl::External(start))
             .title(format!("Verifying {host} — closes by itself"))
             .inner_size(720.0, 640.0)
             .user_agent(user_agent)
@@ -375,7 +374,13 @@ mod platform {
 
         let started = std::time::Instant::now();
         let mut passed = false;
-        while started.elapsed() < std::time::Duration::from_secs(150) {
+        // ARCHHIVE_BOT_CHECK_TIMEOUT_SECS: how long to wait for the check
+        // to pass (default 150 s).
+        let limit = std::env::var("ARCHHIVE_BOT_CHECK_TIMEOUT_SECS")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(150);
+        while started.elapsed() < std::time::Duration::from_secs(limit) {
             tokio::time::sleep(std::time::Duration::from_millis(500)).await;
             if closed.load(Ordering::SeqCst) {
                 break;

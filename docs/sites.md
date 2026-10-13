@@ -56,6 +56,24 @@ the video URL from the rendered page (`sites/challenge.rs`) and follows
 session-bound KVS `get_file` links inside the same browser session. Sites
 with dedicated adapters (PornHub, XVIDEOS, …) are excluded.
 
+### xPomelo sources: tested 2026-10-13
+
+From a datacenter connection. Cloudflare-protected sites then show an
+interactive check that can't be passed from there; on a home connection the
+bot-check fallbacks below are expected to get through. That part is
+unverified.
+
+| Result                                | Sources                                                                                                                                                                                                 |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Play + download                       | XVIDEOS, xHamster, XNXX, Eporner, YouPorn, RedTube, PornZog, XGroovy, PornOne, Hoes, HDtube¹, SexVid¹, XXXBP², TXXX, EroThots, PornHat, YouJizz, Analdin, AnySex, Xozilla, Nuvid, Clips4Sale (trailers) |
+| Cloudflare check (bot-check fallback) | SpankBang, CrazyPorn, Love4Porn, 4KPorn, FapCat, TNAFlix, DrTuber, Noodlemagazine (intermittent)                                                                                                        |
+| Native resolver, CDN unreliable       | HQPorner (`mydaddy.cc` player; files often 404 or rate-limited)                                                                                                                                         |
+| Not supported                         | Beeg (API no longer returns streams; yt-dlp broken too), SxyPrn (yt-dlp marks it unsupported), VipTube (empty player config)                                                                            |
+| Stale listings                        | Some xPomelo results point at removed videos (HTTP 404/410, Tube8 `video-inactive`)                                                                                                                     |
+
+¹ yt-dlp can't extract these; playback and downloads use the KVS resolver.
+² No yt-dlp extractor; `api.xxxbp.tv/hls`.
+
 ## Tier B — Live Cam Sites (scraping + webview bridge)
 
 | Site ID    | Display Name | Browse kinds                   | Cookies |

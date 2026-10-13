@@ -1516,20 +1516,11 @@ impl AppState {
             .await
             {
                 Ok(u) => return Ok(u),
-                Err(e)
-                    if e.to_string().contains("private")
-                        || e.to_string().contains("placeholder clip") =>
-                {
-                    return Err(e)
-                }
+                Err(e) if crate::sites::native::is_kvs_verdict(&e.to_string()) => return Err(e),
                 Err(e) => tracing::debug!("[stream] KVS with clearance failed: {e}"),
             }
         }
         let runner = crate::sites::yt_dlp::SidecarRunner::new(self.site_ctx.app().clone());
-        let site_id = self
-            .sites
-            .detect(url)
-            .unwrap_or_else(|| "custom".to_string());
         let cookies = clearance.map(|c| c.cookie_file.clone()).or_else(|| {
             self.site_ctx
                 .cookie_file_for_site(&crate::sites::cookie_keys::key_for_url(&self.sites, url))

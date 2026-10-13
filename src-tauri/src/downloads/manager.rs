@@ -813,6 +813,48 @@ async fn run_job_with_plan(
             if path_result.is_err() && !cancel.load(Ordering::Relaxed) {
                 return handle_stopped(&db, &app, &job_id);
             }
+            // Sites without their own adapter: when yt-dlp fails (no
+            // extractor, a broken one, a session-bound KVS link), try the
+            // native resolvers (KVS in-session, XXXBP, HQPorner) and fetch
+            // the stream directly.
+            let path_result = match path_result {
+                Err(e)
+                    if crate::sites::cookie_keys::is_host_key(&cookie_key)
+                        && cancel.load(Ordering::Relaxed) =>
+                {
+                    let ctx = app
+                        .try_state::<Arc<crate::state::AppState>>()
+                        .map(|s| s.site_ctx.clone());
+                    let native = match ctx.as_ref() {
+                        Some(ctx) => {
+                            crate::sites::native::resolve_stream(ctx, &plan.url, &cookie_key).await
+                        }
+                        None => crate::sites::native::resolve_download(&plan.url).await,
+                    };
+                    match native {
+                        Some(Ok(media)) => {
+                            tracing::info!("[download] yt-dlp failed; using the native resolver");
+                            download_resolved(
+                                &app,
+                                plan,
+                                library_path,
+                                &media,
+                                &plan.url,
+                                None,
+                                |p| {
+                                    update_progress(&db_emit, &app_emit, &job_id_emit, "", p);
+                                },
+                            )
+                            .await
+                        }
+                        Some(Err(ne)) if !crate::sites::challenge::is_bot_block(&e.to_string()) => {
+                            Err(AppError::Download(format!("{ne} ({e})")))
+                        }
+                        _ => Err(e),
+                    }
+                }
+                other => other,
+            };
             #[cfg(desktop)]
             let path_result = match path_result {
                 Err(e)
@@ -844,30 +886,6 @@ async fn run_job_with_plan(
                             "{ce} (The embedded engine was blocked first: {e})"
                         ))
                     })
-                }
-                other => other,
-            };
-            // Pages yt-dlp has no extractor for but a native resolver knows.
-            let path_result = match path_result {
-                Err(e) if e.to_string().contains("Unsupported URL") => {
-                    match crate::sites::native::resolve_download(&plan.url).await {
-                        Some(Ok(media)) => {
-                            download_resolved(
-                                &app,
-                                plan,
-                                library_path,
-                                &media,
-                                &plan.url,
-                                None,
-                                |p| {
-                                    update_progress(&db_emit, &app_emit, &job_id_emit, "", p);
-                                },
-                            )
-                            .await
-                        }
-                        Some(Err(ne)) => Err(AppError::Download(format!("{ne} ({e})"))),
-                        None => Err(e),
-                    }
                 }
                 other => other,
             };

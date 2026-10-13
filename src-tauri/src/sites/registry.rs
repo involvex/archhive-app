@@ -55,56 +55,78 @@ impl SiteRegistry {
         self.adapters.iter().find(|a| a.id() == id).cloned()
     }
 
+    /// The adapter for `url`, matched on its host (subdomains included).
+    /// Substring matching misfired: `anysex.com/` contains `x.com/`, and a
+    /// video slug mentioning "reddit" isn't a Reddit link.
     pub fn detect(&self, url: &str) -> Option<String> {
-        let lower = url.to_lowercase();
-        if lower.contains("youporn.com") {
-            return Some("youporn".to_string());
-        }
-        if lower.contains("xnxx.com") {
-            return Some("xnxx".to_string());
-        }
-        if lower.contains("instagram.com") {
-            return Some("instagram".to_string());
-        }
-        if lower.contains("thethothub.com") || lower.contains("thothub.to") {
-            return Some("thothub".to_string());
-        }
-        if lower.contains("youtube.com") || lower.contains("youtu.be") {
-            return Some("youtube".to_string());
-        }
-        if lower.contains("tiktok.com") {
-            return Some("tiktok".to_string());
-        }
-        if lower.contains("twitter.com") || lower.contains("x.com/") || lower.contains("//x.com") {
-            return Some("twitter".to_string());
-        }
-        if lower.contains("reddit.com") || lower.contains("i.redd.it") || lower.contains("redd.it")
-        {
-            return Some("reddit".to_string());
-        }
-        if lower.contains("xvideos.com") {
-            return Some("xvideos".to_string());
-        }
-        if lower.contains("xhamster.com") {
-            return Some("xhamster".to_string());
-        }
-        if lower.contains("eporner.com") {
-            return Some("eporner".to_string());
-        }
-        if lower.contains("pornhub.com") {
-            return Some("pornhub".to_string());
-        }
-        if lower.contains("chaturbate.com") {
-            return Some("chaturbate".to_string());
-        }
-        if lower.contains("stripchat.com") {
-            return Some("stripchat".to_string());
-        }
-        for adapter in &self.adapters {
-            if lower.contains(&adapter.id().to_lowercase()) {
-                return Some(adapter.id().to_string());
+        let host = url::Url::parse(url.trim())
+            .ok()
+            .and_then(|u| u.host_str().map(str::to_ascii_lowercase))
+            .unwrap_or_default();
+        let on = |domain: &str| host == domain || host.ends_with(&format!(".{domain}"));
+        const KNOWN: &[(&str, &[&str])] = &[
+            ("youporn", &["youporn.com"]),
+            ("xnxx", &["xnxx.com"]),
+            ("instagram", &["instagram.com"]),
+            ("thothub", &["thethothub.com", "thothub.to"]),
+            ("youtube", &["youtube.com", "youtu.be"]),
+            ("tiktok", &["tiktok.com"]),
+            ("twitter", &["twitter.com", "x.com"]),
+            ("reddit", &["reddit.com", "redd.it"]),
+            ("xvideos", &["xvideos.com"]),
+            (
+                "xhamster",
+                &["xhamster.com", "xhamster.desi", "xhamster.one"],
+            ),
+            ("eporner", &["eporner.com"]),
+            ("pornhub", &["pornhub.com"]),
+            ("chaturbate", &["chaturbate.com"]),
+            ("stripchat", &["stripchat.com"]),
+        ];
+        if !host.is_empty() {
+            for (id, domains) in KNOWN {
+                if domains.iter().any(|d| on(d)) {
+                    return Some((*id).to_string());
+                }
+            }
+            for adapter in &self.adapters {
+                let base = url::Url::parse(adapter.base_url()).ok().and_then(|u| {
+                    u.host_str()
+                        .map(|h| h.trim_start_matches("www.").to_string())
+                });
+                if base.is_some_and(|b| on(&b)) {
+                    return Some(adapter.id().to_string());
+                }
             }
         }
         Some("generic_ytdlp".to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detect_matches_hosts_not_substrings() {
+        let r = SiteRegistry::new();
+        let d = |u: &str| r.detect(u).unwrap();
+        assert_eq!(d("https://anysex.com/video/1/x/"), "generic_ytdlp");
+        assert_eq!(
+            d("https://www.fapcat.com/videos/1/reddit-girl/"),
+            "generic_ytdlp"
+        );
+        assert_eq!(d("https://x.com/user/status/1"), "twitter");
+        assert_eq!(d("https://mobile.twitter.com/u"), "twitter");
+        assert_eq!(d("https://de.xhamster.com/videos/x"), "xhamster");
+        assert_eq!(d("https://i.redd.it/abc.jpg"), "reddit");
+        assert_eq!(d("https://thisvid.com/videos/x/"), "thisvid");
+        assert_eq!(d("https://www.redgifs.com/watch/x"), "redgifs");
+        assert_eq!(d("https://xpomelo.com/category/x"), "xpomelo");
+        assert_eq!(
+            d("https://www.pornhub.com/view_video.php?viewkey=1"),
+            "pornhub"
+        );
+        assert_eq!(d("not a url"), "generic_ytdlp");
     }
 }
