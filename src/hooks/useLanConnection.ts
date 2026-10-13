@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api/client";
-import { getCapabilities } from "@/lib/runtime";
+import { getAppRuntime, getCapabilities } from "@/lib/runtime";
 import { useSettingsStore } from "@/lib/stores/settings";
 import type { HealthResponse } from "@/lib/types";
 
@@ -36,7 +36,7 @@ export function useLanConnection(pollMs = 15000): LanConnectionStatus {
     if (!needsRemote) {
       setState("connected");
       setHealth(null);
-      setMessage("Local desktop engine");
+      setMessage(getAppRuntime() === "mobile-tauri" ? "On-device engine" : "Local desktop engine");
       return;
     }
     if (!remoteHost?.trim()) {
