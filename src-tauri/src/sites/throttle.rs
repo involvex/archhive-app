@@ -3,7 +3,9 @@
 //! Trending rows, feeds, saved-search checks and category lookups can all hit
 //! the same site within a second, which tube sites answer with HTTP 429. This
 //! spaces requests to one host at least [`MIN_GAP`] apart and, after a 429,
-//! fails fast during a cooldown instead of hammering the site further.
+//! fails fast during a cooldown instead of hammering the site further. One
+//! probe request every [`PROBE_EVERY`] still goes through, and a successful
+//! one ends the cooldown, so the app recovers as soon as the site does.
 
 use crate::error::{AppError, AppResult};
 use std::collections::HashMap;
@@ -15,12 +17,15 @@ const MIN_GAP: Duration = Duration::from_millis(1000);
 /// Cooldown after a 429 when the site sends no usable `Retry-After`.
 const DEFAULT_COOLDOWN: Duration = Duration::from_secs(60);
 /// Upper bound on a `Retry-After` we are willing to honour.
-const MAX_COOLDOWN: Duration = Duration::from_secs(15 * 60);
+const MAX_COOLDOWN: Duration = Duration::from_secs(5 * 60);
+/// During a cooldown, let one request through this often to test the site.
+const PROBE_EVERY: Duration = Duration::from_secs(15);
 
 #[derive(Default, Clone, Copy)]
 struct HostState {
     next_slot: Option<Instant>,
     cooldown_until: Option<Instant>,
+    last_probe: Option<Instant>,
 }
 
 static HOSTS: LazyLock<Mutex<HashMap<String, HostState>>> =
@@ -40,9 +45,16 @@ fn host_key(url: &str) -> String {
 fn reserve(state: &mut HostState, now: Instant) -> Result<Duration, Duration> {
     if let Some(until) = state.cooldown_until {
         if until > now {
-            return Err(until - now);
+            let probe_due = state
+                .last_probe
+                .is_none_or(|p| now.duration_since(p) >= PROBE_EVERY);
+            if !probe_due {
+                return Err(until - now);
+            }
+            state.last_probe = Some(now);
+        } else {
+            state.cooldown_until = None;
         }
-        state.cooldown_until = None;
     }
     let slot = state.next_slot.filter(|s| *s > now).unwrap_or(now);
     state.next_slot = Some(slot + MIN_GAP);
@@ -63,9 +75,24 @@ pub async fn acquire(url: &str) -> AppResult<()> {
             Ok(())
         }
         Err(remaining) => Err(AppError::Site(format!(
-            "{key} is rate limiting requests; try again in {}s",
-            remaining.as_secs().max(1)
+            "{key} answered \"too many requests\" a moment ago, so ArcHive is pausing \
+             requests to it (up to {}s; it retries every {}s and resumes as soon as the site \
+             answers)",
+            remaining.as_secs().max(1),
+            PROBE_EVERY.as_secs()
         ))),
+    }
+}
+
+/// A request to the host succeeded: end any cooldown.
+pub fn note_ok(url: &str) {
+    if let Ok(mut hosts) = HOSTS.lock() {
+        if let Some(state) = hosts.get_mut(&host_key(url)) {
+            if state.cooldown_until.take().is_some() {
+                tracing::info!("[throttle] {} answers again; cooldown ended", host_key(url));
+            }
+            state.last_probe = None;
+        }
     }
 }
 
@@ -111,8 +138,17 @@ mod tests {
         // After the queue drains, a later request goes straight out.
         assert_eq!(reserve(&mut s, now + MIN_GAP * 5), Ok(Duration::ZERO));
 
-        s.cooldown_until = Some(now + Duration::from_secs(30));
-        assert_eq!(reserve(&mut s, now), Err(Duration::from_secs(30)));
-        assert!(reserve(&mut s, now + Duration::from_secs(31)).is_ok());
+        let mut s = HostState::default();
+        s.cooldown_until = Some(now + Duration::from_secs(120));
+        // First request in a cooldown is a probe, the next ones wait.
+        assert!(reserve(&mut s, now).is_ok());
+        assert_eq!(
+            reserve(&mut s, now + Duration::from_secs(1)),
+            Err(Duration::from_secs(119))
+        );
+        // Another probe once PROBE_EVERY has passed.
+        assert!(reserve(&mut s, now + PROBE_EVERY).is_ok());
+        assert!(reserve(&mut s, now + PROBE_EVERY + Duration::from_secs(1)).is_err());
+        assert!(reserve(&mut s, now + Duration::from_secs(121)).is_ok());
     }
 }
