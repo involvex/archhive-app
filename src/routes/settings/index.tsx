@@ -1267,7 +1267,9 @@ function SettingsPage() {
                       }
                     }}
                   />
-                  {ENGINE_LABELS[mode]}
+                  {mode === "local" && runtime === "mobile-tauri"
+                    ? "On-device (this phone)"
+                    : ENGINE_LABELS[mode]}
                   {mode === "local" && runtime === "mobile-tauri" && " (recommended)"}
                   {mode === "remote_lan" && runtime === "browser" && " (recommended)"}
                 </label>
