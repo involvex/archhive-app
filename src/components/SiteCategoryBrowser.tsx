@@ -56,6 +56,8 @@ interface SiteCategoryBrowserProps {
   combineTags?: number;
   /** Grouped index sections (`BrowseOptions.category_groups`). */
   groups?: FilterOption[];
+  /** Combined category listings can also exclude (`a,b,-c`, xPomelo). */
+  canExclude?: boolean;
 }
 
 /** Category / tag index for a site, fetched from the backend adapter. */
@@ -64,6 +66,7 @@ export function SiteCategoryBrowser({
   siteName,
   combineTags = 0,
   groups = [],
+  canExclude = false,
 }: SiteCategoryBrowserProps) {
   const navigate = useNavigate();
   // "" = the site's main (popular) index; otherwise a group id such as "a".
@@ -77,6 +80,8 @@ export function SiteCategoryBrowser({
   const [order, setOrder] = useState<"az" | "popular">("az");
   const [combining, setCombining] = useState(false);
   const [selected, setSelected] = useState<SiteCategory[]>([]);
+  // Slugs of selected categories that are excluded rather than required.
+  const [excluded, setExcluded] = useState<string[]>([]);
 
   const load = useCallback(
     async (force = false) => {
@@ -121,7 +126,17 @@ export function SiteCategoryBrowser({
   const maxPick = exact ? combineTags : MAX_SEARCH_COMBINE;
   const isSelected = (c: SiteCategory) => selected.some((s) => s.slug === c.slug);
 
+  const isExcluded = (c: SiteCategory) => excluded.includes(c.slug);
+
   function toggle(c: SiteCategory) {
+    // Required → excluded → cleared, where the site can exclude categories.
+    if (canExclude && c.kind === "category" && isSelected(c)) {
+      if (!isExcluded(c)) {
+        setExcluded((prev) => [...prev, c.slug]);
+        return;
+      }
+      setExcluded((prev) => prev.filter((s) => s !== c.slug));
+    }
     setSelected((prev) =>
       prev.some((s) => s.slug === c.slug)
         ? prev.filter((s) => s.slug !== c.slug)
@@ -133,12 +148,13 @@ export function SiteCategoryBrowser({
 
   function browseSelected() {
     if (selected.length === 0) return;
+    const required = selected.filter((s) => !excluded.includes(s.slug));
     void navigate({
       to: "/browse/$site/$kind/$slug",
       params: {
         site: siteId,
-        kind: selected[0].kind,
-        slug: selected.map((s) => s.slug).join(","),
+        kind: required[0]?.kind ?? "category",
+        slug: selected.map((s) => (excluded.includes(s.slug) ? `-${s.slug}` : s.slug)).join(","),
       },
     });
   }
@@ -184,6 +200,7 @@ export function SiteCategoryBrowser({
             onClick={() => {
               setCombining((v) => !v);
               setSelected([]);
+              setExcluded([]);
             }}
             title="Select several tags and browse videos matching them together"
           >
@@ -297,7 +314,11 @@ export function SiteCategoryBrowser({
             <button
               key={`${c.kind}:${c.slug}`}
               type="button"
-              className={chipClass(isSelected(c))}
+              className={
+                isExcluded(c)
+                  ? "inline-flex items-center gap-1.5 rounded-full bg-red-600 px-3 py-1.5 text-sm text-white line-through transition"
+                  : chipClass(isSelected(c))
+              }
               onClick={() => toggle(c)}
             >
               {inner}
@@ -317,13 +338,21 @@ export function SiteCategoryBrowser({
 
       {combining && canCombine && (
         <CombineBar
-          selected={selected.map((c) => ({ key: c.slug, label: c.name }))}
+          selected={selected.map((c) => ({
+            key: c.slug,
+            label: isExcluded(c) ? `−${c.name}` : c.name,
+          }))}
           hint={
-            exact
-              ? `Tap up to ${maxPick} — ${siteName} shows videos tagged with all of them.`
-              : `Tap up to ${maxPick} — ${siteName} can't match tags exactly, so they run as a word search.`
+            exact && canExclude
+              ? `Tap up to ${maxPick}: once to require, twice to exclude, again to clear.`
+              : exact
+                ? `Tap up to ${maxPick} — ${siteName} shows videos tagged with all of them.`
+                : `Tap up to ${maxPick} — ${siteName} can't match tags exactly, so they run as a word search.`
           }
-          onRemove={(slug) => setSelected((prev) => prev.filter((s) => s.slug !== slug))}
+          onRemove={(slug) => {
+            setSelected((prev) => prev.filter((s) => s.slug !== slug));
+            setExcluded((prev) => prev.filter((s) => s !== slug));
+          }}
           onBrowse={browseSelected}
         />
       )}

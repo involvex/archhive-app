@@ -129,10 +129,12 @@ function BrowseDetailPage() {
   // Category pages suggest categories: XVIDEOS keeps them in a "categories"
   // group, Eporner in its main index; tag pages use the typed letter's group.
   const categoryKind = kind === "category";
+  // xPomelo's main index is only its popular tags; it names the full list.
+  const fullTagGroup = siteInfo?.browse_options?.tag_index_group;
   const tagGroup = categoryKind
     ? tagGroups.some((g) => g.id === "categories")
       ? "categories"
-      : undefined
+      : fullTagGroup
     : groupForText(typedTag, tagGroups);
   const tagGroupKey = tagGroup ?? (categoryKind || tagGroups.length === 0 ? "all" : "");
   useEffect(() => {
@@ -453,6 +455,7 @@ function BrowseDetailPage() {
         ).includes(kind as BrowseKind) && (
           <CategoryIncludeExclude
             siteId={site}
+            group={browseOptions.tag_index_group}
             filters={filters}
             onFiltersChange={setFilters}
             maxInclude={

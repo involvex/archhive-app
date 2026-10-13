@@ -25,6 +25,8 @@ use std::sync::LazyLock;
 const BASE: &str = "https://xpomelo.com";
 /// Tags the site's own editor shows at most; the index runs to ~6k.
 const POPULAR_TAGS: usize = 600;
+/// `list_category_group` id for every tag (not shown as a tab).
+const ALL_TAGS_GROUP: &str = "every-tag";
 /// `BrowseFilters::source` id that keeps paysite results.
 const ALL_SOURCES: &str = "all";
 
@@ -128,7 +130,8 @@ impl SiteAdapter for XpomeloAdapter {
             .collect())
     }
 
-    /// "stars" = pornstar index; a…z / "0" = every tag starting with it.
+    /// "stars" = pornstar index; a…z / "0" = every tag starting with it;
+    /// "every-tag" = every tag.
     async fn list_category_group(
         &self,
         ctx: &SiteContext,
@@ -139,6 +142,9 @@ impl SiteAdapter for XpomeloAdapter {
             return Ok(parse_star_index(&html));
         }
         let tags = tag_index(ctx).await?;
+        if group == ALL_TAGS_GROUP {
+            return Ok(tags);
+        }
         Ok(tags
             .into_iter()
             .filter(|c| {
@@ -311,6 +317,7 @@ fn xpomelo_options() -> BrowseOptions {
             .collect(),
         include_exclude: true,
         include_exclude_kinds: vec![BrowseKind::Category],
+        tag_index_group: Some(ALL_TAGS_GROUP.into()),
         ..Default::default()
     }
 }

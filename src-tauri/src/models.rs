@@ -224,6 +224,11 @@ pub struct BrowseOptions {
     /// (`BrowseFilters::source`).
     #[serde(default)]
     pub sources: Vec<FilterOption>,
+    /// `list_category_group` id that returns the site's complete tag list,
+    /// for autocomplete and the include / exclude picker (the main index may
+    /// hold only the popular ones).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tag_index_group: Option<String>,
 }
 
 /// Separator for combined tags in a Tag/Category slug (`milf,anal`). Tag slugs

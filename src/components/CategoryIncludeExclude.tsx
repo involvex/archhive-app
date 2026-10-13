@@ -11,8 +11,13 @@ function splitList(v?: string): string[] {
     .filter(Boolean);
 }
 
+/** Chips drawn at once; a long index (xPomelo's full tag list) needs Find. */
+const MAX_CHIPS = 300;
+
 interface CategoryIncludeExcludeProps {
   siteId: string;
+  /** Category group to list instead of the main index (`tag_index_group`). */
+  group?: string;
   filters: BrowseFilters;
   onFiltersChange: (f: BrowseFilters) => void;
   /** Most required categories here (0 = this listing can't require any). */
@@ -43,6 +48,7 @@ export function nextChipState(
  */
 export function CategoryIncludeExclude({
   siteId,
+  group,
   filters,
   onFiltersChange,
   maxInclude = Infinity,
@@ -67,7 +73,7 @@ export function CategoryIncludeExclude({
   useEffect(() => {
     if (!open || categories.length > 0) return;
     let cancelled = false;
-    loadSiteCategories(siteId)
+    loadSiteCategories(siteId, false, group)
       .then((cats) => {
         if (!cancelled) setCategories(cats);
       })
@@ -75,14 +81,18 @@ export function CategoryIncludeExclude({
     return () => {
       cancelled = true;
     };
-  }, [open, siteId, categories.length]);
+  }, [open, siteId, group, categories.length]);
 
   const visible = useMemo(() => {
     const q = find.trim().toLowerCase();
+    const picked = new Set([...splitList(draft.include), ...splitList(draft.exclude)]);
+    const chosen = (c: SiteCategory) => picked.has(c.slug);
+    // Chosen ones first so they stay visible when the list is cut short.
     return categories
-      .filter((c) => !q || c.name.toLowerCase().includes(q))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [categories, find]);
+      .filter((c) => !q || c.name.toLowerCase().includes(q) || chosen(c))
+      .sort((a, b) => Number(chosen(b)) - Number(chosen(a)) || a.name.localeCompare(b.name));
+  }, [categories, find, draft.include, draft.exclude]);
+  const shown = visible.slice(0, MAX_CHIPS);
 
   function cycle(slug: string) {
     const state: ChipState = include.includes(slug)
@@ -148,7 +158,7 @@ export function CategoryIncludeExclude({
             {categories.length === 0 && (
               <span className="text-xs text-[var(--color-muted-foreground)]">Loading…</span>
             )}
-            {visible.map((c) => {
+            {shown.map((c) => {
               const state = include.includes(c.slug)
                 ? "include"
                 : exclude.includes(c.slug)
@@ -183,6 +193,12 @@ export function CategoryIncludeExclude({
                 </button>
               );
             })}
+            {visible.length > shown.length && (
+              <span className="w-full text-[11px] text-[var(--color-muted-foreground)]">
+                {(visible.length - shown.length).toLocaleString()} more. Type in Find to narrow the
+                list.
+              </span>
+            )}
           </div>
         </div>
       )}

@@ -1098,7 +1098,9 @@ impl AppState {
         let options = adapter.browse_options();
         let group = group.map(str::trim).filter(|g| !g.is_empty());
         if let Some(g) = group {
-            if !options.category_groups.iter().any(|o| o.id == g) {
+            let known = options.category_groups.iter().any(|o| o.id == g)
+                || options.tag_index_group.as_deref() == Some(g);
+            if !known {
                 return Err(crate::error::AppError::InvalidInput(format!(
                     "unknown category group {g:?} for {site_id}"
                 )));
@@ -1119,7 +1121,7 @@ impl AppState {
         let disk_path = self
             .data_dir
             .join("tag-index")
-            .join(format!("{site_id}__{}.json", group.unwrap_or("all")));
+            .join(format!("{site_id}__{}.json", group.unwrap_or("_main")));
         if let Ok(raw) = std::fs::read_to_string(&disk_path) {
             if let Ok((fetched_at, cats)) =
                 serde_json::from_str::<(u64, Vec<crate::models::SiteCategory>)>(&raw)

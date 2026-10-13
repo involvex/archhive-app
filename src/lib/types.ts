@@ -74,6 +74,8 @@ export interface BrowseOptions {
   include_exclude_kinds?: BrowseKind[];
   /** Source sites an aggregator's results can be narrowed to. */
   sources?: FilterOption[];
+  /** Category group with the site's complete tag list (autocomplete, include / exclude). */
+  tag_index_group?: string;
 }
 
 /** Mirrors `models::BrowseFilters`: option ids, omitted = site default. */
