@@ -27,7 +27,6 @@ pub async fn resolve_kvs_stream(
     use reqwest::cookie::Jar;
     use std::sync::Arc;
 
-    const UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
     let page = url::Url::parse(page_url)
         .map_err(|e| AppError::InvalidInput(format!("bad video URL: {e}")))?;
     let jar = Arc::new(Jar::default());
@@ -36,20 +35,34 @@ pub async fn resolve_kvs_stream(
             jar.add_cookie_str(pair, &page);
         }
     }
-    let client = reqwest::Client::builder()
-        .user_agent(UA)
-        .cookie_provider(jar.clone())
-        .timeout(std::time::Duration::from_secs(30))
-        .build()?;
-    let no_redirect = reqwest::Client::builder()
-        .user_agent(UA)
-        .cookie_provider(jar)
-        .redirect(reqwest::redirect::Policy::none())
-        .timeout(std::time::Duration::from_secs(30))
-        .build()?;
+    // Normal clients first; on a connection failure retry with the
+    // IPv4 / HTTP/1.1 fallback and keep using it for get_file.
+    let make = |fallback: bool, follow: bool| {
+        let builder = if fallback {
+            crate::sites::fallback_client_builder()
+        } else {
+            reqwest::Client::builder().user_agent(crate::sites::BROWSER_UA)
+        };
+        let builder = builder
+            .cookie_provider(jar.clone())
+            .timeout(std::time::Duration::from_secs(30));
+        if follow {
+            builder.build()
+        } else {
+            builder.redirect(reqwest::redirect::Policy::none()).build()
+        }
+    };
 
     crate::sites::throttle::acquire(page_url).await?;
-    let resp = client.get(page_url).send().await?;
+    let (resp, fallback) = match make(false, true)?.get(page_url).send().await {
+        Ok(resp) => (resp, false),
+        Err(e) if crate::sites::is_transport_error(&e) => {
+            tracing::warn!("[{site_id}] {e}; retrying over IPv4 / HTTP/1.1");
+            (make(true, true)?.get(page_url).send().await?, true)
+        }
+        Err(e) => return Err(e.into()),
+    };
+    let no_redirect = make(fallback, false)?;
     let status = resp.status();
     let html = resp.text().await?;
     if looks_like_bot_check(&html) {

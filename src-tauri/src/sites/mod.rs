@@ -15,9 +15,30 @@ pub mod throttle;
 pub mod urls;
 pub mod yt_dlp;
 
+/// Browser User-Agent for site scraping.
+pub(crate) const BROWSER_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+
+/// Client for retrying failed connections: IPv4 only (a bound 0.0.0.0 local
+/// address) and HTTP/1.1 only. Some networks resolve a site's IPv6 address
+/// but cannot reach it, or break HTTP/2, and fail with "error sending
+/// request" while browsers (and yt-dlp) quietly fall back.
+pub(crate) fn fallback_client_builder() -> reqwest::ClientBuilder {
+    reqwest::Client::builder()
+        .user_agent(BROWSER_UA)
+        .http1_only()
+        .local_address(Some(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED)))
+        .connect_timeout(std::time::Duration::from_secs(15))
+}
+
+/// Transport-level failure worth one retry on the fallback client.
+pub(crate) fn is_transport_error(e: &reqwest::Error) -> bool {
+    e.is_connect() || e.is_timeout() || e.is_request()
+}
+
 #[derive(Clone)]
 pub struct SiteContext {
     pub client: reqwest::Client,
+    fallback: reqwest::Client,
     vault: Arc<CookieVault>,
     app: tauri::AppHandle,
     lan_port: u16,
@@ -34,11 +55,13 @@ impl SiteContext {
         lan_port: u16,
     ) -> AppResult<Self> {
         let client = reqwest::Client::builder()
-            .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            .user_agent(BROWSER_UA)
             .cookie_store(true)
             .build()?;
+        let fallback = fallback_client_builder().cookie_store(true).build()?;
         Ok(Self {
             client,
+            fallback,
             vault,
             app,
             lan_port,
@@ -72,19 +95,31 @@ impl SiteContext {
         site_id: &str,
         extra: Option<&[(&str, &str)]>,
     ) -> AppResult<String> {
-        let mut req = self.client.get(url);
-        if let Ok(Some(header)) = self.vault.cookie_header(site_id) {
-            if !header.is_empty() {
+        let cookie = self
+            .vault
+            .cookie_header(site_id)
+            .ok()
+            .flatten()
+            .filter(|h| !h.is_empty());
+        let build = |client: &reqwest::Client| {
+            let mut req = client.get(url);
+            if let Some(header) = cookie.as_deref() {
                 req = req.header("Cookie", header);
             }
-        }
-        if let Some(pairs) = extra {
-            for (k, v) in pairs {
+            for (k, v) in extra.unwrap_or_default() {
                 req = req.header(*k, *v);
             }
-        }
+            req
+        };
         throttle::acquire(url).await?;
-        let resp = req.send().await?;
+        let resp = match build(&self.client).send().await {
+            Ok(resp) => resp,
+            Err(e) if is_transport_error(&e) => {
+                tracing::warn!("[{site_id}] {e}; retrying over IPv4 / HTTP/1.1");
+                build(&self.fallback).send().await?
+            }
+            Err(e) => return Err(e.into()),
+        };
         if resp.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
             let retry_after = resp
                 .headers()
