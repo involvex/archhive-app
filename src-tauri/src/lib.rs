@@ -97,6 +97,12 @@ fn bootstrap_mobile_settings(db: &Database, data_dir: &std::path::Path) -> Resul
         settings.engine_mode = EngineMode::Local;
         changed = true;
     }
+    // "Standalone" (YouTube + direct links only) is retired: the on-device
+    // engine runs full yt-dlp, so Local covers everything it did.
+    if settings.engine_mode == EngineMode::Standalone {
+        settings.engine_mode = EngineMode::Local;
+        changed = true;
+    }
     if settings.library_path.is_empty() {
         let downloads = data_dir.join("downloads");
         std::fs::create_dir_all(&downloads).map_err(|e| e.to_string())?;
