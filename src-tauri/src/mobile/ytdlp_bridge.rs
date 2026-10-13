@@ -432,3 +432,53 @@ pub fn set_immersive(app: &AppHandle, enabled: bool, landscape: bool) -> AppResu
         Ok(())
     }
 }
+
+/// Android: may ArcHive manage all files in shared storage (needed to delete
+/// library files in e.g. Download/ArcHive that this install didn't create)?
+/// Other platforms: always true.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+pub fn storage_access(app: &AppHandle) -> AppResult<bool> {
+    #[cfg(target_os = "android")]
+    {
+        use serde_json::json;
+        with_plugin_state(app, |state| {
+            let response: PluginResponse = state
+                .handle()?
+                .run_mobile_plugin("storageAccess", json!({}))
+                .map_err(|e| AppError::Other(format!("storageAccess failed: {e}")))?;
+            Ok(response.ok.unwrap_or(false))
+        })
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = app;
+        Ok(true)
+    }
+}
+
+/// Android: open the system "All files access" screen for ArcHive.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+pub fn open_storage_access_settings(app: &AppHandle) -> AppResult<()> {
+    #[cfg(target_os = "android")]
+    {
+        use serde_json::json;
+        with_plugin_state(app, |state| {
+            let response: PluginResponse = state
+                .handle()?
+                .run_mobile_plugin("openStorageAccessSettings", json!({}))
+                .map_err(|e| AppError::Other(format!("openStorageAccessSettings failed: {e}")))?;
+            if response.ok.unwrap_or(false) {
+                Ok(())
+            } else {
+                Err(AppError::Other(response.message.unwrap_or_else(|| {
+                    "could not open the settings screen".into()
+                })))
+            }
+        })
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = app;
+        Ok(())
+    }
+}

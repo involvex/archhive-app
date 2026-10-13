@@ -985,11 +985,12 @@ pub fn browse_dirs(
     map_err(state.browse_dirs(path.as_deref()))
 }
 
-/// Resolve the default on-device download folder (`<app-data>/downloads`,
-/// creating it if needed). Used by the Settings folder picker "Reset" action.
+/// Resolve the default on-device download folder (Android: shared
+/// `Download/ArcHive` when writable; else `<app-data>/downloads`), creating
+/// it if needed. Used by the Settings folder picker "Reset" action.
 #[tauri::command]
 pub fn default_library_dir(state: State<'_, Arc<AppState>>) -> CmdResult<String> {
-    let dir = state.data_dir.join("downloads");
+    let dir = crate::default_library_dir(&state.data_dir);
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     Ok(dir.to_string_lossy().to_string())
 }
@@ -1338,5 +1339,20 @@ pub async fn load_demo_scene(state: State<'_, Arc<AppState>>) -> CmdResult<Strin
 pub fn set_player_fullscreen(app: AppHandle, enabled: bool, landscape: bool) -> CmdResult<()> {
     map_err(crate::mobile::ytdlp_bridge::set_immersive(
         &app, enabled, landscape,
+    ))
+}
+
+/// Android "All files access" (deleting library files in shared storage).
+/// Always true on other platforms.
+#[tauri::command]
+pub fn storage_access_status(app: AppHandle) -> CmdResult<bool> {
+    map_err(crate::mobile::ytdlp_bridge::storage_access(&app))
+}
+
+/// Android: open the system "All files access" screen for ArcHive.
+#[tauri::command]
+pub fn open_storage_access_settings(app: AppHandle) -> CmdResult<()> {
+    map_err(crate::mobile::ytdlp_bridge::open_storage_access_settings(
+        &app,
     ))
 }

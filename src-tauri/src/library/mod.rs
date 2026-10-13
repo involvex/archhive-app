@@ -542,3 +542,54 @@ mod remux_fold_tests {
         assert_eq!(LibraryScanner::fold_remux_copies(&db).unwrap(), 0);
     }
 }
+
+#[cfg(test)]
+mod delete_scene_tests {
+    use super::*;
+
+    #[test]
+    fn delete_with_files_removes_video_and_thumb() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::new(dir.path().to_path_buf()).unwrap();
+        let video = dir.path().join("v.mp4");
+        let thumb = dir.path().join("v.jpg");
+        std::fs::write(&video, b"x").unwrap();
+        std::fs::write(&thumb, b"y").unwrap();
+        let s = |p: &Path| p.to_string_lossy().to_string();
+        let id = db
+            .insert_scene(
+                "v",
+                Some(&s(&video)),
+                None,
+                &[],
+                &[],
+                Some(&s(&thumb)),
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+        db.delete_scene(&id, true).unwrap();
+        assert!(!video.exists() && !thumb.exists());
+        assert!(db.get_scene(&id).is_err());
+        // A file that is already gone doesn't block deleting the entry.
+        let id2 = db
+            .insert_scene(
+                "gone",
+                Some(&s(&dir.path().join("gone.mp4"))),
+                None,
+                &[],
+                &[],
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+        db.delete_scene(&id2, true).unwrap();
+    }
+}

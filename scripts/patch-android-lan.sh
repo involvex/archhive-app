@@ -40,6 +40,18 @@ else
   echo "Patched $MANIFEST with mDNS and media storage permissions."
 fi
 
+# All files access: lets ArcHive delete library files in shared storage
+# (e.g. Download/ArcHive) it didn't create in this install. Granted by the
+# user in system settings; WRITE_EXTERNAL_STORAGE covers Android <= 10.
+if grep -q 'MANAGE_EXTERNAL_STORAGE' "$MANIFEST"; then
+  echo "Android all-files access permission already present."
+else
+  sed -i '/<uses-permission android:name="android.permission.INTERNET" \/>/a\
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />\
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />' "$MANIFEST"
+  echo "Patched $MANIFEST with all-files access permissions."
+fi
+
 # Enable Activity PiP so HTML video.requestPictureInPicture can float.
 if grep -q 'supportsPictureInPicture' "$MANIFEST"; then
   echo "Android Picture-in-Picture already enabled."

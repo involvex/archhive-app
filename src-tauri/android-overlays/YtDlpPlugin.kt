@@ -502,6 +502,62 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
      * immersive window here: system bars hidden (swipe to peek) and, for
      * landscape video, a sensor-landscape orientation lock.
      */
+    /**
+     * Whether ArcHive may manage all files in shared storage ("All files
+     * access", Android 11+). Needed to delete library files in e.g.
+     * Download/ArcHive that this install didn't create. Android 10 and
+     * older use WRITE_EXTERNAL_STORAGE instead and report granted.
+     */
+    @Command
+    fun storageAccess(invoke: Invoke) {
+        val ret = JSObject()
+        val granted = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            android.os.Environment.isExternalStorageManager()
+        } else {
+            true
+        }
+        ret.put("ok", granted)
+        ret.put("message", if (granted) "granted" else "missing")
+        invoke.resolve(ret)
+    }
+
+    /** Open the system "All files access" screen for ArcHive. */
+    @Command
+    fun openStorageAccessSettings(invoke: Invoke) {
+        activity.runOnUiThread {
+            val ret = JSObject()
+            try {
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                    val intent = try {
+                        android.content.Intent(
+                            android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                            android.net.Uri.parse("package:" + activity.packageName),
+                        )
+                    } catch (e: Throwable) {
+                        android.content.Intent(
+                            android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION,
+                        )
+                    }
+                    try {
+                        activity.startActivity(intent)
+                    } catch (e: android.content.ActivityNotFoundException) {
+                        activity.startActivity(
+                            android.content.Intent(
+                                android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION,
+                            ),
+                        )
+                    }
+                }
+                ret.put("ok", true)
+            } catch (e: Throwable) {
+                Log.w("YtDlpPlugin", "openStorageAccessSettings failed", e)
+                ret.put("ok", false)
+                ret.put("message", e.message ?: e.javaClass.simpleName)
+            }
+            invoke.resolve(ret)
+        }
+    }
+
     @Command
     fun setImmersive(invoke: Invoke) {
         val args = invoke.parseArgs(ImmersiveArgs::class.java)

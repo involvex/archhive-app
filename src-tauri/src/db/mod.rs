@@ -2897,10 +2897,23 @@ impl Database {
                     |row| Ok((row.get(0)?, row.get(1)?)),
                 )
                 .optional()?;
-            let Some(row) = row else {
-                return Err(AppError::NotFound(format!("scene {id}")));
-            };
+            row.ok_or_else(|| AppError::NotFound(format!("scene {id}")))?
+        };
 
+        // Delete the video first: if the OS refuses (Android shared storage
+        // without "All files access"), keep the library entry and say so
+        // instead of silently leaving the file behind.
+        if delete_files {
+            if let Some(p) = path.as_deref() {
+                remove_media_file(p)?;
+            }
+        }
+
+        {
+            let conn = self
+                .conn
+                .lock()
+                .map_err(|e| AppError::Other(e.to_string()))?;
             conn.execute(
                 "DELETE FROM scene_performers WHERE scene_id = ?1",
                 params![id],
@@ -2908,13 +2921,9 @@ impl Database {
             conn.execute("DELETE FROM scene_tags WHERE scene_id = ?1", params![id])?;
             conn.execute("DELETE FROM watch_history WHERE scene_id = ?1", params![id])?;
             conn.execute("DELETE FROM scenes WHERE id = ?1", params![id])?;
-            row
-        };
+        }
 
         if delete_files {
-            if let Some(p) = path {
-                let _ = std::fs::remove_file(p);
-            }
             if let Some(t) = thumb {
                 let _ = std::fs::remove_file(t);
             }
@@ -3068,6 +3077,23 @@ fn safe_file_stem(title: &str) -> String {
         "untitled".to_string()
     } else {
         safe
+    }
+}
+
+/// Delete a library video file. Missing files are fine; a refusal is
+/// reported (Android shared storage needs "All files access" for files this
+/// install didn't create).
+fn remove_media_file(path: &str) -> AppResult<()> {
+    match std::fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+            Err(AppError::Other(format!(
+                "ArcHive isn't allowed to delete {path}. On Android, allow \"All files access\" \
+                 for ArcHive (Settings → Library), then try again."
+            )))
+        }
+        Err(e) => Err(AppError::Other(format!("Couldn't delete {path}: {e}"))),
     }
 }
 

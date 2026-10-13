@@ -48,6 +48,21 @@ $1
         Write-Host "Android storage permissions already present."
     }
 
+    # All files access: lets ArcHive delete library files in shared storage
+    # (e.g. Download/ArcHive) it did not create in this install. Granted by the
+    # user in system settings; WRITE_EXTERNAL_STORAGE covers Android 10 and older.
+    if ($manifest -notmatch 'MANAGE_EXTERNAL_STORAGE') {
+        $manifest = $manifest -replace '(<uses-permission android:name="android.permission.INTERNET" />)', @'
+$1
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
+'@
+        Set-Content -Path $ManifestPath -Value $manifest -NoNewline
+        Write-Host "Patched $ManifestPath with all-files access permissions."
+    } else {
+        Write-Host "Android all-files access permission already present."
+    }
+
     # Enable Activity PiP so HTML video.requestPictureInPicture can float.
     if ($manifest -notmatch 'supportsPictureInPicture') {
         if ($manifest -match 'android:configChanges="[^"]*"') {

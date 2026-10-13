@@ -72,7 +72,9 @@ function SceneEditForm({
       onDeleted?.(scene.id);
       onClose();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Delete failed");
+      // Tauri commands reject with a plain string.
+      const msg = e instanceof Error ? e.message : String(e ?? "");
+      setError(msg || "Delete failed");
     } finally {
       setDeleting(false);
     }
@@ -149,6 +151,15 @@ function SceneEditForm({
           </label>
         )}
         {error && <p className="text-sm text-red-500">{error}</p>}
+        {error?.includes("All files access") && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void api.openStorageAccessSettings().catch(() => {})}
+          >
+            Open “All files access” settings
+          </Button>
+        )}
       </div>
 
       {confirmDelete ? (

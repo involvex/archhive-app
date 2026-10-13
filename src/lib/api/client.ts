@@ -1249,6 +1249,24 @@ export const api = {
     return localInvoke<string>("update_yt_dlp");
   },
 
+  /**
+   * Android "All files access" (deleting library files in shared storage
+   * that this install didn't create). Always true off the phone app.
+   */
+  async storageAccess(): Promise<boolean> {
+    if (getAppRuntime() !== "mobile-tauri") return true;
+    try {
+      return await localInvoke<boolean>("storage_access_status");
+    } catch {
+      return true;
+    }
+  },
+
+  /** Android: open the system "All files access" screen for ArcHive. */
+  async openStorageAccessSettings(): Promise<void> {
+    await localInvoke("open_storage_access_settings");
+  },
+
   async defaultLibraryDir(): Promise<string> {
     if (shouldUseRemoteApi()) {
       throw new Error("Pick the library folder on the host device, not via Remote LAN.");

@@ -83,6 +83,22 @@ fn resolve_lan_static_ui(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
 }
 
 /// Mobile-only defaults (compiled into Android/iOS builds via `cfg(mobile)`).
+/// Default download folder. Android: the shared `Download/ArcHive` (visible
+/// in the Files app and kept on uninstall) when the app can write there,
+/// else `<app-data>/downloads`, which is also the default elsewhere.
+pub(crate) fn default_library_dir(data_dir: &std::path::Path) -> std::path::PathBuf {
+    #[cfg(target_os = "android")]
+    {
+        let shared = std::path::Path::new("/storage/emulated/0/Download/ArcHive");
+        let probe = shared.join(".archhive-write-test");
+        if std::fs::create_dir_all(shared).is_ok() && std::fs::write(&probe, b"ok").is_ok() {
+            let _ = std::fs::remove_file(&probe);
+            return shared.to_path_buf();
+        }
+    }
+    data_dir.join("downloads")
+}
+
 #[cfg_attr(not(mobile), allow(dead_code))]
 fn bootstrap_mobile_settings(db: &Database, data_dir: &std::path::Path) -> Result<(), String> {
     let mut settings = db.get_settings().unwrap_or_default();
@@ -104,7 +120,7 @@ fn bootstrap_mobile_settings(db: &Database, data_dir: &std::path::Path) -> Resul
         changed = true;
     }
     if settings.library_path.is_empty() {
-        let downloads = data_dir.join("downloads");
+        let downloads = default_library_dir(data_dir);
         std::fs::create_dir_all(&downloads).map_err(|e| e.to_string())?;
         settings.library_path = downloads.to_string_lossy().to_string();
         changed = true;
@@ -336,6 +352,8 @@ pub fn run() {
             commands::batch_update_scenes,
             commands::list_pornhub_categories,
             commands::set_player_fullscreen,
+            commands::storage_access_status,
+            commands::open_storage_access_settings,
             commands::probe_scene_metadata,
             commands::probe_library_durations,
             commands::ffmpeg_status,

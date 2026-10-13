@@ -57,6 +57,7 @@ import { Sun, Moon, Monitor, Clock, Book, Contrast } from "lucide-react";
 import { ChangelogDialog, useChangelogDialog } from "@/components/ChangelogDialog";
 import { ExtLink } from "@/components/ExtLink";
 import { CookieLoginButton } from "@/components/CookieLoginButton";
+import { StorageAccessRow } from "@/components/StorageAccessRow";
 import {
   cookieHostLabel,
   hostCookieKey,
@@ -1491,6 +1492,7 @@ function SettingsPage() {
                   Library path is managed on the desktop host. Scan runs on the host when connected.
                 </p>
               )}
+              <StorageAccessRow />
               <div>
                 <label className="text-xs text-[var(--color-muted-foreground)]">Library path</label>
                 <Input
