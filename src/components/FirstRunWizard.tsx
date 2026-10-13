@@ -29,12 +29,7 @@ const ENGINE_OPTIONS: { mode: EngineMode; title: string; desc: string }[] = [
   {
     mode: "remote_lan",
     title: "Remote LAN",
-    desc: "Use a desktop ArcHive as the engine. Best for phones and tablets.",
-  },
-  {
-    mode: "standalone",
-    title: "Standalone",
-    desc: "On-device only (YouTube + direct links). No desktop needed.",
+    desc: "Use a desktop ArcHive on your network as the engine (LAN host + token).",
   },
 ];
 
@@ -183,7 +178,7 @@ export function FirstRunWizard({ onDone }: { onDone: () => void }) {
           </p>
           <ul className="list-disc space-y-1 pl-5 text-[var(--color-muted-foreground)]">
             <li>Library folder — where your downloads live</li>
-            <li>Engine mode — local, remote LAN, or standalone</li>
+            <li>Engine mode — on this device, or a desktop over remote LAN</li>
             <li>Device pairing — phone + desktop over your Wi-Fi</li>
             <li>Cookies — for sites that need a login</li>
             <li>Media tools check — ffmpeg, yt-dlp, gallery-dl</li>

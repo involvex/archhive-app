@@ -10,7 +10,8 @@ function applyDeviceSettingsToStore(backend: AppSettings) {
   const remoteHost = backend.remote_host?.trim() || priorHost || undefined;
   const remoteToken = backend.remote_token?.trim() || priorToken || undefined;
   useSettingsStore.getState().updateSettings({
-    engine_mode: backend.engine_mode,
+    // Retired "standalone" mode is served by the full local engine now.
+    engine_mode: backend.engine_mode === "standalone" ? "local" : backend.engine_mode,
     library_path: backend.library_path,
     lan_enabled: backend.lan_enabled,
     lan_port: backend.lan_port,
