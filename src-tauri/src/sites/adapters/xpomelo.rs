@@ -222,10 +222,13 @@ impl SiteAdapter for XpomeloAdapter {
                 // xPomelo's own `/image?key=` thumbnails sit behind the same
                 // Cloudflare rules; on the phone fetch them via the app.
                 if let Some(t) = i.thumbnail.as_deref().filter(|t| t.starts_with(BASE)) {
-                    i.thumbnail = Some(crate::sites::adapters::pornhub::maybe_loopback_proxy(
+                    let session = browser_session();
+                    i.thumbnail = Some(crate::sites::adapters::pornhub::loopback_proxy_with(
                         ctx,
                         t,
                         "https://xpomelo.com/",
+                        session.as_ref().map(|(c, _)| c.as_str()),
+                        session.as_ref().map(|(_, ua)| ua.as_str()),
                     ));
                 }
                 i
@@ -331,16 +334,45 @@ fn xpomelo_options() -> BrowseOptions {
     }
 }
 
+/// Cookies + User-Agent of an in-app browser visit that got past xPomelo's
+/// Cloudflare after it refused the app; later requests reuse them so they
+/// look like that browser session.
+static BROWSER_SESSION: LazyLock<std::sync::Mutex<Option<(String, String)>>> =
+    LazyLock::new(Default::default);
+
+fn browser_session() -> Option<(String, String)> {
+    BROWSER_SESSION.lock().ok().and_then(|s| s.clone())
+}
+
+/// xPomelo / Cloudflare refused the app (or ArcHive is pausing after that).
+fn is_refusal(e: &AppError) -> bool {
+    let m = e.to_string().to_ascii_lowercase();
+    m.contains("429")
+        || m.contains("too many requests")
+        || m.contains("rate limit")
+        || m.contains("http 403")
+        || m.contains("pausing")
+}
+
 async fn fetch(
     ctx: &SiteContext,
     url: &str,
     orientation: Option<BrowseOrientation>,
 ) -> AppResult<String> {
-    let cookie = match orientation {
-        Some(BrowseOrientation::Gay) => Some("orientation=gay"),
-        Some(BrowseOrientation::Transgender) => Some("orientation=trans"),
-        _ => None,
+    let session = browser_session();
+    let mut cookie = match orientation {
+        Some(BrowseOrientation::Gay) => "orientation=gay".to_string(),
+        Some(BrowseOrientation::Transgender) => "orientation=trans".to_string(),
+        _ => String::new(),
     };
+    if let Some((c, _)) = &session {
+        if !c.is_empty() {
+            if !cookie.is_empty() {
+                cookie.push_str("; ");
+            }
+            cookie.push_str(c);
+        }
+    }
     let mut headers = vec![
         (
             "Accept",
@@ -348,19 +380,49 @@ async fn fetch(
         ),
         ("Accept-Language", "en-US,en;q=0.9"),
     ];
-    if let Some(c) = cookie {
-        headers.push(("Cookie", c));
+    if !cookie.is_empty() {
+        headers.push(("Cookie", cookie.as_str()));
     }
-    ctx.fetch_with_headers(url, "xpomelo", Some(&headers))
-        .await
-        .map_err(|e| match e {
-            AppError::Site(msg) if msg.contains("HTTP 403") => AppError::Site(
-                "xPomelo's Cloudflare protection refused the request (HTTP 403); \
-                 try again in a minute"
-                    .to_string(),
-            ),
-            other => other,
-        })
+    if let Some((_, ua)) = session.as_ref().filter(|(_, ua)| !ua.is_empty()) {
+        headers.push(("User-Agent", ua.as_str()));
+    }
+    match ctx.fetch_with_headers(url, "xpomelo", Some(&headers)).await {
+        Ok(html) => Ok(html),
+        Err(e) if is_refusal(&e) => {
+            #[cfg(target_os = "android")]
+            {
+                match fetch_in_browser(ctx, url).await {
+                    Ok(html) => return Ok(html),
+                    Err(be) => tracing::warn!("[xpomelo] in-app browser fallback failed: {be}"),
+                }
+            }
+            Err(match e {
+                AppError::Site(msg) if msg.contains("HTTP 403") => AppError::Site(
+                    "xPomelo's Cloudflare protection refused the request (HTTP 403); \
+                     try again in a minute"
+                        .to_string(),
+                ),
+                other => other,
+            })
+        }
+        Err(e) => Err(e),
+    }
+}
+
+/// Load the page in the in-app browser (a real WebView, which Cloudflare
+/// lets through like the phone's browser) and keep its session.
+#[cfg(target_os = "android")]
+async fn fetch_in_browser(ctx: &SiteContext, url: &str) -> AppResult<String> {
+    static LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    let _guard = LOCK.lock().await;
+    tracing::info!("[xpomelo] app refused; loading {url} in the in-app browser");
+    let page = crate::cookie_login::open_page(ctx.app(), url, "Loading xPomelo").await;
+    crate::cookie_login::close_page(ctx.app()).await;
+    let page = page?;
+    if let Ok(mut s) = BROWSER_SESSION.lock() {
+        *s = Some((page.cookies.clone(), page.user_agent.clone()));
+    }
+    Ok(page.html)
 }
 
 /// Tag index (`<script id="data-tags">[{"key":"big tits","name":"big tits"},…]`
