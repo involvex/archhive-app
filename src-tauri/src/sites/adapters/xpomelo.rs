@@ -175,15 +175,24 @@ impl SiteAdapter for XpomeloAdapter {
             q.filters.duration = buckets.first().map(|b| (*b).to_string());
             vec![q]
         };
-        let pages = futures_util::future::join_all(queries.iter().map(|q| async move {
+        // One after another, not in parallel: xPomelo's Cloudflare rate
+        // limits bursts.
+        let mut pages = Vec::with_capacity(queries.len());
+        for q in &queries {
             let url = listing_url(q);
             tracing::info!("[xpomelo] browse: {url}");
-            let html = fetch(ctx, &url, q.orientation).await?;
-            let cards = parse_listing(&html);
-            let more = cards.len() >= 40 || html.contains(&format!("page={}", q.page + 1));
-            AppResult::Ok((cards, more))
-        }))
-        .await;
+            let page = fetch(ctx, &url, q.orientation).await.map(|html| {
+                let cards = parse_listing(&html);
+                let more = cards.len() >= 40 || html.contains(&format!("page={}", q.page + 1));
+                (cards, more)
+            });
+            // Rate limited: the other buckets would be refused too.
+            let limited = matches!(&page, Err(AppError::Site(m)) if m.contains("429") || m.contains("Cloudflare"));
+            pages.push(page);
+            if limited {
+                break;
+            }
+        }
         let mut lists = Vec::new();
         let mut has_more = false;
         let mut first_err = None;

@@ -79,7 +79,11 @@ function CustomBrowsePage() {
     void load(page + 1, true);
   }, [page, load]);
 
-  const { sentinelRef } = useInfiniteScroll(loadMore, hasMore, loading);
+  const {
+    sentinelRef,
+    paused: autoLoadPaused,
+    loadMore: loadMoreNow,
+  } = useInfiniteScroll(loadMore, hasMore, loading);
 
   const handleRefresh = useCallback(async () => {
     void load(page, false);
@@ -198,6 +202,13 @@ function CustomBrowsePage() {
       )}
 
       {hasMore && <div ref={sentinelRef} className="h-4" />}
+      {hasMore && autoLoadPaused && !loading && (
+        <div className="flex justify-center py-2">
+          <Button variant="outline" size="sm" onClick={loadMoreNow}>
+            Load more
+          </Button>
+        </div>
+      )}
 
       <BrowseItemDetailsDialog
         item={infoItem}

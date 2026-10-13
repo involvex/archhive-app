@@ -261,7 +261,11 @@ function BrowseDetailPage() {
     }
   }, [loading, hasMore, page, load]);
 
-  const { sentinelRef } = useInfiniteScroll(loadMore, hasMore, loading);
+  const {
+    sentinelRef,
+    paused: autoLoadPaused,
+    loadMore: loadMoreNow,
+  } = useInfiniteScroll(loadMore, hasMore, loading);
 
   const handleRefresh = useCallback(async () => {
     void load(1, false);
@@ -716,6 +720,13 @@ function BrowseDetailPage() {
       )}
 
       {showItems && hasMore && <div ref={sentinelRef} className="h-4" />}
+      {showItems && hasMore && autoLoadPaused && !loading && (
+        <div className="flex justify-center py-2">
+          <Button variant="outline" size="sm" onClick={loadMoreNow}>
+            Load more
+          </Button>
+        </div>
+      )}
 
       {loading && showItems && (
         <div className="flex justify-center py-4 text-xs text-[var(--color-muted-foreground)]">

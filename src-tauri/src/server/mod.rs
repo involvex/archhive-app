@@ -989,12 +989,31 @@ async fn proxy_remote_media(
         .filter(|u| !u.is_empty() && u.len() < 512)
         .map(String::as_str)
         .unwrap_or("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
-    let client = reqwest::Client::builder()
-        .user_agent(user_agent)
-        .build()
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let range = headers
+        .get(header::RANGE)
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string);
+    // Thumbnails: answered from memory when seen before, so grids that
+    // re-render (tab switches, scrolling back) don't refetch them.
+    if range.is_none() {
+        if let Some((ctype, body)) = proxy_image_cache_get(url) {
+            return Ok(image_response(StatusCode::OK, &ctype, body));
+        }
+    }
+    // Requests without a Range (thumbnails, HLS segments) queue for a few
+    // slots so a grid of thumbnails doesn't hit a site all at once.
+    let permit = if range.is_none() {
+        PROXY_SLOTS.acquire().await.ok()
+    } else {
+        None
+    };
 
-    let mut req = client.get(url).header("Referer", &referer);
+    // One shared client: connections (and HTTP/2 multiplexing) are reused
+    // instead of opening a new TLS connection per thumbnail.
+    let mut req = PROXY_CLIENT
+        .get(url)
+        .header(reqwest::header::USER_AGENT, user_agent)
+        .header("Referer", &referer);
 
     let cookie = params
         .get("cookie")
@@ -1007,7 +1026,7 @@ async fn proxy_remote_media(
     if let Some(ref cookie) = cookie {
         req = req.header("Cookie", cookie.as_str());
     }
-    if let Some(range) = headers.get(header::RANGE).and_then(|v| v.to_str().ok()) {
+    if let Some(range) = range.as_deref() {
         req = req.header(header::RANGE, range);
     }
 
@@ -1035,6 +1054,17 @@ async fn proxy_remote_media(
         .get(reqwest::header::ACCEPT_RANGES)
         .and_then(|v| v.to_str().ok())
         .map(str::to_string);
+
+    if range.is_none() && status == StatusCode::OK && content_type.starts_with("image/") {
+        let body = upstream
+            .bytes()
+            .await
+            .map_err(|_| StatusCode::BAD_GATEWAY)?;
+        drop(permit);
+        proxy_image_cache_put(url, &content_type, body.clone());
+        return Ok(image_response(status, &content_type, body));
+    }
+    drop(permit);
 
     let looks_hls = url.to_lowercase().contains(".m3u8")
         || content_type.contains("mpegurl")
@@ -1093,6 +1123,66 @@ async fn proxy_remote_media(
         .headers_mut()
         .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     Ok(response)
+}
+
+static PROXY_CLIENT: std::sync::LazyLock<reqwest::Client> = std::sync::LazyLock::new(|| {
+    reqwest::Client::builder()
+        .pool_max_idle_per_host(4)
+        .build()
+        .unwrap_or_default()
+});
+
+/// Concurrent non-Range upstream requests through the media proxy.
+static PROXY_SLOTS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(6);
+
+type ImageCache = (
+    std::collections::HashMap<String, (String, axum::body::Bytes)>,
+    std::collections::VecDeque<String>,
+);
+static PROXY_IMAGES: std::sync::LazyLock<std::sync::Mutex<ImageCache>> =
+    std::sync::LazyLock::new(Default::default);
+const PROXY_IMAGE_CACHE_ENTRIES: usize = 1500;
+const PROXY_IMAGE_MAX_BYTES: usize = 512 * 1024;
+
+fn proxy_image_cache_get(url: &str) -> Option<(String, axum::body::Bytes)> {
+    PROXY_IMAGES.lock().ok()?.0.get(url).cloned()
+}
+
+fn proxy_image_cache_put(url: &str, content_type: &str, body: axum::body::Bytes) {
+    if body.len() > PROXY_IMAGE_MAX_BYTES {
+        return;
+    }
+    let Ok(mut cache) = PROXY_IMAGES.lock() else {
+        return;
+    };
+    let (map, order) = &mut *cache;
+    if map
+        .insert(url.to_string(), (content_type.to_string(), body))
+        .is_none()
+    {
+        order.push_back(url.to_string());
+    }
+    while order.len() > PROXY_IMAGE_CACHE_ENTRIES {
+        if let Some(old) = order.pop_front() {
+            map.remove(&old);
+        }
+    }
+}
+
+fn image_response(status: StatusCode, content_type: &str, body: axum::body::Bytes) -> Response {
+    use axum::http::{header, HeaderValue};
+    use axum::response::IntoResponse;
+    let mut response = body.into_response();
+    *response.status_mut() = status;
+    if let Ok(v) = HeaderValue::from_str(content_type) {
+        response.headers_mut().insert(header::CONTENT_TYPE, v);
+    }
+    // Let the WebView keep thumbnails too.
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("public, max-age=86400"),
+    );
+    response
 }
 
 /// Site whose vault cookies the proxy may attach, from the Referer it was
