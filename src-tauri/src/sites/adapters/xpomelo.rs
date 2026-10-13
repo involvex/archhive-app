@@ -30,7 +30,7 @@ const ALL_SOURCES: &str = "all";
 
 /// Result hosts that only sell the video (trailers / store pages) — hidden
 /// unless the Source filter says otherwise.
-const PAYSITE_HOSTS: &[&str] = &[
+pub(crate) const PAYSITE_HOSTS: &[&str] = &[
     "faphouse.com",
     "clips4sale.com",
     "brazzers.com",
@@ -38,6 +38,11 @@ const PAYSITE_HOSTS: &[&str] = &[
     "puretaboo.com",
     "analvids.com",
 ];
+
+/// Sources whose videos ArcHive can't play or download (Beeg's API no longer
+/// returns streams and yt-dlp's extractor is broken; yt-dlp marks SxyPrn
+/// unsupported). Hidden by default like paysites.
+pub(crate) const UNSUPPORTED_HOSTS: &[&str] = &["beeg.com", "sxyprn.com"];
 
 /// `site=` values from the site's Source menu (its own spelling).
 const SOURCES: &[&str] = &[
@@ -151,10 +156,12 @@ impl SiteAdapter for XpomeloAdapter {
         let html = fetch(ctx, &url, query.orientation).await?;
         let cards = parse_listing(&html);
         let has_more = cards.len() >= 40 || html.contains(&format!("page={}", query.page + 1));
-        let keep_paysites = query.filters.source.is_some();
+        // The default ("Free sites") hides paysites and unsupported sources;
+        // picking a source (or "All") shows them.
+        let keep_hidden = query.filters.source.is_some();
         let items = cards
             .into_iter()
-            .filter(|i| keep_paysites || !is_paysite(&i.url))
+            .filter(|i| keep_hidden || !hidden_by_default(&i.url))
             .map(|mut i| {
                 // xPomelo's own `/image?key=` thumbnails sit behind the same
                 // Cloudflare rules; on the phone fetch them via the app.
@@ -221,6 +228,23 @@ impl SiteAdapter for XpomeloAdapter {
     }
 }
 
+/// Source menu label: paysites and unsupported sources are marked.
+fn source_label(source: &str) -> String {
+    let lower = source.to_ascii_lowercase();
+    let is = |hosts: &[&str]| {
+        hosts
+            .iter()
+            .any(|h| h.split('.').next() == Some(lower.as_str()))
+    };
+    if is(PAYSITE_HOSTS) {
+        format!("{source} (paysite)")
+    } else if is(UNSUPPORTED_HOSTS) {
+        format!("{source} (unsupported)")
+    } else {
+        source.to_string()
+    }
+}
+
 fn xpomelo_options() -> BrowseOptions {
     let o = |id: &str, label: &str| FilterOption::new(id, label);
     BrowseOptions {
@@ -238,8 +262,8 @@ fn xpomelo_options() -> BrowseOptions {
             o("30m", "30+ min"),
         ],
         qualities: vec![o("hd", "HD"), o("4k", "4K")],
-        sources: std::iter::once(o(ALL_SOURCES, "All (incl. paysites)"))
-            .chain(SOURCES.iter().map(|s| o(s, s)))
+        sources: std::iter::once(o(ALL_SOURCES, "All (incl. paysites, unsupported)"))
+            .chain(SOURCES.iter().map(|s| o(s, &source_label(s))))
             .collect(),
         filter_kinds: vec![BrowseKind::Search, BrowseKind::Category, BrowseKind::Model],
         has_categories: true,
@@ -496,6 +520,13 @@ fn source_site_id(url: &str) -> &'static str {
     "xpomelo"
 }
 
+fn hidden_by_default(url: &str) -> bool {
+    is_paysite(url) || {
+        let host = host_of(url);
+        UNSUPPORTED_HOSTS.iter().any(|d| host_matches(&host, d))
+    }
+}
+
 fn is_paysite(url: &str) -> bool {
     let host = host_of(url);
     PAYSITE_HOSTS.iter().any(|d| host_matches(&host, d))
@@ -698,6 +729,14 @@ mod tests {
     fn paysites_detected_by_host() {
         assert!(is_paysite("https://www.brazzers.com/video/1/x"));
         assert!(is_paysite("https://faphouse.com/videos/x"));
+        assert!(is_paysite("https://www.clips4sale.com/studio/1/x"));
+        assert!(hidden_by_default("https://www.clips4sale.com/studio/1/x"));
+        assert!(hidden_by_default("https://beeg.com/video/1"));
+        assert!(hidden_by_default("https://sxyprn.com/post/x.html"));
+        assert!(!hidden_by_default("https://hoes.tube/videos/1/x/"));
+        assert_eq!(source_label("Clips4sale"), "Clips4sale (paysite)");
+        assert_eq!(source_label("Beeg"), "Beeg (unsupported)");
+        assert_eq!(source_label("Hoes"), "Hoes");
         assert!(!is_paysite(
             "https://www.pornhub.com/view_video.php?viewkey=brazzers.com"
         ));

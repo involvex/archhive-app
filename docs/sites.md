@@ -30,7 +30,8 @@ and, where ArcHive has an adapter, the source site's id, so playback,
 downloads and the Info dialog run through that site's own pipeline; other
 sources go through plain yt-dlp. Category listings take any number of
 required and excluded categories (`/category/a%2Cb%2C-c`). Results from
-paysites (Brazzers, FapHouse, …) are hidden unless the Source filter is set.
+paysites (Brazzers, FapHouse, Clips4Sale, …) and unsupported sources (Beeg,
+SxyPrn) are hidden unless the Source filter is set.
 Cloudflare blocks HTTP/1.1 clients on this site; the main HTTP/2 client passes.
 
 ### Bot checks (Cloudflare)
