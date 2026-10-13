@@ -109,6 +109,7 @@ function BrowseItemDetailsBody({ item, onClose }: { item: MediaItem; onClose: ()
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState<string | null>(null);
   const [addedNote, setAddedNote] = useState<string | null>(null);
+  const [thumbFailed, setThumbFailed] = useState(false);
 
   useEffect(() => {
     if (!isThinMetadata(item)) {
@@ -124,14 +125,17 @@ function BrowseItemDetailsBody({ item, onClose }: { item: MediaItem; onClose: ()
           title: data.title || item.title,
           description: data.description ?? item.description,
           channel: data.channel ?? item.channel,
-          thumbnail: data.thumbnail ?? item.thumbnail,
+          // The listing thumbnail is already loaded (and proxied where needed).
+          thumbnail: item.thumbnail ?? data.thumbnail,
           duration: data.duration ?? item.duration,
           performers: data.performers.length > 0 ? data.performers : item.performers,
           tags: data.tags.length > 0 ? data.tags : item.tags,
         });
       })
       .catch((e) => {
-        if (!cancelled) setError(e instanceof Error ? e.message : "Failed to resolve details");
+        if (cancelled) return;
+        const msg = e instanceof Error ? e.message : String(e ?? "");
+        setError(msg || "Failed to resolve details");
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -172,9 +176,14 @@ function BrowseItemDetailsBody({ item, onClose }: { item: MediaItem; onClose: ()
         </button>
       </div>
 
-      {data.thumbnail && (
+      {data.thumbnail && !thumbFailed && (
         <div className="mb-3 aspect-video overflow-hidden rounded-md bg-[var(--color-muted)]">
-          <img src={data.thumbnail} alt="" className="h-full w-full object-cover" />
+          <img
+            src={data.thumbnail}
+            alt=""
+            className="h-full w-full object-cover"
+            onError={() => setThumbFailed(true)}
+          />
         </div>
       )}
 
@@ -182,6 +191,11 @@ function BrowseItemDetailsBody({ item, onClose }: { item: MediaItem; onClose: ()
         <p className="mb-2 text-sm text-[var(--color-muted-foreground)]">Loading details…</p>
       )}
       {error && <p className="mb-2 text-sm text-red-500">{error}</p>}
+      {!loading && !error && resolved && isThinMetadata(resolved) && (
+        <p className="mb-2 text-sm text-[var(--color-muted-foreground)]">
+          This site doesn’t list tags, performers or a description for this video.
+        </p>
+      )}
       {addedNote && <p className="mb-2 text-sm text-green-500">{addedNote}</p>}
 
       <dl className="space-y-3">

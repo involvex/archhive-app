@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 pub mod adapters;
 pub mod browse_fallback;
+pub mod details;
 pub mod extractors;
 pub mod listing;
 pub mod registry;

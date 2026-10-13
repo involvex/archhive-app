@@ -1296,11 +1296,69 @@ impl AppState {
     }
 
     pub async fn resolve_media_details(&self, url: &str) -> AppResult<MediaItem> {
-        let runner = crate::sites::yt_dlp::SidecarRunner::new(self.site_ctx.app().clone());
         let site_id = self
             .sites
             .detect(url)
             .unwrap_or_else(|| "custom".to_string());
+        if crate::sites::details::SCRAPED_SITES.contains(&site_id.as_str()) {
+            match self.site_ctx.fetch_html(url, &site_id).await {
+                Ok(html) => {
+                    let d = crate::sites::details::scrape(&site_id, &html);
+                    if d.is_useful() {
+                        return Ok(self.page_details_item(url, &site_id, d));
+                    }
+                }
+                Err(e) => tracing::warn!("details page fetch failed for {url}: {e}"),
+            }
+        }
+        self.resolve_media_details_ytdlp(url, site_id).await
+    }
+
+    fn page_details_item(
+        &self,
+        url: &str,
+        site_id: &str,
+        d: crate::sites::details::PageDetails,
+    ) -> MediaItem {
+        let thumbnail = d.thumbnail.map(|t| match site_id {
+            "thothub" => crate::sites::adapters::pornhub::maybe_loopback_proxy(
+                &self.site_ctx,
+                &t,
+                "https://thethothub.com/",
+            ),
+            "thisvid" => crate::sites::adapters::pornhub::maybe_loopback_proxy(
+                &self.site_ctx,
+                &t,
+                "https://thisvid.com/",
+            ),
+            _ => t,
+        });
+        MediaItem {
+            id: url.to_string(),
+            title: d.title.unwrap_or_else(|| url.to_string()),
+            url: url.to_string(),
+            thumbnail,
+            duration: d.duration,
+            site_id: site_id.to_string(),
+            performers: d.performers,
+            tags: d.tags,
+            description: d.description,
+            channel: d.channel,
+            is_live: None,
+            viewers: None,
+            age: None,
+            gender: None,
+            stream_url: None,
+            embed_url: None,
+        }
+    }
+
+    async fn resolve_media_details_ytdlp(
+        &self,
+        url: &str,
+        site_id: String,
+    ) -> AppResult<MediaItem> {
+        let runner = crate::sites::yt_dlp::SidecarRunner::new(self.site_ctx.app().clone());
         let cookies = self.site_ctx.cookie_file_for_site(&site_id);
         let json = runner.resolve_media_json(url, cookies.as_deref()).await?;
 
