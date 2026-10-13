@@ -3,7 +3,9 @@ import { mergeSiteLists, siteHasCategories, SITE_CATALOG } from "@/lib/sites/cat
 import { useSiteInfo } from "@/lib/sites/useSiteInfo";
 import { PornhubCategoryBrowser } from "@/components/PornhubCategoryBrowser";
 import { SiteCategoryBrowser } from "@/components/SiteCategoryBrowser";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
+import { ArrowLeft } from "lucide-react";
+import { SiteAvatar } from "@/components/SitePicker";
 import { Button } from "@/components/ui/button";
 import { CookieLoginButton } from "@/components/CookieLoginButton";
 import type { BrowseKind } from "@/lib/types";
@@ -44,13 +46,24 @@ function SiteHubPage() {
   const advancedKinds = site.supported_kinds.filter((k) => k !== "category");
 
   return (
-    <div className="space-y-6">
-      <div>
-        <Button asChild variant="ghost" size="sm" className="mb-2">
-          <Link to="/browse">← All sites</Link>
-        </Button>
-        <h2 className="text-2xl font-bold">{site.display_name}</h2>
-        <p className="text-sm text-[var(--color-muted-foreground)]">{site.base_url}</p>
+    <div className="space-y-5">
+      <div className="flex items-center gap-2">
+        <Link
+          to="/browse"
+          aria-label="All sites"
+          className="-ml-1.5 shrink-0 rounded-full p-1.5 text-[var(--color-muted-foreground)] hover:bg-[var(--color-muted)] hover:text-[var(--color-foreground)]"
+        >
+          <ArrowLeft className="h-5 w-5" />
+        </Link>
+        <SiteAvatar site={site} size="sm" />
+        <div className="min-w-0 flex-1">
+          <h2 className="truncate text-lg font-bold leading-tight md:text-2xl">
+            {site.display_name}
+          </h2>
+          <p className="hidden truncate text-xs text-[var(--color-muted-foreground)] md:block">
+            {site.base_url}
+          </p>
+        </div>
       </div>
 
       {site.id === "pornhub" && <PornhubCategoryBrowser />}
@@ -64,44 +77,24 @@ function SiteHubPage() {
         />
       )}
 
-      {advancedKinds.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Advanced browse</CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-wrap gap-2">
-            {advancedKinds.map((kind) => (
-              <Button key={kind} asChild variant="outline">
-                <Link
-                  to="/browse/$site/$kind/$slug"
-                  params={{ site: site.id, kind, slug: "example" }}
-                >
-                  {KIND_LABELS[kind]}
-                </Link>
-              </Button>
+      {site.supported_kinds.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs font-medium tracking-wide text-[var(--color-muted-foreground)] uppercase">
+            Browse by
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {(site.id === "pornhub" ? advancedKinds : site.supported_kinds).map((kind) => (
+              <Link
+                key={kind}
+                to="/browse/$site/$kind/$slug"
+                params={{ site: site.id, kind, slug: "example" }}
+                className="rounded-full bg-[var(--color-secondary)] px-3.5 py-1.5 text-sm hover:bg-[var(--color-muted)]"
+              >
+                {KIND_LABELS[kind]}
+              </Link>
             ))}
-          </CardContent>
-        </Card>
-      )}
-
-      {site.id !== "pornhub" && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Browse by</CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-wrap gap-2">
-            {site.supported_kinds.map((kind) => (
-              <Button key={kind} asChild variant="outline">
-                <Link
-                  to="/browse/$site/$kind/$slug"
-                  params={{ site: site.id, kind, slug: "example" }}
-                >
-                  {KIND_LABELS[kind]}
-                </Link>
-              </Button>
-            ))}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       )}
 
       {site.requires_cookies && (

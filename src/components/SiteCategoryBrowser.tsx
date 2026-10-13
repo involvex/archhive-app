@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { Layers, RefreshCw, Search, X } from "lucide-react";
+import { Layers, RefreshCw, Search } from "lucide-react";
 import { api } from "@/lib/api/client";
 import type { FilterOption, SiteCategory } from "@/lib/types";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ErrorState } from "@/components/ErrorState";
+import { CombineBar } from "@/components/CombineBar";
 
 /** Per-session cache so returning to a site hub doesn't refetch. */
 const cache = new Map<string, SiteCategory[]>();
@@ -144,189 +144,189 @@ export function SiteCategoryBrowser({
   }
 
   const chipClass = (active: boolean) =>
-    `inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs transition ${
+    `inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm transition ${
+      active
+        ? "bg-[var(--color-primary)] text-[var(--color-primary-foreground)]"
+        : "bg-[var(--color-secondary)] hover:bg-[var(--color-muted)]"
+    }`;
+
+  // Named sections (main index, XVIDEOS "Categories") vs. A–Z letter pages.
+  const sections = [
+    {
+      id: "",
+      label: groups.some((g) => g.id === "categories") ? "Popular" : "Categories",
+    },
+    ...groups.filter((g) => g.label.length > 3),
+  ];
+  const letters = groups.filter((g) => g.label.length <= 3);
+  const tabClass = (active: boolean) =>
+    `rounded-lg text-sm font-medium transition ${
       active
         ? "bg-[var(--color-primary)] text-[var(--color-primary-foreground)]"
         : "bg-[var(--color-secondary)] hover:bg-[var(--color-muted)]"
     }`;
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
-        <CardTitle className="text-base">
-          {siteName} {kindLabel}
+    <section className="space-y-3">
+      <div className="flex items-center gap-2">
+        <h3 className="min-w-0 flex-1 truncate text-base font-semibold">
+          {kindLabel}
           {categories && (
             <span className="ml-2 text-xs font-normal text-[var(--color-muted-foreground)]">
-              {categories.length}
+              {categories.length.toLocaleString()}
             </span>
           )}
-        </CardTitle>
+        </h3>
+        {canCombine && (
+          <Button
+            size="sm"
+            variant={combining ? "default" : "outline"}
+            onClick={() => {
+              setCombining((v) => !v);
+              setSelected([]);
+            }}
+            title="Select several tags and browse videos matching them together"
+          >
+            <Layers className="h-4 w-4" />
+            Combine
+          </Button>
+        )}
         <Button
           size="sm"
           variant="ghost"
           onClick={() => void load(true)}
           disabled={loading}
           title="Refresh"
+          aria-label="Refresh"
         >
           <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
         </Button>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {groups.length > 0 && (
-          <div className="flex gap-1 overflow-x-auto pb-1 scrollbar-hide">
-            {[
-              {
-                // Main index: XVIDEOS' popular tags (its categories are a
-                // group), Eporner's categories (its tags are groups).
-                id: "",
-                label: groups.some((g) => g.id === "categories") ? "Popular" : "Categories",
-              },
-              ...groups,
-            ].map((g) => (
+      </div>
+
+      {groups.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex gap-1.5">
+            {sections.map((g) => (
               <button
-                key={g.id || "popular"}
+                key={g.id || "main"}
                 type="button"
                 onClick={() => setGroup(g.id)}
-                className={`shrink-0 rounded-md px-2.5 py-1 text-xs font-medium ${
-                  group === g.id
-                    ? "bg-[var(--color-primary)] text-[var(--color-primary-foreground)]"
-                    : "bg-[var(--color-secondary)] hover:bg-[var(--color-muted)]"
-                }`}
+                className={`flex-1 px-3 py-2 sm:flex-none ${tabClass(group === g.id)}`}
               >
                 {g.label}
               </button>
             ))}
           </div>
-        )}
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative min-w-40 flex-1 sm:max-w-sm">
-            <Search className="absolute left-2 top-2.5 h-4 w-4 text-[var(--color-muted-foreground)]" />
-            <Input
-              className="pl-8"
-              placeholder={`Find ${kindLabel.toLowerCase()}…`}
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-            />
-          </div>
-          <div className="flex overflow-hidden rounded-md border border-[var(--color-border)] text-xs">
-            {(
-              [
-                ["az", "A–Z"],
-                ["popular", "Most videos"],
-              ] as const
-            ).map(([id, label]) => (
-              <button
-                key={id}
-                type="button"
-                onClick={() => setOrder(id)}
-                className={`px-2.5 py-1.5 ${order === id ? "bg-[var(--color-muted)] font-medium" : ""}`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          {canCombine && (
-            <Button
-              size="sm"
-              variant={combining ? "default" : "outline"}
-              onClick={() => {
-                setCombining((v) => !v);
-                setSelected([]);
-              }}
-              title="Select several tags and browse videos matching them together"
-            >
-              <Layers className="h-4 w-4" />
-              Combine
-            </Button>
-          )}
-        </div>
-
-        {combining && canCombine && (
-          <div className="space-y-2 rounded-md border border-[var(--color-border)] p-2">
-            <p className="text-xs text-[var(--color-muted-foreground)]">
-              {exact
-                ? `Pick up to ${maxPick} — ${siteName} shows videos tagged with all of them.`
-                : `Pick up to ${maxPick} — ${siteName} can't match tags exactly, so they run as a word search.`}
-            </p>
-            <div className="flex flex-wrap items-center gap-1.5">
-              {selected.length === 0 && (
-                <span className="text-xs text-[var(--color-muted-foreground)]">
-                  Tap {kindLabel.toLowerCase()} below to add them.
-                </span>
-              )}
-              {selected.map((c) => (
+          {letters.length > 0 && (
+            <div className="grid grid-cols-9 gap-1 sm:flex sm:flex-wrap">
+              {letters.map((g) => (
                 <button
-                  key={c.slug}
+                  key={g.id}
                   type="button"
-                  className={chipClass(true)}
-                  onClick={() => toggle(c)}
+                  onClick={() => setGroup(g.id)}
+                  aria-label={`Tags starting with ${g.label}`}
+                  className={`h-9 sm:w-9 ${tabClass(group === g.id)}`}
                 >
-                  {c.name}
-                  <X className="h-3 w-3" />
+                  {g.label}
                 </button>
               ))}
-              <Button
-                size="sm"
-                className="ml-auto"
-                disabled={selected.length === 0}
-                onClick={browseSelected}
-              >
-                Browse {selected.length > 1 ? `${selected.length} together` : ""}
-              </Button>
             </div>
-          </div>
-        )}
-
-        {error && <ErrorState message={error} onRetry={() => void load(true)} />}
-        {loading && !categories && (
-          <p className="text-xs text-[var(--color-muted-foreground)]">Loading…</p>
-        )}
-        {categories && categories.length === 0 && !loading && !error && (
-          <p className="text-xs text-[var(--color-muted-foreground)]">
-            No categories returned. The site may require cookies — log in from Settings → Cookies.
-          </p>
-        )}
-        <div className="flex max-h-[60vh] flex-wrap gap-1.5 overflow-y-auto">
-          {visible.map((c) => {
-            const inner = (
-              <>
-                {c.thumbnail && (
-                  <img
-                    src={c.thumbnail}
-                    alt=""
-                    loading="lazy"
-                    referrerPolicy="no-referrer"
-                    className="h-5 w-5 rounded-full object-cover"
-                  />
-                )}
-                <span>{c.name}</span>
-                {c.count != null && (
-                  <span className="text-[10px] opacity-70">{formatCount(c.count)}</span>
-                )}
-              </>
-            );
-            return combining && canCombine ? (
-              <button
-                key={`${c.kind}:${c.slug}`}
-                type="button"
-                className={chipClass(isSelected(c))}
-                onClick={() => toggle(c)}
-              >
-                {inner}
-              </button>
-            ) : (
-              <Link
-                key={`${c.kind}:${c.slug}`}
-                to="/browse/$site/$kind/$slug"
-                params={{ site: siteId, kind: c.kind, slug: c.slug }}
-                className={chipClass(false)}
-              >
-                {inner}
-              </Link>
-            );
-          })}
+          )}
         </div>
-      </CardContent>
-    </Card>
+      )}
+
+      <div className="flex items-center gap-2">
+        <div className="relative min-w-0 flex-1">
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-[var(--color-muted-foreground)]" />
+          <Input
+            className="h-9 pl-8"
+            placeholder={`Find ${kindLabel.toLowerCase()}…`}
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+          />
+        </div>
+        <div className="flex shrink-0 overflow-hidden rounded-md border border-[var(--color-border)] text-xs">
+          {(
+            [
+              ["az", "A–Z"],
+              ["popular", "Top"],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setOrder(id)}
+              title={id === "popular" ? "Most videos first" : "Alphabetical"}
+              className={`h-9 px-3 ${order === id ? "bg-[var(--color-muted)] font-medium" : ""}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {error && <ErrorState message={error} onRetry={() => void load(true)} />}
+      {loading && !categories && (
+        <p className="text-xs text-[var(--color-muted-foreground)]">Loading…</p>
+      )}
+      {categories && categories.length === 0 && !loading && !error && (
+        <p className="text-xs text-[var(--color-muted-foreground)]">
+          No categories returned. The site may require cookies — log in from Settings → Cookies.
+        </p>
+      )}
+      <div className={`flex flex-wrap gap-1.5 ${combining ? "pb-24" : ""}`}>
+        {visible.map((c) => {
+          const inner = (
+            <>
+              {c.thumbnail && (
+                <img
+                  src={c.thumbnail}
+                  alt=""
+                  loading="lazy"
+                  referrerPolicy="no-referrer"
+                  className="h-5 w-5 rounded-full object-cover"
+                />
+              )}
+              <span>{c.name}</span>
+              {c.count != null && (
+                <span className="text-[10px] opacity-70">{formatCount(c.count)}</span>
+              )}
+            </>
+          );
+          return combining && canCombine ? (
+            <button
+              key={`${c.kind}:${c.slug}`}
+              type="button"
+              className={chipClass(isSelected(c))}
+              onClick={() => toggle(c)}
+            >
+              {inner}
+            </button>
+          ) : (
+            <Link
+              key={`${c.kind}:${c.slug}`}
+              to="/browse/$site/$kind/$slug"
+              params={{ site: siteId, kind: c.kind, slug: c.slug }}
+              className={chipClass(false)}
+            >
+              {inner}
+            </Link>
+          );
+        })}
+      </div>
+
+      {combining && canCombine && (
+        <CombineBar
+          selected={selected.map((c) => ({ key: c.slug, label: c.name }))}
+          hint={
+            exact
+              ? `Tap up to ${maxPick} — ${siteName} shows videos tagged with all of them.`
+              : `Tap up to ${maxPick} — ${siteName} can't match tags exactly, so they run as a word search.`
+          }
+          onRemove={(slug) => setSelected((prev) => prev.filter((s) => s.slug !== slug))}
+          onBrowse={browseSelected}
+        />
+      )}
+    </section>
   );
 }
