@@ -1371,16 +1371,20 @@ export const api = {
     return localInvoke<string>("test_stashbox_endpoint", { id });
   },
 
-  /** Fingerprint-first, title fallback. Works local + Remote LAN. */
+  /** Fingerprint-first, then a scored metadata match (title, performers,
+   * studio, length) unless `fingerprintOnly`. `minScore` drops weaker
+   * metadata candidates. Works local + Remote LAN. */
   async queryStashdbForScene(
     sceneId: string,
     endpointId?: string,
     fingerprintOnly = false,
+    minScore?: number,
   ): Promise<StashSceneMatch[]> {
     const body = {
       scene_id: sceneId,
       endpoint_id: endpointId ?? null,
       fingerprint_only: fingerprintOnly,
+      min_score: minScore ?? null,
     };
     if (shouldUseRemoteApi()) {
       return remoteFetch<StashSceneMatch[]>("/api/stashbox/query", {
@@ -1392,6 +1396,7 @@ export const api = {
       sceneId,
       endpointId: endpointId ?? null,
       fingerprintOnly,
+      minScore: minScore ?? null,
     });
   },
 
@@ -1403,16 +1408,26 @@ export const api = {
     return localInvoke<UnenrichedScenesResult>("list_unenriched_scenes", { limit });
   },
 
-  async searchStashdbScenes(title: string, endpointId?: string): Promise<StashSceneMatch[]> {
+  /** Text search; with `sceneId` results are ranked against that scene. */
+  async searchStashdbScenes(
+    title: string,
+    endpointId?: string,
+    sceneId?: string,
+  ): Promise<StashSceneMatch[]> {
     if (shouldUseRemoteApi()) {
       return remoteFetch<StashSceneMatch[]>("/api/stashbox/search-scenes", {
         method: "POST",
-        body: JSON.stringify({ title, endpoint_id: endpointId ?? null }),
+        body: JSON.stringify({
+          title,
+          endpoint_id: endpointId ?? null,
+          scene_id: sceneId ?? null,
+        }),
       });
     }
     return localInvoke<StashSceneMatch[]>("search_stashdb_scenes", {
       title,
       endpointId: endpointId ?? null,
+      sceneId: sceneId ?? null,
     });
   },
 

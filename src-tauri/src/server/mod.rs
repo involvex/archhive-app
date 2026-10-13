@@ -1863,6 +1863,7 @@ struct QueryStashBody {
     title: Option<String>,
     endpoint_id: Option<String>,
     fingerprint_only: Option<bool>,
+    min_score: Option<f32>,
 }
 
 async fn query_stashdb_lan(
@@ -1873,12 +1874,17 @@ async fn query_stashdb_lan(
     let matches = if let Some(scene_id) = body.scene_id.as_deref() {
         state
             .app
-            .query_stashdb_for_scene(scene_id, body.endpoint_id.as_deref(), fingerprint_only)
+            .query_stashdb_for_scene(
+                scene_id,
+                body.endpoint_id.as_deref(),
+                fingerprint_only,
+                body.min_score,
+            )
             .await
     } else if let Some(title) = body.title.as_deref() {
         state
             .app
-            .search_stashdb_scenes(title, body.endpoint_id.as_deref())
+            .search_stashdb_scenes(title, body.endpoint_id.as_deref(), None)
             .await
     } else {
         return Err((StatusCode::BAD_REQUEST, "scene_id or title required".into()));
@@ -1910,7 +1916,7 @@ async fn search_stashdb_scenes_lan(
     let title = body.title.as_deref().unwrap_or("");
     let matches = state
         .app
-        .search_stashdb_scenes(title, body.endpoint_id.as_deref())
+        .search_stashdb_scenes(title, body.endpoint_id.as_deref(), body.scene_id.as_deref())
         .await
         .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
     Ok(Json(serde_json::json!(matches)))

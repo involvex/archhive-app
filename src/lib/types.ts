@@ -598,6 +598,10 @@ export interface StashSceneMatch {
   image?: string;
   duration?: number;
   endpoint_id: string;
+  /** How well it fits the library scene, 0–1 (1 = fingerprint match). */
+  score?: number;
+  /** What matched: "fingerprint", "title 80%", performer / studio names, "same length". */
+  match_reasons?: string[];
 }
 
 export interface StashPerformerMatch {

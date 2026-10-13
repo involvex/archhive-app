@@ -615,13 +615,16 @@ impl AppState {
         Ok(())
     }
 
-    /// Query StashDB for one library scene: fingerprints first, title fallback
-    /// (unless `fingerprint_only`, used by batch Identify to avoid mismatches).
+    /// Query StashDB for one library scene: fingerprints first, then
+    /// (unless `fingerprint_only`) a metadata match — a few text searches
+    /// ranked by title words, performers, studio and length. `min_score`
+    /// drops weaker metadata candidates (batch Identify).
     pub async fn query_stashdb_for_scene(
         &self,
         scene_id: &str,
         endpoint_id: Option<&str>,
         fingerprint_only: bool,
+        min_score: Option<f32>,
     ) -> AppResult<Vec<crate::models::StashSceneMatch>> {
         let endpoint_id = match endpoint_id {
             Some(id) => id.to_string(),
@@ -650,16 +653,45 @@ impl AppState {
         {
             return Ok(Vec::new());
         }
-        match client
-            .find_by_fingerprints(md5.as_deref(), oshash.as_deref())
-            .await
-        {
-            Ok(matches) if !matches.is_empty() => Ok(matches),
-            Ok(_) if fingerprint_only => Ok(Vec::new()),
-            Ok(_) => client.search_scenes(&scene.title).await,
-            Err(e) if fingerprint_only => Err(e),
-            Err(_) => client.search_scenes(&scene.title).await,
+        let has_hashes = md5.as_deref().is_some_and(|h| !h.trim().is_empty())
+            || oshash.as_deref().is_some_and(|h| !h.trim().is_empty());
+        let by_fingerprint = if has_hashes {
+            client
+                .find_by_fingerprints(md5.as_deref(), oshash.as_deref())
+                .await
+        } else {
+            Ok(Vec::new())
+        };
+        match by_fingerprint {
+            Ok(mut matches) if !matches.is_empty() => {
+                for m in &mut matches {
+                    m.score = Some(1.0);
+                    m.match_reasons = vec!["fingerprint".into()];
+                }
+                return Ok(matches);
+            }
+            Ok(_) if fingerprint_only => return Ok(Vec::new()),
+            Err(e) if fingerprint_only => return Err(e),
+            _ => {}
         }
+        let mut candidates = Vec::new();
+        let mut last_err = None;
+        for term in crate::metadata::matcher::search_terms(&scene) {
+            match client.search_scenes(&term).await {
+                Ok(found) => candidates.extend(found),
+                Err(e) => last_err = Some(e),
+            }
+        }
+        if candidates.is_empty() {
+            if let Some(e) = last_err {
+                return Err(e);
+            }
+        }
+        let mut ranked = crate::metadata::matcher::rank(&scene, candidates);
+        if let Some(min) = min_score {
+            ranked.retain(|m| m.score.unwrap_or(0.0) >= min);
+        }
+        Ok(ranked)
     }
 
     /// Scenes eligible for batch Identify + total count for the banner.
@@ -682,10 +714,13 @@ impl AppState {
         crate::library::LibraryScanner::rehash_library_hashes(self.db.clone(), 2).await
     }
 
+    /// Manual text search; with `scene_id` the results are ranked against
+    /// that library scene.
     pub async fn search_stashdb_scenes(
         &self,
         title: &str,
         endpoint_id: Option<&str>,
+        scene_id: Option<&str>,
     ) -> AppResult<Vec<crate::models::StashSceneMatch>> {
         let endpoint_id = match endpoint_id {
             Some(id) => id.to_string(),
@@ -701,9 +736,17 @@ impl AppState {
                     )
                 })?,
         };
-        self.stashbox_client(&endpoint_id)?
+        let found = self
+            .stashbox_client(&endpoint_id)?
             .search_scenes(title)
-            .await
+            .await?;
+        match scene_id {
+            Some(id) => Ok(crate::metadata::matcher::rank(
+                &self.db.get_scene(id)?,
+                found,
+            )),
+            None => Ok(found),
+        }
     }
 
     pub async fn search_stashdb_performers(

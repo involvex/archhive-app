@@ -1,3 +1,4 @@
+import { StashMatchScore } from "@/components/StashMatchScore";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api/client";
 import type { Scene, StashBoxEndpoint, StashSceneMatch } from "@/lib/types";
@@ -22,10 +23,15 @@ interface IdentifyRow {
 
 const BATCH_LIMIT = 25;
 
+/** Weakest metadata match batch Identify offers (fingerprints are 1.0). */
+const BATCH_MIN_SCORE = 0.7;
+
 /**
- * Batch Identify (Stash Tagger-style): fingerprint-only matching for every
- * unenriched scene. No title fallback in batch mode — a wrong auto-match is
- * worse than no match. Each row is applied explicitly (single or Apply all).
+ * Batch Identify (Stash Tagger-style): fingerprint matching for every
+ * unenriched scene, optionally followed by a scored metadata match (title
+ * words, performers, studio, length). Weak metadata candidates are dropped
+ * and every row shows its score; nothing is applied without a tap (single or
+ * Apply all).
  */
 export function IdentifyDialog({ open, onClose, onDone }: IdentifyDialogProps) {
   const [endpoints, setEndpoints] = useState<StashBoxEndpoint[]>([]);
@@ -36,6 +42,8 @@ export function IdentifyDialog({ open, onClose, onDone }: IdentifyDialogProps) {
   const [running, setRunning] = useState(false);
   const [applyingAll, setApplyingAll] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Tube clips rarely match by fingerprint (re-encoded, cut, site intro).
+  const [useMetadata, setUseMetadata] = useState(true);
   const cancelRef = useRef(false);
   const dirtyRef = useRef(false);
 
@@ -106,12 +114,19 @@ export function IdentifyDialog({ open, onClose, onDone }: IdentifyDialogProps) {
     cancelRef.current = false;
     const endpoint = endpointId;
     const targets = rows.filter((r) => r.state === "pending" || r.state === "error");
-    await runPooled(targets, 5, async (row) => {
+    // Metadata matching runs up to three searches per scene: go easier on
+    // the server.
+    await runPooled(targets, useMetadata ? 2 : 5, async (row) => {
       setRows((prev) =>
         prev.map((r) => (r.scene.id === row.scene.id ? { ...r, state: "working" } : r)),
       );
       try {
-        const matches = await api.queryStashdbForScene(row.scene.id, endpoint, true);
+        const matches = await api.queryStashdbForScene(
+          row.scene.id,
+          endpoint,
+          !useMetadata,
+          useMetadata ? BATCH_MIN_SCORE : undefined,
+        );
         const best = matches[0] ?? null;
         setRows((prev) =>
           prev.map((r) =>
@@ -210,9 +225,23 @@ export function IdentifyDialog({ open, onClose, onDone }: IdentifyDialogProps) {
         </div>
 
         <p className="mb-3 text-xs text-[var(--color-muted-foreground)]">
-          Fingerprint-only matching (no title guessing). Apply per scene or all at once — title,
-          date, studio, performers and tags merge in.
+          Matches by file fingerprint first. Apply per scene or all at once — title, date, studio,
+          performers and tags merge in.
         </p>
+        <label className="mb-3 flex items-start gap-2 text-xs">
+          <input
+            type="checkbox"
+            className="mt-0.5"
+            checked={useMetadata}
+            disabled={running}
+            onChange={(e) => setUseMetadata(e.target.checked)}
+          />
+          <span>
+            Also match by title, performers, studio and length when fingerprints don't match (tube
+            clips). Only matches of {Math.round(BATCH_MIN_SCORE * 100)}% or more are offered — check
+            them before applying.
+          </span>
+        </label>
 
         {endpoints.length > 1 && (
           <select
@@ -255,8 +284,9 @@ export function IdentifyDialog({ open, onClose, onDone }: IdentifyDialogProps) {
                     )}
                     {row.state === "nomatch" && (
                       <p className="text-xs text-[var(--color-muted-foreground)]">
-                        No fingerprint match — open the scene's Enrich to search by performer,
-                        studio or title.
+                        {useMetadata
+                          ? "No confident match — open the scene's Enrich to see weaker candidates or search by hand."
+                          : "No fingerprint match — open the scene's Enrich to search by performer, studio or title."}
                       </p>
                     )}
                     {row.state === "error" && (
@@ -289,6 +319,7 @@ export function IdentifyDialog({ open, onClose, onDone }: IdentifyDialogProps) {
                               {row.match.performers.map((p) => p.name).join(", ")}
                             </p>
                           )}
+                          <StashMatchScore match={row.match} />
                         </div>
                         {row.state === "matched" && (
                           <Button size="sm" variant="outline" onClick={() => void applyRow(row)}>

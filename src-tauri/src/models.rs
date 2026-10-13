@@ -344,7 +344,7 @@ pub enum DownloadTool {
     FfmpegHls,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Scene {
     pub id: String,
     pub title: String,
@@ -1247,6 +1247,13 @@ pub struct StashSceneMatch {
     /// Which endpoint returned this match (endpoint id).
     #[serde(default)]
     pub endpoint_id: String,
+    /// How well it fits the library scene, 0–1 (1 = fingerprint match).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub score: Option<f32>,
+    /// What matched: "fingerprint", "title 80%", performer / studio names,
+    /// "same length".
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub match_reasons: Vec<String>,
 }
 
 /// One StashDB performer candidate.

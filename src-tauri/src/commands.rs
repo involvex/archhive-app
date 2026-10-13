@@ -1229,12 +1229,14 @@ pub async fn query_stashdb_for_scene(
     scene_id: String,
     endpoint_id: Option<String>,
     fingerprint_only: Option<bool>,
+    min_score: Option<f32>,
 ) -> CmdResult<Vec<crate::models::StashSceneMatch>> {
     state
         .query_stashdb_for_scene(
             &scene_id,
             endpoint_id.as_deref(),
             fingerprint_only.unwrap_or(false),
+            min_score,
         )
         .await
         .map_err(|e| e.to_string())
@@ -1254,9 +1256,10 @@ pub async fn search_stashdb_scenes(
     state: State<'_, Arc<AppState>>,
     title: String,
     endpoint_id: Option<String>,
+    scene_id: Option<String>,
 ) -> CmdResult<Vec<crate::models::StashSceneMatch>> {
     state
-        .search_stashdb_scenes(&title, endpoint_id.as_deref())
+        .search_stashdb_scenes(&title, endpoint_id.as_deref(), scene_id.as_deref())
         .await
         .map_err(|e| e.to_string())
 }

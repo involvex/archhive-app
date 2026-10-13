@@ -566,6 +566,7 @@ fn parse_scene_value(v: &Value) -> Option<StashSceneMatch> {
         image: first_image_url(v),
         duration: v.get("duration").and_then(|d| d.as_u64()).map(|d| d as u32),
         endpoint_id: String::new(),
+        ..Default::default()
     })
 }
 

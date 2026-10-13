@@ -1,3 +1,4 @@
+import { StashMatchScore } from "@/components/StashMatchScore";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api/client";
 import type { Scene, StashBoxEndpoint, StashSceneMatch } from "@/lib/types";
@@ -95,7 +96,7 @@ export function EnrichDialog({ scene, open, onClose, onApplied }: EnrichDialogPr
         setSelectedId(matches[0]?.stash_id ?? null);
         if (matches.length === 0) {
           setStatus(
-            "No fingerprint match, and a text search for this title found nothing. Try a performer, studio or a few title words below.",
+            "No fingerprint match, and searching by title, performers and studio found nothing. Try a performer, studio or a few title words below.",
           );
         }
       } catch (e) {
@@ -115,7 +116,11 @@ export function EnrichDialog({ scene, open, onClose, onApplied }: EnrichDialogPr
     setError(null);
     setStatus("");
     try {
-      const matches = await api.searchStashdbScenes(queryTitle.trim(), endpointId || undefined);
+      const matches = await api.searchStashdbScenes(
+        queryTitle.trim(),
+        endpointId || undefined,
+        scene.id,
+      );
       setCandidates(matches);
       setSelectedId(matches[0]?.stash_id ?? null);
       if (matches.length === 0) setStatus("No matches — try fewer or different words.");
@@ -247,6 +252,7 @@ export function EnrichDialog({ scene, open, onClose, onApplied }: EnrichDialogPr
                               "no date/studio"}
                             {c.duration ? ` · ${Math.round(c.duration / 60)} min` : ""}
                           </span>
+                          <StashMatchScore match={c} />
                           {c.performers.length > 0 && (
                             <span className="block truncate text-xs">
                               {c.performers.map((p) => p.name).join(", ")}
