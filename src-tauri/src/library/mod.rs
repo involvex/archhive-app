@@ -312,13 +312,13 @@ impl LibraryScanner {
     ) -> AppResult<(Option<String>, Option<String>, Option<String>)> {
         let ffmpeg = FfmpegProcessor::new(app.clone());
         let thumb = ffmpeg.extract_thumbnail(video_path).await.ok();
-        let remuxed = if video_path.extension().and_then(|e| e.to_str()) == Some("mp4") {
-            ffmpeg.remux_faststart(video_path).await.ok()
-        } else {
-            None
-        };
-
-        let final_path: &Path = remuxed.as_deref().unwrap_or(video_path);
+        // Faststart remux in place (same path); a failure keeps the original.
+        if video_path.extension().and_then(|e| e.to_str()) == Some("mp4") {
+            if let Err(e) = ffmpeg.remux_faststart(video_path).await {
+                tracing::info!("[library] faststart remux skipped for {video_path:?}: {e}");
+            }
+        }
+        let final_path: &Path = video_path;
 
         // Offload blocking hash computations to the blocking thread pool.
         let oshash = {
@@ -358,6 +358,41 @@ impl LibraryScanner {
         )?;
 
         Ok((phash, oshash, thumb_str))
+    }
+
+    /// One-time repair for downloads made while the faststart remux was kept
+    /// as a second file: the scene points at `<stem>.remux.mp4` and the
+    /// original `<stem>.mp4` sits next to it (sometimes imported by a scan
+    /// as a second scene). Keep the remux under the original name, delete
+    /// the duplicate file and any scene row that only referenced it.
+    /// Returns how many scenes were repaired.
+    pub fn fold_remux_copies(db: &Database) -> AppResult<u32> {
+        let mut fixed = 0;
+        for (id, path) in db.scenes_with_path_suffix(".remux.mp4")? {
+            let remux = Path::new(&path);
+            let Some(original) = path.strip_suffix(".remux.mp4").map(|s| format!("{s}.mp4")) else {
+                continue;
+            };
+            let original_path = Path::new(&original);
+            if remux.exists() {
+                // A scan may have imported the duplicate original as its own
+                // scene; this download's scene (with metadata) wins.
+                for other in db.scene_ids_with_path(&original)? {
+                    if other != id {
+                        db.delete_scene(&other, false)?;
+                    }
+                }
+                if original_path.exists() {
+                    std::fs::remove_file(original_path)?;
+                }
+                std::fs::rename(remux, original_path)?;
+            } else if !original_path.exists() {
+                continue;
+            }
+            db.update_scene_path(&id, &original, None)?;
+            fixed += 1;
+        }
+        Ok(fixed)
     }
 
     /// (Re)compute MD5 + OSHASH for every library file missing them, without
@@ -447,5 +482,63 @@ impl LibraryScanner {
             rehashed: rehashed.load(std::sync::atomic::Ordering::Relaxed),
             errors: errors.load(std::sync::atomic::Ordering::Relaxed),
         })
+    }
+}
+
+#[cfg(test)]
+mod remux_fold_tests {
+    use super::*;
+
+    #[test]
+    fn folds_remux_copy_back_and_drops_duplicate_scene() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::new(dir.path().to_path_buf()).unwrap();
+        let original = dir.path().join("clip.mp4");
+        let remux = dir.path().join("clip.remux.mp4");
+        std::fs::write(&original, b"original").unwrap();
+        std::fs::write(&remux, b"remuxed").unwrap();
+        let s = |p: &Path| p.to_string_lossy().to_string();
+        let download = db
+            .insert_scene(
+                "clip",
+                Some(&s(&remux)),
+                Some("https://site.test/v/1"),
+                &[],
+                &[],
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+        // A scan imported the leftover original as its own scene.
+        let scanned = db
+            .insert_scene(
+                "clip",
+                Some(&s(&original)),
+                None,
+                &[],
+                &[],
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+
+        assert_eq!(LibraryScanner::fold_remux_copies(&db).unwrap(), 1);
+        assert!(!remux.exists());
+        assert_eq!(std::fs::read(&original).unwrap(), b"remuxed");
+        assert_eq!(
+            db.get_scene(&download).unwrap().path.as_deref(),
+            Some(s(&original).as_str())
+        );
+        assert!(db.get_scene(&scanned).is_err());
+        // Idempotent.
+        assert_eq!(LibraryScanner::fold_remux_copies(&db).unwrap(), 0);
     }
 }

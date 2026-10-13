@@ -2029,6 +2029,39 @@ impl Database {
     }
 
     /// Load all known scene paths into a HashSet for O(1) lookups during scan.
+    /// `(id, path)` of scenes whose file path ends with `suffix`.
+    pub fn scenes_with_path_suffix(&self, suffix: &str) -> AppResult<Vec<(String, String)>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let mut stmt = conn.prepare("SELECT id, path FROM scenes WHERE path LIKE ?1")?;
+        // `ends_with` below is the real filter; LIKE only narrows the scan.
+        let pattern = format!("%{suffix}");
+        let rows = stmt.query_map(params![pattern], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            let (id, path) = row?;
+            if path.ends_with(suffix) {
+                out.push((id, path));
+            }
+        }
+        Ok(out)
+    }
+
+    /// Ids of scenes whose file path is exactly `path`.
+    pub fn scene_ids_with_path(&self, path: &str) -> AppResult<Vec<String>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let mut stmt = conn.prepare("SELECT id FROM scenes WHERE path = ?1")?;
+        let rows = stmt.query_map(params![path], |row| row.get::<_, String>(0))?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(AppError::from)
+    }
+
     pub fn all_scene_paths(&self) -> AppResult<std::collections::HashSet<String>> {
         let conn = self
             .conn

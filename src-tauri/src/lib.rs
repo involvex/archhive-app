@@ -222,6 +222,24 @@ pub fn run() {
             });
         }
 
+        // One-time repair: downloads that kept a second `.remux.mp4` copy.
+        {
+            let db = state.db.clone();
+            tauri::async_runtime::spawn(async move {
+                match tokio::task::spawn_blocking(move || {
+                    crate::library::LibraryScanner::fold_remux_copies(&db)
+                })
+                .await
+                {
+                    Ok(Ok(n)) if n > 0 => {
+                        tracing::info!("[library] removed {n} duplicate .remux.mp4 copies")
+                    }
+                    Ok(Err(e)) => tracing::warn!("[library] remux cleanup failed: {e}"),
+                    _ => {}
+                }
+            });
+        }
+
         // #19 watchlist auto-queue poller (desktop only).
         #[cfg(not(mobile))]
         state.spawn_watchlist_poller();

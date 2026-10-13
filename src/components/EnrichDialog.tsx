@@ -94,7 +94,9 @@ export function EnrichDialog({ scene, open, onClose, onApplied }: EnrichDialogPr
         setCandidates(matches);
         setSelectedId(matches[0]?.stash_id ?? null);
         if (matches.length === 0) {
-          setStatus("No fingerprint match — try a title search below.");
+          setStatus(
+            "No fingerprint match, and a text search for this title found nothing. Try a performer, studio or a few title words below.",
+          );
         }
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e) || "Query failed");
@@ -116,7 +118,7 @@ export function EnrichDialog({ scene, open, onClose, onApplied }: EnrichDialogPr
       const matches = await api.searchStashdbScenes(queryTitle.trim(), endpointId || undefined);
       setCandidates(matches);
       setSelectedId(matches[0]?.stash_id ?? null);
-      if (matches.length === 0) setStatus("No matches for that title.");
+      if (matches.length === 0) setStatus("No matches — try fewer or different words.");
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e) || "Search failed");
     } finally {
@@ -259,14 +261,14 @@ export function EnrichDialog({ scene, open, onClose, onApplied }: EnrichDialogPr
             ) : (
               !error && (
                 <p className="text-sm text-[var(--color-muted-foreground)]">
-                  No matches yet — try a title search.
+                  No matches yet — search by performer, studio or title words.
                 </p>
               )
             )}
 
             <div className="mt-3 flex gap-2">
               <Input
-                placeholder="Search by title…"
+                placeholder="Performer, studio or title words…"
                 value={queryTitle}
                 onChange={(e) => setQueryTitle(e.target.value)}
                 onKeyDown={(e) => {

@@ -3,10 +3,15 @@
 /// Settings use placeholders like `{performer}/{title}.{ext}`. yt-dlp expects
 /// `%(uploader)s/%(title)s.%(ext)s`. Without conversion, files are written to a
 /// literal path named `{performer}/{title}.{ext}`.
+/// yt-dlp field for `{performer}` / `{uploader}` / `{channel}`: the uploader,
+/// else the channel, else the site's domain. Many tube sites report no
+/// uploader, and plain `%(uploader)s` then files them under a literal `NA/`.
+const UPLOADER: &str = "%(uploader,channel,webpage_url_domain|Unknown)s";
+
 pub fn to_ytdlp_output_template(template: &str) -> String {
     let trimmed = template.trim();
     if trimmed.is_empty() {
-        return "%(uploader)s/%(title)s.%(ext)s".to_string();
+        return format!("{UPLOADER}/%(title)s.%(ext)s");
     }
     // Already a yt-dlp template.
     if trimmed.contains("%(") {
@@ -15,9 +20,9 @@ pub fn to_ytdlp_output_template(template: &str) -> String {
 
     let mut out = trimmed.to_string();
     let replacements = [
-        ("{performer}", "%(uploader)s"),
-        ("{channel}", "%(uploader)s"),
-        ("{uploader}", "%(uploader)s"),
+        ("{performer}", UPLOADER),
+        ("{channel}", UPLOADER),
+        ("{uploader}", UPLOADER),
         ("{title}", "%(title)s"),
         ("{ext}", "%(ext)s"),
         ("{id}", "%(id)s"),
@@ -29,14 +34,14 @@ pub fn to_ytdlp_output_template(template: &str) -> String {
         out = out.replace(from, to);
     }
     // Common brace variants users might type.
-    out = out.replace("{Performer}", "%(uploader)s");
+    out = out.replace("{Performer}", UPLOADER);
     out = out.replace("{Title}", "%(title)s");
     out = out.replace("{Ext}", "%(ext)s");
 
     if !out.contains("%(") {
         // Unknown brace template — fall back to a safe default rather than
         // writing a literal `{foo}` path again.
-        return "%(uploader)s/%(title)s.%(ext)s".to_string();
+        return format!("{UPLOADER}/%(title)s.%(ext)s");
     }
     out
 }
@@ -49,7 +54,7 @@ mod tests {
     fn converts_default_archhive_template() {
         assert_eq!(
             to_ytdlp_output_template("{performer}/{title}.{ext}"),
-            "%(uploader)s/%(title)s.%(ext)s"
+            "%(uploader,channel,webpage_url_domain|Unknown)s/%(title)s.%(ext)s"
         );
     }
 
@@ -63,7 +68,7 @@ mod tests {
     fn empty_falls_back() {
         assert_eq!(
             to_ytdlp_output_template("  "),
-            "%(uploader)s/%(title)s.%(ext)s"
+            "%(uploader,channel,webpage_url_domain|Unknown)s/%(title)s.%(ext)s"
         );
     }
 }

@@ -165,7 +165,38 @@ impl FfmpegProcessor {
         Ok(())
     }
 
+    /// Move the MP4 index (`moov`) to the front so playback can start before
+    /// the whole file is read, replacing the file in place. The remux goes to
+    /// a temporary `<stem>.remux.mp4` that replaces the original once it is
+    /// complete; on any failure the original is left untouched and the
+    /// temporary file removed, so only one copy of the video remains.
     pub async fn remux_faststart(&self, video_path: &Path) -> AppResult<PathBuf> {
+        let tmp = self.remux_faststart_copy(video_path).await;
+        let tmp = match tmp {
+            Ok(p) => p,
+            Err(e) => {
+                let _ = std::fs::remove_file(video_path.with_extension("remux.mp4"));
+                return Err(e);
+            }
+        };
+        let original_len = std::fs::metadata(video_path).map(|m| m.len()).unwrap_or(0);
+        let remux_len = std::fs::metadata(&tmp).map(|m| m.len()).unwrap_or(0);
+        // A stream copy keeps the size within a few percent; anything much
+        // smaller is a truncated remux.
+        if remux_len == 0 || remux_len < original_len / 10 * 9 {
+            let _ = std::fs::remove_file(&tmp);
+            return Err(crate::error::AppError::Other(format!(
+                "remux produced an incomplete file ({remux_len} of {original_len} bytes)"
+            )));
+        }
+        if let Err(e) = std::fs::rename(&tmp, video_path) {
+            let _ = std::fs::remove_file(&tmp);
+            return Err(e.into());
+        }
+        Ok(video_path.to_path_buf())
+    }
+
+    async fn remux_faststart_copy(&self, video_path: &Path) -> AppResult<PathBuf> {
         let out_path = video_path.with_extension("remux.mp4");
         let args = vec![
             "-y".to_string(),

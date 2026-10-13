@@ -77,6 +77,35 @@ static SEARCH_SCENES_QUERY: std::sync::LazyLock<String> = std::sync::LazyLock::n
     )
 });
 
+/// Full-text search over titles, performers and studios (what Stash's own
+/// Tagger uses). `queryScenes(title:)` above only filters titles, so a
+/// performer name or a tube title with extra words never matched.
+static SEARCH_SCENES_TERM_QUERY: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+    format!(
+        r#"query SearchScenesTerm($term: String!) {{
+  searchScenes(term: $term, per_page: 15) {{
+    count
+    scenes {{
+      {SCENE_SELECTION}
+    }}
+  }}
+}}
+"#
+    )
+});
+
+/// Older stash-box servers: the deprecated list form.
+static SEARCH_SCENE_LEGACY_QUERY: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+    format!(
+        r#"query SearchSceneLegacy($term: String!) {{
+  searchScene(term: $term, limit: 15) {{
+    {SCENE_SELECTION}
+  }}
+}}
+"#
+    )
+});
+
 const SEARCH_PERFORMERS_QUERY: &str = r#"
 query SearchPerformers($name: String!) {
   queryPerformers(input: { name: $name, per_page: 10 }) {
@@ -263,21 +292,43 @@ impl StashBoxClient {
         Ok(Some(m))
     }
 
-    /// Title search fallback when no fingerprints match. The box treats
-    /// `title` as a LIKE query unless quoted.
+    /// Text search when no fingerprints match: titles, performers and
+    /// studios (`searchScenes`), falling back to the deprecated
+    /// `searchScene` and then the title-only `queryScenes` filter on boxes
+    /// that lack them.
     pub async fn search_scenes(&self, title: &str) -> AppResult<Vec<StashSceneMatch>> {
-        let title = title.trim();
-        if title.is_empty() {
+        let term = search_term(title);
+        if term.is_empty() {
             return Err(AppError::InvalidInput("title is required".into()));
         }
-        let data = self
-            .graphql_scenes(SEARCH_SCENES_QUERY.as_str(), json!({ "title": title }))
-            .await?;
-        let raw = data
-            .get("queryScenes")
-            .and_then(|q| q.get("scenes"))
-            .cloned()
-            .unwrap_or(Value::Null);
+        let vars = json!({ "term": term });
+        let raw = match self
+            .graphql_scenes(SEARCH_SCENES_TERM_QUERY.as_str(), vars.clone())
+            .await
+        {
+            Ok(data) => data
+                .get("searchScenes")
+                .and_then(|q| q.get("scenes"))
+                .cloned()
+                .unwrap_or(Value::Null),
+            Err(AppError::Site(msg)) if msg.contains("searchScenes") => {
+                match self
+                    .graphql_scenes(SEARCH_SCENE_LEGACY_QUERY.as_str(), vars)
+                    .await
+                {
+                    Ok(data) => data.get("searchScene").cloned().unwrap_or(Value::Null),
+                    Err(AppError::Site(msg)) if msg.contains("searchScene") => self
+                        .graphql_scenes(SEARCH_SCENES_QUERY.as_str(), json!({ "title": term }))
+                        .await?
+                        .get("queryScenes")
+                        .and_then(|q| q.get("scenes"))
+                        .cloned()
+                        .unwrap_or(Value::Null),
+                    Err(e) => return Err(e),
+                }
+            }
+            Err(e) => return Err(e),
+        };
         let mut out = Vec::new();
         flatten_scene_values(&raw, &mut out);
         for m in &mut out {
@@ -367,6 +418,25 @@ impl StashBoxClient {
 /// `FingerprintQueryInput` rows (`{ hash, algorithm }`) for the hashes worth
 /// sending. Our thumbnail phash is excluded: Stash stores int64 phashes and
 /// ours (base64, different algorithm) could never match.
+/// Tube titles → a search term: emoji and decoration dropped, words kept
+/// ("🔥❤️SisLovesMe - Lacy Lennon Fucks Her Stepbro" →
+/// "SisLovesMe Lacy Lennon Fucks Her Stepbro").
+fn search_term(title: &str) -> String {
+    title
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '\'' || c == '.' {
+                c
+            } else {
+                ' '
+            }
+        })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 fn fingerprint_inputs(md5: Option<&str>, oshash: Option<&str>) -> Vec<Value> {
     let mut inputs = Vec::new();
     if let Some(h) = md5.filter(|h| !h.trim().is_empty()) {
@@ -522,6 +592,17 @@ fn parse_performer_value(v: &Value) -> Option<StashPerformerMatch> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn search_term_strips_decoration() {
+        assert_eq!(
+            search_term("🔥❤️SisLovesMe - Lacy Lennon Fucks Her Stepbro"),
+            "SisLovesMe Lacy Lennon Fucks Her Stepbro"
+        );
+        assert_eq!(search_term("  Lacy Lennon "), "Lacy Lennon");
+        assert_eq!(search_term("🔥❤️"), "");
+    }
+
     use super::*;
 
     // Keeps the shared selection pasted into each query in sync: every query

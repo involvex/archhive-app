@@ -255,7 +255,8 @@ export function IdentifyDialog({ open, onClose, onDone }: IdentifyDialogProps) {
                     )}
                     {row.state === "nomatch" && (
                       <p className="text-xs text-[var(--color-muted-foreground)]">
-                        No fingerprint match — try Enrich for a title search.
+                        No fingerprint match — open the scene's Enrich to search by performer,
+                        studio or title.
                       </p>
                     )}
                     {row.state === "error" && (
