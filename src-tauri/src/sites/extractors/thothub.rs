@@ -148,6 +148,7 @@ pub(crate) fn is_kvs_placeholder(url: &str) -> bool {
         "/na.mp4",
         "/removed.mp4",
         "/deleted.mp4",
+        "/video_error.mp4",
     ]
     .iter()
     .any(|p| path.ends_with(p))

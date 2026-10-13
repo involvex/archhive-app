@@ -12,6 +12,7 @@ pub mod challenge;
 pub mod details;
 pub mod extractors;
 pub mod listing;
+pub mod native;
 pub mod registry;
 pub mod throttle;
 pub mod urls;

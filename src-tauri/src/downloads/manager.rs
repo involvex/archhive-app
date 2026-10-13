@@ -486,11 +486,32 @@ async fn download_via_webview(
     app: &AppHandle,
     plan: &DownloadPlan,
     library_path: &str,
-    mut on_progress: impl FnMut(Option<f32>),
+    on_progress: impl FnMut(Option<f32>),
 ) -> AppResult<String> {
     let media = crate::sites::challenge::resolve_via_webview(app, &plan.url).await?;
-    let is_hls = media
-        .url
+    download_resolved(
+        app,
+        plan,
+        library_path,
+        &media.url,
+        &media.referer,
+        media.cookie.as_deref(),
+        on_progress,
+    )
+    .await
+}
+
+/// Fetch an already-resolved stream URL (MP4 directly, HLS via ffmpeg).
+async fn download_resolved(
+    app: &AppHandle,
+    plan: &DownloadPlan,
+    library_path: &str,
+    media_url: &str,
+    referer: &str,
+    cookie: Option<&str>,
+    mut on_progress: impl FnMut(Option<f32>),
+) -> AppResult<String> {
+    let is_hls = media_url
         .split(['?', '#'])
         .next()
         .is_some_and(|p| p.to_ascii_lowercase().ends_with(".m3u8"));
@@ -506,10 +527,10 @@ async fn download_via_webview(
         );
         let result = FfmpegProcessor::new(app.clone())
             .download_hls(
-                &media.url,
+                media_url,
                 &out_path,
-                Some(&media.referer),
-                media.cookie.as_deref(),
+                Some(referer),
+                cookie,
                 plan.duration,
                 Some(on_progress),
             )
@@ -522,11 +543,11 @@ async fn download_via_webview(
     }
     let mut last_reported = 0u64;
     crate::downloads::image::download_direct(
-        &media.url,
+        media_url,
         library_path,
         plan.title.as_deref(),
-        Some(&media.referer),
-        media.cookie.as_deref(),
+        Some(referer),
+        cookie,
         Some(|downloaded: u64, total: Option<u64>| {
             let done = total.is_some_and(|t| downloaded >= t);
             if downloaded >= last_reported + 1024 * 1024 || done {
@@ -719,6 +740,30 @@ async fn run_job_with_plan(
             if path_result.is_err() && !cancel.load(Ordering::Relaxed) {
                 return handle_stopped(&db, &app, &job_id);
             }
+            // Pages yt-dlp has no extractor for but a native resolver knows.
+            let path_result = match path_result {
+                Err(e) if e.to_string().contains("Unsupported URL") => {
+                    match crate::sites::native::resolve_download(&plan.url).await {
+                        Some(Ok(media)) => {
+                            download_resolved(
+                                &app,
+                                plan,
+                                library_path,
+                                &media,
+                                &plan.url,
+                                None,
+                                |p| {
+                                    update_progress(&db_emit, &app_emit, &job_id_emit, "", p);
+                                },
+                            )
+                            .await
+                        }
+                        Some(Err(ne)) => Err(AppError::Download(format!("{ne} ({e})"))),
+                        None => Err(e),
+                    }
+                }
+                other => other,
+            };
             #[cfg(target_os = "android")]
             let path_result = match path_result {
                 Err(e)

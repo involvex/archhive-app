@@ -1474,6 +1474,15 @@ impl AppState {
             return adapter.resolve_stream_url(&self.site_ctx, url).await;
         }
 
+        // KVS session links / site APIs yt-dlp can't play or doesn't know.
+        if let Some(result) =
+            crate::sites::native::resolve_stream(&self.site_ctx, url, &site_id).await
+        {
+            return result.map(|stream| {
+                crate::sites::adapters::pornhub::maybe_loopback_proxy(&self.site_ctx, &stream, url)
+            });
+        }
+
         let runner = crate::sites::yt_dlp::SidecarRunner::new(self.site_ctx.app().clone());
         let cookies = self.site_ctx.cookie_file_for_site(&site_id);
         let mut args = vec![
