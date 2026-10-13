@@ -9,8 +9,10 @@ import { SkeletonGrid } from "@/components/SkeletonGrid";
 import { EmptyState } from "@/components/EmptyState";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Radio, Search } from "lucide-react";
+import { Radio, Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { SiteAvatar } from "@/components/SitePicker";
+import { useMediaQuery } from "@/lib/hooks/useMediaQuery";
 
 export const Route = createFileRoute("/live/")({
   component: LiveIndexPage,
@@ -28,6 +30,8 @@ function LiveIndexPage() {
   const [error, setError] = useState("");
   const [infoItem, setInfoItem] = useState<MediaItem | null>(null);
   const [selectedSite, setSelectedSite] = useState<string>("chaturbate");
+  const isPhone = useMediaQuery("(max-width: 767px)");
+  const siteLabel = LIVE_SITES.find((s) => s.id === selectedSite)?.label ?? "streams";
 
   const loadPopular = useCallback(async (site: string) => {
     setLoading(true);
@@ -86,39 +90,68 @@ function LiveIndexPage() {
         <h2 className="text-2xl font-bold">Live Streams</h2>
       </div>
 
-      {/* Site selector chips */}
-      <div className="flex gap-2">
+      {/* Site selector */}
+      <div className="grid grid-cols-2 gap-2 sm:flex">
         {LIVE_SITES.map((site) => (
           <button
             key={site.id}
             type="button"
             onClick={() => handleSiteChange(site.id)}
+            aria-pressed={selectedSite === site.id}
             className={cn(
-              "rounded-full px-4 py-1.5 text-sm font-medium transition-colors",
+              "flex min-h-12 items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium transition active:scale-[0.97] sm:min-w-44",
               selectedSite === site.id
-                ? "bg-[var(--color-primary)] text-[var(--color-primary-foreground)]"
-                : "bg-[var(--color-muted)] text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)]",
+                ? "bg-[var(--color-primary)]/15 ring-2 ring-[var(--color-primary)]"
+                : "bg-[var(--color-secondary)] hover:bg-[var(--color-muted)]",
             )}
           >
+            <SiteAvatar site={{ id: site.id, display_name: site.label }} size="sm" />
             {site.label}
           </button>
         ))}
       </div>
 
       {/* Search */}
-      <div className="flex gap-2 max-w-md">
-        <Input
-          placeholder={`Search ${LIVE_SITES.find((s) => s.id === selectedSite)?.label ?? "streams"}...`}
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") void loadSearch(selectedSite);
-          }}
-        />
-        <Button onClick={() => loadSearch(selectedSite)} disabled={loading}>
-          Search
+      <form
+        className="flex gap-2 md:max-w-md"
+        onSubmit={(e) => {
+          e.preventDefault();
+          (document.activeElement as HTMLElement | null)?.blur();
+          void loadSearch(selectedSite);
+        }}
+      >
+        <div className="relative min-w-0 flex-1">
+          <Input
+            className="h-11 pr-9 text-base md:h-9 md:text-sm"
+            placeholder={`Search ${siteLabel} rooms…`}
+            value={query}
+            enterKeyHint="search"
+            onChange={(e) => setQuery(e.target.value)}
+          />
+          {query && (
+            <button
+              type="button"
+              aria-label="Clear search"
+              className="absolute right-1 top-1/2 -translate-y-1/2 rounded p-2 text-[var(--color-muted-foreground)]"
+              onClick={() => {
+                setQuery("");
+                void loadPopular(selectedSite);
+              }}
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+        <Button
+          type="submit"
+          disabled={loading || !query.trim()}
+          className="h-11 w-11 shrink-0 p-0 md:h-9 md:w-auto md:px-4"
+          aria-label="Search"
+        >
+          <Search className="h-4 w-4 md:mr-1.5" />
+          <span className="hidden md:inline">Search</span>
         </Button>
-      </div>
+      </form>
 
       {error && (
         <>
@@ -134,7 +167,7 @@ function LiveIndexPage() {
         </>
       )}
 
-      <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 md:grid-cols-4 md:gap-3 lg:grid-cols-5 xl:grid-cols-6">
         {items.map((item) => (
           <Link
             key={item.id}
@@ -148,12 +181,12 @@ function LiveIndexPage() {
               searchQuery: query.trim(),
             }}
           >
-            <SceneCard item={item} onInfo={(i) => setInfoItem(i)} />
+            <SceneCard item={item} onInfo={(i) => setInfoItem(i)} compactActions={isPhone} />
           </Link>
         ))}
       </div>
 
-      {loading && !error && <SkeletonGrid count={12} cols={3} />}
+      {loading && !error && <SkeletonGrid count={12} cols={isPhone ? 2 : 4} />}
 
       {!loading && items.length === 0 && !error && (
         <EmptyState

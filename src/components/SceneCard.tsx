@@ -9,6 +9,7 @@ import {
   Check,
   Clock,
   Download,
+  Eye,
   Info,
   Play,
   Pencil,
@@ -26,6 +27,12 @@ export interface CardWatchState {
 type CardItem = MediaItem | Scene;
 
 export type { CardItem };
+
+function formatViewers(n: number): string {
+  if (n >= 10_000) return `${Math.round(n / 1000)}k`;
+  if (n >= 1_000) return `${(n / 1000).toFixed(1)}k`;
+  return String(n);
+}
 
 interface SceneCardProps {
   item: CardItem;
@@ -500,6 +507,17 @@ export function SceneCard({
           </div>
         )}
 
+        {"is_live" in item && item.is_live && (
+          <span className="absolute bottom-1.5 left-1.5 flex items-center gap-1.5 rounded bg-black/75 px-1.5 py-0.5 text-[11px] font-medium text-white">
+            <span className="rounded-sm bg-red-600 px-1 text-[10px] font-bold leading-4">LIVE</span>
+            {item.viewers != null && (
+              <span className="flex items-center gap-0.5 tabular-nums">
+                <Eye className="h-3 w-3" />
+                {formatViewers(item.viewers)}
+              </span>
+            )}
+          </span>
+        )}
         {duration != null && duration > 0 && (
           <span className="absolute bottom-1.5 right-1.5 rounded bg-black/75 px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-white flex items-center gap-1">
             <Clock className="h-3 w-3" />
@@ -606,11 +624,13 @@ export function SceneCard({
           </div>
         )}
 
-        {(channel || performers.length > 0) && (
-          <p className="text-[10px] text-[var(--color-muted-foreground)] truncate">
-            {channel || performers.join(", ")}
-          </p>
-        )}
+        {(channel || performers.length > 0) &&
+          (channel || performers.join(", ")).trim().toLowerCase() !==
+            title.trim().toLowerCase() && (
+            <p className="text-[10px] text-[var(--color-muted-foreground)] truncate">
+              {channel || performers.join(", ")}
+            </p>
+          )}
 
         {tags.length > 0 && (
           <div className="flex flex-wrap gap-1">
