@@ -47,6 +47,11 @@ interface SceneCardProps {
    * files play without a LAN connection. Explicit `false` hides it.
    */
   offline?: boolean | null;
+  /**
+   * Phone grids: Info / Download become small icon buttons on the thumbnail
+   * instead of a full-width button row under the title.
+   */
+  compactActions?: boolean;
 }
 
 function isMediaItem(item: CardItem): item is MediaItem {
@@ -132,6 +137,7 @@ export function SceneCard({
   listView = false,
   watch,
   offline = null,
+  compactActions = false,
 }: SceneCardProps) {
   const title = getItemTitle(item);
   const performers = getItemPerformers(item);
@@ -463,8 +469,39 @@ export function SceneCard({
           </div>
         )}
 
+        {compactActions && !selectionMode && (onInfo || onDownload) && (
+          <div className="absolute top-1 right-1 z-10 flex gap-1">
+            {onInfo && (
+              <button
+                type="button"
+                className="flex h-7 w-7 items-center justify-center rounded-full bg-black/55 text-white backdrop-blur-sm active:scale-90"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onInfo(item as MediaItem);
+                }}
+                aria-label="Info"
+              >
+                <Info className="h-3.5 w-3.5" />
+              </button>
+            )}
+            {onDownload && (
+              <button
+                type="button"
+                className="flex h-7 w-7 items-center justify-center rounded-full bg-black/55 text-white backdrop-blur-sm active:scale-90"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDownload(item as MediaItem);
+                }}
+                aria-label="Download"
+              >
+                <Download className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+        )}
+
         {duration != null && duration > 0 && (
-          <span className="absolute bottom-2 right-2 rounded bg-black/70 px-1.5 py-0.5 text-xs flex items-center gap-1">
+          <span className="absolute bottom-1.5 right-1.5 rounded bg-black/75 px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-white flex items-center gap-1">
             <Clock className="h-3 w-3" />
             {formatDuration(duration)}
             {fileSize != null && fileSize > 0 && (
@@ -588,7 +625,7 @@ export function SceneCard({
           </div>
         )}
 
-        {hasActions && (
+        {hasActions && !compactActions && (
           <div className="flex gap-1.5 pt-1">
             {onInfo && (
               <Button
