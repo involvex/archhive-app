@@ -3,20 +3,11 @@ use crate::sites::SiteContext;
 use regex::Regex;
 use std::sync::OnceLock;
 
-/// Best-effort direct MP4 extraction for ThotHub / Kernel Video Sharing pages.
-///
-/// KVS players embed `video_url` / `video_alt_url*` (and `license_code`) in a
-/// page script. Newer builds already expose plain `/get_file/...` HTTPS URLs;
-/// older ones prefix obfuscated URLs with `function/0/` which we decode using
-/// the same license-token swap as yt-dlp's generic KVS extractor.
-///
-/// Returns `Ok(None)` when nothing playable is found so callers can fall back
-/// to yt-dlp (desktop) or surface a clear error (mobile).
-pub async fn extract_stream_url(ctx: &SiteContext, url: &str) -> AppResult<Option<String>> {
-    let html = ctx.fetch_html(url, "thothub").await?;
-    Ok(pick_best_stream(&html, url))
-}
-
+/// Direct MP4 extraction for Kernel Video Sharing (KVS) sites — ThotHub,
+/// ThisVid. KVS players embed `video_url` / `video_alt_url*` (and
+/// `license_code`) in a page script. Newer builds expose plain
+/// `/get_file/...` URLs; older ones prefix obfuscated URLs with `function/0/`,
+/// decoded with the same license-token swap as yt-dlp's generic KVS extractor.
 /// Resolve a KVS (ThotHub, ThisVid) video page to a playable CDN URL.
 ///
 /// KVS `get_file` links only work inside the session that loaded the page
