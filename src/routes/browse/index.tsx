@@ -25,6 +25,7 @@ import {
   Bookmark,
   RefreshCw,
   Trash2,
+  X,
   Zap,
   ZapOff,
 } from "lucide-react";
@@ -70,7 +71,16 @@ function useRecentSearches() {
     });
   }, []);
 
-  return { recent, addRecent };
+  const clearRecent = useCallback(() => {
+    setRecent([]);
+    try {
+      localStorage.removeItem("archhive_recent_searches");
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  return { recent, addRecent, clearRecent };
 }
 
 function BrowsePage() {
@@ -78,7 +88,7 @@ function BrowsePage() {
   const navigate = useNavigate();
   const { settings } = useSettingsStore();
   const isMobile = isMobileDevice();
-  const { recent, addRecent } = useRecentSearches();
+  const { recent, addRecent, clearRecent } = useRecentSearches();
   const [sites, setSites] = useState<SiteInfo[]>(() => mergeSiteLists([], getPluginBrowseSites()));
 
   const [selectedSite, setSelectedSite] = useState("auto");
@@ -507,16 +517,26 @@ function BrowsePage() {
       {recent.length > 0 && (
         <Card>
           <CardContent className="p-4 space-y-3">
-            <div className="flex items-center gap-2 text-sm font-medium">
-              <Clock className="h-4 w-4" />
-              Recent searches
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <Clock className="h-4 w-4" />
+                Recent searches
+              </div>
+              <button
+                type="button"
+                onClick={clearRecent}
+                className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs text-[var(--color-muted-foreground)] hover:text-[var(--color-foreground)]"
+                title="Clear recent searches"
+              >
+                <X className="h-3 w-3" /> Clear
+              </button>
             </div>
-            <div className="grid gap-1">
+            <div className="grid grid-cols-1 gap-1">
               {recent.map((r) => (
                 <button
                   key={`${r.site}-${r.kind}-${r.slug}`}
                   type="button"
-                  className="flex items-center justify-between rounded-md px-3 py-2 text-sm hover:bg-[var(--color-muted)] transition text-left"
+                  className="flex min-w-0 items-center justify-between gap-2 rounded-md px-3 py-2 text-sm hover:bg-[var(--color-muted)] transition text-left"
                   onClick={() => {
                     setSelectedSite(r.site);
                     setSearchInput(r.slug);
@@ -526,14 +546,16 @@ function BrowsePage() {
                     });
                   }}
                 >
-                  <span className="flex items-center gap-2">
-                    <span className="text-xs text-[var(--color-muted-foreground)] capitalize">
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className="shrink-0 text-xs text-[var(--color-muted-foreground)] capitalize">
                       {r.site}
                     </span>
-                    <span className="text-xs text-[var(--color-muted-foreground)]">{r.kind}:</span>
-                    <span>{r.slug}</span>
+                    <span className="shrink-0 text-xs text-[var(--color-muted-foreground)]">
+                      {r.kind}:
+                    </span>
+                    <span className="truncate">{r.slug}</span>
                   </span>
-                  <ArrowRight className="h-3.5 w-3.5 text-[var(--color-muted-foreground)]" />
+                  <ArrowRight className="h-3.5 w-3.5 shrink-0 text-[var(--color-muted-foreground)]" />
                 </button>
               ))}
             </div>
@@ -586,11 +608,13 @@ function BrowsePage() {
               watch it for new content.
             </p>
           ) : (
-            <div className="grid gap-1">
+            <div className="grid grid-cols-1 gap-1">
               {saved.map((s) => (
                 <div
                   key={s.id}
-                  className="flex items-center justify-between gap-2 rounded-md px-3 py-2 text-sm hover:bg-[var(--color-muted)] transition"
+                  // min-w-0: grid items default to their content width, so a
+                  // long name pushed the action buttons off-screen on phones.
+                  className="flex min-w-0 items-center justify-between gap-1 rounded-md py-2 pr-1 pl-3 text-sm hover:bg-[var(--color-muted)] transition"
                 >
                   <button
                     type="button"
@@ -605,12 +629,12 @@ function BrowsePage() {
                       });
                     }}
                   >
-                    <span className="min-w-0 flex-1 truncate">
-                      <span className="font-medium">{s.name}</span>{" "}
-                      <span className="text-xs text-[var(--color-muted-foreground)]">
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-medium">{s.name}</span>
+                      <span className="block truncate text-xs text-[var(--color-muted-foreground)]">
                         {s.last_checked_at
-                          ? `· checked ${new Date(s.last_checked_at).toLocaleString()}`
-                          : "· never checked"}
+                          ? `Checked ${new Date(s.last_checked_at).toLocaleString()}`
+                          : "Never checked"}
                       </span>
                     </span>
                     {s.new_count > 0 && (
