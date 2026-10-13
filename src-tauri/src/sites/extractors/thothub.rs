@@ -17,6 +17,126 @@ pub async fn extract_stream_url(ctx: &SiteContext, url: &str) -> AppResult<Optio
     Ok(pick_best_stream(&html, url))
 }
 
+/// Resolve a KVS (ThotHub, ThisVid) video page to a playable CDN URL.
+///
+/// KVS `get_file` links only work inside the session that loaded the page
+/// (PHPSESSID / kt_* cookies): fetched by anyone else — yt-dlp's own
+/// session, or the WebView — they redirect to a placeholder clip
+/// (ThisVid `processing.mp4`, ThotHub `fu.mp4`). So the page is loaded in a
+/// fresh cookie session (plus the user's imported cookies for the site) and
+/// `get_file` is followed in that same session; the signed CDN URL it
+/// redirects to plays without cookies.
+pub async fn resolve_kvs_stream(
+    ctx: &SiteContext,
+    page_url: &str,
+    site_id: &str,
+    site_name: &str,
+) -> AppResult<String> {
+    use crate::error::AppError;
+    use reqwest::cookie::Jar;
+    use std::sync::Arc;
+
+    const UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+    let page = url::Url::parse(page_url)
+        .map_err(|e| AppError::InvalidInput(format!("bad video URL: {e}")))?;
+    let jar = Arc::new(Jar::default());
+    if let Ok(Some(header)) = ctx._vault().cookie_header(site_id) {
+        for pair in header.split(';').map(str::trim).filter(|p| p.contains('=')) {
+            jar.add_cookie_str(pair, &page);
+        }
+    }
+    let client = reqwest::Client::builder()
+        .user_agent(UA)
+        .cookie_provider(jar.clone())
+        .timeout(std::time::Duration::from_secs(30))
+        .build()?;
+    let no_redirect = reqwest::Client::builder()
+        .user_agent(UA)
+        .cookie_provider(jar)
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(std::time::Duration::from_secs(30))
+        .build()?;
+
+    crate::sites::throttle::acquire(page_url).await?;
+    let resp = client.get(page_url).send().await?;
+    let status = resp.status();
+    let html = resp.text().await?;
+    if looks_like_bot_check(&html) {
+        return Err(AppError::Site(format!(
+            "{site_name} is showing a bot check (Cloudflare) to this device. Open Settings → \
+             Cookies → {site_name} → Log in once so the check passes, then try again."
+        )));
+    }
+    if !status.is_success() {
+        return Err(AppError::Site(format!(
+            "{site_name} returned HTTP {status} for the video page."
+        )));
+    }
+    let get_file = pick_best_stream(&html, page_url).ok_or_else(|| {
+        AppError::Site(format!(
+            "No player on this {site_name} page — the video may be private or need you to be \
+             logged in (Settings → Cookies → {site_name})."
+        ))
+    })?;
+
+    crate::sites::throttle::acquire(&get_file).await?;
+    let resp = no_redirect
+        .get(&get_file)
+        .header(reqwest::header::REFERER, page_url)
+        .send()
+        .await?;
+    if resp.status().is_redirection() {
+        let location = resp
+            .headers()
+            .get(reqwest::header::LOCATION)
+            .and_then(|v| v.to_str().ok())
+            .ok_or_else(|| AppError::Site(format!("{site_name} sent an empty redirect")))?;
+        let target = page
+            .join(location)
+            .map_err(|e| AppError::Site(format!("bad redirect from {site_name}: {e}")))?
+            .to_string();
+        if is_kvs_placeholder(&target) {
+            return Err(AppError::Site(format!(
+                "{site_name} served its placeholder clip instead of the video — it may be \
+                 private, still processing, or need login cookies."
+            )));
+        }
+        return Ok(target);
+    }
+    if resp.status().is_success() {
+        return Ok(get_file);
+    }
+    Err(AppError::Site(format!(
+        "{site_name} refused the video file (HTTP {}).",
+        resp.status()
+    )))
+}
+
+/// Cloudflare / DDoS-Guard interstitials instead of the real page.
+fn looks_like_bot_check(html: &str) -> bool {
+    let head = &html[..html.len().min(4000)];
+    head.contains("Just a moment...")
+        || head.contains("cf-chl")
+        || head.contains("challenge-platform")
+        || head.contains("ddos-guard")
+}
+
+/// KVS placeholder clips served when `get_file` is hit outside the session.
+fn is_kvs_placeholder(url: &str) -> bool {
+    let path = url::Url::parse(url)
+        .map(|u| u.path().to_ascii_lowercase())
+        .unwrap_or_default();
+    [
+        "/processing.mp4",
+        "/fu.mp4",
+        "/na.mp4",
+        "/removed.mp4",
+        "/deleted.mp4",
+    ]
+    .iter()
+    .any(|p| path.ends_with(p))
+}
+
 fn pick_best_stream(html: &str, page_url: &str) -> Option<String> {
     let license = extract_license_code(html);
     let mut candidates = collect_video_urls(html);
@@ -77,6 +197,14 @@ fn collect_video_urls(html: &str) -> Vec<(i32, String)> {
             .get(&key)
             .map(|t| parse_height(t))
             .unwrap_or_else(|| parse_height(&url));
+        // The unlabelled main `video_url` is the site's standard quality:
+        // rank it above labelled low-res alternates (ThisVid "240p") but
+        // below labelled HD ones ("720p").
+        let height = if height == 0 && key == "video_url" {
+            480
+        } else {
+            height
+        };
         out.push((height, url));
     }
     out
@@ -210,6 +338,38 @@ var playercfg = {
         let parts: Vec<_> = parsed.path().split('/').collect();
         assert!(parts[3].len() >= 32);
         assert_eq!(parts[3].len(), "0123456789abcdef0123456789abcdefREST".len());
+    }
+
+    #[test]
+    fn main_url_beats_low_res_alternate() {
+        let html = r#"video_url: 'https://thisvid.com/get_file/5/a/1/1/1.mp4/',
+            video_alt_url: 'https://thisvid.com/get_file/5/b/1/1/1_240p.mp4/',
+            video_alt_url_text: '240p',"#;
+        assert_eq!(
+            super::pick_best_stream(html, "https://thisvid.com/videos/x/").as_deref(),
+            Some("https://thisvid.com/get_file/5/a/1/1/1.mp4/")
+        );
+        let hd = r#"video_url: 'https://x.com/get_file/1/a/1.mp4/',
+            video_alt_url: 'https://x.com/get_file/1/b/1_720p.mp4/',
+            video_alt_url_text: '720p',"#;
+        assert!(super::pick_best_stream(hd, "https://x.com/v/")
+            .unwrap()
+            .contains("_720p"));
+    }
+
+    #[test]
+    fn detects_placeholders_and_bot_checks() {
+        assert!(super::is_kvs_placeholder(
+            "http://m.thisvid.com/processing.mp4"
+        ));
+        assert!(super::is_kvs_placeholder("https://thothub.to/fu.mp4"));
+        assert!(!super::is_kvs_placeholder(
+            "https://jupiter4.thisvid.com/key=a,end=1/14830236.mp4"
+        ));
+        assert!(super::looks_like_bot_check(
+            "<html><title>Just a moment...</title>"
+        ));
+        assert!(!super::looks_like_bot_check("<html><title>Video</title>"));
     }
 
     #[test]

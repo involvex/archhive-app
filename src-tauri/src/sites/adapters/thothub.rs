@@ -53,6 +53,13 @@ impl SiteAdapter for ThotHubAdapter {
             Ok(html) => parse_listing(&html, self.id()),
             Err(_) => Vec::new(),
         };
+        // ThotHub thumbnails are hotlink-protected (403 unless the Referer is
+        // ThotHub itself), so the phone loads them through the loopback proxy.
+        for item in &mut items {
+            if let Some(thumb) = item.thumbnail.as_deref() {
+                item.thumbnail = Some(maybe_loopback_proxy(ctx, thumb, BASE));
+            }
+        }
         if items.is_empty() {
             items = match ytdlp_browse_fallback(ctx, self.id(), &url, query.page, 24).await {
                 Ok(fallback) => fallback,
@@ -90,21 +97,20 @@ impl SiteAdapter for ThotHubAdapter {
         })
     }
     async fn resolve_stream_url(&self, ctx: &SiteContext, url: &str) -> AppResult<String> {
-        // Prefer HTTP KVS extraction (works on Android without yt-dlp ThotHub support).
-        if let Ok(Some(stream_url)) =
-            crate::sites::extractors::thothub::extract_stream_url(ctx, url).await
-        {
-            return Ok(maybe_loopback_proxy(ctx, &stream_url, BASE));
+        // KVS session-aware extraction: get_file only works in the session
+        // that loaded the page (otherwise it redirects to the fu.mp4
+        // placeholder). The mirror it redirects to refuses the WebView's own
+        // Referer, so play it through the loopback proxy with ThotHub's.
+        let resolved =
+            crate::sites::extractors::thothub::resolve_kvs_stream(ctx, url, self.id(), "ThotHub")
+                .await;
+        if let Ok(stream_url) = &resolved {
+            return Ok(maybe_loopback_proxy(ctx, stream_url, BASE));
         }
 
         #[cfg(mobile)]
         {
-            return Err(crate::error::AppError::Other(
-                "Could not extract a ThotHub stream from the page. \
-                 Import cookies for thothub in Settings, connect Remote LAN to a desktop host, \
-                 or download the video first."
-                    .to_string(),
-            ));
+            return resolved;
         }
 
         #[cfg(not(mobile))]

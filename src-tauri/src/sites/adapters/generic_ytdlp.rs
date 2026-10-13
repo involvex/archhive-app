@@ -444,6 +444,15 @@ impl SiteAdapter for GenericYtDlpAdapter {
         if let Some(stream_url) = direct {
             return Ok(stream_url);
         }
+        // ThisVid (KVS): yt-dlp's get_file link belongs to yt-dlp's own
+        // session and gives the WebView a "processing.mp4" placeholder, so
+        // resolve the signed CDN URL in our own page session instead.
+        if self.site_id == "thisvid" {
+            return crate::sites::extractors::thothub::resolve_kvs_stream(
+                ctx, url, "thisvid", "ThisVid",
+            )
+            .await;
+        }
 
         let runner = SidecarRunner::new(ctx.app().clone());
         let cookies = ctx.cookie_file_for_site(self.site_id);
