@@ -1,6 +1,15 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Bookmark, BookmarkCheck, EyeOff, LayoutGrid, List, Search } from "lucide-react";
+import {
+  ArrowLeft,
+  Bookmark,
+  BookmarkCheck,
+  EyeOff,
+  LayoutGrid,
+  List,
+  Search,
+  SlidersHorizontal,
+} from "lucide-react";
 import { api, browseFiltersKey } from "@/lib/api/client";
 import { useSiteInfo } from "@/lib/sites/useSiteInfo";
 import { siteHasCategories } from "@/lib/sites/catalog";
@@ -8,10 +17,14 @@ import { groupForText, loadSiteCategories } from "@/components/SiteCategoryBrows
 import { CategoryIncludeExclude } from "@/components/CategoryIncludeExclude";
 import { CategoryTagNarrow } from "@/components/CategoryTagNarrow";
 import { SuggestInput, type Suggestion } from "@/components/SuggestInput";
+import { SiteAvatar } from "@/components/SitePicker";
+import { BottomSheet } from "@/components/ui/bottom-sheet";
+import { useMediaQuery } from "@/lib/hooks/useMediaQuery";
 import {
   applyLocalFilters,
   BrowseFilterBar,
   EMPTY_LOCAL_FILTERS,
+  LOCAL_DURATIONS,
   type LocalFilters,
 } from "@/components/BrowseFilterBar";
 import { normalizeBrowseInput } from "@/lib/browse/normalize";
@@ -21,6 +34,7 @@ import type {
   BrowseFilters,
   BrowseKind,
   BrowseOrientation,
+  FilterOption,
   MediaItem,
   SiteCategory,
 } from "@/lib/types";
@@ -252,7 +266,12 @@ function BrowseDetailPage() {
   });
 
   async function handleDownload(item: MediaItem) {
-    await api.queueDownload(item.url, site, item.title);
+    try {
+      await api.queueDownload(item.url, site, item.title);
+      toast.success("Added to downloads");
+    } catch (e) {
+      toast.error(`Download failed: ${errorText(e)}`);
+    }
   }
 
   // #28: detect whether this exact search (incl. sort / filters) is already saved.
@@ -302,6 +321,31 @@ function BrowseDetailPage() {
     }
   }
 
+  // Phones get a compact header and a Filters sheet; desktop keeps the
+  // controls inline.
+  const isPhone = useMediaQuery("(max-width: 767px)");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const browseOptions = siteInfo?.browse_options;
+  const activeFilterLabels = useMemo(() => {
+    const label = (list: FilterOption[] | undefined, id?: string) =>
+      id ? (list?.find((o) => o.id === id)?.label ?? id) : "";
+    const count = (v?: string) => (v ? v.split(",").filter(Boolean).length : 0);
+    return [
+      label(browseOptions?.sorts, filters.sort),
+      label(browseOptions?.periods, filters.period),
+      label(browseOptions?.durations, filters.duration),
+      label(browseOptions?.qualities, filters.quality),
+      count(filters.include) ? `${count(filters.include)} required` : "",
+      count(filters.exclude) ? `${count(filters.exclude)} excluded` : "",
+      filters.tag ? `#${filters.tag}` : "",
+      localFilters.duration
+        ? (LOCAL_DURATIONS.find((d) => d.id === localFilters.duration)?.label ?? "")
+        : "",
+      localFilters.text.trim() ? `“${localFilters.text.trim()}”` : "",
+      hideWatched ? "Hide watched" : "",
+    ].filter(Boolean);
+  }, [browseOptions, filters, localFilters, hideWatched]);
+
   // #28: hide results already watched in the library (matched by source URL).
   async function toggleHideWatched() {
     const next = !hideWatched;
@@ -324,6 +368,100 @@ function BrowseDetailPage() {
   const showInitialSkeleton = initial && loading && !error;
   const showEmpty = !loading && !error && visibleItems.length === 0 && querySlug && !initial;
   const showItems = visibleItems.length > 0;
+
+  const hideWatchedButton = (
+    <Button
+      size="sm"
+      variant={hideWatched ? "default" : "outline"}
+      onClick={() => void toggleHideWatched()}
+      title="Hide results already watched in your library"
+      aria-label="Hide watched"
+      aria-pressed={hideWatched}
+    >
+      <EyeOff className="h-4 w-4" />
+      <span className="hidden sm:inline">Hide watched</span>
+    </Button>
+  );
+
+  const viewToggle = (
+    <div className="flex shrink-0 overflow-hidden rounded-md border border-[var(--color-border)]">
+      {(
+        [
+          ["grid", LayoutGrid, "Grid view"],
+          ["list", List, "List view"],
+        ] as const
+      ).map(([mode, Icon, label]) => (
+        <button
+          key={mode}
+          type="button"
+          onClick={() => setViewMode(mode)}
+          className={`p-2 transition-colors ${viewMode === mode ? "bg-[var(--color-muted)] text-[var(--color-foreground)]" : "text-[var(--color-muted-foreground)] hover:text-[var(--color-foreground)]"}`}
+          aria-label={label}
+          aria-pressed={viewMode === mode}
+        >
+          <Icon className="h-4 w-4" />
+        </button>
+      ))}
+    </div>
+  );
+
+  const filterControls = (
+    <div className="space-y-3">
+      {isPornhubAnimal && (
+        <div className="flex flex-wrap gap-1.5">
+          {ORIENT_TABS.map((o) => (
+            <button
+              key={o.value}
+              type="button"
+              onClick={() => {
+                setOrientation(o.value);
+                setInitial(true);
+                setItems([]);
+                void load(1);
+              }}
+              className={`inline-flex items-center rounded-full px-3 py-1.5 text-xs font-medium transition ${
+                orientation === o.value
+                  ? "bg-[var(--color-primary)] text-[var(--color-primary-foreground)]"
+                  : "bg-[var(--color-secondary)] hover:bg-[var(--color-muted)]"
+              }`}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+      )}
+      <BrowseFilterBar
+        options={browseOptions}
+        kind={kind as BrowseKind}
+        filters={filters}
+        onFiltersChange={setFilters}
+        local={localFilters}
+        onLocalChange={setLocalFilters}
+      />
+      {browseOptions?.include_exclude &&
+        browseOptions.filter_kinds.includes(kind as BrowseKind) && (
+          <CategoryIncludeExclude
+            siteId={site}
+            filters={filters}
+            onFiltersChange={setFilters}
+            maxInclude={
+              browseOptions.exclude_only_kinds?.includes(kind as BrowseKind)
+                ? 0
+                : browseOptions.max_include || Infinity
+            }
+            maxExclude={browseOptions.max_exclude || Infinity}
+          />
+        )}
+      {kind === "category" && browseOptions?.category_tag_filter && (
+        <CategoryTagNarrow
+          siteId={site}
+          groups={browseOptions.category_groups ?? []}
+          filters={filters}
+          onFiltersChange={setFilters}
+        />
+      )}
+    </div>
+  );
 
   return (
     <div ref={containerRef} className="space-y-4">
@@ -357,93 +495,47 @@ function BrowseDetailPage() {
         </div>
       )}
 
-      <div>
-        <Link
-          to="/browse"
-          className="text-xs text-[var(--color-muted-foreground)] hover:text-[var(--color-foreground)] transition-colors"
-        >
-          &larr; Browse
-        </Link>
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-2xl font-bold capitalize">
-            {site} / {kind}
-          </h2>
-          <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              variant={savedId ? "default" : "outline"}
-              onClick={() => void toggleSavedSearch()}
-              disabled={savingSearch || !browseSlug}
-              title={savedId ? "Remove saved search" : "Save this search"}
-            >
-              {savedId ? <BookmarkCheck className="h-4 w-4" /> : <Bookmark className="h-4 w-4" />}
-              <span className="hidden sm:inline">{savedId ? "Saved" : "Save"}</span>
-            </Button>
-            <Button
-              size="sm"
-              variant={hideWatched ? "default" : "outline"}
-              onClick={() => void toggleHideWatched()}
-              title="Hide results already watched in your library"
-            >
-              <EyeOff className="h-4 w-4" />
-              <span className="hidden sm:inline">Hide watched</span>
-            </Button>
-            {showItems && (
-              <div className="flex rounded-md border border-[var(--color-border)] overflow-hidden">
-                <button
-                  type="button"
-                  onClick={() => setViewMode("grid")}
-                  className={`p-1.5 transition-colors ${viewMode === "grid" ? "bg-[var(--color-muted)] text-[var(--color-foreground)]" : "text-[var(--color-muted-foreground)] hover:text-[var(--color-foreground)]"}`}
-                  aria-label="Grid view"
-                >
-                  <LayoutGrid className="h-4 w-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setViewMode("list")}
-                  className={`p-1.5 transition-colors ${viewMode === "list" ? "bg-[var(--color-muted)] text-[var(--color-foreground)]" : "text-[var(--color-muted-foreground)] hover:text-[var(--color-foreground)]"}`}
-                  aria-label="List view"
-                >
-                  <List className="h-4 w-4" />
-                </button>
-              </div>
-            )}
+      <div className="space-y-3">
+        <div className="flex items-center gap-2">
+          <Link
+            to="/browse"
+            aria-label="Back to Browse"
+            className="-ml-1.5 shrink-0 rounded-full p-1.5 text-[var(--color-muted-foreground)] hover:bg-[var(--color-muted)] hover:text-[var(--color-foreground)]"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </Link>
+          {siteInfo && <SiteAvatar site={siteInfo} size="sm" />}
+          <div className="min-w-0 flex-1">
+            <h2 className="truncate text-lg font-bold leading-tight md:text-2xl">
+              {siteInfo?.display_name ?? site}
+            </h2>
+            <p className="truncate text-xs capitalize text-[var(--color-muted-foreground)]">
+              {kind}
+              {isPornhubAnimal && orientation !== "straight"
+                ? ` · ${ORIENT_TABS.find((o) => o.value === orientation)?.label}`
+                : ""}
+            </p>
           </div>
-          {hiddenCount > 0 && (
-            <p className="mt-1 text-xs text-[var(--color-muted-foreground)]">
-              {hiddenCount} watched {hiddenCount === 1 ? "result" : "results"} hidden.
-            </p>
-          )}
-          {filteredOut > 0 && (
-            <p className="mt-1 text-xs text-[var(--color-muted-foreground)]">
-              {filteredOut} loaded {filteredOut === 1 ? "result" : "results"} filtered out.
-            </p>
+          <Button
+            size="sm"
+            variant={savedId ? "default" : "outline"}
+            onClick={() => void toggleSavedSearch()}
+            disabled={savingSearch || !browseSlug}
+            title={savedId ? "Remove saved search" : "Save this search"}
+            aria-label={savedId ? "Remove saved search" : "Save this search"}
+          >
+            {savedId ? <BookmarkCheck className="h-4 w-4" /> : <Bookmark className="h-4 w-4" />}
+            <span className="hidden sm:inline">{savedId ? "Saved" : "Save"}</span>
+          </Button>
+          {!isPhone && (
+            <>
+              {hideWatchedButton}
+              {showItems && viewToggle}
+            </>
           )}
         </div>
-        {isPornhubAnimal && (
-          <div className="mt-3 flex flex-wrap gap-1.5">
-            {ORIENT_TABS.map((o) => (
-              <button
-                key={o.value}
-                type="button"
-                onClick={() => {
-                  setOrientation(o.value);
-                  setInitial(true);
-                  setItems([]);
-                  void load(1);
-                }}
-                className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium transition ${
-                  orientation === o.value
-                    ? "bg-[var(--color-primary)] text-[var(--color-primary-foreground)]"
-                    : "bg-[var(--color-secondary)] hover:bg-[var(--color-muted)]"
-                }`}
-              >
-                {o.label}
-              </button>
-            ))}
-          </div>
-        )}
-        <div className="mt-3 flex gap-2 max-w-md">
+
+        <div className="flex gap-2 md:max-w-md">
           <SuggestInput
             placeholder={
               suggestTags ? `Type a ${kind} (comma-separate to combine)` : `Enter ${kind} slug...`
@@ -451,6 +543,7 @@ function BrowseDetailPage() {
             suggestions={suggestTags ? tagSuggestions : []}
             value={querySlug}
             onValueChange={(v) => setQuerySlug(v.startsWith("#") ? v.slice(1) : v)}
+            className="h-10"
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 let val = querySlug;
@@ -465,71 +558,124 @@ function BrowseDetailPage() {
             }}
           />
           <Button
+            className="h-10 shrink-0"
             onClick={() => {
               setInitial(true);
               setItems([]);
               void load(1);
             }}
             disabled={loading}
+            aria-label="Browse"
           >
-            Browse
+            <Search className="h-4 w-4 sm:hidden" />
+            <span className="hidden sm:inline">Browse</span>
           </Button>
         </div>
         {querySlug.includes(",") &&
           (siteInfo?.browse_options?.combine_tags ?? 0) <
             querySlug.split(",").filter((t) => t.trim()).length && (
-            <p className="mt-1 text-xs text-[var(--color-muted-foreground)]">
+            <p className="text-xs text-[var(--color-muted-foreground)]">
               This site can&apos;t match all these tags exactly — results come from a word search.
             </p>
           )}
-        <div className="mt-3">
-          <BrowseFilterBar
-            options={siteInfo?.browse_options}
-            kind={kind as BrowseKind}
-            filters={filters}
-            onFiltersChange={setFilters}
-            local={localFilters}
-            onLocalChange={setLocalFilters}
-          />
-          {siteInfo?.browse_options?.include_exclude &&
-            siteInfo.browse_options.filter_kinds.includes(kind as BrowseKind) && (
-              <div className="mt-2">
-                <CategoryIncludeExclude
-                  siteId={site}
-                  filters={filters}
-                  onFiltersChange={setFilters}
-                  maxInclude={
-                    siteInfo.browse_options.exclude_only_kinds?.includes(kind as BrowseKind)
-                      ? 0
-                      : siteInfo.browse_options.max_include || Infinity
-                  }
-                  maxExclude={siteInfo.browse_options.max_exclude || Infinity}
-                />
-              </div>
-            )}
-          {kind === "category" && siteInfo?.browse_options?.category_tag_filter && (
-            <div className="mt-2">
-              <CategoryTagNarrow
-                siteId={site}
-                groups={siteInfo.browse_options.category_groups ?? []}
-                filters={filters}
-                onFiltersChange={setFilters}
-              />
+
+        {isPhone ? (
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant={activeFilterLabels.length ? "default" : "outline"}
+              className="h-9 shrink-0"
+              onClick={() => setFiltersOpen(true)}
+            >
+              <SlidersHorizontal className="h-4 w-4" />
+              Filters
+              {activeFilterLabels.length > 0 && (
+                <span className="ml-0.5 rounded-full bg-[var(--color-primary-foreground)]/20 px-1.5 text-[11px] tabular-nums">
+                  {activeFilterLabels.length}
+                </span>
+              )}
+            </Button>
+            <div className="flex min-w-0 flex-1 gap-1.5 overflow-x-auto scrollbar-hide">
+              {activeFilterLabels.length === 0 ? (
+                <span className="truncate text-xs text-[var(--color-muted-foreground)]">
+                  Site default order
+                </span>
+              ) : (
+                activeFilterLabels.map((l) => (
+                  <span
+                    key={l}
+                    className="shrink-0 rounded-full bg-[var(--color-secondary)] px-2.5 py-1 text-[11px]"
+                  >
+                    {l}
+                  </span>
+                ))
+              )}
             </div>
-          )}
-        </div>
+            {showItems && viewToggle}
+          </div>
+        ) : (
+          filterControls
+        )}
+
+        {(hiddenCount > 0 || filteredOut > 0) && (
+          <p className="text-xs text-[var(--color-muted-foreground)]">
+            {[
+              hiddenCount > 0
+                ? `${hiddenCount} watched ${hiddenCount === 1 ? "result" : "results"} hidden`
+                : "",
+              filteredOut > 0
+                ? `${filteredOut} loaded ${filteredOut === 1 ? "result" : "results"} filtered out`
+                : "",
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+            .
+          </p>
+        )}
       </div>
+
+      <BottomSheet
+        open={filtersOpen}
+        onClose={() => setFiltersOpen(false)}
+        title="Filters"
+        footer={
+          <Button className="h-11 w-full" onClick={() => setFiltersOpen(false)}>
+            Show results
+          </Button>
+        }
+      >
+        <div className="space-y-4">
+          {filterControls}
+          <button
+            type="button"
+            role="switch"
+            aria-checked={hideWatched}
+            onClick={() => void toggleHideWatched()}
+            className="flex w-full items-center justify-between gap-3 border-t border-[var(--color-border)] pt-3 text-left text-sm"
+          >
+            Hide videos already in my library
+            <span
+              className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${hideWatched ? "bg-[var(--color-primary)]" : "bg-[var(--color-muted)]"}`}
+            >
+              <span
+                className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${hideWatched ? "left-[1.375rem]" : "left-0.5"}`}
+              />
+            </span>
+          </button>
+        </div>
+      </BottomSheet>
 
       {error && <ErrorState message={error} onRetry={() => void load(page, false)} />}
 
-      {showInitialSkeleton && <SkeletonGrid count={12} cols={3} />}
+      {showInitialSkeleton && <SkeletonGrid count={12} cols={isPhone ? 2 : 3} />}
 
       {showItems && viewMode === "grid" && (
-        <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 md:grid-cols-4 md:gap-3 lg:grid-cols-5 xl:grid-cols-6">
           {visibleItems.map((item) => (
             <SceneCard
               key={item.id}
               item={item}
+              compactActions={isPhone}
               onDownload={(i) => void handleDownload(i)}
               onInfo={setInfoItem}
               onWatch={setWatchItem}
