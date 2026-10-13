@@ -22,6 +22,7 @@
     "android:dev": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/android-dev.ps1",
     "android:dev:lan": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/android-dev.ps1 -WithLanHost",
     "android:regen": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/android-regen.ps1",
+    "sign:apk": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/sign-android-apk.ps1",
     "android:validate": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/validate-android-build.ps1",
     "android:patches": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/apply-android-patches.ps1",
     "setup:binaries": "powershell -ExecutionPolicy Bypass -File scripts/setup-binaries.ps1",

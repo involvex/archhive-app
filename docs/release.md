@@ -67,5 +67,12 @@ and keep it safe: losing it means users must uninstall to update.
 
 Without the secrets the workflow signs with a throwaway key and warns: the APK
 installs, but a later build signed with a different key can't update it.
-Locally: `bash scripts/sign-android-apk.sh <unsigned.apk> <out.apk>` with the
-same environment variables. The Windows installer needs no secrets.
+Locally:
+
+- Windows: `bun run sign:apk` signs the release APK from
+  `bun run build:apk:release` into `ArcHive-android.apk` at the repo root
+  (`scripts/sign-android-apk.ps1`; pass `-In`, `-Out`, `-Keystore`,
+  `-KeyAlias` to override). Passwords come from the same
+  `ANDROID_KEYSTORE_PASSWORD` / `ANDROID_KEY_PASSWORD` variables.
+- macOS / Linux: `bash scripts/sign-android-apk.sh <unsigned.apk> <out.apk>`
+  with the same environment variables. The Windows installer needs no secrets.
