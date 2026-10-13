@@ -992,7 +992,7 @@ async fn proxy_remote_media(
         .filter(|c| !c.is_empty())
         .cloned()
         .or_else(|| {
-            let site = site_id_from_referer(&referer);
+            let site = site_id_from_referer(&referer)?;
             state.app.vault.cookie_header(site).ok().flatten()
         });
     if let Some(ref cookie) = cookie {
@@ -1086,23 +1086,18 @@ async fn proxy_remote_media(
     Ok(response)
 }
 
-fn site_id_from_referer(referer: &str) -> &'static str {
-    let lower = referer.to_lowercase();
-    if lower.contains("pornhub") {
-        "pornhub"
-    } else if lower.contains("xvideos") {
-        "xvideos"
-    } else if lower.contains("xhamster") {
-        "xhamster"
-    } else if lower.contains("xnxx") {
-        "xnxx"
-    } else if lower.contains("youporn") {
-        "youporn"
-    } else if lower.contains("redgifs") {
-        "redgifs"
-    } else {
-        "pornhub"
-    }
+/// Site whose vault cookies the proxy may attach, from the Referer it was
+/// given. Unknown sites get none (never another site's cookies).
+fn site_id_from_referer(referer: &str) -> Option<&'static str> {
+    let host = url::Url::parse(referer)
+        .ok()
+        .and_then(|u| u.host_str().map(str::to_ascii_lowercase))?;
+    let host = host.strip_prefix("www.").unwrap_or(&host).to_string();
+    [
+        "pornhub", "xvideos", "xhamster", "xnxx", "youporn", "redgifs", "eporner",
+    ]
+    .into_iter()
+    .find(|site| host == format!("{site}.com") || host.ends_with(&format!(".{site}.com")))
 }
 
 fn rewrite_m3u8_for_proxy(body: &str, playlist_url: &str, referer: &str, port: u16) -> String {
@@ -1921,4 +1916,20 @@ pub fn generate_token() -> String {
             b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"[idx] as char
         })
         .collect()
+}
+
+#[cfg(test)]
+mod referer_tests {
+    use super::site_id_from_referer as site;
+
+    #[test]
+    fn proxy_cookies_only_for_the_referer_site() {
+        assert_eq!(site("https://www.eporner.com/"), Some("eporner"));
+        assert_eq!(site("https://www.pornhub.com/"), Some("pornhub"));
+        assert_eq!(site("https://de.xhamster.com/videos/x"), Some("xhamster"));
+        // Unknown or look-alike hosts get no cookies at all.
+        assert_eq!(site("https://example.com/"), None);
+        assert_eq!(site("https://pornhub.com.evil.example/"), None);
+        assert_eq!(site("not a url"), None);
+    }
 }

@@ -179,7 +179,15 @@ impl SiteAdapter for EpornerAdapter {
             })
             .ok_or_else(|| AppError::Other("No stream URL resolved from Eporner".to_string()))?
             .to_string();
-        Ok(stream_url)
+        // Eporner's CDN answers a foreign Referer (the WebView sends
+        // http://tauri.localhost/) with a placeholder clip ("only available
+        // on eporner.com", static.eporner.com/na.mp4). Play through the
+        // loopback proxy, which sends Eporner's own Referer.
+        Ok(super::pornhub::maybe_loopback_proxy(
+            ctx,
+            &stream_url,
+            "https://www.eporner.com/",
+        ))
     }
 
     async fn resolve_download(
