@@ -336,6 +336,15 @@ fn parse_listing(html: &str, site_id: &str) -> Vec<MediaItem> {
                 if is_junk_title(&title) {
                     continue;
                 }
+                // Private videos (`<div class="item private">`) only play for
+                // logged-in members; flag them so a tap doesn't look like a
+                // broken player. "-private" in the results filter hides them.
+                let private = el.value().classes().any(|c| c == "private");
+                let title = if private {
+                    format!("🔒 {title}")
+                } else {
+                    title
+                };
 
                 let thumbnail = el
                     .select(&img_sel)
@@ -366,7 +375,11 @@ fn parse_listing(html: &str, site_id: &str) -> Vec<MediaItem> {
                     duration: None,
                     site_id: site_id.to_string(),
                     performers: vec![],
-                    tags: vec![],
+                    tags: if private {
+                        vec!["private".to_string()]
+                    } else {
+                        vec![]
+                    },
                     description: None,
                     channel: None,
                     is_live: None,
