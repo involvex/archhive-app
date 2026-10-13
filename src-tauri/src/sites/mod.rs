@@ -138,6 +138,7 @@ impl SiteContext {
         if !resp.status().is_success() {
             return Err(AppError::Site(format!("HTTP {} for {url}", resp.status())));
         }
+        throttle::note_ok(url);
         Ok(resp.text().await?)
     }
 
