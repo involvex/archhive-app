@@ -93,6 +93,358 @@ pub fn scrape(site_id: &str, html: &str) -> PageDetails {
     d
 }
 
+/// Any tube site without its own scraper: structured data first (KVS player
+/// config, JSON-LD, `video:tag` meta), then tag / category / model / channel
+/// links on the page outside menus and "related" blocks, and meta keywords
+/// only when nothing else turned up.
+pub fn scrape_generic(html: &str) -> PageDetails {
+    let mut d = scrape("", html);
+    let doc = Html::parse_document(html);
+    let mut tags = Vec::new();
+    let mut performers = Vec::new();
+
+    // KVS (ThisVid, Hoes, Analdin, Xozilla, 4KPorn, …): flashvars lists;
+    // XGroovy's pageContext uses `_title` / `_slug` variants.
+    for key in ["video_categories", "video_tags"] {
+        let mut found = kvs_list(html, key);
+        if found.is_empty() {
+            found = kvs_list(html, &format!("{key}_title"));
+        }
+        if found.is_empty() {
+            found = kvs_list(html, &format!("{key}_slug"))
+                .into_iter()
+                .map(|t| t.replace('-', " "))
+                .collect();
+        }
+        tags.extend(found);
+    }
+    performers.extend(kvs_list(html, "video_models"));
+
+    // JSON-LD VideoObject.
+    for script in doc.select(&sel(r#"script[type="application/ld+json"]"#)) {
+        let raw: String = script.text().collect();
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(raw.trim()) {
+            ld_collect(&v, &mut tags, &mut performers, 0);
+        }
+    }
+    for prop in ["video:tag", "og:video:tag", "article:tag"] {
+        let s = sel(&format!(r#"meta[property="{prop}"], meta[name="{prop}"]"#));
+        tags.extend(
+            doc.select(&s)
+                .filter_map(|m| m.value().attr("content"))
+                .map(clean),
+        );
+    }
+
+    // Page links only when the page had no structured lists (they'd add
+    // the same tags again, plus whatever index blocks slip through).
+    let links = page_links(&doc);
+    if tags.is_empty() {
+        tags.extend(labelled_links(&doc, "Categories"));
+        tags.extend(labelled_links(&doc, "Tags"));
+    }
+    if tags.is_empty() {
+        tags.extend(links.categories);
+        tags.extend(links.tags);
+    }
+    if performers.is_empty() {
+        performers.extend(labelled_links(&doc, "Pornstars"));
+        performers.extend(labelled_links(&doc, "Models"));
+    }
+    if performers.is_empty() {
+        performers.extend(links.models);
+    }
+    if d.channel.is_none() {
+        d.channel = links.channels.into_iter().next();
+    }
+
+    if tags.is_empty() {
+        if let Some(kw) = meta(&doc, "keywords") {
+            tags.extend(
+                kw.split(',')
+                    .map(|t| {
+                        // "big tits porn" → "big tits" (HQPorner and the like).
+                        let t = t.trim();
+                        t.strip_suffix(" porn").unwrap_or(t).to_string()
+                    })
+                    .filter(|t| !t.is_empty() && t.len() <= 40 && !is_junk_keyword(t)),
+            );
+        }
+    }
+    d.tags = dedupe(tags).into_iter().take(60).collect();
+    d.performers = dedupe(performers).into_iter().take(20).collect();
+    d
+}
+
+/// `video_tags: 'Amateur, Big Tits, …'` in a KVS flashvars block.
+fn kvs_list(html: &str, key: &str) -> Vec<String> {
+    let re = match regex::Regex::new(&format!(r#"{key}\s*:\s*['"]([^'"]*)['"]"#)) {
+        Ok(re) => re,
+        Err(_) => return Vec::new(),
+    };
+    re.captures(html)
+        .map(|c| {
+            c[1].split(',')
+                .map(|t| clean(t.trim()))
+                .filter(|t| !t.is_empty() && t.len() <= 60)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// `keywords` / `genre` / `actor` of JSON-LD objects (also inside `@graph`).
+fn ld_collect(
+    v: &serde_json::Value,
+    tags: &mut Vec<String>,
+    performers: &mut Vec<String>,
+    depth: u8,
+) {
+    use serde_json::Value;
+    if depth > 4 {
+        return;
+    }
+    let strings = |v: &Value| -> Vec<String> {
+        match v {
+            Value::String(s) => s.split(',').map(|t| clean(t.trim())).collect(),
+            Value::Array(a) => a
+                .iter()
+                .filter_map(|x| x.as_str().map(|s| clean(s.trim())))
+                .collect(),
+            _ => Vec::new(),
+        }
+    };
+    match v {
+        Value::Array(a) => a
+            .iter()
+            .for_each(|x| ld_collect(x, tags, performers, depth + 1)),
+        Value::Object(o) => {
+            for key in ["keywords", "genre"] {
+                if let Some(k) = o.get(key) {
+                    tags.extend(strings(k).into_iter().filter(|t| t.len() <= 60));
+                }
+            }
+            for key in ["actor", "actors", "performer"] {
+                let names = match o.get(key) {
+                    Some(Value::Array(a)) => a
+                        .iter()
+                        .filter_map(|x| x.get("name").and_then(Value::as_str).map(clean))
+                        .collect(),
+                    Some(x) => x
+                        .get("name")
+                        .and_then(Value::as_str)
+                        .map(clean)
+                        .into_iter()
+                        .collect::<Vec<_>>(),
+                    None => Vec::new(),
+                };
+                performers.extend(names);
+            }
+            if let Some(g) = o.get("@graph") {
+                ld_collect(g, tags, performers, depth + 1);
+            }
+        }
+        _ => {}
+    }
+}
+
+#[derive(Default)]
+struct PageLinks {
+    tags: Vec<String>,
+    categories: Vec<String>,
+    models: Vec<String>,
+    channels: Vec<String>,
+}
+
+/// Path segment that marks a link's kind: `/tags/x`, `/categories/x`,
+/// `/pornstar/x`, `/channels/x`, … (followed by a slug).
+fn link_kind(href: &str) -> Option<(u8, String)> {
+    let path = href
+        .split("://")
+        .nth(1)
+        .map(|r| r.split_once('/').map(|(_, p)| p).unwrap_or(""))
+        .unwrap_or(href.trim_start_matches('/'));
+    let path = path.split(['?', '#']).next().unwrap_or("");
+    let segs: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+    for (i, seg) in segs.iter().enumerate() {
+        let kind = match seg.to_ascii_lowercase().as_str() {
+            "tag" | "tags" | "keyword" | "keywords" => 0,
+            "category" | "categories" | "cat" => 1,
+            "pornstar" | "pornstars" | "model" | "models" | "star" | "stars" | "actor"
+            | "actors" | "performer" | "performers" => 2,
+            "channel" | "channels" | "studio" | "studios" => 3,
+            _ => continue,
+        };
+        let slug = segs.get(i + 1)?;
+        if slug.is_empty() || slug.chars().all(|c| c.is_ascii_digit()) && segs.len() == i + 2 {
+            // "/categories/2/" is a listing page number, not a category.
+            return None;
+        }
+        return Some((kind, slug.to_string()));
+    }
+    None
+}
+
+/// Links inside these are site-wide navigation, not the video's own tags.
+/// Walking up from the link, the nearest marker wins: a "tags" / "categories"
+/// block is the video's own (xHamster even wraps it in `<nav
+/// id="video-tags-list">`), a menu / dropdown / footer is not.
+fn in_navigation(el: ElementRef<'_>) -> bool {
+    const NAV: &[&str] = &[
+        "menu",
+        "nav",
+        "dropdown",
+        "drop_",
+        "drop-",
+        "footer",
+        "header",
+        "sidebar",
+        "related",
+        "recommend",
+        "popular",
+        "trending",
+        "breadcrumb",
+        "filter",
+        "sort",
+        "pagination",
+        "suggest",
+        "top-",
+        "mobile-",
+        "lang",
+    ];
+    const CONTENT: &[&str] = &[
+        "tag",
+        "categor",
+        "pornstar",
+        "model",
+        "video-info",
+        "video_info",
+    ];
+    for a in el.ancestors().take(10).filter_map(ElementRef::wrap) {
+        let v = a.value();
+        let attrs = format!(
+            "{} {}",
+            v.attr("class").unwrap_or(""),
+            v.attr("id").unwrap_or("")
+        )
+        .to_ascii_lowercase();
+        if CONTENT.iter().any(|w| attrs.contains(w)) && !attrs.contains("menu") {
+            return false;
+        }
+        if matches!(v.name(), "nav" | "header" | "footer") || NAV.iter().any(|w| attrs.contains(w))
+        {
+            return true;
+        }
+    }
+    false
+}
+
+fn page_links(doc: &Html) -> PageLinks {
+    use std::collections::HashMap;
+    let count_re = regex::Regex::new(r"\s*\(?[\d.,]+\s*[KkMm]?\)?$").expect("count");
+    // Group by the nearest ancestor with a class / id: a block of dozens of
+    // links is a category index or menu, not this video's tags.
+    let mut groups: HashMap<_, Vec<(u8, String)>> = HashMap::new();
+    for a in doc.select(&sel("a[href]")) {
+        let Some((kind, slug)) = a.value().attr("href").and_then(link_kind) else {
+            continue;
+        };
+        if in_navigation(a) {
+            continue;
+        }
+        let mut text = element_text(a);
+        text = count_re.replace(&text, "").trim().to_string();
+        if text.is_empty() || text.len() > 50 || text.starts_with('#') && text.len() == 1 {
+            text = urlencoding_decode(&slug).replace(['-', '_', '+'], " ");
+        }
+        let text = text.trim_start_matches('#').trim();
+        let text = text
+            .strip_prefix("Submitted by ")
+            .or_else(|| text.strip_prefix("Uploaded by "))
+            .unwrap_or(text)
+            .to_string();
+        let lower = text.to_ascii_lowercase();
+        // Menu labels ("Big Tits Category"), "Rank:" style captions.
+        if text.is_empty()
+            || lower.starts_with("see all")
+            || lower.starts_with("show all")
+            || lower.ends_with(" category")
+            || lower.ends_with(" pornstar")
+            || lower.ends_with(':')
+        {
+            continue;
+        }
+        let group = a
+            .ancestors()
+            .filter_map(ElementRef::wrap)
+            .find(|p| p.value().attr("class").is_some() || p.value().attr("id").is_some())
+            .map(|p| p.id())
+            .unwrap_or_else(|| a.id());
+        groups.entry(group).or_default().push((kind, text));
+    }
+    let mut out = PageLinks::default();
+    for (_, links) in groups.into_iter().filter(|(_, l)| l.len() <= 60) {
+        for (kind, text) in links {
+            match kind {
+                0 => out.tags.push(text),
+                1 => out.categories.push(text),
+                2 => out.models.push(text),
+                _ => out.channels.push(text),
+            }
+        }
+    }
+    out
+}
+
+fn urlencoding_decode(s: &str) -> String {
+    let bytes = s.as_bytes();
+    let hex = |b: u8| (b as char).to_digit(16).map(|d| d as u8);
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let (Some(h), Some(l)) = (hex(bytes[i + 1]), hex(bytes[i + 2])) {
+                out.push(h * 16 + l);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// Site-wide meta keywords that say nothing about the video.
+fn is_junk_keyword(k: &str) -> bool {
+    let k = k.to_ascii_lowercase();
+    [
+        "porn",
+        "porno",
+        "xxx",
+        "sex",
+        "free",
+        "free porn",
+        "porn videos",
+        "sex videos",
+        "xxx videos",
+        "hd porn",
+        "porn tube",
+        "free sex",
+        "adult",
+        "videos",
+        "video",
+        "tube",
+        "free porn videos",
+        "porn movies",
+        "sex movies",
+        "hd",
+        "online",
+    ]
+    .contains(&k.as_str())
+        || k.contains(".com")
+        || k.contains(".xxx")
+}
+
 fn sel(s: &str) -> Selector {
     Selector::parse(s).expect("static selector")
 }
@@ -201,6 +553,71 @@ fn dedupe(items: Vec<String>) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn generic_kvs_jsonld_and_links() {
+        let kvs = r#"<script>var flashvars = { video_categories: 'Amateur, Big Tits',
+            video_tags: 'blonde, pov', video_models: 'Jane Doe' };</script>"#;
+        let d = scrape_generic(kvs);
+        assert_eq!(d.tags, ["Amateur", "Big Tits", "blonde", "pov"]);
+        assert_eq!(d.performers, ["Jane Doe"]);
+
+        let ld = r#"<script type="application/ld+json">{"@type":"VideoObject",
+            "keywords":"milf, stepmom","genre":["Hardcore"],
+            "actor":[{"@type":"Person","name":"Ann"}]}</script>"#;
+        let d = scrape_generic(ld);
+        assert_eq!(d.tags, ["milf", "stepmom", "Hardcore"]);
+        assert_eq!(d.performers, ["Ann"]);
+
+        let mut menu = String::from(r#"<nav class="main-menu">"#);
+        for i in 0..5 {
+            menu.push_str(&format!(r#"<a href="/categories/menu{i}/">Menu {i}</a>"#));
+        }
+        menu.push_str("</nav><div class=\"cat-index\">");
+        for i in 0..70 {
+            menu.push_str(&format!(r#"<a href="/categories/idx{i}/">Idx {i}</a>"#));
+        }
+        menu.push_str(
+            r#"</div><div class="video-info"><div class="tags-row">
+            <a href="/tags/outdoor/">Outdoor <span>12K</span></a>
+            <a href="/categories/teen/">Teen</a>
+            <a href="/pornstar/riley-reid/">Riley Reid</a>
+            <a href="/channels/brazzers/">Brazzers</a>
+            <a href="/categories/2/">2</a></div></div>
+            <meta name="keywords" content="porn, free porn, ignored">"#,
+        );
+        let d = scrape_generic(&menu);
+        assert_eq!(d.tags, ["Teen", "Outdoor"]);
+        assert_eq!(d.performers, ["Riley Reid"]);
+        assert_eq!(d.channel.as_deref(), Some("Brazzers"));
+
+        let kw = r#"<meta name="keywords" content="Porn, Free Porn, homemade, Big Ass, site.com">"#;
+        assert_eq!(scrape_generic(kw).tags, ["homemade", "Big Ass"]);
+    }
+
+    /// `SCRAPE_DIR=/path cargo test generic_on_saved_pages -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn generic_on_saved_pages() {
+        let dir = std::env::var("SCRAPE_DIR").expect("SCRAPE_DIR");
+        let mut files: Vec<_> = std::fs::read_dir(dir).unwrap().flatten().collect();
+        files.sort_by_key(|f| f.file_name());
+        for f in files {
+            let html = std::fs::read_to_string(f.path()).unwrap_or_default();
+            if html.len() < 20_000 {
+                continue;
+            }
+            let d = scrape_generic(&html);
+            println!(
+                "{:15} tags {:2} {:?} | perf {:?} | chan {:?}",
+                f.file_name().to_string_lossy().trim_end_matches(".html"),
+                d.tags.len(),
+                d.tags.iter().take(8).collect::<Vec<_>>(),
+                d.performers.iter().take(3).collect::<Vec<_>>(),
+                d.channel
+            );
+        }
+    }
 
     #[test]
     fn xvideos_tags_uploader_models() {

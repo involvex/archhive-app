@@ -39,8 +39,8 @@ const DURATIONS: { id: string; label: string; min?: number; max?: number }[] = [
 ];
 
 const SORTS: { id: NonNullable<OnlineQuery["sort"]>; label: string; needsSearch?: boolean }[] = [
-  { id: "site", label: "Site order", needsSearch: true },
   { id: "newest", label: "Newest first" },
+  { id: "site", label: "Site order (last update)", needsSearch: true },
   { id: "longest", label: "Longest" },
   { id: "shortest", label: "Shortest" },
   { id: "title", label: "Title A–Z" },
@@ -85,7 +85,8 @@ function OnlineLibraryPage() {
   const [text, setText] = useState("");
   const [debouncedText, setDebouncedText] = useState("");
   const [duration, setDuration] = useState("");
-  const [sort, setSort] = useState<NonNullable<OnlineQuery["sort"]>>(searchId ? "site" : "newest");
+  // Newest found first; Update fetches the site's newest videos.
+  const [sort, setSort] = useState<NonNullable<OnlineQuery["sort"]>>("newest");
   const [include, setInclude] = useState<string[]>([]);
   const [exclude, setExclude] = useState<string[]>([]);
   const [tagFind, setTagFind] = useState("");
@@ -128,7 +129,7 @@ function OnlineLibraryPage() {
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setSort(searchId ? "site" : "newest");
+    setSort("newest");
     setInclude([]);
     setExclude([]);
   }, [searchId]);
@@ -188,9 +189,16 @@ function OnlineLibraryPage() {
     setUpdating(true);
     try {
       const r = await api.updateOnlineSearch(searchId, pages);
+      const why =
+        r.stopped === "caught up"
+          ? " — caught up with the last update"
+          : r.stopped === "end of results"
+            ? " — end of the results"
+            : r.stopped
+              ? ` (stopped: ${r.stopped})`
+              : "";
       toast.success(
-        `Fetched ${r.pages} ${r.pages === 1 ? "page" : "pages"}: ${r.new_items} new, ${r.total} in total` +
-          (r.stopped && r.stopped !== "end of results" ? ` (stopped: ${r.stopped})` : ""),
+        `Fetched ${r.pages} ${r.pages === 1 ? "page" : "pages"}, newest first: ${r.new_items} new, ${r.total} in total${why}`,
       );
       await Promise.all([loadMeta(), loadPage(0)]);
       if (tagsOpen) void loadTags();

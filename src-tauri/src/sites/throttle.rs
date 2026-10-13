@@ -59,9 +59,33 @@ fn host_key(url: &str) -> String {
     host.strip_prefix("www.").unwrap_or(&host).to_string()
 }
 
+/// Spacing for hosts with stricter limits than [`MIN_GAP`] + jitter:
+/// (host, minimum gap, extra random jitter). xPomelo answers 429 after
+/// roughly a dozen requests in 25 s at the default pace.
+const SLOW_HOSTS: &[(&str, Duration, u64)] = &[("xpomelo.com", Duration::from_millis(4000), 3000)];
+
+fn pace_for(host: &str) -> (Duration, u64) {
+    SLOW_HOSTS
+        .iter()
+        .find(|(h, _, _)| *h == host)
+        .map(|(_, gap, jitter)| (*gap, *jitter))
+        .unwrap_or((MIN_GAP, JITTER_MS))
+}
+
+/// [`reserve_paced`] at the default pace.
+#[cfg(test)]
+fn reserve(state: &mut HostState, now: Instant) -> Result<Duration, Duration> {
+    reserve_paced(state, now, MIN_GAP, JITTER_MS)
+}
+
 /// Reserve the next send slot for a host. Returns how long to wait, or the
 /// remaining cooldown as an error.
-fn reserve(state: &mut HostState, now: Instant) -> Result<Duration, Duration> {
+fn reserve_paced(
+    state: &mut HostState,
+    now: Instant,
+    gap: Duration,
+    jitter_ms: u64,
+) -> Result<Duration, Duration> {
     if let Some(until) = state.cooldown_until {
         if until > now {
             let probe_due = state
@@ -76,8 +100,8 @@ fn reserve(state: &mut HostState, now: Instant) -> Result<Duration, Duration> {
         }
     }
     let slot = state.next_slot.filter(|s| *s > now).unwrap_or(now);
-    let jitter = Duration::from_millis(rand::random::<u64>() % (JITTER_MS + 1));
-    state.next_slot = Some(slot + MIN_GAP + jitter);
+    let jitter = Duration::from_millis(rand::random::<u64>() % (jitter_ms + 1));
+    state.next_slot = Some(slot + gap + jitter);
     Ok(slot - now)
 }
 
@@ -86,7 +110,13 @@ pub async fn acquire(url: &str) -> AppResult<()> {
     let key = host_key(url);
     let wait = {
         let mut hosts = HOSTS.lock().map_err(|e| AppError::Other(e.to_string()))?;
-        reserve(hosts.entry(key.clone()).or_default(), Instant::now())
+        let (gap, jitter) = pace_for(&key);
+        reserve_paced(
+            hosts.entry(key.clone()).or_default(),
+            Instant::now(),
+            gap,
+            jitter,
+        )
     };
     match wait {
         Ok(d) if d.is_zero() => Ok(()),
@@ -137,6 +167,17 @@ pub fn note_rate_limited(url: &str, retry_after: Option<&str>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn slow_hosts_get_their_own_pace() {
+        assert_eq!(pace_for("xpomelo.com").0, Duration::from_millis(4000));
+        assert_eq!(pace_for("pornhub.com"), (MIN_GAP, JITTER_MS));
+        let now = Instant::now();
+        let mut s = HostState::default();
+        let (gap, jitter) = pace_for("xpomelo.com");
+        assert_eq!(reserve_paced(&mut s, now, gap, jitter), Ok(Duration::ZERO));
+        assert!(reserve_paced(&mut s, now, gap, jitter).unwrap() >= gap);
+    }
 
     #[test]
     fn host_key_normalises() {

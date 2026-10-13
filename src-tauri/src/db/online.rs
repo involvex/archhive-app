@@ -174,6 +174,20 @@ impl Database {
         Ok(())
     }
 
+    pub fn online_search_updated_at(&self, search_id: &str) -> AppResult<Option<String>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        Ok(conn
+            .query_row(
+                "SELECT updated_at FROM online_search_updates WHERE search_id = ?1",
+                params![search_id],
+                |r| r.get(0),
+            )
+            .optional()?)
+    }
+
     /// Tags / performers / channel from the video's own page.
     pub fn set_online_item_details(
         &self,

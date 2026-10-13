@@ -1365,16 +1365,31 @@ impl AppState {
             .sites
             .detect(url)
             .unwrap_or_else(|| "custom".to_string());
-        if crate::sites::details::SCRAPED_SITES.contains(&site_id.as_str()) {
-            match self.site_ctx.fetch_html(url, &site_id).await {
-                Ok(html) => {
-                    let d = crate::sites::details::scrape(&site_id, &html);
-                    if d.is_useful() {
-                        return Ok(self.page_details_item(url, &site_id, d));
-                    }
+        // Read the video page itself: the site's own scraper when there is
+        // one, otherwise the generic reader (KVS player config, JSON-LD,
+        // tag / category / model links). yt-dlp is the fallback; it has no
+        // tags for most tube sites.
+        let scraped = crate::sites::details::SCRAPED_SITES.contains(&site_id.as_str());
+        let cookie_key = if self.sites.get(&site_id).is_some() && site_id != "custom" {
+            site_id.clone()
+        } else {
+            crate::sites::cookie_keys::host_key(url).unwrap_or_else(|| site_id.clone())
+        };
+        match self.site_ctx.fetch_html(url, &cookie_key).await {
+            Ok(html) => {
+                let mut d = if scraped {
+                    crate::sites::details::scrape(&site_id, &html)
+                } else {
+                    Default::default()
+                };
+                if d.tags.is_empty() && d.performers.is_empty() {
+                    d = crate::sites::details::scrape_generic(&html);
                 }
-                Err(e) => tracing::warn!("details page fetch failed for {url}: {e}"),
+                if d.is_useful() {
+                    return Ok(self.page_details_item(url, &site_id, d));
+                }
             }
+            Err(e) => tracing::warn!("details page fetch failed for {url}: {e}"),
         }
         self.resolve_media_details_ytdlp(url, site_id).await
     }
@@ -2257,9 +2272,12 @@ impl AppState {
         });
     }
 
-    /// Fetch `pages` pages of a saved search into its Online library slice,
-    /// one after another at the normal per-site pace. Stops at the end of
-    /// the results or at the first refusal (a cached fallback page counts).
+    /// Fetch up to `pages` pages of a saved search into its Online library
+    /// slice, one after another at the normal per-site pace. Uses the site's
+    /// "Newest" sort (other saved filters kept) and, after the first update,
+    /// the smallest period filter covering the time since the last one;
+    /// stops at the end of the results, at a page with nothing new, or at
+    /// the first refusal (a cached fallback page counts).
     pub async fn update_online_search(
         &self,
         id: &str,
@@ -2271,8 +2289,31 @@ impl AppState {
             .db
             .get_saved_search(id)?
             .ok_or_else(|| crate::error::AppError::NotFound(format!("saved search {id}")))?;
+        let options = self
+            .sites
+            .get(&search.site_id)
+            .map(|a| a.browse_options())
+            .unwrap_or_default();
+        let last_update = self
+            .db
+            .online_search_updated_at(id)?
+            .and_then(|t| chrono::DateTime::parse_from_rfc3339(&t).ok());
+        let mut filters = search.filters.clone();
+        if let Some(newest) = newest_sort(&options.sorts) {
+            filters.sort = Some(newest);
+        }
+        let mut with_period = filters.clone();
+        if filters.period.is_none() {
+            if let Some(since) = last_update {
+                let days = (chrono::Utc::now() - since.with_timezone(&chrono::Utc)).num_days();
+                with_period.period = period_covering(&options.periods, days + 1);
+            }
+        }
+
         let mut result = crate::models::OnlineUpdateResult::default();
-        for page in 1..=pages.clamp(1, 20) {
+        let mut use_period = with_period.period.is_some();
+        let mut page = 1;
+        while page <= pages.clamp(1, 20) {
             let fetched = self
                 .browse(
                     &search.site_id,
@@ -2280,14 +2321,28 @@ impl AppState {
                     &search.slug,
                     page,
                     search.orientation,
-                    search.filters.clone(),
+                    if use_period {
+                        with_period.clone()
+                    } else {
+                        filters.clone()
+                    },
                 )
                 .await;
             let data = match fetched {
+                // Some sites only honour a period with other sorts: retry
+                // the first page without it rather than report nothing.
+                Ok(d) if use_period && page == 1 && d.items.is_empty() => {
+                    use_period = false;
+                    continue;
+                }
                 Ok(d) if !d.from_cache => d,
                 Ok(_) => {
                     result.stopped = Some("the site refused the request".into());
                     break;
+                }
+                Err(_) if use_period && page == 1 => {
+                    use_period = false;
+                    continue;
                 }
                 Err(e) if page == 1 => return Err(e),
                 Err(e) => {
@@ -2297,13 +2352,20 @@ impl AppState {
             };
             result.pages += 1;
             result.seen += data.items.len() as u32;
-            result.new_items += self
+            let new_items = self
                 .db
                 .record_online_items(&data.items, Some((id, (page as i64 - 1) * 1000)))?;
+            result.new_items += new_items;
             if !data.has_more || data.items.is_empty() {
                 result.stopped = Some("end of results".into());
                 break;
             }
+            // Newest first: a page with nothing new means we're caught up.
+            if last_update.is_some() && new_items == 0 {
+                result.stopped = Some("caught up".into());
+                break;
+            }
+            page += 1;
         }
         self.db.mark_online_search_updated(id)?;
         result.total = self
@@ -2752,5 +2814,75 @@ mod tests {
             let err = AppState::resolve_under_library(root_str, "escape.jpg").unwrap_err();
             assert!(matches!(err, crate::error::AppError::InvalidInput(_)));
         }
+    }
+}
+
+/// The site's "Newest" sort option, if it has one.
+fn newest_sort(sorts: &[crate::models::FilterOption]) -> Option<String> {
+    sorts
+        .iter()
+        .find(|o| {
+            let l = o.label.to_ascii_lowercase();
+            l.contains("newest") || l.contains("latest") || l.contains("most recent")
+        })
+        .map(|o| o.id.clone())
+}
+
+/// Smallest period option ("Today", "This week", "Past month", "Last 3
+/// months", "This year", …) that covers `days`; none when only "All time"
+/// or nothing fits.
+fn period_covering(periods: &[crate::models::FilterOption], days: i64) -> Option<String> {
+    let span = |label: &str| -> Option<i64> {
+        let l = label.to_ascii_lowercase();
+        let n: i64 = l
+            .split_whitespace()
+            .find_map(|w| w.parse().ok())
+            .unwrap_or(1);
+        let unit = if l.contains("today") || l.contains("day") {
+            1
+        } else if l.contains("week") {
+            7
+        } else if l.contains("month") {
+            30
+        } else if l.contains("year") {
+            365
+        } else {
+            return None;
+        };
+        Some(n * unit)
+    };
+    periods
+        .iter()
+        .filter_map(|o| span(&o.label).map(|d| (d, o.id.clone())))
+        .filter(|(d, _)| *d >= days)
+        .min_by_key(|(d, _)| *d)
+        .map(|(_, id)| id)
+}
+
+#[cfg(test)]
+mod update_filter_tests {
+    use super::*;
+    use crate::models::FilterOption;
+
+    #[test]
+    fn picks_newest_and_covering_period() {
+        let o = |id: &str, l: &str| FilterOption::new(id, l);
+        assert_eq!(
+            newest_sort(&[o("mv", "Most viewed"), o("mr", "Newest")]).as_deref(),
+            Some("mr")
+        );
+        let periods = [
+            o("t", "Today"),
+            o("w", "This week"),
+            o("3month", "Last 3 months"),
+            o("y", "This year"),
+            o("a", "All time"),
+        ];
+        assert_eq!(period_covering(&periods, 1).as_deref(), Some("t"));
+        assert_eq!(period_covering(&periods, 5).as_deref(), Some("w"));
+        assert_eq!(period_covering(&periods, 40).as_deref(), Some("3month"));
+        assert_eq!(period_covering(&periods, 400), None);
+        let xp = [o("30", "Past month"), o("365", "Past year")];
+        assert_eq!(period_covering(&xp, 3).as_deref(), Some("30"));
     }
 }
