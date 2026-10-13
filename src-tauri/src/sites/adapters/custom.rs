@@ -105,7 +105,7 @@ impl SiteAdapter for CustomUrlAdapter {
 
     async fn resolve_stream_url(&self, ctx: &SiteContext, url: &str) -> AppResult<String> {
         let runner = crate::sites::yt_dlp::SidecarRunner::new(ctx.app().clone());
-        let cookies = ctx.cookie_file_for_site(self.id());
+        let cookies = ctx.cookie_file_for_site(&crate::sites::cookie_keys::key_for(self.id(), url));
         let mut args = vec![
             url.to_string(),
             "--get-url".to_string(),

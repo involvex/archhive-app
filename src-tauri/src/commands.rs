@@ -421,8 +421,25 @@ pub async fn cookie_login(
     app: AppHandle,
     state: State<'_, Arc<AppState>>,
     site_id: String,
+    url: Option<String>,
 ) -> CmdResult<crate::cookie_login::CookieLoginResult> {
-    let (display_name, base_url) = map_err(state.site_login_info(&site_id))?;
+    // Per-domain entries (`host-<domain>`, any site without an adapter) take
+    // the site's URL from the caller; it must belong to that entry.
+    let (display_name, base_url) = if crate::sites::cookie_keys::is_host_key(&site_id) {
+        let url = url
+            .filter(|u| u.starts_with("https://") || u.starts_with("http://"))
+            .ok_or_else(|| "A site URL is required for this cookie entry.".to_string())?;
+        if crate::sites::cookie_keys::host_key(&url).as_deref() != Some(site_id.as_str()) {
+            return Err(format!("{url} does not belong to cookie entry {site_id}"));
+        }
+        let host = url::Url::parse(&url)
+            .ok()
+            .and_then(|u| u.host_str().map(str::to_string))
+            .unwrap_or_else(|| site_id.clone());
+        (host, url)
+    } else {
+        map_err(state.site_login_info(&site_id))?
+    };
     let target = crate::cookie_login::login_target(&site_id, &base_url);
     map_err(crate::cookie_login::capture(&app, &site_id, &display_name, &target).await)
 }

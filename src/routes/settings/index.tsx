@@ -57,6 +57,15 @@ import { Sun, Moon, Monitor, Clock, Book, Contrast } from "lucide-react";
 import { ChangelogDialog, useChangelogDialog } from "@/components/ChangelogDialog";
 import { ExtLink } from "@/components/ExtLink";
 import { CookieLoginButton } from "@/components/CookieLoginButton";
+import {
+  cookieHostLabel,
+  hostCookieKey,
+  isHostCookieKey,
+  XPOMELO_COOKIE_HOSTS,
+  type CookieHost,
+} from "@/lib/sites/cookieHosts";
+
+const CUSTOM_COOKIE_HOSTS_KEY = "archhive.cookieHosts";
 
 export const Route = createFileRoute("/settings/")({
   component: SettingsPage,
@@ -181,6 +190,16 @@ function SettingsPage() {
   const [sites, setSites] = useState<SiteInfo[]>([]);
   const [cookieSites, setCookieSites] = useState<CookieSiteInfo[]>([]);
   const [selectedSite, setSelectedSite] = useState("");
+  // Sites added by domain in Settings → Cookies (this device only).
+  const [customHosts, setCustomHosts] = useState<CookieHost[]>(() => {
+    try {
+      const raw = localStorage.getItem(CUSTOM_COOKIE_HOSTS_KEY);
+      return raw ? (JSON.parse(raw) as CookieHost[]) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [newCookieDomain, setNewCookieDomain] = useState("");
   const [cookieText, setCookieText] = useState("");
   const [cookieJson, setCookieJson] = useState("");
   const [cookieTable, setCookieTable] = useState("");
@@ -754,11 +773,12 @@ function SettingsPage() {
 
   function copyBookmarklet() {
     const site = cookieSitesList.find((s) => s.id === selectedSite);
-    if (!site) {
+    const baseUrl = site?.base_url ?? (selectedHost ? `https://${selectedHost.domain}/` : "");
+    if (!baseUrl) {
       setCookieStatus("Select a site first.");
       return;
     }
-    const bookmarklet = buildCookieBookmarklet(site.base_url);
+    const bookmarklet = buildCookieBookmarklet(baseUrl);
     void navigator.clipboard.writeText(bookmarklet);
     setCookieStatus("Bookmarklet copied. Create a browser bookmark with the pasted URL.");
   }
@@ -1145,8 +1165,39 @@ function SettingsPage() {
   // Every site can use cookies (logged-in listings, age gates, premium);
   // sites that need them to work at all are listed first.
   const cookieSitesList = [...sites]
-    .filter((s) => s.id !== "custom")
+    .filter((s) => s.id !== "custom" && s.id !== "xpomelo")
     .sort((a, b) => Number(b.requires_cookies) - Number(a.requires_cookies));
+  // Per-domain entries: xPomelo sources plus sites added by domain.
+  const cookieHosts = [...XPOMELO_COOKIE_HOSTS, ...customHosts];
+  const selectedHost = isHostCookieKey(selectedSite)
+    ? cookieHosts.find((h) => hostCookieKey(h.domain) === selectedSite)
+    : undefined;
+  const selectedSiteName = selectedHost
+    ? selectedHost.name
+    : cookieSitesList.find((s) => s.id === selectedSite)?.display_name;
+
+  function addCookieHost() {
+    const raw = newCookieDomain.trim();
+    const key = hostCookieKey(raw);
+    if (!key) {
+      setCookieStatus("Enter a site address such as example.com.");
+      return;
+    }
+    const domain = (raw.includes("://") ? new URL(raw).hostname : raw.replace(/\/.*$/, ""))
+      .toLowerCase()
+      .replace(/^www\./, "");
+    if (!cookieHosts.some((h) => hostCookieKey(h.domain) === key)) {
+      const next = [...customHosts, { name: domain, domain }];
+      setCustomHosts(next);
+      try {
+        localStorage.setItem(CUSTOM_COOKIE_HOSTS_KEY, JSON.stringify(next));
+      } catch {
+        /* per-device convenience only */
+      }
+    }
+    setSelectedSite(key);
+    setNewCookieDomain("");
+  }
   // #48: Android engine-plugin signal for the Media tools card.
   const engineStatus =
     runtime === "mobile-tauri" && !versionsLoading ? enginePluginStatus(binaryVersions) : null;
@@ -2298,18 +2349,59 @@ function SettingsPage() {
                 onChange={(e) => setSelectedSite(e.target.value)}
               >
                 <option value="">Select site…</option>
-                {cookieSitesList.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.display_name}
-                    {s.requires_cookies ? " (required)" : ""}
-                  </option>
-                ))}
+                <optgroup label="Supported sites">
+                  {cookieSitesList.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.display_name}
+                      {s.requires_cookies ? " (required)" : ""}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="Sites from xPomelo">
+                  {XPOMELO_COOKIE_HOSTS.map((h) => (
+                    <option key={h.domain} value={hostCookieKey(h.domain) ?? h.domain}>
+                      {h.name}
+                      {h.paysite ? " (paysite)" : ""}
+                    </option>
+                  ))}
+                </optgroup>
+                {customHosts.length > 0 && (
+                  <optgroup label="Added sites">
+                    {customHosts.map((h) => (
+                      <option key={h.domain} value={hostCookieKey(h.domain) ?? h.domain}>
+                        {h.domain}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
               </select>
+              <form
+                className="flex gap-2"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  addCookieHost();
+                }}
+              >
+                <Input
+                  className="h-9 text-sm"
+                  placeholder="Other site, e.g. example.com"
+                  value={newCookieDomain}
+                  onChange={(e) => setNewCookieDomain(e.target.value)}
+                />
+                <Button type="submit" variant="outline" disabled={!newCookieDomain.trim()}>
+                  Add site
+                </Button>
+              </form>
+              <p className="text-xs text-[var(--color-muted-foreground)]">
+                Cookies for these sites are used for playback, downloads (yt-dlp, on the phone and
+                on desktop) and info lookups.
+              </p>
               {selectedSite && (
                 <CookieLoginButton
                   key={selectedSite}
                   siteId={selectedSite}
-                  siteName={cookieSitesList.find((s) => s.id === selectedSite)?.display_name}
+                  siteName={selectedSiteName}
+                  url={selectedHost ? `https://${selectedHost.domain}/` : undefined}
                   onSaved={() => void refreshCookies()}
                 />
               )}
@@ -2356,7 +2448,9 @@ function SettingsPage() {
                   {cookieSites.map((c) => (
                     <li key={c.site_id} className="flex items-center justify-between gap-2">
                       <span>
-                        {c.site_id}{" "}
+                        {isHostCookieKey(c.site_id)
+                          ? cookieHostLabel(c.site_id, customHosts)
+                          : c.site_id}{" "}
                         <span className="text-xs text-[var(--color-muted-foreground)]">
                           ({c.updated_at})
                         </span>

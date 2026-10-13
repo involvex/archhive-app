@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 interface CookieLoginButtonProps {
   siteId: string;
   siteName?: string;
+  /** Site address for per-domain entries (`host-<domain>`). */
+  url?: string;
   /** Called after cookies were captured and stored. */
   onSaved?: (count: number) => void;
   className?: string;
@@ -22,6 +24,7 @@ interface CookieLoginButtonProps {
 export function CookieLoginButton({
   siteId,
   siteName,
+  url,
   onSaved,
   className,
 }: CookieLoginButtonProps) {
@@ -39,7 +42,7 @@ export function CookieLoginButton({
         : "",
     );
     try {
-      const result = await api.loginForCookies(siteId);
+      const result = await api.loginForCookies(siteId, url);
       setStatus(`Saved ${result.count} cookies for ${siteName ?? siteId}.`);
       onSaved?.(result.count);
     } catch (e) {

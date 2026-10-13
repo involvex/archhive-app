@@ -1,3 +1,4 @@
+import { cookieDomainMatchesHostKey, isHostCookieKey } from "@/lib/sites/cookieHosts";
 export interface BrowserCookieExport {
   name: string;
   value: string;
@@ -112,6 +113,10 @@ export function filterCookiesForSite(
   cookies: BrowserCookieExport[],
   siteId: string,
 ): BrowserCookieExport[] {
+  // Per-domain entries (`host-<domain>`): keep that site's cookies only.
+  if (isHostCookieKey(siteId)) {
+    return cookies.filter((cookie) => cookieDomainMatchesHostKey(cookie.domain, siteId));
+  }
   const domains = SITE_COOKIE_DOMAINS[siteId];
   if (!domains?.length) return cookies;
   return cookies.filter((cookie) => domains.some((domain) => cookie.domain.includes(domain)));

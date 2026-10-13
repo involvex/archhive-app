@@ -1094,8 +1094,13 @@ export const api = {
    * (on this device, or on the LAN host in Remote LAN mode). Resolves once the
    * user saves; rejects with "Login cancelled." when they back out.
    */
-  async loginForCookies(siteId: string): Promise<CookieLoginResult> {
-    const result = await localInvoke<CookieLoginResult>("cookie_login", { siteId });
+  async loginForCookies(siteId: string, url?: string): Promise<CookieLoginResult> {
+    // `url`: required for per-domain entries (`host-<domain>`), which have
+    // no adapter to supply the site's address.
+    const result = await localInvoke<CookieLoginResult>("cookie_login", {
+      siteId,
+      url: url ?? null,
+    });
     await api.saveSiteCookies(siteId, result.netscape);
     return result;
   },

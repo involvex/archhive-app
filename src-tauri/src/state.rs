@@ -399,7 +399,9 @@ impl AppState {
                     .sites
                     .detect(url)
                     .unwrap_or_else(|| "generic_ytdlp".to_string());
-                let cookies = self.vault.cookie_file_for_site(&adapter);
+                let cookies = self
+                    .vault
+                    .cookie_file_for_site(&crate::sites::cookie_keys::key_for(&adapter, url));
                 match runner
                     .list_flat_playlist_all(url, MAX_PER_BROWSE, cookies.as_deref())
                     .await
@@ -1359,7 +1361,9 @@ impl AppState {
         site_id: String,
     ) -> AppResult<MediaItem> {
         let runner = crate::sites::yt_dlp::SidecarRunner::new(self.site_ctx.app().clone());
-        let cookies = self.site_ctx.cookie_file_for_site(&site_id);
+        let cookies = self
+            .site_ctx
+            .cookie_file_for_site(&crate::sites::cookie_keys::key_for_url(&self.sites, url));
         let json = runner.resolve_media_json(url, cookies.as_deref()).await?;
 
         let title = json
@@ -1526,9 +1530,10 @@ impl AppState {
             .sites
             .detect(url)
             .unwrap_or_else(|| "custom".to_string());
-        let cookies = clearance
-            .map(|c| c.cookie_file.clone())
-            .or_else(|| self.site_ctx.cookie_file_for_site(&site_id));
+        let cookies = clearance.map(|c| c.cookie_file.clone()).or_else(|| {
+            self.site_ctx
+                .cookie_file_for_site(&crate::sites::cookie_keys::key_for_url(&self.sites, url))
+        });
         let ua = clearance.map(|c| c.user_agent.as_str());
         let run = |impersonate: Option<&str>| {
             let mut args = vec![
@@ -1593,8 +1598,9 @@ impl AppState {
         }
 
         // KVS session links / site APIs yt-dlp can't play or doesn't know.
+        let cookie_key = crate::sites::cookie_keys::key_for_url(&self.sites, url);
         if let Some(result) =
-            crate::sites::native::resolve_stream(&self.site_ctx, url, &site_id).await
+            crate::sites::native::resolve_stream(&self.site_ctx, url, &cookie_key).await
         {
             return result.map(|stream| {
                 crate::sites::adapters::pornhub::maybe_loopback_proxy(&self.site_ctx, &stream, url)
@@ -1602,7 +1608,9 @@ impl AppState {
         }
 
         let runner = crate::sites::yt_dlp::SidecarRunner::new(self.site_ctx.app().clone());
-        let cookies = self.site_ctx.cookie_file_for_site(&site_id);
+        let cookies = self
+            .site_ctx
+            .cookie_file_for_site(&crate::sites::cookie_keys::key_for_url(&self.sites, url));
         let mut args = vec![
             url.to_string(),
             "--get-url".to_string(),

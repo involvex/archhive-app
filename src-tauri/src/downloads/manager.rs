@@ -666,7 +666,10 @@ async fn run_job_with_plan(
     let db_emit = db.clone();
     let app_emit = app.clone();
     let job_id_emit = job_id.clone();
-    let cookies = vault.cookie_file_for_site(&plan.adapter_id);
+    // Sites without their own adapter (xPomelo sources, pasted URLs) keep
+    // cookies per domain; see `sites::cookie_keys`.
+    let cookie_key = crate::sites::cookie_keys::key_for(&plan.adapter_id, &plan.url);
+    let cookies = vault.cookie_file_for_site(&cookie_key);
 
     let result: AppResult<Vec<String>> = match plan.tool {
         DownloadTool::GalleryDl => {
@@ -698,7 +701,7 @@ async fn run_job_with_plan(
             if !cancel.load(Ordering::Relaxed) {
                 return handle_stopped(&db, &app, &job_id);
             }
-            let cookie_header = vault.cookie_header(&plan.adapter_id).ok().flatten();
+            let cookie_header = vault.cookie_header(&cookie_key).ok().flatten();
             let mut last_reported = 0u64;
             let path = crate::downloads::image::download_direct(
                 &plan.url,
@@ -732,7 +735,7 @@ async fn run_job_with_plan(
             if !cancel.load(Ordering::Relaxed) {
                 return handle_stopped(&db, &app, &job_id);
             }
-            let cookie_header = vault.cookie_header(&plan.adapter_id).ok().flatten();
+            let cookie_header = vault.cookie_header(&cookie_key).ok().flatten();
             std::fs::create_dir_all(library_path)?;
             let base = plan
                 .title
@@ -938,7 +941,7 @@ async fn run_job_with_plan(
                 && enriched_performers.is_empty()
                 && enriched_tags.is_empty()
             {
-                let cookies = vault.cookie_file_for_site(&plan.adapter_id);
+                let cookies = vault.cookie_file_for_site(&cookie_key);
                 if let Ok(json) = runner
                     .resolve_media_json(&plan.url, cookies.as_deref())
                     .await

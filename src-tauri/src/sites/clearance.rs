@@ -42,14 +42,10 @@ fn host_of(url: &str) -> Option<String> {
         .map(|h| h.trim_start_matches("www.").to_ascii_lowercase())
 }
 
-/// Vault cookie key for a site's clearance (`clearance-crazyporn-xxx`).
+/// Vault cookie key for a site's clearance: the site's per-domain entry
+/// (`host-crazyporn-xxx`), shared with cookies from Settings → Cookies.
 pub fn vault_key(url: &str) -> Option<String> {
-    let host = host_of(url)?;
-    let slug: String = host
-        .chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
-        .collect();
-    Some(format!("clearance-{slug}"))
+    crate::sites::cookie_keys::host_key(url)
 }
 
 fn ua_secret_key(vault_key: &str) -> String {
@@ -133,7 +129,7 @@ mod tests {
     fn keys_and_args() {
         assert_eq!(
             vault_key("https://www.crazyporn.xxx/videos/1/x/").as_deref(),
-            Some("clearance-crazyporn-xxx")
+            Some("host-crazyporn-xxx")
         );
         assert_eq!(vault_key("not a url"), None);
         assert_eq!(
