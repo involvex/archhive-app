@@ -352,15 +352,26 @@ fn browser_session() -> Option<(String, String)> {
     BROWSER_SESSION.lock().ok().and_then(|s| s.clone())
 }
 
-/// xPomelo / Cloudflare refused the app (or ArcHive is pausing after that).
-fn is_refusal(e: &AppError) -> bool {
+/// Cloudflare's bot check refused the app (HTTP 403). The in-app browser
+/// gets past that one.
+fn is_bot_check(e: &AppError) -> bool {
+    e.to_string().contains("HTTP 403")
+}
+
+/// Rate limited (429 / Cloudflare 1015) or ArcHive pausing after one. A
+/// browser can't get past an IP rate limit, so nothing more is sent.
+fn is_rate_limit(e: &AppError) -> bool {
     let m = e.to_string().to_ascii_lowercase();
     m.contains("429")
         || m.contains("too many requests")
         || m.contains("rate limit")
-        || m.contains("http 403")
         || m.contains("pausing")
 }
+
+const RATE_LIMITED: &str = "xPomelo's Cloudflare is rate limiting this connection (error 1015). \
+     ArcHive has paused xPomelo requests and tries again on its own; the block \
+     usually lifts within 10-60 minutes. Saved searches still open from the \
+     Online library meanwhile.";
 
 async fn fetch(
     ctx: &SiteContext,
@@ -406,7 +417,8 @@ async fn fetch(
         .await
     {
         Ok(html) => Ok(html),
-        Err(e) if is_refusal(&e) => {
+        Err(e) if is_rate_limit(&e) => Err(AppError::Site(RATE_LIMITED.to_string())),
+        Err(e) if is_bot_check(&e) => {
             #[cfg(target_os = "android")]
             {
                 match fetch_in_browser(ctx, url).await {
@@ -414,14 +426,11 @@ async fn fetch(
                     Err(be) => tracing::warn!("[xpomelo] in-app browser fallback failed: {be}"),
                 }
             }
-            Err(match e {
-                AppError::Site(msg) if msg.contains("HTTP 403") => AppError::Site(
-                    "xPomelo's Cloudflare protection refused the request (HTTP 403); \
-                     try again in a minute"
-                        .to_string(),
-                ),
-                other => other,
-            })
+            Err(AppError::Site(
+                "xPomelo's Cloudflare protection refused the request (HTTP 403); \
+                 try again in a minute"
+                    .to_string(),
+            ))
         }
         Err(e) => Err(e),
     }
@@ -437,6 +446,11 @@ async fn fetch_in_browser(ctx: &SiteContext, url: &str) -> AppResult<String> {
     let page = crate::cookie_login::open_page(ctx.app(), url, "Loading xPomelo").await;
     crate::cookie_login::close_page(ctx.app()).await;
     let page = page?;
+    let lower = page.html.to_ascii_lowercase();
+    if lower.contains("error 1015") || lower.contains("you are being rate limited") {
+        crate::sites::throttle::note_rate_limited(url, None);
+        return Err(AppError::Site(RATE_LIMITED.to_string()));
+    }
     if let Ok(mut s) = BROWSER_SESSION.lock() {
         *s = Some((page.cookies.clone(), page.user_agent.clone()));
     }
@@ -752,6 +766,16 @@ fn dedupe(items: Vec<MediaItem>) -> Vec<MediaItem> {
         .collect()
 }
 
+/// `/image?key=…&src=https%3A%2F%2Fthumbs…` carries the source site's own
+/// thumbnail; xPomelo's image server is only needed when it doesn't.
+fn original_thumb(src: &str) -> Option<String> {
+    let query = src.strip_prefix("/image?")?;
+    url::form_urlencoded::parse(query.as_bytes())
+        .find(|(k, _)| k == "src")
+        .map(|(_, v)| v.into_owned())
+        .filter(|v| v.starts_with("https://") || v.starts_with("http://"))
+}
+
 /// Result cards: `<div class="qy-mod-li " data-id="…">` with
 /// `a.qy-mod-link[href]` (source URL), `<img src>`, `span.CrkfKf` (duration),
 /// `a.qy-title-link[title]` and `a.qy-source` (source site name). Ad cards
@@ -787,7 +811,10 @@ fn parse_listing(html: &str) -> Vec<MediaItem> {
                 .filter(|t| !t.is_empty())?;
             let thumbnail = THUMB.captures(block).map(|c| {
                 let src = crate::sites::urls::html_unescape(&c[1]);
-                if src.starts_with('/') {
+                if let Some(original) = original_thumb(&src) {
+                    // The source site's own CDN: no request to xPomelo.
+                    original
+                } else if src.starts_with('/') {
                     format!("{BASE}{src}")
                 } else {
                     src
@@ -985,6 +1012,19 @@ mod tests {
                 "spankbang.com/y/video/other"
             ]
         );
+    }
+
+    #[test]
+    fn thumbnails_prefer_the_source_cdn() {
+        assert_eq!(
+            original_thumb(
+                "/image?key=1851250585&domain=xvideos.com&id=video.x&src=https%3A%2F%2Fthumbs-gcore.xvideos-cdn.com%2Fa%2F3%2Fxv_15_t.jpg"
+            )
+            .as_deref(),
+            Some("https://thumbs-gcore.xvideos-cdn.com/a/3/xv_15_t.jpg")
+        );
+        assert_eq!(original_thumb("/image?key=-999701320"), None);
+        assert_eq!(original_thumb("https://cdn.example/t.jpg"), None);
     }
 
     #[test]

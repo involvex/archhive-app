@@ -1017,7 +1017,33 @@ async fn proxy_remote_media(
     }
     // Requests without a Range (thumbnails, HLS segments) queue for a few
     // slots so a grid of thumbnails doesn't hit a site all at once.
-    let permit = if range.is_none() {
+    // Hosts behind strict Cloudflare rate limits (xPomelo's image server
+    // shares the limit with its pages): no requests while backing off, and
+    // only two at a time, spaced out, otherwise.
+    let strict = PROXY_STRICT_HOSTS.iter().any(|h| {
+        url::Url::parse(url)
+            .ok()
+            .and_then(|u| u.host_str().map(str::to_string))
+            .is_some_and(|host| host == *h || host.ends_with(&format!(".{h}")))
+    });
+    if strict && crate::sites::throttle::cooling_down(url) {
+        return Err(StatusCode::SERVICE_UNAVAILABLE);
+    }
+    let strict_permit = if strict {
+        let permit = PROXY_STRICT_SLOTS.acquire().await.ok();
+        let wait = {
+            let mut next = PROXY_STRICT_NEXT.lock().await;
+            let now = tokio::time::Instant::now();
+            let slot = (*next).max(now);
+            *next = slot + std::time::Duration::from_millis(300);
+            slot - now
+        };
+        tokio::time::sleep(wait).await;
+        permit
+    } else {
+        None
+    };
+    let permit = if range.is_none() && !strict {
         PROXY_SLOTS.acquire().await.ok()
     } else {
         None
@@ -1046,8 +1072,19 @@ async fn proxy_remote_media(
     }
 
     let upstream = req.send().await.map_err(|_| StatusCode::BAD_GATEWAY)?;
+    drop(strict_permit);
     let status =
         StatusCode::from_u16(upstream.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
+    if strict && status == StatusCode::TOO_MANY_REQUESTS {
+        // Cloudflare 1015: pause every request to the site, pages included.
+        let retry_after = upstream
+            .headers()
+            .get(reqwest::header::RETRY_AFTER)
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_string);
+        crate::sites::throttle::note_rate_limited(url, retry_after.as_deref());
+        return Err(StatusCode::TOO_MANY_REQUESTS);
+    }
     let content_type = upstream
         .headers()
         .get(reqwest::header::CONTENT_TYPE)
@@ -1147,6 +1184,12 @@ static PROXY_CLIENT: std::sync::LazyLock<reqwest::Client> = std::sync::LazyLock:
         .build()
         .unwrap_or_default()
 });
+
+/// Hosts whose images count against a strict Cloudflare rate limit.
+const PROXY_STRICT_HOSTS: &[&str] = &["xpomelo.com"];
+static PROXY_STRICT_SLOTS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(2);
+static PROXY_STRICT_NEXT: std::sync::LazyLock<tokio::sync::Mutex<tokio::time::Instant>> =
+    std::sync::LazyLock::new(|| tokio::sync::Mutex::new(tokio::time::Instant::now()));
 
 /// Concurrent non-Range upstream requests through the media proxy.
 static PROXY_SLOTS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(6);

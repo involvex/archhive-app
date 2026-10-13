@@ -64,6 +64,16 @@ fn host_key(url: &str) -> String {
 /// roughly a dozen requests in 25 s at the default pace.
 const SLOW_HOSTS: &[(&str, Duration, u64)] = &[("xpomelo.com", Duration::from_millis(4000), 3000)];
 
+/// Test-request interval while backing off: strict hosts count every
+/// request against the block, so they are asked less often.
+fn probe_every(host: &str) -> Duration {
+    if SLOW_HOSTS.iter().any(|(h, _, _)| *h == host) {
+        Duration::from_secs(90)
+    } else {
+        PROBE_EVERY
+    }
+}
+
 fn pace_for(host: &str) -> (Duration, u64) {
     SLOW_HOSTS
         .iter()
@@ -75,7 +85,7 @@ fn pace_for(host: &str) -> (Duration, u64) {
 /// [`reserve_paced`] at the default pace.
 #[cfg(test)]
 fn reserve(state: &mut HostState, now: Instant) -> Result<Duration, Duration> {
-    reserve_paced(state, now, MIN_GAP, JITTER_MS)
+    reserve_paced(state, now, MIN_GAP, JITTER_MS, PROBE_EVERY)
 }
 
 /// Reserve the next send slot for a host. Returns how long to wait, or the
@@ -85,12 +95,13 @@ fn reserve_paced(
     now: Instant,
     gap: Duration,
     jitter_ms: u64,
+    probe: Duration,
 ) -> Result<Duration, Duration> {
     if let Some(until) = state.cooldown_until {
         if until > now {
             let probe_due = state
                 .last_probe
-                .is_none_or(|p| now.duration_since(p) >= PROBE_EVERY);
+                .is_none_or(|p| now.duration_since(p) >= probe);
             if !probe_due {
                 return Err(until - now);
             }
@@ -116,6 +127,7 @@ pub async fn acquire(url: &str) -> AppResult<()> {
             Instant::now(),
             gap,
             jitter,
+            probe_every(&key),
         )
     };
     match wait {
@@ -129,7 +141,7 @@ pub async fn acquire(url: &str) -> AppResult<()> {
              requests to it (up to {}s; it retries every {}s and resumes as soon as the site \
              answers)",
             remaining.as_secs().max(1),
-            PROBE_EVERY.as_secs()
+            probe_every(&key).as_secs()
         ))),
     }
 }
@@ -144,6 +156,15 @@ pub fn note_ok(url: &str) {
             state.last_probe = None;
         }
     }
+}
+
+/// Whether ArcHive is backing off from this URL's host after a 429.
+pub fn cooling_down(url: &str) -> bool {
+    HOSTS
+        .lock()
+        .ok()
+        .and_then(|h| h.get(&host_key(url)).and_then(|s| s.cooldown_until))
+        .is_some_and(|until| until > Instant::now())
 }
 
 /// Record a 429 so later requests to the host back off.
@@ -175,8 +196,11 @@ mod tests {
         let now = Instant::now();
         let mut s = HostState::default();
         let (gap, jitter) = pace_for("xpomelo.com");
-        assert_eq!(reserve_paced(&mut s, now, gap, jitter), Ok(Duration::ZERO));
-        assert!(reserve_paced(&mut s, now, gap, jitter).unwrap() >= gap);
+        assert_eq!(
+            reserve_paced(&mut s, now, gap, jitter, PROBE_EVERY),
+            Ok(Duration::ZERO)
+        );
+        assert!(reserve_paced(&mut s, now, gap, jitter, PROBE_EVERY).unwrap() >= gap);
     }
 
     #[test]
