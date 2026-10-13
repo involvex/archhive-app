@@ -74,6 +74,7 @@ function SiteHubPage() {
           siteName={site.display_name}
           combineTags={site.browse_options?.combine_tags ?? 0}
           groups={site.browse_options?.category_groups ?? []}
+          options={site.browse_options}
           canExclude={Boolean(
             site.browse_options?.include_exclude &&
             (site.browse_options.include_exclude_kinds?.length

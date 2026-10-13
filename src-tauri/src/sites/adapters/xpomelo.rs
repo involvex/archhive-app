@@ -192,7 +192,7 @@ impl SiteAdapter for XpomeloAdapter {
             let page = fetch(ctx, &url, q.orientation).await.map(|html| {
                 let cards = parse_listing(&html);
                 let more = cards.len() >= 40 || html.contains(&format!("page={}", q.page + 1));
-                (cards, more)
+                (cards, more, result_count(&html))
             });
             // Rate limited: the other buckets would be refused too.
             let limited = matches!(&page, Err(AppError::Site(m)) if m.contains("429") || m.contains("Cloudflare"));
@@ -204,11 +204,14 @@ impl SiteAdapter for XpomeloAdapter {
         let mut lists = Vec::new();
         let mut has_more = false;
         let mut first_err = None;
+        // A range adds up its buckets' counts (all of them or none).
+        let mut total: Option<u32> = Some(0);
         for page in pages {
             match page {
-                Ok((cards, more)) => {
+                Ok((cards, more, count)) => {
                     has_more |= more;
                     lists.push(cards);
+                    total = total.zip(count).map(|(a, b)| a.saturating_add(b));
                 }
                 Err(e) => first_err = first_err.or(Some(e)),
             }
@@ -246,7 +249,7 @@ impl SiteAdapter for XpomeloAdapter {
             items,
             page: query.page,
             has_more,
-            total: None,
+            total,
             ..Default::default()
         })
     }
@@ -766,6 +769,21 @@ fn dedupe(items: Vec<MediaItem>) -> Vec<MediaItem> {
         .collect()
 }
 
+/// Result count from the page heading: `<h1 class="main cat-count-header">
+/// Blonde Porn Videos (575,432)</h1>` on category / pornstar pages (it follows
+/// the filters). Search pages have none.
+fn result_count(html: &str) -> Option<u32> {
+    static RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+        regex::Regex::new(r#"<h1[^>]*>[^<]*\(([\d,.]+)\)\s*</h1>"#).expect("count")
+    });
+    RE.captures(html)?[1]
+        .chars()
+        .filter(char::is_ascii_digit)
+        .collect::<String>()
+        .parse()
+        .ok()
+}
+
 /// `/image?key=…&src=https%3A%2F%2Fthumbs…` carries the source site's own
 /// thumbnail; xPomelo's image server is only needed when it doesn't.
 fn original_thumb(src: &str) -> Option<String> {
@@ -1011,6 +1029,22 @@ mod tests {
                 "pornhub.com/view_video.php?viewkey=a",
                 "spankbang.com/y/video/other"
             ]
+        );
+    }
+
+    #[test]
+    fn result_count_from_heading() {
+        assert_eq!(
+            result_count(r#"<h1 class="main cat-count-header">Blonde Porn Videos (575,432)</h1>"#),
+            Some(575_432)
+        );
+        assert_eq!(
+            result_count(r#"<h1 class="main dbgbXb">Riley Reid Porn Videos (16,639)</h1>"#),
+            Some(16_639)
+        );
+        assert_eq!(
+            result_count(r#"<h1 class="main">Search Results for "x"</h1>"#),
+            None
         );
     }
 

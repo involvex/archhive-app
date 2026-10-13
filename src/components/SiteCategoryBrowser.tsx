@@ -2,7 +2,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Layers, RefreshCw, Search } from "lucide-react";
 import { api } from "@/lib/api/client";
-import type { FilterOption, SiteCategory } from "@/lib/types";
+import type {
+  BrowseFilters,
+  BrowseKind,
+  BrowseOptions,
+  FilterOption,
+  SiteCategory,
+} from "@/lib/types";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ErrorState } from "@/components/ErrorState";
@@ -51,9 +57,29 @@ function formatCount(n?: number): string {
   return String(n);
 }
 
+/** Remembered per site so the hub opens with the last choices. */
+function loadHubFilters(siteId: string): BrowseFilters {
+  try {
+    const raw = localStorage.getItem(`archhive.hubFilters.${siteId}`);
+    return raw ? (JSON.parse(raw) as BrowseFilters) : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveHubFilters(siteId: string, f: BrowseFilters) {
+  try {
+    localStorage.setItem(`archhive.hubFilters.${siteId}`, JSON.stringify(f));
+  } catch {
+    // Storage unavailable (private mode): the choices just aren't kept.
+  }
+}
+
 interface SiteCategoryBrowserProps {
   siteId: string;
   siteName: string;
+  /** Site sort / filter options, offered before opening a tag. */
+  options?: BrowseOptions;
   /** Tags one URL can intersect exactly (`BrowseOptions.combine_tags`). */
   combineTags?: number;
   /** Grouped index sections (`BrowseOptions.category_groups`). */
@@ -69,8 +95,19 @@ export function SiteCategoryBrowser({
   combineTags = 0,
   groups = [],
   canExclude = false,
+  options,
 }: SiteCategoryBrowserProps) {
   const navigate = useNavigate();
+  // Sort / length / … picked here open with the listing (one request with
+  // everything set, instead of loading the default listing first).
+  const [hubFilters, setHubFiltersState] = useState<BrowseFilters>(() => loadHubFilters(siteId));
+  const setHubFilter = (key: keyof BrowseFilters, value: string) => {
+    const next = { ...hubFilters, [key]: value || undefined };
+    setHubFiltersState(next);
+    saveHubFilters(siteId, next);
+  };
+  const filtersFor = (kind: BrowseKind): BrowseFilters =>
+    options?.filter_kinds.includes(kind) ? hubFilters : {};
   // "" = the site's main (popular) index; otherwise a group id such as "a".
   const [group, setGroup] = useState("");
   const [categories, setCategories] = useState<SiteCategory[] | null>(
@@ -158,6 +195,7 @@ export function SiteCategoryBrowser({
         kind: required[0]?.kind ?? "category",
         slug: selected.map((s) => (excluded.includes(s.slug) ? `-${s.slug}` : s.slug)).join(","),
       },
+      search: filtersFor(required[0]?.kind ?? "category"),
     });
   }
 
@@ -183,6 +221,15 @@ export function SiteCategoryBrowser({
         ? "bg-[var(--color-primary)] text-[var(--color-primary-foreground)]"
         : "bg-[var(--color-secondary)] hover:bg-[var(--color-muted)]"
     }`;
+
+  const pickers: { key: keyof BrowseFilters; label: string; list?: FilterOption[] }[] = [
+    { key: "sort", label: "Sort", list: options?.sorts },
+    { key: "duration", label: "Length", list: options?.durations },
+    { key: "period", label: "Period", list: options?.periods },
+    { key: "quality", label: "Quality", list: options?.qualities },
+    { key: "source", label: "Source", list: options?.sources },
+  ];
+  const shownPickers = pickers.filter((p) => p.list && p.list.length > 0);
 
   return (
     <section className="space-y-3">
@@ -221,6 +268,30 @@ export function SiteCategoryBrowser({
           <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
         </Button>
       </div>
+
+      {shownPickers.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {shownPickers.map((p) => (
+            <select
+              key={p.key}
+              className="h-8 max-w-[11rem] rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-2 text-xs"
+              value={hubFilters[p.key] ?? ""}
+              onChange={(e) => setHubFilter(p.key, e.target.value)}
+              aria-label={p.label}
+            >
+              <option value="">{p.label}: default</option>
+              {p.list!.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          ))}
+          <span className="text-[11px] text-[var(--color-muted-foreground)]">
+            Applied when you open a tag
+          </span>
+        </div>
+      )}
 
       {groups.length > 0 && (
         <div className="space-y-2">
@@ -330,6 +401,7 @@ export function SiteCategoryBrowser({
               key={`${c.kind}:${c.slug}`}
               to="/browse/$site/$kind/$slug"
               params={{ site: siteId, kind: c.kind, slug: c.slug }}
+              search={filtersFor(c.kind)}
               className={chipClass(false)}
             >
               {inner}

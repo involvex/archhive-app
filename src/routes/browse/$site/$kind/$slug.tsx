@@ -111,6 +111,8 @@ function BrowseDetailPage() {
   const [items, setItems] = useState<MediaItem[]>(cached?.items ?? []);
   const [page, setPage] = useState(cached?.page ?? 1);
   const [hasMore, setHasMore] = useState(cached?.hasMore ?? false);
+  // Total matches the site reports for this listing (xPomelo), if any.
+  const [resultTotal, setResultTotal] = useState<number | null>(null);
   const [querySlug, setQuerySlug] = useState(cached?.querySlug ?? browseSlug);
   const siteInfo = useSiteInfo(site);
   const [filters, setFilters] = useState<BrowseFilters>(cached?.filters ?? initialFilters);
@@ -226,6 +228,7 @@ function BrowseDetailPage() {
           return [...prev, ...result.items.filter((i) => !seen.has(i.id))];
         });
         setHasMore(result.has_more);
+        if (!append) setResultTotal(result.total ?? null);
         setPage(p);
         setFromCache(Boolean(result.from_cache));
         setCacheAgeSecs(result.cache_age_secs ?? null);
@@ -663,6 +666,11 @@ function BrowseDetailPage() {
           filterControls
         )}
 
+        {resultTotal != null && resultTotal > 0 && (
+          <p className="text-xs text-[var(--color-muted-foreground)]">
+            {resultTotal.toLocaleString()} {resultTotal === 1 ? "video" : "videos"} on the site
+          </p>
+        )}
         {(hiddenCount > 0 || filteredOut > 0) && (
           <p className="text-xs text-[var(--color-muted-foreground)]">
             {[
