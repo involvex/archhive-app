@@ -1094,10 +1094,19 @@ fn site_id_from_referer(referer: &str) -> Option<&'static str> {
         .and_then(|u| u.host_str().map(str::to_ascii_lowercase))?;
     let host = host.strip_prefix("www.").unwrap_or(&host).to_string();
     [
-        "pornhub", "xvideos", "xhamster", "xnxx", "youporn", "redgifs", "eporner",
+        ("pornhub.com", "pornhub"),
+        ("xvideos.com", "xvideos"),
+        ("xhamster.com", "xhamster"),
+        ("xnxx.com", "xnxx"),
+        ("youporn.com", "youporn"),
+        ("redgifs.com", "redgifs"),
+        ("eporner.com", "eporner"),
+        ("thethothub.com", "thothub"),
+        ("thisvid.com", "thisvid"),
     ]
     .into_iter()
-    .find(|site| host == format!("{site}.com") || host.ends_with(&format!(".{site}.com")))
+    .find(|(domain, _)| host == *domain || host.ends_with(&format!(".{domain}")))
+    .map(|(_, site)| site)
 }
 
 fn rewrite_m3u8_for_proxy(body: &str, playlist_url: &str, referer: &str, port: u16) -> String {
@@ -1927,6 +1936,7 @@ mod referer_tests {
         assert_eq!(site("https://www.eporner.com/"), Some("eporner"));
         assert_eq!(site("https://www.pornhub.com/"), Some("pornhub"));
         assert_eq!(site("https://de.xhamster.com/videos/x"), Some("xhamster"));
+        assert_eq!(site("https://thethothub.com/"), Some("thothub"));
         // Unknown or look-alike hosts get no cookies at all.
         assert_eq!(site("https://example.com/"), None);
         assert_eq!(site("https://pornhub.com.evil.example/"), None);
