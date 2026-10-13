@@ -1118,21 +1118,21 @@ impl AppState {
     }
 
     /// A site's category / tag index — or one `group` of a grouped index
-    /// (e.g. XVIDEOS letter "a") — cached in memory for six hours and on disk
-    /// for a week, so the large per-letter indexes are fetched rarely.
+    /// (e.g. XVIDEOS letter "a"). Served from memory / disk with no expiry:
+    /// the site is only asked again when there is no copy yet or the user
+    /// taps Refresh (`refresh`). A failed refresh keeps the cached copy.
     pub async fn list_site_categories(
         &self,
         site_id: &str,
         group: Option<&str>,
+        refresh: bool,
     ) -> AppResult<Vec<crate::models::SiteCategory>> {
         use std::collections::HashMap;
         use std::sync::LazyLock;
-        use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-        type Cache = HashMap<String, (Instant, Vec<crate::models::SiteCategory>)>;
+        use std::time::{SystemTime, UNIX_EPOCH};
+        type Cache = HashMap<String, Vec<crate::models::SiteCategory>>;
         static CACHE: LazyLock<std::sync::Mutex<Cache>> =
             LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
-        const MEMORY_TTL: Duration = Duration::from_secs(6 * 3600);
-        const DISK_TTL_SECS: u64 = 7 * 24 * 3600;
 
         let adapter = self
             .sites
@@ -1150,46 +1150,58 @@ impl AppState {
             }
         }
         let key = format!("{site_id}|{}", group.unwrap_or(""));
-        if let Some((at, cats)) = CACHE.lock().ok().and_then(|c| c.get(&key).cloned()) {
-            if at.elapsed() < MEMORY_TTL {
-                return Ok(cats);
-            }
-        }
-
         // Disk cache: <data>/tag-index/<site>__<group>.json
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
         let disk_path = self
             .data_dir
             .join("tag-index")
             .join(format!("{site_id}__{}.json", group.unwrap_or("_main")));
-        if let Ok(raw) = std::fs::read_to_string(&disk_path) {
-            if let Ok((fetched_at, cats)) =
-                serde_json::from_str::<(u64, Vec<crate::models::SiteCategory>)>(&raw)
-            {
-                if now.saturating_sub(fetched_at) < DISK_TTL_SECS && !cats.is_empty() {
-                    if let Ok(mut c) = CACHE.lock() {
-                        c.insert(key, (Instant::now(), cats.clone()));
-                    }
-                    return Ok(cats);
+        let cached = CACHE
+            .lock()
+            .ok()
+            .and_then(|c| c.get(&key).cloned())
+            .or_else(|| {
+                let raw = std::fs::read_to_string(&disk_path).ok()?;
+                let (_, cats) =
+                    serde_json::from_str::<(u64, Vec<crate::models::SiteCategory>)>(&raw).ok()?;
+                (!cats.is_empty()).then_some(cats)
+            });
+        if !refresh {
+            if let Some(cats) = cached {
+                if let Ok(mut c) = CACHE.lock() {
+                    c.insert(key, cats.clone());
                 }
+                return Ok(cats);
             }
+        } else {
+            adapter.forget_category_cache();
         }
 
-        let cats = match group {
-            Some(g) => adapter.list_category_group(&self.site_ctx, g).await?,
-            None if options.has_categories => adapter.list_categories(&self.site_ctx).await?,
-            None => Vec::new(),
+        let fetched = match group {
+            Some(g) => adapter.list_category_group(&self.site_ctx, g).await,
+            None if options.has_categories => adapter.list_categories(&self.site_ctx).await,
+            None => Ok(Vec::new()),
+        };
+        let cats = match fetched {
+            Ok(cats) => cats,
+            Err(e) => {
+                if let Some(cats) = cached {
+                    tracing::warn!("[categories] refresh of {key} failed ({e}); keeping cache");
+                    return Ok(cats);
+                }
+                return Err(e);
+            }
         };
         if !cats.is_empty() {
             if let Ok(mut c) = CACHE.lock() {
-                c.insert(key, (Instant::now(), cats.clone()));
+                c.insert(key, cats.clone());
             }
             if let Some(dir) = disk_path.parent() {
                 let _ = std::fs::create_dir_all(dir);
             }
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
             if let Ok(json) = serde_json::to_string(&(now, &cats)) {
                 let _ = std::fs::write(&disk_path, json);
             }

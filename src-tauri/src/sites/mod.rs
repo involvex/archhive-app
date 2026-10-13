@@ -21,7 +21,7 @@ pub mod urls;
 pub mod yt_dlp;
 
 /// Browser User-Agent for site scraping.
-pub(crate) const BROWSER_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+pub(crate) const BROWSER_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36";
 
 /// Client for retrying failed connections: IPv4 only (a bound 0.0.0.0 local
 /// address) and HTTP/1.1 only. Some networks resolve a site's IPv6 address
@@ -106,12 +106,50 @@ impl SiteContext {
             .ok()
             .flatten()
             .filter(|h| !h.is_empty());
+        // Look like a browser navigating the site: the headers Chrome sends
+        // for a page load, and the previous page on the same site as Referer.
+        let referer = throttle::last_page(url);
+        let has = |name: &str| {
+            extra
+                .unwrap_or_default()
+                .iter()
+                .any(|(k, _)| k.eq_ignore_ascii_case(name))
+        };
+        // Callers asking for JSON etc. are XHR-style requests, not page loads.
+        let xhr = extra
+            .unwrap_or_default()
+            .iter()
+            .any(|(k, v)| k.eq_ignore_ascii_case("Accept") && !v.contains("text/html"));
+        let mut defaults: Vec<(&str, &str)> = vec![
+            (
+                "Accept",
+                "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+            ),
+            ("Accept-Language", "en-US,en;q=0.9"),
+            (
+                "Sec-Fetch-Site",
+                if referer.is_some() { "same-origin" } else { "none" },
+            ),
+        ];
+        if xhr {
+            defaults.extend([("Sec-Fetch-Dest", "empty"), ("Sec-Fetch-Mode", "cors")]);
+        } else {
+            defaults.extend([
+                ("Upgrade-Insecure-Requests", "1"),
+                ("Sec-Fetch-Dest", "document"),
+                ("Sec-Fetch-Mode", "navigate"),
+            ]);
+        }
+        if let Some(r) = referer.as_deref() {
+            defaults.push(("Referer", r));
+        }
+        defaults.retain(|(k, _)| !has(k));
         let build = |client: &reqwest::Client| {
             let mut req = client.get(url);
             if let Some(header) = cookie.as_deref() {
                 req = req.header("Cookie", header);
             }
-            for (k, v) in extra.unwrap_or_default() {
+            for (k, v) in defaults.iter().chain(extra.unwrap_or_default()) {
                 req = req.header(*k, *v);
             }
             req
@@ -139,6 +177,7 @@ impl SiteContext {
             return Err(AppError::Site(format!("HTTP {} for {url}", resp.status())));
         }
         throttle::note_ok(url);
+        throttle::note_page(url);
         Ok(resp.text().await?)
     }
 
@@ -185,6 +224,11 @@ pub trait SiteAdapter: Send + Sync {
     async fn list_categories(&self, _ctx: &SiteContext) -> AppResult<Vec<SiteCategory>> {
         Ok(Vec::new())
     }
+
+    /// Drop any copy of the category / tag index the adapter keeps itself,
+    /// so the next `list_categories` / `list_category_group` asks the site
+    /// (the user tapped Refresh).
+    fn forget_category_cache(&self) {}
 
     /// One section of a grouped index (`browse_options().category_groups`).
     async fn list_category_group(

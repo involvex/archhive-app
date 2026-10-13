@@ -303,11 +303,19 @@ export const api = {
   },
 
   /** A site's category / tag index (empty when the site has none). */
-  async listSiteCategories(siteId: string, group?: string): Promise<SiteCategory[]> {
-    const qs = group ? `?group=${encodeURIComponent(group)}` : "";
+  /** Category / tag index from the app's cache; `refresh` asks the site again. */
+  async listSiteCategories(
+    siteId: string,
+    group?: string,
+    refresh = false,
+  ): Promise<SiteCategory[]> {
+    const params = new URLSearchParams();
+    if (group) params.set("group", group);
+    if (refresh) params.set("refresh", "1");
+    const qs = params.toString() ? `?${params}` : "";
     return localOrRemote<SiteCategory[]>(
       "list_site_categories",
-      { siteId, group: group ?? null },
+      { siteId, group: group ?? null, refresh },
       `/api/sites/${encodeURIComponent(siteId)}/categories${qs}`,
     );
   },

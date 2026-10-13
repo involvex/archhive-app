@@ -121,6 +121,12 @@ impl SiteAdapter for XpomeloAdapter {
         xpomelo_options()
     }
 
+    fn forget_category_cache(&self) {
+        if let Ok(mut c) = TAG_INDEX.lock() {
+            *c = None;
+        }
+    }
+
     /// The most popular tags (the index is ordered by popularity).
     async fn list_categories(&self, ctx: &SiteContext) -> AppResult<Vec<SiteCategory>> {
         Ok(tag_index(ctx)
@@ -428,14 +434,14 @@ async fn fetch_in_browser(ctx: &SiteContext, url: &str) -> AppResult<String> {
 /// Tag index (`<script id="data-tags">[{"key":"big tits","name":"big tits"},…]`
 /// on every category page), most popular first. Cached for the session: the
 /// page is ~1.3 MB.
+/// The full tag index, kept for the session so every letter group and the
+/// full list come from one page fetch (state caches each group on disk).
+static TAG_INDEX: LazyLock<std::sync::Mutex<Option<Vec<SiteCategory>>>> =
+    LazyLock::new(Default::default);
+
 async fn tag_index(ctx: &SiteContext) -> AppResult<Vec<SiteCategory>> {
-    use std::time::{Duration, Instant};
-    type Cached = Option<(Instant, Vec<SiteCategory>)>;
-    static CACHE: LazyLock<std::sync::Mutex<Cached>> = LazyLock::new(Default::default);
-    if let Some((at, tags)) = CACHE.lock().ok().and_then(|c| c.clone()) {
-        if at.elapsed() < Duration::from_secs(6 * 3600) {
-            return Ok(tags);
-        }
+    if let Some(tags) = TAG_INDEX.lock().ok().and_then(|c| c.clone()) {
+        return Ok(tags);
     }
     let html = fetch(ctx, &format!("{BASE}/category"), None).await?;
     let tags = parse_tag_index(&html);
@@ -444,8 +450,8 @@ async fn tag_index(ctx: &SiteContext) -> AppResult<Vec<SiteCategory>> {
             "xPomelo category index not found on the page".to_string(),
         ));
     }
-    if let Ok(mut c) = CACHE.lock() {
-        *c = Some((Instant::now(), tags.clone()));
+    if let Ok(mut c) = TAG_INDEX.lock() {
+        *c = Some(tags.clone());
     }
     Ok(tags)
 }

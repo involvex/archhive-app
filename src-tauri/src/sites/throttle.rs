@@ -13,7 +13,10 @@ use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
 /// Minimum spacing between request starts to the same host.
-const MIN_GAP: Duration = Duration::from_millis(1000);
+const MIN_GAP: Duration = Duration::from_millis(1200);
+/// Extra random wait on top of [`MIN_GAP`], so requests don't arrive on a
+/// fixed beat like a script.
+const JITTER_MS: u64 = 1600;
 /// Cooldown after a 429 when the site sends no usable `Retry-After`.
 const DEFAULT_COOLDOWN: Duration = Duration::from_secs(60);
 /// Upper bound on a `Retry-After` we are willing to honour.
@@ -26,6 +29,22 @@ struct HostState {
     next_slot: Option<Instant>,
     cooldown_until: Option<Instant>,
     last_probe: Option<Instant>,
+}
+
+/// Last page fetched per host (sent as Referer on the next one).
+static LAST_PAGE: LazyLock<Mutex<HashMap<String, String>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// The previous page fetched from this URL's host, if any.
+pub fn last_page(url: &str) -> Option<String> {
+    LAST_PAGE.lock().ok()?.get(&host_key(url)).cloned()
+}
+
+/// Remember a successfully fetched page as the host's current page.
+pub fn note_page(url: &str) {
+    if let Ok(mut pages) = LAST_PAGE.lock() {
+        pages.insert(host_key(url), url.to_string());
+    }
 }
 
 static HOSTS: LazyLock<Mutex<HashMap<String, HostState>>> =
@@ -57,7 +76,8 @@ fn reserve(state: &mut HostState, now: Instant) -> Result<Duration, Duration> {
         }
     }
     let slot = state.next_slot.filter(|s| *s > now).unwrap_or(now);
-    state.next_slot = Some(slot + MIN_GAP);
+    let jitter = Duration::from_millis(rand::random::<u64>() % (JITTER_MS + 1));
+    state.next_slot = Some(slot + MIN_GAP + jitter);
     Ok(slot - now)
 }
 
@@ -132,11 +152,14 @@ mod tests {
     fn spaces_requests_and_honours_cooldown() {
         let now = Instant::now();
         let mut s = HostState::default();
+        let max_gap = MIN_GAP + Duration::from_millis(JITTER_MS);
         assert_eq!(reserve(&mut s, now), Ok(Duration::ZERO));
-        assert_eq!(reserve(&mut s, now), Ok(MIN_GAP));
-        assert_eq!(reserve(&mut s, now), Ok(MIN_GAP * 2));
+        let second = reserve(&mut s, now).unwrap();
+        assert!(second >= MIN_GAP && second <= max_gap, "{second:?}");
+        let third = reserve(&mut s, now).unwrap();
+        assert!(third >= second + MIN_GAP && third <= second + max_gap);
         // After the queue drains, a later request goes straight out.
-        assert_eq!(reserve(&mut s, now + MIN_GAP * 5), Ok(Duration::ZERO));
+        assert_eq!(reserve(&mut s, now + max_gap * 5), Ok(Duration::ZERO));
 
         let mut s = HostState::default();
         s.cooldown_until = Some(now + Duration::from_secs(120));

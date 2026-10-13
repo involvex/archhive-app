@@ -445,7 +445,13 @@ async fn site_categories(
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     let cats = state
         .app
-        .list_site_categories(&id, params.get("group").map(String::as_str))
+        .list_site_categories(
+            &id,
+            params.get("group").map(String::as_str),
+            params
+                .get("refresh")
+                .is_some_and(|v| v == "1" || v == "true"),
+        )
         .await
         .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
     Ok(Json(serde_json::json!(cats)))
@@ -988,7 +994,7 @@ async fn proxy_remote_media(
         .get("ua")
         .filter(|u| !u.is_empty() && u.len() < 512)
         .map(String::as_str)
-        .unwrap_or("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+        .unwrap_or("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36");
     let range = headers
         .get(header::RANGE)
         .and_then(|v| v.to_str().ok())

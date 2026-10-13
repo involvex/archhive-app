@@ -27,7 +27,9 @@ export async function loadSiteCategories(
     const hit = cache.get(key);
     if (hit) return hit;
   }
-  const list = await api.listSiteCategories(siteId, group);
+  // `force` (the Refresh button) is the only thing that asks the site again;
+  // otherwise the app's cached copy is used however old it is.
+  const list = await api.listSiteCategories(siteId, group, force);
   cache.set(key, list);
   return list;
 }
