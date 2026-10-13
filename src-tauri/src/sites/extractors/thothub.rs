@@ -138,7 +138,7 @@ fn looks_like_bot_check(html: &str) -> bool {
 }
 
 /// KVS placeholder clips served when `get_file` is hit outside the session.
-fn is_kvs_placeholder(url: &str) -> bool {
+pub(crate) fn is_kvs_placeholder(url: &str) -> bool {
     let path = url::Url::parse(url)
         .map(|u| u.path().to_ascii_lowercase())
         .unwrap_or_default();
@@ -153,7 +153,7 @@ fn is_kvs_placeholder(url: &str) -> bool {
     .any(|p| path.ends_with(p))
 }
 
-fn pick_best_stream(html: &str, page_url: &str) -> Option<String> {
+pub(crate) fn pick_best_stream(html: &str, page_url: &str) -> Option<String> {
     let license = extract_license_code(html);
     let mut candidates = collect_video_urls(html);
     if candidates.is_empty() {

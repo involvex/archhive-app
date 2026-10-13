@@ -361,6 +361,12 @@ impl SidecarRunner {
         args: &[String],
     ) -> AppResult<String> {
         self.run_capture(name, args).await.map_err(|e| {
+            if is_gone(&e.to_string()) {
+                return AppError::Other(format!(
+                    "The source site says this video no longer exists (HTTP 404/410) — it \
+                     was probably removed. ({e})"
+                ));
+            }
             #[cfg(mobile)]
             {
                 AppError::Other(format!(
@@ -716,11 +722,19 @@ fn looks_like_media_path(s: &str) -> bool {
     MEDIA_EXTS.iter().any(|ext| lower.ends_with(ext))
 }
 
+/// yt-dlp could reach the site but the video page is gone.
+fn is_gone(detail: &str) -> bool {
+    detail.contains("HTTP Error 404") || detail.contains("HTTP Error 410")
+}
+
 /// Append actionable guidance to site-block errors (403/Forbidden). Embedded
 /// clients are fingerprinted and blocked far more often than desktop
 /// browsers; cookies or Remote LAN mode usually fix it.
 fn with_block_hint(detail: &str) -> String {
-    if detail.contains("403") || detail.contains("Forbidden") || detail.contains("forbidden") {
+    if is_gone(detail) {
+        format!("{detail} The video was probably removed from the source site.")
+    } else if detail.contains("403") || detail.contains("Forbidden") || detail.contains("forbidden")
+    {
         format!(
             "{detail} Site is blocking the embedded engine. Import cookies in Settings → Cookies, \
              update the yt-dlp engine in Settings → Library, or use Remote LAN mode."

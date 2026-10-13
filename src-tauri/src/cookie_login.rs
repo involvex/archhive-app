@@ -43,6 +43,36 @@ pub struct CookieLoginResult {
     pub count: usize,
 }
 
+/// A video page as rendered by the in-app browser after any bot check
+/// (Android `CookieBrowserPlugin.resolvePage`).
+#[derive(Debug, Clone, serde::Deserialize)]
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+pub struct PageCapture {
+    pub html: String,
+    /// Final page URL (after redirects).
+    pub url: String,
+    #[serde(rename = "userAgent", default)]
+    pub user_agent: String,
+    /// `Cookie:` header for the page URL.
+    #[serde(default)]
+    pub cookies: String,
+}
+
+/// Where a link led inside the in-app browser session.
+#[derive(Debug, Clone, serde::Deserialize)]
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+pub struct FollowResult {
+    pub url: String,
+    #[serde(default)]
+    pub cookies: String,
+}
+
+/// Open `url` in the in-app browser until no bot check is showing and
+/// return the rendered page. The browser stays open for [`follow_in_page`]
+/// until [`close_page`].
+#[cfg(target_os = "android")]
+pub use platform::{close_page, follow as follow_in_page, open_page};
+
 /// Where the login browser starts and which URLs' cookies to collect.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoginTarget {
@@ -413,6 +443,53 @@ mod platform {
             .iter()
             .flat_map(|e| cookies_from_header(&e.url, &e.header, now))
             .collect())
+    }
+
+    fn plugin(app: &AppHandle) -> AppResult<PluginHandle<tauri::Wry>> {
+        app.try_state::<AndroidLoginState<tauri::Wry>>()
+            .and_then(|s| s.handle.clone())
+            .ok_or_else(|| AppError::Other("In-app browser unavailable on this build.".into()))
+    }
+
+    async fn call<T: serde::de::DeserializeOwned + Send + 'static>(
+        app: &AppHandle,
+        command: &'static str,
+        payload: serde_json::Value,
+    ) -> AppResult<T> {
+        let handle = plugin(app)?;
+        tokio::task::spawn_blocking(move || handle.run_mobile_plugin::<T>(command, payload))
+            .await
+            .map_err(|e| AppError::Other(format!("in-app browser task failed: {e}")))?
+            .map_err(|e| {
+                let msg = e.to_string();
+                if msg.contains("cancelled") {
+                    AppError::Other("Cancelled in the in-app browser.".into())
+                } else {
+                    AppError::Other(format!("In-app browser: {msg}"))
+                }
+            })
+    }
+
+    pub async fn open_page(app: &AppHandle, url: &str, title: &str) -> AppResult<PageCapture> {
+        call(
+            app,
+            "resolvePage",
+            serde_json::json!({ "url": url, "title": title }),
+        )
+        .await
+    }
+
+    pub async fn follow(app: &AppHandle, url: &str, referer: &str) -> AppResult<FollowResult> {
+        call(
+            app,
+            "followRedirect",
+            serde_json::json!({ "url": url, "referer": referer }),
+        )
+        .await
+    }
+
+    pub async fn close_page(app: &AppHandle) {
+        let _ = call::<serde_json::Value>(app, "closeResolver", serde_json::json!({})).await;
     }
 }
 

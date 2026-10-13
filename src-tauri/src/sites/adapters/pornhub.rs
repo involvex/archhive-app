@@ -803,6 +803,30 @@ pub(crate) fn maybe_loopback_proxy(ctx: &SiteContext, stream_url: &str, referer:
     }
 }
 
+/// [`maybe_loopback_proxy`] that also forwards browser cookies and the
+/// browser's User-Agent (Cloudflare clearance is bound to the UA).
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+pub(crate) fn loopback_proxy_with(
+    ctx: &SiteContext,
+    stream_url: &str,
+    referer: &str,
+    cookie: Option<&str>,
+    user_agent: Option<&str>,
+) -> String {
+    let base = maybe_loopback_proxy(ctx, stream_url, referer);
+    if base == stream_url {
+        return base;
+    }
+    let mut out = base;
+    if let Some(c) = cookie.filter(|c| !c.is_empty()) {
+        out.push_str(&format!("&cookie={}", urlencoding_encode(c)));
+    }
+    if let Some(ua) = user_agent.filter(|u| !u.is_empty()) {
+        out.push_str(&format!("&ua={}", urlencoding_encode(ua)));
+    }
+    out
+}
+
 fn urlencoding_encode(s: &str) -> String {
     s.bytes()
         .map(|b| match b {

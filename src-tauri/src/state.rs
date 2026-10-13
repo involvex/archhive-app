@@ -1433,6 +1433,34 @@ impl AppState {
     /// Resolve a direct streamable URL for a media item using `yt-dlp --get-url`.
     /// Used by the in-app Watch button to preview a remote video without downloading.
     pub async fn resolve_stream_url(&self, url: &str) -> AppResult<String> {
+        let result = self.resolve_stream_url_inner(url).await;
+        #[cfg(target_os = "android")]
+        if let Err(e) = &result {
+            let msg = e.to_string();
+            if crate::sites::challenge::is_bot_block(&msg)
+                && crate::sites::challenge::webview_fallback_applies(url)
+            {
+                tracing::info!("[stream] bot check on {url}; trying the in-app browser");
+                return match crate::sites::challenge::resolve_via_webview(self.site_ctx.app(), url)
+                    .await
+                {
+                    Ok(m) => Ok(crate::sites::adapters::pornhub::loopback_proxy_with(
+                        &self.site_ctx,
+                        &m.url,
+                        &m.referer,
+                        m.cookie.as_deref(),
+                        Some(&m.user_agent),
+                    )),
+                    Err(we) => Err(crate::error::AppError::Other(format!(
+                        "{we} (The embedded engine was blocked first: {msg})"
+                    ))),
+                };
+            }
+        }
+        result
+    }
+
+    async fn resolve_stream_url_inner(&self, url: &str) -> AppResult<String> {
         let site_id = self
             .sites
             .detect(url)

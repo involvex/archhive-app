@@ -479,6 +479,69 @@ async fn worker_loop(
     }
 }
 
+/// Download a page the embedded engine was refused on: resolve it in the
+/// in-app browser (see `sites::challenge`), then fetch the stream directly.
+#[cfg(target_os = "android")]
+async fn download_via_webview(
+    app: &AppHandle,
+    plan: &DownloadPlan,
+    library_path: &str,
+    mut on_progress: impl FnMut(Option<f32>),
+) -> AppResult<String> {
+    let media = crate::sites::challenge::resolve_via_webview(app, &plan.url).await?;
+    let is_hls = media
+        .url
+        .split(['?', '#'])
+        .next()
+        .is_some_and(|p| p.to_ascii_lowercase().ends_with(".m3u8"));
+    if is_hls {
+        let base = plan
+            .title
+            .as_deref()
+            .map(crate::downloads::image::sanitize_filename)
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "video".to_string());
+        let out_path = crate::downloads::image::unique_path(
+            Path::new(library_path).join(format!("{base}.mp4")),
+        );
+        let result = FfmpegProcessor::new(app.clone())
+            .download_hls(
+                &media.url,
+                &out_path,
+                Some(&media.referer),
+                media.cookie.as_deref(),
+                plan.duration,
+                Some(on_progress),
+            )
+            .await;
+        if result.is_err() {
+            let _ = std::fs::remove_file(&out_path);
+        }
+        result?;
+        return Ok(out_path.to_string_lossy().to_string());
+    }
+    let mut last_reported = 0u64;
+    crate::downloads::image::download_direct(
+        &media.url,
+        library_path,
+        plan.title.as_deref(),
+        Some(&media.referer),
+        media.cookie.as_deref(),
+        Some(|downloaded: u64, total: Option<u64>| {
+            let done = total.is_some_and(|t| downloaded >= t);
+            if downloaded >= last_reported + 1024 * 1024 || done {
+                last_reported = downloaded;
+                on_progress(
+                    total
+                        .filter(|t| *t > 0)
+                        .map(|t| downloaded as f32 / t as f32),
+                );
+            }
+        }),
+    )
+    .await
+}
+
 async fn run_job_with_plan(
     db: Arc<Database>,
     app: AppHandle,
@@ -656,6 +719,28 @@ async fn run_job_with_plan(
             if path_result.is_err() && !cancel.load(Ordering::Relaxed) {
                 return handle_stopped(&db, &app, &job_id);
             }
+            #[cfg(target_os = "android")]
+            let path_result = match path_result {
+                Err(e)
+                    if crate::sites::challenge::is_bot_block(&e.to_string())
+                        && crate::sites::challenge::webview_fallback_applies(&plan.url) =>
+                {
+                    tracing::info!(
+                        "[download] bot check on {}; trying the in-app browser",
+                        plan.url
+                    );
+                    download_via_webview(&app, plan, library_path, |p| {
+                        update_progress(&db_emit, &app_emit, &job_id_emit, "", p);
+                    })
+                    .await
+                    .map_err(|we| {
+                        AppError::Download(format!(
+                            "{we} (The embedded engine was blocked first: {e})"
+                        ))
+                    })
+                }
+                other => other,
+            };
             Ok(vec![path_result?])
         }
     };

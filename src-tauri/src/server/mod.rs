@@ -982,8 +982,15 @@ async fn proxy_remote_media(
         .unwrap_or("https://www.pornhub.com/")
         .to_string();
 
+    // `ua`: the in-app browser's User-Agent for pages it cleared a bot
+    // check on (the clearance cookie is tied to it).
+    let user_agent = params
+        .get("ua")
+        .filter(|u| !u.is_empty() && u.len() < 512)
+        .map(String::as_str)
+        .unwrap_or("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
     let client = reqwest::Client::builder()
-        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        .user_agent(user_agent)
         .build()
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 

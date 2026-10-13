@@ -33,6 +33,16 @@ required and excluded categories (`/category/a%2Cb%2C-c`). Results from
 paysites (Brazzers, FapHouse, …) are hidden unless the Source filter is set.
 Cloudflare blocks HTTP/1.1 clients on this site; the main HTTP/2 client passes.
 
+### Bot checks (Cloudflare) on Android
+
+Some sources (SpankBang, KVS tubes such as CrazyPorn, Love4Porn, 4KPorn)
+answer the embedded engines with a Cloudflare challenge. When playback or a
+download fails that way on Android, ArcHive opens the page in its in-app
+browser, where the check passes by itself or after one tap. It then reads
+the video URL from the rendered page (`sites/challenge.rs`) and follows
+session-bound KVS `get_file` links inside the same browser session. Sites
+with dedicated adapters (PornHub, XVIDEOS, …) are excluded.
+
 ## Tier B — Live Cam Sites (scraping + webview bridge)
 
 | Site ID    | Display Name | Browse kinds                   | Cookies |
