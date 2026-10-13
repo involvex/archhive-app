@@ -18,6 +18,21 @@
 | reddit    | Reddit       | channel, search, video                       | Login cookies (Reddit hides listings from logged-out visitors) |
 | eporner   | Eporner      | search, tag, category, video                 | No                                                             |
 
+## Aggregators
+
+| Site ID | Display Name | Browse kinds            | Cookies |
+| ------- | ------------ | ----------------------- | ------- |
+| xpomelo | xPomelo      | search, category, model | No      |
+
+xPomelo hosts nothing: each result links to its source tube (PornHub,
+XVIDEOS, xHamster, XNXX, Eporner, SpankBang, …). Items keep the source URL
+and, where ArcHive has an adapter, the source site's id, so playback,
+downloads and the Info dialog run through that site's own pipeline; other
+sources go through plain yt-dlp. Category listings take any number of
+required and excluded categories (`/category/a%2Cb%2C-c`). Results from
+paysites (Brazzers, FapHouse, …) are hidden unless the Source filter is set.
+Cloudflare blocks HTTP/1.1 clients on this site; the main HTTP/2 client passes.
+
 ## Tier B — Live Cam Sites (scraping + webview bridge)
 
 | Site ID    | Display Name | Browse kinds                   | Cookies |
@@ -92,19 +107,20 @@ Every page also has on-device filters (words, `-exclude`, length) over
 loaded results. Category / tag indexes come from `list_categories()`
 (`list_site_categories` command, `GET /api/sites/{id}/categories`).
 
-| Site       | Sort                                    | Date / Length / Quality      | Categories            |
-| ---------- | --------------------------------------- | ---------------------------- | --------------------- |
-| PornHub    | newest, views, rating, longest, hottest | period, duration, HD         | JSON-embedded catalog |
-| XVIDEOS    | relevance, date, rating, views, length  | period, duration, HD/1080p   | `/tags` (top 400)     |
-| XNXX       | views, random                           | period, duration, HD/Full HD | `/tags` (top 400)     |
-| xHamster   | search: 5 sorts; category: newest/best  | duration, 720p/1080p/4K      | `/categories`         |
-| YouPorn    | relevance, date, views, rating, length  | —                            | `/categories/`        |
-| Eporner    | 7 API `order` values                    | —                            | `/cats/`              |
-| ThotHub    | KVS `sort_by` (5)                       | —                            | —                     |
-| ThisVid    | KVS `sort_by` (5)                       | —                            | `/categories/`        |
-| Reddit     | hot, new, top, rising                   | period (top)                 | —                     |
-| RedGifs    | trending, latest, top                   | —                            | —                     |
-| Chaturbate | —                                       | —                            | top hashtags API      |
+| Site       | Sort                                    | Date / Length / Quality         | Categories            |
+| ---------- | --------------------------------------- | ------------------------------- | --------------------- |
+| PornHub    | newest, views, rating, longest, hottest | period, duration, HD            | JSON-embedded catalog |
+| XVIDEOS    | relevance, date, rating, views, length  | period, duration, HD/1080p      | `/tags` (top 400)     |
+| XNXX       | views, random                           | period, duration, HD/Full HD    | `/tags` (top 400)     |
+| xHamster   | search: 5 sorts; category: newest/best  | duration, 720p/1080p/4K         | `/categories`         |
+| YouPorn    | relevance, date, views, rating, length  | —                               | `/categories/`        |
+| Eporner    | 7 API `order` values                    | —                               | `/cats/`              |
+| xPomelo    | relevance, date, views, length          | period, duration, HD/4K, source | `data-tags` JSON (6k) |
+| ThotHub    | KVS `sort_by` (5)                       | —                               | —                     |
+| ThisVid    | KVS `sort_by` (5)                       | —                               | `/categories/`        |
+| Reddit     | hot, new, top, rising                   | period (top)                    | —                     |
+| RedGifs    | trending, latest, top                   | —                               | —                     |
+| Chaturbate | —                                       | —                               | top hashtags API      |
 
 ## SCrawler Parity Roadmap
 

@@ -215,7 +215,8 @@ export function browseFiltersKey(filters?: BrowseFilters): string {
       filters.quality ||
       filters.include ||
       filters.exclude ||
-      filters.tag
+      filters.tag ||
+      filters.source
     )
   ) {
     return "";
@@ -225,7 +226,8 @@ export function browseFiltersKey(filters?: BrowseFilters): string {
     filters.include || filters.exclude
       ? `${base}|i=${filters.include ?? ""}|x=${filters.exclude ?? ""}`
       : base;
-  return filters.tag ? `${withCats}|t=${filters.tag}` : withCats;
+  const withTag = filters.tag ? `${withCats}|t=${filters.tag}` : withCats;
+  return filters.source ? `${withTag}|src=${filters.source}` : withTag;
 }
 
 export interface ScanProgress {

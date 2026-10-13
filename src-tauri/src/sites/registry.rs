@@ -2,8 +2,8 @@ use crate::models::SiteInfo;
 use crate::sites::adapters::{
     chaturbate::ChaturbateAdapter, custom::CustomUrlAdapter, eporner::EpornerAdapter,
     generic_ytdlp::GenericYtDlpAdapter, reddit::RedditAdapter, redgifs::RedgifsAdapter,
-    stripchat::StripchatAdapter, thothub::ThotHubAdapter, PornhubAdapter, XHamsterAdapter,
-    XVideosAdapter, XnxxAdapter, YouPornAdapter,
+    stripchat::StripchatAdapter, thothub::ThotHubAdapter, xpomelo::XpomeloAdapter, PornhubAdapter,
+    XHamsterAdapter, XVideosAdapter, XnxxAdapter, YouPornAdapter,
 };
 use crate::sites::SiteAdapter;
 use std::sync::Arc;
@@ -24,6 +24,7 @@ impl SiteRegistry {
             Arc::new(XnxxAdapter),
             Arc::new(XHamsterAdapter),
             Arc::new(XVideosAdapter),
+            Arc::new(XpomeloAdapter),
             Arc::new(RedditAdapter),
             Arc::new(RedgifsAdapter),
             Arc::new(CustomUrlAdapter),

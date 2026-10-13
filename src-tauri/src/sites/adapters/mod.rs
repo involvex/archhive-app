@@ -9,5 +9,6 @@ pub mod redgifs;
 pub mod stripchat;
 pub mod stripchat_webview;
 pub mod thothub;
+pub mod xpomelo;
 
 pub use pornhub::{PornhubAdapter, XHamsterAdapter, XVideosAdapter, XnxxAdapter, YouPornAdapter};

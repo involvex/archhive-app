@@ -117,7 +117,8 @@ export function BrowseFilterBar({
       filters.quality ||
       filters.include ||
       filters.exclude ||
-      filters.tag,
+      filters.tag ||
+      filters.source,
     ) || Boolean(local.text || local.duration);
 
   return (
@@ -152,6 +153,15 @@ export function BrowseFilterBar({
             defaultLabel="Any quality"
             onChange={(quality) => onFiltersChange({ ...filters, quality })}
           />
+          {(options.sources?.length ?? 0) > 0 && (
+            <FilterSelect
+              label="Source"
+              value={filters.source}
+              options={options.sources ?? []}
+              defaultLabel="Free sites"
+              onChange={(source) => onFiltersChange({ ...filters, source })}
+            />
+          )}
         </>
       )}
       {(!siteFilters || !options?.durations.length) && (

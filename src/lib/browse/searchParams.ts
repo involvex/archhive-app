@@ -1,7 +1,16 @@
 import type { BrowseFilters, BrowseOrientation } from "@/lib/types";
 
 const ORIENTATIONS: readonly BrowseOrientation[] = ["straight", "gay", "lesbian", "transgender"];
-const FILTER_KEYS = ["sort", "period", "duration", "quality", "include", "exclude", "tag"] as const;
+const FILTER_KEYS = [
+  "sort",
+  "period",
+  "duration",
+  "quality",
+  "include",
+  "exclude",
+  "tag",
+  "source",
+] as const;
 
 /** URL search params of a browse page: orientation plus site-side filters. */
 export type BrowseSearch = { orientation?: BrowseOrientation } & BrowseFilters;

@@ -39,6 +39,7 @@ struct BrowseParams {
     include: Option<String>,
     exclude: Option<String>,
     tag: Option<String>,
+    source: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -429,6 +430,7 @@ async fn browse(
                 include: params.include,
                 exclude: params.exclude,
                 tag: params.tag,
+                source: params.source,
             },
         )
         .await

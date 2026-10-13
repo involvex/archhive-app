@@ -267,7 +267,9 @@ function BrowseDetailPage() {
 
   async function handleDownload(item: MediaItem) {
     try {
-      await api.queueDownload(item.url, site, item.title);
+      // Aggregator results (xPomelo) carry the source site's id, so the
+      // download goes through that site's adapter.
+      await api.queueDownload(item.url, item.site_id || site, item.title);
       toast.success("Added to downloads");
     } catch (e) {
       toast.error(`Download failed: ${errorText(e)}`);
@@ -335,6 +337,7 @@ function BrowseDetailPage() {
       label(browseOptions?.periods, filters.period),
       label(browseOptions?.durations, filters.duration),
       label(browseOptions?.qualities, filters.quality),
+      label(browseOptions?.sources, filters.source),
       count(filters.include) ? `${count(filters.include)} required` : "",
       count(filters.exclude) ? `${count(filters.exclude)} excluded` : "",
       filters.tag ? `#${filters.tag}` : "",
@@ -439,7 +442,10 @@ function BrowseDetailPage() {
         onLocalChange={setLocalFilters}
       />
       {browseOptions?.include_exclude &&
-        browseOptions.filter_kinds.includes(kind as BrowseKind) && (
+        (browseOptions.include_exclude_kinds?.length
+          ? browseOptions.include_exclude_kinds
+          : browseOptions.filter_kinds
+        ).includes(kind as BrowseKind) && (
           <CategoryIncludeExclude
             siteId={site}
             filters={filters}

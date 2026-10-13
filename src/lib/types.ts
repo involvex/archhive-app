@@ -70,6 +70,10 @@ export interface BrowseOptions {
   max_exclude?: number;
   /** Kinds whose listings take only `exclude`, not `include`. */
   exclude_only_kinds?: BrowseKind[];
+  /** Kinds that take include / exclude at all (empty = all `filter_kinds`). */
+  include_exclude_kinds?: BrowseKind[];
+  /** Source sites an aggregator's results can be narrowed to. */
+  sources?: FilterOption[];
 }
 
 /** Mirrors `models::BrowseFilters`: option ids, omitted = site default. */
@@ -84,6 +88,8 @@ export interface BrowseFilters {
   exclude?: string;
   /** One tag narrowing a category listing (ThisVid `?tag=`). */
   tag?: string;
+  /** Source site of an aggregator's results (`BrowseOptions.sources`). */
+  source?: string;
 }
 
 /** Mirrors `models::SiteCategory`. */

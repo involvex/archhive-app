@@ -99,6 +99,9 @@ pub struct BrowseFilters {
     /// `BrowseOptions::category_tag_filter`, e.g. ThisVid `?tag=`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tag: Option<String>,
+    /// Source site of an aggregator's results (`BrowseOptions::sources`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
 }
 
 impl BrowseFilters {
@@ -110,6 +113,7 @@ impl BrowseFilters {
             && self.include.is_none()
             && self.exclude.is_none()
             && self.tag.is_none()
+            && self.source.is_none()
     }
 
     /// Stable cache-key suffix (empty when no filter is set).
@@ -134,6 +138,9 @@ impl BrowseFilters {
         if let Some(tag) = &self.tag {
             key.push_str(&format!("|t={tag}"));
         }
+        if let Some(source) = &self.source {
+            key.push_str(&format!("|src={source}"));
+        }
         key
     }
 
@@ -148,6 +155,7 @@ impl BrowseFilters {
             include: f(self.include),
             exclude: f(self.exclude),
             tag: f(self.tag),
+            source: f(self.source),
         }
     }
 }
@@ -209,6 +217,13 @@ pub struct BrowseOptions {
     /// Listing kinds that take only `exclude`, not `include`.
     #[serde(default)]
     pub exclude_only_kinds: Vec<BrowseKind>,
+    /// Kinds that take `include` / `exclude` at all (empty = all `filter_kinds`).
+    #[serde(default)]
+    pub include_exclude_kinds: Vec<BrowseKind>,
+    /// Source sites an aggregator's results can be narrowed to
+    /// (`BrowseFilters::source`).
+    #[serde(default)]
+    pub sources: Vec<FilterOption>,
 }
 
 /// Separator for combined tags in a Tag/Category slug (`milf,anal`). Tag slugs

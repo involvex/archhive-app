@@ -80,6 +80,13 @@ export const SITE_CATALOG: SiteInfo[] = [
     requires_cookies: false,
   },
   {
+    id: "xpomelo",
+    display_name: "xPomelo",
+    base_url: "https://xpomelo.com",
+    supported_kinds: ["search", "category", "model"] as BrowseKind[],
+    requires_cookies: false,
+  },
+  {
     id: "youtube",
     display_name: "YouTube",
     base_url: "https://www.youtube.com",
@@ -124,6 +131,7 @@ const CATEGORY_SITE_IDS = new Set([
   "xhamster",
   "youporn",
   "eporner",
+  "xpomelo",
   "thisvid",
   "chaturbate",
 ]);

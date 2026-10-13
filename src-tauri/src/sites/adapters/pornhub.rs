@@ -946,6 +946,7 @@ pub fn tube_browse_options(site_id: &str) -> BrowseOptions {
             max_include: 1,
             max_exclude: 10,
             exclude_only_kinds: vec![BrowseKind::Category],
+            ..Default::default()
         },
         "xvideos" => BrowseOptions {
             sorts: o(&[
@@ -2354,6 +2355,7 @@ mod category_tests {
                 include: get("include"),
                 exclude: get("exclude"),
                 tag: get("tag"),
+                source: get("source"),
             },
         }
     }
