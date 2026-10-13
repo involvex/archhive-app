@@ -63,6 +63,12 @@ pub async fn resolve_kvs_stream(
             "{site_name} returned HTTP {status} for the video page."
         )));
     }
+    if is_private_video_page(&html) {
+        return Err(AppError::Site(format!(
+            "This is a private {site_name} video — only logged-in members can watch it. \
+             Log in via Settings → Cookies → {site_name}, or pick a video without the 🔒."
+        )));
+    }
     let get_file = pick_best_stream(&html, page_url).ok_or_else(|| {
         AppError::Site(format!(
             "No player on this {site_name} page — the video may be private or need you to be \
@@ -101,6 +107,12 @@ pub async fn resolve_kvs_stream(
         "{site_name} refused the video file (HTTP {}).",
         resp.status()
     )))
+}
+
+/// KVS "private video" pages: no player unless the viewer is a member.
+fn is_private_video_page(html: &str) -> bool {
+    html.contains("This video is a private video")
+        || html.contains("Only active members can watch private videos")
 }
 
 /// Cloudflare / DDoS-Guard interstitials instead of the real page.
@@ -361,6 +373,9 @@ var playercfg = {
             "<html><title>Just a moment...</title>"
         ));
         assert!(!super::looks_like_bot_check("<html><title>Video</title>"));
+        assert!(super::is_private_video_page(
+            "This video is a private video uploaded by x. Only active members can watch private videos."
+        ));
     }
 
     #[test]
