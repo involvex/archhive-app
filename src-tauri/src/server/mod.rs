@@ -900,12 +900,12 @@ struct ResolveBody {
 async fn resolve_media_details(
     State(state): State<ApiState>,
     Json(body): Json<ResolveBody>,
-) -> Result<Json<serde_json::Value>, StatusCode> {
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     let item = state
         .app
         .resolve_media_details(&body.url)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(Json(serde_json::json!(item)))
 }
 
