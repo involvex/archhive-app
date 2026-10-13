@@ -1166,7 +1166,7 @@ function SettingsPage() {
   // Every site can use cookies (logged-in listings, age gates, premium);
   // sites that need them to work at all are listed first.
   const cookieSitesList = [...sites]
-    .filter((s) => s.id !== "custom" && s.id !== "xpomelo")
+    .filter((s) => s.id !== "custom")
     .sort((a, b) => Number(b.requires_cookies) - Number(a.requires_cookies));
   // Per-domain entries: xPomelo sources plus sites added by domain.
   const cookieHosts = [...XPOMELO_COOKIE_HOSTS, ...customHosts];

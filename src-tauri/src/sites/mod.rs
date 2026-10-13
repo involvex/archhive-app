@@ -85,6 +85,15 @@ impl SiteContext {
         &self.vault
     }
 
+    /// Whether the vault holds cookies under this key.
+    pub fn has_cookies(&self, key: &str) -> bool {
+        self.vault
+            .cookie_header(key)
+            .ok()
+            .flatten()
+            .is_some_and(|h| !h.is_empty())
+    }
+
     pub fn cookie_file_for_site(&self, site_id: &str) -> Option<std::path::PathBuf> {
         self.vault.cookie_file_for_site(site_id)
     }

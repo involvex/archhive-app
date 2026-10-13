@@ -25,6 +25,8 @@ use std::sync::LazyLock;
 const BASE: &str = "https://xpomelo.com";
 /// Tags the site's own editor shows at most; the index runs to ~6k.
 const POPULAR_TAGS: usize = 600;
+/// Vault key of cookies added for xpomelo.com by domain.
+const HOST_COOKIE_KEY: &str = "host-xpomelo-com";
 /// `list_category_group` id for every tag (not shown as a tab).
 const ALL_TAGS_GROUP: &str = "every-tag";
 /// `BrowseFilters::source` id that keeps paysite results.
@@ -392,7 +394,17 @@ async fn fetch(
     if let Some((_, ua)) = session.as_ref().filter(|(_, ua)| !ua.is_empty()) {
         headers.push(("User-Agent", ua.as_str()));
     }
-    match ctx.fetch_with_headers(url, "xpomelo", Some(&headers)).await {
+    // Cookies saved for xPomelo itself, or added by domain ("Other site":
+    // host-xpomelo-com) before xPomelo had its own entry.
+    let cookie_key = if !ctx.has_cookies("xpomelo") && ctx.has_cookies(HOST_COOKIE_KEY) {
+        HOST_COOKIE_KEY
+    } else {
+        "xpomelo"
+    };
+    match ctx
+        .fetch_with_headers(url, cookie_key, Some(&headers))
+        .await
+    {
         Ok(html) => Ok(html),
         Err(e) if is_refusal(&e) => {
             #[cfg(target_os = "android")]
@@ -1004,6 +1016,10 @@ mod tests {
         assert_eq!(source_label("Clips4sale"), "Clips4sale (paysite)");
         assert_eq!(source_label("Beeg"), "Beeg (unsupported)");
         assert_eq!(source_label("Hoes"), "Hoes");
+        assert_eq!(
+            crate::sites::cookie_keys::host_key("https://xpomelo.com/videos").as_deref(),
+            Some(HOST_COOKIE_KEY)
+        );
         assert!(!is_paysite(
             "https://www.pornhub.com/view_video.php?viewkey=brazzers.com"
         ));
