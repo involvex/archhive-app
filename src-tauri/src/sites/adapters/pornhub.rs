@@ -688,7 +688,7 @@ impl PornhubAdapter {
 
 /// Rewrite CDN URLs through the local LAN proxy so the WebView can play them
 /// with a proper Referer (HTML5 <video> cannot set Referer itself).
-fn maybe_loopback_proxy(ctx: &SiteContext, stream_url: &str, referer: &str) -> String {
+pub(crate) fn maybe_loopback_proxy(ctx: &SiteContext, stream_url: &str, referer: &str) -> String {
     #[cfg(mobile)]
     {
         if !(stream_url.starts_with("http://") || stream_url.starts_with("https://")) {
