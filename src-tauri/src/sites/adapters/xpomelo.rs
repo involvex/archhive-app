@@ -41,8 +41,9 @@ pub(crate) const PAYSITE_HOSTS: &[&str] = &[
 
 /// Sources whose videos ArcHive can't play or download (Beeg's API no longer
 /// returns streams and yt-dlp's extractor is broken; yt-dlp marks SxyPrn
-/// unsupported). Hidden by default like paysites.
-pub(crate) const UNSUPPORTED_HOSTS: &[&str] = &["beeg.com", "sxyprn.com"];
+/// unsupported; VipTube's player config comes back empty). Hidden by
+/// default like paysites.
+pub(crate) const UNSUPPORTED_HOSTS: &[&str] = &["beeg.com", "sxyprn.com", "viptube.com"];
 
 /// `site=` values from the site's Source menu (its own spelling).
 const SOURCES: &[&str] = &[
@@ -733,6 +734,8 @@ mod tests {
         assert!(hidden_by_default("https://www.clips4sale.com/studio/1/x"));
         assert!(hidden_by_default("https://beeg.com/video/1"));
         assert!(hidden_by_default("https://sxyprn.com/post/x.html"));
+        assert!(hidden_by_default("https://www.viptube.com/video/1/x"));
+        assert_eq!(source_label("VipTube"), "VipTube (unsupported)");
         assert!(!hidden_by_default("https://hoes.tube/videos/1/x/"));
         assert_eq!(source_label("Clips4sale"), "Clips4sale (paysite)");
         assert_eq!(source_label("Beeg"), "Beeg (unsupported)");

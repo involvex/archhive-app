@@ -28,6 +28,7 @@ const SITE_ICONS = new Set([
   "reddit",
   "redgifs",
   "eporner",
+  "xpomelo",
   "youtube",
   "tiktok",
   "instagram",
