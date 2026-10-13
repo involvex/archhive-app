@@ -28,6 +28,21 @@ pub fn is_bot_block(err: &str) -> bool {
     .any(|m| e.contains(m))
 }
 
+/// Page title of a Cloudflare / DDoS-Guard interstitial.
+pub fn is_challenge_title(title: &str) -> bool {
+    let t = title.to_ascii_lowercase();
+    [
+        "just a moment",
+        "attention required",
+        "checking your browser",
+        "ddos-guard",
+        "security verification",
+        "verify you are human",
+    ]
+    .iter()
+    .any(|m| t.contains(m))
+}
+
 /// Sites whose own adapters resolve streams (a 403 there means something
 /// else — geo block, removed video) don't get the in-app browser fallback.
 pub fn webview_fallback_applies(url: &str) -> bool {

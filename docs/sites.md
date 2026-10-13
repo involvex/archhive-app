@@ -33,7 +33,20 @@ required and excluded categories (`/category/a%2Cb%2C-c`). Results from
 paysites (Brazzers, FapHouse, …) are hidden unless the Source filter is set.
 Cloudflare blocks HTTP/1.1 clients on this site; the main HTTP/2 client passes.
 
-### Bot checks (Cloudflare) on Android
+### Bot checks (Cloudflare)
+
+#### Desktop
+
+When yt-dlp is refused by a bot check, ArcHive retries it with browser
+impersonation (`--impersonate`, `sites/clearance.rs`). This needs the
+standalone yt-dlp builds that bundle curl_cffi (`yt-dlp.exe`, `yt-dlp_macos`,
+`yt-dlp_linux`); `setup-binaries` downloads those. If the site still refuses,
+a small verification window opens on the page and closes by itself once the
+check passes. Its cookies (`cf_clearance`, session) are saved encrypted per
+site and reused, together with the same User-Agent, by yt-dlp and by the KVS
+resolver.
+
+#### Android
 
 Some sources (SpankBang, KVS tubes such as CrazyPorn, Love4Porn, 4KPorn)
 answer the embedded engines with a Cloudflare challenge. When playback or a

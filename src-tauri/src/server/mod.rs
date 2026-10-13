@@ -914,12 +914,12 @@ async fn resolve_media_details(
 async fn resolve_stream_url(
     State(state): State<ApiState>,
     Json(body): Json<ResolveBody>,
-) -> Result<Json<serde_json::Value>, StatusCode> {
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     let stream_url = state
         .app
         .resolve_stream_url(&body.url)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(Json(serde_json::json!({ "stream_url": stream_url })))
 }
 

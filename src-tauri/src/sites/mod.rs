@@ -9,6 +9,7 @@ use std::sync::Arc;
 pub mod adapters;
 pub mod browse_fallback;
 pub mod challenge;
+pub mod clearance;
 pub mod details;
 pub mod extractors;
 pub mod listing;

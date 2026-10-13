@@ -1434,6 +1434,20 @@ impl AppState {
     /// Used by the in-app Watch button to preview a remote video without downloading.
     pub async fn resolve_stream_url(&self, url: &str) -> AppResult<String> {
         let result = self.resolve_stream_url_inner(url).await;
+        #[cfg(desktop)]
+        if let Err(e) = &result {
+            let msg = e.to_string();
+            if crate::sites::challenge::is_bot_block(&msg)
+                && crate::sites::challenge::webview_fallback_applies(url)
+            {
+                tracing::info!("[stream] bot check on {url}; trying impersonation / clearance");
+                return self.resolve_stream_cleared(url).await.map_err(|we| {
+                    crate::error::AppError::Other(format!(
+                        "{we} (The embedded engine was blocked first: {msg})"
+                    ))
+                });
+            }
+        }
         #[cfg(target_os = "android")]
         if let Err(e) = &result {
             let msg = e.to_string();
@@ -1458,6 +1472,110 @@ impl AppState {
             }
         }
         result
+    }
+
+    /// Desktop: impersonated yt-dlp (+ a saved clearance), else pass the
+    /// bot check in a browser window and retry with its cookies.
+    #[cfg(desktop)]
+    async fn resolve_stream_cleared(&self, url: &str) -> AppResult<String> {
+        use crate::sites::clearance;
+        let stored = clearance::stored(&self.vault, url);
+        match self.stream_with_clearance(url, stored.as_ref()).await {
+            Ok(u) => return Ok(u),
+            Err(e) if !crate::sites::challenge::is_bot_block(&e.to_string()) => return Err(e),
+            Err(e) => tracing::info!("[stream] still blocked ({e}); opening a verification window"),
+        }
+        let fresh = clearance::obtain(self.site_ctx.app(), &self.vault, url).await?;
+        self.stream_with_clearance(url, Some(&fresh)).await
+    }
+
+    #[cfg(desktop)]
+    async fn stream_with_clearance(
+        &self,
+        url: &str,
+        clearance: Option<&crate::sites::clearance::Clearance>,
+    ) -> AppResult<String> {
+        use crate::sites::clearance as cl;
+        // KVS pages resolve in-session to a playable CDN URL.
+        if let Some(c) = clearance {
+            let host = url::Url::parse(url)
+                .ok()
+                .and_then(|u| u.host_str().map(str::to_string))
+                .unwrap_or_default();
+            match crate::sites::extractors::thothub::resolve_kvs_stream_as(
+                &self.site_ctx,
+                url,
+                &c.vault_key,
+                &host,
+                Some(&c.user_agent),
+            )
+            .await
+            {
+                Ok(u) => return Ok(u),
+                Err(e)
+                    if e.to_string().contains("private")
+                        || e.to_string().contains("placeholder clip") =>
+                {
+                    return Err(e)
+                }
+                Err(e) => tracing::debug!("[stream] KVS with clearance failed: {e}"),
+            }
+        }
+        let runner = crate::sites::yt_dlp::SidecarRunner::new(self.site_ctx.app().clone());
+        let site_id = self
+            .sites
+            .detect(url)
+            .unwrap_or_else(|| "custom".to_string());
+        let cookies = clearance
+            .map(|c| c.cookie_file.clone())
+            .or_else(|| self.site_ctx.cookie_file_for_site(&site_id));
+        let ua = clearance.map(|c| c.user_agent.as_str());
+        let run = |impersonate: Option<&str>| {
+            let mut args = vec![
+                url.to_string(),
+                "--get-url".to_string(),
+                "--no-warnings".to_string(),
+                "--no-playlist".to_string(),
+            ];
+            if let Some(c) = cookies.as_ref() {
+                args.push("--cookies".to_string());
+                args.push(c.to_string_lossy().to_string());
+            }
+            match impersonate {
+                Some(target) => args.extend(cl::impersonate_args(target, ua)),
+                None => {
+                    if let Some(ua) = ua {
+                        args.push("--user-agent".to_string());
+                        args.push(ua.to_string());
+                    }
+                }
+            }
+            args
+        };
+        let mut result = runner
+            .run_capture_for_stream_url("yt-dlp", &run(Some(cl::IMPERSONATE_TARGET)))
+            .await;
+        if let Err(e) = &result {
+            if cl::impersonation_unavailable(&e.to_string()) {
+                result = runner
+                    .run_capture_for_stream_url("yt-dlp", &run(Some(cl::IMPERSONATE_FALLBACK)))
+                    .await;
+            }
+        }
+        if let Err(e) = &result {
+            // yt-dlp without curl_cffi (the Python zipapp): cookies + UA only.
+            if cl::impersonation_unavailable(&e.to_string()) {
+                result = runner
+                    .run_capture_for_stream_url("yt-dlp", &run(None))
+                    .await;
+            }
+        }
+        result?
+            .lines()
+            .map(str::trim)
+            .find(|line| !line.is_empty())
+            .map(str::to_string)
+            .ok_or_else(|| crate::error::AppError::Other("No stream URL resolved".to_string()))
     }
 
     async fn resolve_stream_url_inner(&self, url: &str) -> AppResult<String> {

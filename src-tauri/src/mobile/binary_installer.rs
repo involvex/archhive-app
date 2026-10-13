@@ -10,9 +10,12 @@ fn yt_dlp_download_url() -> &'static str {
         "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"
     } else if cfg!(target_os = "macos") {
         "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos"
+    } else if cfg!(target_arch = "aarch64") {
+        // Linux desktop — never use on Android (install_yt_dlp hard-fails there).
+        // Standalone builds bundle curl_cffi for `--impersonate`.
+        "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux_aarch64"
     } else {
-        // Linux desktop — never use on Android (install_yt_dlp hard-fails there)
-        "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp"
+        "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux"
     }
 }
 

@@ -73,6 +73,11 @@ pub struct FollowResult {
 #[cfg(target_os = "android")]
 pub use platform::{close_page, follow as follow_in_page, open_page};
 
+/// Desktop: pass a bot check in a browser window and return its cookies
+/// (see `sites::clearance`).
+#[cfg(desktop)]
+pub use platform::clear_bot_check;
+
 /// Where the login browser starts and which URLs' cookies to collect.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoginTarget {
@@ -265,6 +270,155 @@ mod platform {
         }
     }
 
+    /// Every cookie the window holds for `urls`, HttpOnly ones included.
+    fn window_cookies(window: &tauri::WebviewWindow, urls: &[String]) -> Vec<CapturedCookie> {
+        let mut out = Vec::new();
+        let now = now_unix();
+        for u in urls {
+            let Ok(parsed) = url::Url::parse(u) else {
+                continue;
+            };
+            let host = parsed.host_str().unwrap_or_default().to_string();
+            // Must run off the main thread (Windows deadlocks otherwise);
+            // this is an async command task, so that holds.
+            let cookies = match window.cookies_for_url(parsed) {
+                Ok(c) => c,
+                Err(e) => {
+                    tracing::warn!("[cookie-login] cookies_for_url({u}) failed: {e}");
+                    continue;
+                }
+            };
+            for c in cookies {
+                let (domain, include_subdomains) = match c.domain() {
+                    Some(d) if !d.is_empty() => {
+                        let d = if d.starts_with('.') || d == host {
+                            d.to_string()
+                        } else {
+                            format!(".{d}")
+                        };
+                        let sub = d.starts_with('.');
+                        (d, sub)
+                    }
+                    _ => (host.clone(), false),
+                };
+                let expires = c
+                    .expires_datetime()
+                    .map(|t| t.unix_timestamp())
+                    .filter(|t| *t > now)
+                    .unwrap_or(now + SESSION_COOKIE_TTL_SECS);
+                out.push(CapturedCookie {
+                    domain,
+                    include_subdomains,
+                    path: c
+                        .path()
+                        .filter(|p| !p.is_empty())
+                        .unwrap_or("/")
+                        .to_string(),
+                    secure: c.secure().unwrap_or(false),
+                    expires,
+                    name: c.name().to_string(),
+                    value: c.value().to_string(),
+                });
+            }
+        }
+        out
+    }
+
+    /// Show `url` in a small window (sending `user_agent`) until no bot
+    /// check is showing, then return its cookies. Closes by itself; closing
+    /// it by hand cancels.
+    pub async fn clear_bot_check(
+        app: &AppHandle,
+        url: &str,
+        host: &str,
+        user_agent: &str,
+    ) -> AppResult<Vec<CapturedCookie>> {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
+        const CHECK_LABEL: &str = "bot-check";
+
+        if let Some(existing) = app.get_webview_window(CHECK_LABEL) {
+            let _ = existing.destroy();
+        }
+        let start: url::Url = url
+            .parse()
+            .map_err(|e| AppError::InvalidInput(format!("bad URL: {e}")))?;
+        let title = Arc::new(Mutex::new(String::new()));
+        let loaded = Arc::new(AtomicBool::new(false));
+        let closed = Arc::new(AtomicBool::new(false));
+        let (t, l) = (title.clone(), loaded.clone());
+        let window = WebviewWindowBuilder::new(app, CHECK_LABEL, WebviewUrl::External(start))
+            .title(format!("Verifying {host} — closes by itself"))
+            .inner_size(720.0, 640.0)
+            .user_agent(user_agent)
+            .focused(true)
+            .on_document_title_changed(move |_, new_title| {
+                if let Ok(mut g) = t.lock() {
+                    *g = new_title;
+                }
+            })
+            .on_page_load(move |_, payload| {
+                l.store(
+                    matches!(payload.event(), tauri::webview::PageLoadEvent::Finished),
+                    Ordering::SeqCst,
+                );
+            })
+            .build()
+            .map_err(|e| AppError::Other(format!("could not open the browser window: {e}")))?;
+        let c = closed.clone();
+        window.on_window_event(move |event| {
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                c.store(true, Ordering::SeqCst);
+            }
+        });
+
+        let started = std::time::Instant::now();
+        let mut passed = false;
+        while started.elapsed() < std::time::Duration::from_secs(150) {
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            if closed.load(Ordering::SeqCst) {
+                break;
+            }
+            let current = title.lock().map(|g| g.clone()).unwrap_or_default();
+            if loaded.load(Ordering::SeqCst)
+                && !current.trim().is_empty()
+                && !crate::sites::challenge::is_challenge_title(&current)
+            {
+                // Let the cleared page settle its cookies.
+                tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
+                passed = true;
+                break;
+            }
+        }
+        let cookies = if passed {
+            let page = window
+                .url()
+                .map(|u| u.to_string())
+                .unwrap_or_else(|_| url.to_string());
+            let mut urls = vec![page];
+            if let Ok(u) = url::Url::parse(url) {
+                urls.push(format!(
+                    "{}://{}/",
+                    u.scheme(),
+                    u.host_str().unwrap_or_default()
+                ));
+            }
+            window_cookies(&window, &urls)
+        } else {
+            Vec::new()
+        };
+        let _ = window.destroy();
+        if !passed {
+            return Err(AppError::Other(if closed.load(Ordering::SeqCst) {
+                "Verification window closed.".into()
+            } else {
+                format!("{host} kept showing its bot check.")
+            }));
+        }
+        Ok(dedupe(cookies))
+    }
+
     pub async fn capture(
         app: &AppHandle,
         title: &str,
@@ -306,57 +460,11 @@ mod platform {
             *slot = None;
         }
 
-        let mut out = Vec::new();
-        if save {
-            let now = now_unix();
-            for u in &target.cookie_urls {
-                let Ok(parsed) = url::Url::parse(u) else {
-                    continue;
-                };
-                let host = parsed.host_str().unwrap_or_default().to_string();
-                // Must run off the main thread (Windows deadlocks otherwise);
-                // this is an async command task, so that holds.
-                let cookies = match window.cookies_for_url(parsed) {
-                    Ok(c) => c,
-                    Err(e) => {
-                        tracing::warn!("[cookie-login] cookies_for_url({u}) failed: {e}");
-                        continue;
-                    }
-                };
-                for c in cookies {
-                    let (domain, include_subdomains) = match c.domain() {
-                        Some(d) if !d.is_empty() => {
-                            let d = if d.starts_with('.') || d == host {
-                                d.to_string()
-                            } else {
-                                format!(".{d}")
-                            };
-                            let sub = d.starts_with('.');
-                            (d, sub)
-                        }
-                        _ => (host.clone(), false),
-                    };
-                    let expires = c
-                        .expires_datetime()
-                        .map(|t| t.unix_timestamp())
-                        .filter(|t| *t > now)
-                        .unwrap_or(now + SESSION_COOKIE_TTL_SECS);
-                    out.push(CapturedCookie {
-                        domain,
-                        include_subdomains,
-                        path: c
-                            .path()
-                            .filter(|p| !p.is_empty())
-                            .unwrap_or("/")
-                            .to_string(),
-                        secure: c.secure().unwrap_or(false),
-                        expires,
-                        name: c.name().to_string(),
-                        value: c.value().to_string(),
-                    });
-                }
-            }
-        }
+        let out = if save {
+            window_cookies(&window, &target.cookie_urls)
+        } else {
+            Vec::new()
+        };
         let _ = window.destroy();
         if !save {
             return Err(AppError::Other("Login cancelled.".into()));

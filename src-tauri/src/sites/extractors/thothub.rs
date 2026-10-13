@@ -23,6 +23,19 @@ pub async fn resolve_kvs_stream(
     site_id: &str,
     site_name: &str,
 ) -> AppResult<String> {
+    resolve_kvs_stream_as(ctx, page_url, site_id, site_name, None).await
+}
+
+/// [`resolve_kvs_stream`] sending `user_agent` (a bot-check clearance is
+/// only valid for the User-Agent it was issued to).
+pub async fn resolve_kvs_stream_as(
+    ctx: &SiteContext,
+    page_url: &str,
+    site_id: &str,
+    site_name: &str,
+    user_agent: Option<&str>,
+) -> AppResult<String> {
+    let user_agent = user_agent.unwrap_or(crate::sites::BROWSER_UA);
     use crate::error::AppError;
     use reqwest::cookie::Jar;
     use std::sync::Arc;
@@ -41,7 +54,7 @@ pub async fn resolve_kvs_stream(
         let builder = if fallback {
             crate::sites::fallback_client_builder()
         } else {
-            reqwest::Client::builder().user_agent(crate::sites::BROWSER_UA)
+            reqwest::Client::builder().user_agent(user_agent)
         };
         let builder = builder
             .cookie_provider(jar.clone())

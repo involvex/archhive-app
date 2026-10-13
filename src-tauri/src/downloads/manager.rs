@@ -501,6 +501,76 @@ async fn download_via_webview(
     .await
 }
 
+/// Desktop: re-run yt-dlp with browser impersonation (+ a saved clearance),
+/// else pass the bot check in a browser window and retry with its cookies
+/// and User-Agent (see `sites::clearance`).
+#[cfg(desktop)]
+#[allow(clippy::too_many_arguments)]
+async fn download_cleared(
+    app: &AppHandle,
+    vault: &CookieVault,
+    runner: &SidecarRunner,
+    plan: &DownloadPlan,
+    library_path: &str,
+    site_cookies: Option<&Path>,
+    cancel: Arc<AtomicBool>,
+    format_args: &[String],
+    on_line: impl Fn(&str),
+) -> AppResult<String> {
+    use crate::sites::clearance as cl;
+    let attempt = |clearance: Option<cl::Clearance>| {
+        let on_line = &on_line;
+        let cancel = cancel.clone();
+        async move {
+            let cookies = clearance
+                .as_ref()
+                .map(|c| c.cookie_file.clone())
+                .or_else(|| site_cookies.map(Path::to_path_buf));
+            let ua = clearance.as_ref().map(|c| c.user_agent.clone());
+            let mut last = None;
+            for target in [
+                Some(cl::IMPERSONATE_TARGET),
+                Some(cl::IMPERSONATE_FALLBACK),
+                None,
+            ] {
+                let mut args = format_args.to_vec();
+                match target {
+                    Some(t) => args.extend(cl::impersonate_args(t, ua.as_deref())),
+                    None => {
+                        if let Some(ua) = ua.as_deref() {
+                            args.push("--user-agent".into());
+                            args.push(ua.into());
+                        }
+                    }
+                }
+                let result = runner
+                    .run_yt_dlp(
+                        &plan.url,
+                        library_path,
+                        &plan.output_template,
+                        cookies.as_deref(),
+                        cancel.clone(),
+                        on_line,
+                        &args,
+                    )
+                    .await;
+                match result {
+                    Err(e) if cl::impersonation_unavailable(&e.to_string()) => last = Some(e),
+                    other => return other,
+                }
+            }
+            Err(last.unwrap_or_else(|| AppError::Download("yt-dlp failed".into())))
+        }
+    };
+    match attempt(cl::stored(vault, &plan.url)).await {
+        Ok(path) => return Ok(path),
+        Err(e) if !crate::sites::challenge::is_bot_block(&e.to_string()) => return Err(e),
+        Err(_) => {}
+    }
+    let fresh = cl::obtain(app, vault, &plan.url).await?;
+    attempt(Some(fresh)).await
+}
+
 /// Fetch an already-resolved stream URL (MP4 directly, HLS via ffmpeg).
 async fn download_resolved(
     app: &AppHandle,
@@ -740,6 +810,40 @@ async fn run_job_with_plan(
             if path_result.is_err() && !cancel.load(Ordering::Relaxed) {
                 return handle_stopped(&db, &app, &job_id);
             }
+            #[cfg(desktop)]
+            let path_result = match path_result {
+                Err(e)
+                    if crate::sites::challenge::is_bot_block(&e.to_string())
+                        && crate::sites::challenge::webview_fallback_applies(&plan.url)
+                        && cancel.load(Ordering::Relaxed) =>
+                {
+                    tracing::info!(
+                        "[download] bot check on {}; impersonation / clearance",
+                        plan.url
+                    );
+                    download_cleared(
+                        &app,
+                        &vault,
+                        &runner,
+                        plan,
+                        library_path,
+                        cookies.as_deref(),
+                        cancel.clone(),
+                        &format_args,
+                        |line| {
+                            let progress = SidecarRunner::parse_progress(line);
+                            update_progress(&db_emit, &app_emit, &job_id_emit, line, progress);
+                        },
+                    )
+                    .await
+                    .map_err(|ce| {
+                        AppError::Download(format!(
+                            "{ce} (The embedded engine was blocked first: {e})"
+                        ))
+                    })
+                }
+                other => other,
+            };
             // Pages yt-dlp has no extractor for but a native resolver knows.
             let path_result = match path_result {
                 Err(e) if e.to_string().contains("Unsupported URL") => {

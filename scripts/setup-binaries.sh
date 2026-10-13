@@ -10,7 +10,17 @@ if [[ "$ARCH" == *windows* ]]; then EXT=".exe"; fi
 
 YTDLP_OUT="$BIN_DIR/yt-dlp-$ARCH$EXT"
 echo "Downloading yt-dlp to $YTDLP_OUT..."
-curl -fsSL "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp" -o "$YTDLP_OUT"
+# Standalone builds bundle Python and curl_cffi, which `--impersonate` needs
+# to get past Cloudflare fingerprint blocks; the plain `yt-dlp` zipapp needs
+# a system Python and can't impersonate.
+case "$ARCH" in
+  *apple-darwin*) YTDLP_ASSET="yt-dlp_macos" ;;
+  x86_64-*linux*) YTDLP_ASSET="yt-dlp_linux" ;;
+  aarch64-*linux*) YTDLP_ASSET="yt-dlp_linux_aarch64" ;;
+  *windows*) YTDLP_ASSET="yt-dlp.exe" ;;
+  *) YTDLP_ASSET="yt-dlp" ;;
+esac
+curl -fsSL "https://github.com/yt-dlp/yt-dlp/releases/latest/download/$YTDLP_ASSET" -o "$YTDLP_OUT"
 chmod +x "$YTDLP_OUT"
 
 FFMPEG_OUT="$BIN_DIR/ffmpeg-$ARCH$EXT"
