@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ChevronDown, ChevronUp, Minus, Plus } from "lucide-react";
 import type { BrowseFilters, SiteCategory } from "@/lib/types";
 import { loadSiteCategories } from "@/components/SiteCategoryBrowser";
@@ -57,10 +57,8 @@ export function CategoryIncludeExclude({
   const [open, setOpen] = useState(false);
   const [categories, setCategories] = useState<SiteCategory[]>([]);
   const [find, setFind] = useState("");
-  // Local draft so several taps reload once: changes are committed after a
-  // short pause (each committed change refetches the listing).
+  // Mirrors the parent's (draft) filters so chip states update instantly.
   const [draft, setDraft] = useState({ include: filters.include, exclude: filters.exclude });
-  const commitTimer = useRef<number | undefined>(undefined);
   const include = splitList(draft.include);
   const exclude = splitList(draft.exclude);
   useEffect(() => {
@@ -68,7 +66,6 @@ export function CategoryIncludeExclude({
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setDraft({ include: filters.include, exclude: filters.exclude });
   }, [filters.include, filters.exclude]);
-  useEffect(() => () => window.clearTimeout(commitTimer.current), []);
 
   useEffect(() => {
     if (!open || categories.length > 0) return;
@@ -109,11 +106,8 @@ export function CategoryIncludeExclude({
       exclude: exc.length ? exc.join(",") : undefined,
     };
     setDraft(draftNext);
-    window.clearTimeout(commitTimer.current);
-    commitTimer.current = window.setTimeout(
-      () => onFiltersChange({ ...filters, ...draftNext }),
-      900,
-    );
+    // The page holds these as a draft until Apply, so pass them on now.
+    onFiltersChange({ ...filters, ...draftNext });
   }
 
   const summary =

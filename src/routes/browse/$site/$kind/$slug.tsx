@@ -169,6 +169,19 @@ function BrowseDetailPage() {
       }));
   }, [tagIndex, typedTag, querySlug]);
   const filtersKey = browseFiltersKey(filters);
+  // Site filters are edited as a draft and only load results on Apply, so
+  // changing several settings costs one request instead of one per tap.
+  const [draftFilters, setDraftFilters] = useState<BrowseFilters>(filters);
+  const draftKey = browseFiltersKey(draftFilters);
+  const draftDirty = draftKey !== filtersKey;
+  useEffect(() => {
+    // Applied filters changed elsewhere (Apply, saved search): follow them.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setDraftFilters(filters);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtersKey]);
+  const applyFilters = useCallback(() => setFilters(draftFilters), [draftFilters]);
+  const discardFilters = useCallback(() => setDraftFilters(filters), [filters]);
   const [loading, setLoading] = useState(false);
   const [initial, setInitial] = useState(!cached?.items?.length);
   const [error, setError] = useState("");
@@ -447,8 +460,8 @@ function BrowseDetailPage() {
       <BrowseFilterBar
         options={browseOptions}
         kind={kind as BrowseKind}
-        filters={filters}
-        onFiltersChange={setFilters}
+        filters={draftFilters}
+        onFiltersChange={setDraftFilters}
         local={localFilters}
         onLocalChange={setLocalFilters}
       />
@@ -460,8 +473,8 @@ function BrowseDetailPage() {
           <CategoryIncludeExclude
             siteId={site}
             group={browseOptions.tag_index_group}
-            filters={filters}
-            onFiltersChange={setFilters}
+            filters={draftFilters}
+            onFiltersChange={setDraftFilters}
             maxInclude={
               browseOptions.exclude_only_kinds?.includes(kind as BrowseKind)
                 ? 0
@@ -474,9 +487,19 @@ function BrowseDetailPage() {
         <CategoryTagNarrow
           siteId={site}
           groups={browseOptions.category_groups ?? []}
-          filters={filters}
-          onFiltersChange={setFilters}
+          filters={draftFilters}
+          onFiltersChange={setDraftFilters}
         />
+      )}
+      {draftDirty && !isPhone && (
+        <div className="flex items-center gap-2">
+          <Button size="sm" onClick={applyFilters}>
+            Apply filters
+          </Button>
+          <Button size="sm" variant="ghost" onClick={discardFilters}>
+            Discard changes
+          </Button>
+        </div>
       )}
     </div>
   );
@@ -629,6 +652,11 @@ function BrowseDetailPage() {
                 ))
               )}
             </div>
+            {draftDirty && (
+              <Button size="sm" className="h-9 shrink-0" onClick={applyFilters}>
+                Apply
+              </Button>
+            )}
             {showItems && viewToggle}
           </div>
         ) : (
@@ -657,8 +685,14 @@ function BrowseDetailPage() {
         onClose={() => setFiltersOpen(false)}
         title="Filters"
         footer={
-          <Button className="h-11 w-full" onClick={() => setFiltersOpen(false)}>
-            Show results
+          <Button
+            className="h-11 w-full"
+            onClick={() => {
+              if (draftDirty) applyFilters();
+              setFiltersOpen(false);
+            }}
+          >
+            {draftDirty ? "Apply filters" : "Show results"}
           </Button>
         }
       >
