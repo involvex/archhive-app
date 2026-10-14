@@ -1387,8 +1387,65 @@ impl AppState {
         let cookie_key = self.page_cookie_key(url, &site_id);
         match self.site_ctx.fetch_html(url, &cookie_key).await {
             Ok(html) => crate::sites::details::says_video_removed(&html),
-            Err(e) => is_gone(&e.to_string()),
+            Err(e) => self.error_means_removed(url, &e.to_string()).await,
         }
+    }
+
+    /// A video page fetch error that proves the video is gone: the site's
+    /// own removed-video notice, or 404 / 410 while the site itself is up
+    /// (a site in maintenance or misconfigured may answer 404 for every
+    /// page, which must not empty the library).
+    async fn error_means_removed(&self, url: &str, msg: &str) -> bool {
+        if msg.contains("(video removed)") {
+            return true;
+        }
+        if !(msg.contains("HTTP 404") || msg.contains("HTTP 410")) {
+            return false;
+        }
+        let up = self.site_is_up(url).await;
+        if !up {
+            tracing::warn!("[online] {url} answered 404/410 but its site looks down; keeping it");
+        }
+        up
+    }
+
+    /// The site's home page loads normally (remembered for a few minutes per
+    /// host, so a big re-fetch adds about one request every 5 minutes).
+    async fn site_is_up(&self, url: &str) -> bool {
+        use std::collections::HashMap;
+        use std::sync::{LazyLock, Mutex};
+        use std::time::{Duration, Instant};
+        static LAST_UP: LazyLock<Mutex<HashMap<String, Instant>>> = LazyLock::new(Default::default);
+        const FRESH: Duration = Duration::from_secs(5 * 60);
+        let Some(root) = url::Url::parse(url)
+            .ok()
+            .and_then(|u| u.host_str().map(|h| format!("{}://{h}/", u.scheme())))
+        else {
+            return false;
+        };
+        let fresh = LAST_UP
+            .lock()
+            .ok()
+            .and_then(|m| m.get(&root).copied())
+            .is_some_and(|t| t.elapsed() < FRESH);
+        if fresh {
+            return true;
+        }
+        let site_id = self
+            .sites
+            .detect(&root)
+            .unwrap_or_else(|| "custom".to_string());
+        let cookie_key = self.page_cookie_key(&root, &site_id);
+        let up = match self.site_ctx.fetch_html(&root, &cookie_key).await {
+            Ok(html) => !looks_like_maintenance(&html),
+            Err(_) => false,
+        };
+        if up {
+            if let Ok(mut m) = LAST_UP.lock() {
+                m.insert(root, Instant::now());
+            }
+        }
+        up
     }
 
     /// Drop a removed video from the Online library and every saved search
@@ -1442,7 +1499,7 @@ impl AppState {
             }
             // The video was taken down (every supported site answers 404 or
             // 410): say so instead of asking yt-dlp about it too.
-            Err(e) if is_gone(&e.to_string()) => {
+            Err(e) if self.error_means_removed(url, &e.to_string()).await => {
                 self.forget_removed_video(url);
                 return Err(crate::error::AppError::NotFound(format!(
                     "{REMOVED_VIDEO} ({url})"
@@ -3209,17 +3266,31 @@ fn crawl_flags<T>(f: impl FnOnce(&mut CrawlFlags) -> T) -> T {
     f(&mut guard)
 }
 
-/// Errors worth waiting out rather than giving up on: "slow down" (429,
-/// Cloudflare 1015, ArcHive pausing) and the site being down (5xx / 52x,
-/// no connection).
 /// Error text for a video the site took down (the UI matches on it).
 const REMOVED_VIDEO: &str = "video removed from the site";
 
-/// A page fetch error saying the video no longer exists.
-fn is_gone(msg: &str) -> bool {
-    msg.contains("HTTP 404") || msg.contains("HTTP 410") || msg.contains("(video removed)")
+/// A home page that is a maintenance / outage notice, or next to empty.
+fn looks_like_maintenance(html: &str) -> bool {
+    let title = html
+        .split_once("<title")
+        .and_then(|(_, rest)| rest.split_once('>'))
+        .and_then(|(_, rest)| rest.split_once("</title>"))
+        .map(|(t, _)| t.to_ascii_lowercase())
+        .unwrap_or_default();
+    html.len() < 2000
+        || [
+            "maintenance",
+            "temporarily unavailable",
+            "be right back",
+            "down for",
+        ]
+        .iter()
+        .any(|w| title.contains(w))
 }
 
+/// Errors worth waiting out rather than giving up on: "slow down" (429,
+/// Cloudflare 1015, ArcHive pausing) and the site being down (5xx / 52x,
+/// no connection).
 fn is_rate_limit_message(msg: &str) -> bool {
     let m = msg.to_ascii_lowercase();
     [
@@ -3280,7 +3351,22 @@ impl CrawlSlice {
 
 #[cfg(test)]
 mod crawl_pause_tests {
-    use super::is_rate_limit_message;
+    use super::{is_rate_limit_message, looks_like_maintenance};
+
+    #[test]
+    fn maintenance_home_pages() {
+        let normal = format!(
+            "<html><head><title>Free Porn Videos</title></head>{}",
+            "x".repeat(5000)
+        );
+        assert!(!looks_like_maintenance(&normal));
+        let maint = format!(
+            "<html><head><title>Site Maintenance - We'll be right back</title></head>{}",
+            "x".repeat(5000)
+        );
+        assert!(looks_like_maintenance(&maint));
+        assert!(looks_like_maintenance("<html>503</html>"));
+    }
 
     #[test]
     fn waits_out_rate_limits_and_outages() {
