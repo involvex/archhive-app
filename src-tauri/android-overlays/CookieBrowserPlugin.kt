@@ -2,7 +2,10 @@ package com.archhive.app
 
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.app.AlertDialog
 import android.app.Dialog
+import android.content.Context
+import android.os.Message
 import android.content.Intent
 import android.net.Uri
 import android.graphics.Bitmap
@@ -104,6 +107,13 @@ class CookieBrowserPlugin(private val activity: Activity) : Plugin(activity) {
         "onclickads.net", "onclkds.com", "richpartners.co", "galaksion.com",
         "pemsrv.com", "rmhfrtnd.com", "tsyndicate.com", "dtscout.com",
     )
+
+    /** Site of a host for "is this another site?": its last two labels
+     *  (m.site.com and www.site.com are the same site). */
+    private fun siteOf(host: String?): String {
+        val parts = (host ?: "").lowercase().split('.').filter { it.isNotEmpty() }
+        return parts.takeLast(2).joinToString(".")
+    }
 
     private fun isAdHost(host: String?): Boolean {
         if (host.isNullOrEmpty()) return false
@@ -232,8 +242,17 @@ class CookieBrowserPlugin(private val activity: Activity) : Plugin(activity) {
                 }
                 val clear = Button(activity).apply { text = "Clear site" }
                 val shareBtn = Button(activity).apply { text = "Share" }
+                // Ad blocking is opt-in (sites with anti-adblock refuse to
+                // play when ad requests fail); remembered across sessions.
+                val prefs = activity.getSharedPreferences("archhive_browser", Context.MODE_PRIVATE)
+                var adblock = prefs.getBoolean("adblock", false)
+                val adsBtn = Button(activity)
+                fun adsLabel() { adsBtn.text = if (adblock) "Ads: off" else "Ads: on" }
+                adsLabel()
+                var popups = 0
                 bar.addView(close)
                 bar.addView(title, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+                bar.addView(adsBtn)
                 bar.addView(clear)
                 bar.addView(shareBtn)
                 val progress = ProgressBar(activity, null, android.R.attr.progressBarStyleHorizontal).apply {
@@ -248,8 +267,11 @@ class CookieBrowserPlugin(private val activity: Activity) : Plugin(activity) {
                     settings.loadWithOverviewMode = true
                     settings.useWideViewPort = true
                     settings.mediaPlaybackRequiresUserGesture = false
-                    // No popup windows (popunders); window.open() goes nowhere.
-                    settings.setSupportMultipleWindows(false)
+                    // Popups (click-anywhere popunders): with multiple windows
+                    // off, window.open() would load the ad in this page, so
+                    // windows are "supported" and every request is refused
+                    // in onCreateWindow.
+                    settings.setSupportMultipleWindows(true)
                     settings.javaScriptCanOpenWindowsAutomatically = false
                     settings.userAgentString = settings.userAgentString.replace("; wv", "")
                     webViewClient = object : WebViewClient() {
@@ -257,7 +279,7 @@ class CookieBrowserPlugin(private val activity: Activity) : Plugin(activity) {
                             view: WebView,
                             request: WebResourceRequest,
                         ): WebResourceResponse? {
-                            if (args.adblock && isAdHost(request.url.host)) {
+                            if (adblock && isAdHost(request.url.host)) {
                                 blocked++
                                 return WebResourceResponse(
                                     "text/plain", "utf-8", ByteArrayInputStream(ByteArray(0)),
@@ -269,8 +291,22 @@ class CookieBrowserPlugin(private val activity: Activity) : Plugin(activity) {
                         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                             val scheme = request.url.scheme ?: return true
                             if (scheme != "http" && scheme != "https") return true
-                            // Ad redirects in the main frame are dropped too.
-                            return args.adblock && isAdHost(request.url.host)
+                            if (!request.isForMainFrame) return false
+                            if (adblock && isAdHost(request.url.host)) return true
+                            // Click hijacks send the page to another site;
+                            // server redirects (e.g. a /go link) and links
+                            // within the site load as usual.
+                            val here = siteOf(Uri.parse(view.url ?: args.url).host)
+                            val there = siteOf(request.url.host)
+                            if (request.isRedirect || here.isEmpty() || here == there) return false
+                            val target = request.url.toString()
+                            AlertDialog.Builder(activity)
+                                .setTitle("Leave for ${request.url.host}?")
+                                .setMessage(target.take(200))
+                                .setPositiveButton("Open") { _, _ -> view.loadUrl(target) }
+                                .setNegativeButton("Stay", null)
+                                .show()
+                            return true
                         }
 
                         override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
@@ -287,9 +323,27 @@ class CookieBrowserPlugin(private val activity: Activity) : Plugin(activity) {
                             progress.progress = newProgress
                             progress.visibility = if (newProgress >= 100) android.view.View.GONE else android.view.View.VISIBLE
                         }
+
+                        // Every new window (popunder, target=_blank ad) is refused.
+                        override fun onCreateWindow(
+                            view: WebView,
+                            isDialog: Boolean,
+                            isUserGesture: Boolean,
+                            resultMsg: Message,
+                        ): Boolean {
+                            popups++
+                            title.text = "${view.title ?: view.url ?: ""}\n$popups popups blocked"
+                            return false
+                        }
                     }
                 }
                 cookieManager.setAcceptThirdPartyCookies(webView, true)
+                adsBtn.setOnClickListener {
+                    adblock = !adblock
+                    prefs.edit().putBoolean("adblock", adblock).apply()
+                    adsLabel()
+                    webView.reload()
+                }
                 root.addView(bar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
                 root.addView(progress, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 6))
                 root.addView(webView, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
