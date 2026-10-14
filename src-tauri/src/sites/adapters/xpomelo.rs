@@ -189,10 +189,29 @@ impl SiteAdapter for XpomeloAdapter {
         for q in &queries {
             let url = listing_url(q);
             tracing::info!("[xpomelo] browse: {url}");
-            let page = match fetch(ctx, &url, q.orientation).await {
+            let mut fetched = fetch(ctx, &url, q.orientation).await;
+            // A full page has PAGE_SIZE cards (fewer only on the last page).
+            // A short one can be a throttled answer: ask once more (at the
+            // normal pace) and keep whichever has more cards.
+            if let Ok(html) = &fetched {
+                let got = raw_card_count(html);
+                if let Some(expected) = expected_cards(html, q.page).filter(|e| got < *e) {
+                    tracing::warn!(
+                        "[xpomelo] page {} had {got} of {expected} results; fetching it again",
+                        q.page
+                    );
+                    match fetch(ctx, &url, q.orientation).await {
+                        Ok(again) if raw_card_count(&again) > got => fetched = Ok(again),
+                        Ok(_) => tracing::warn!("[xpomelo] page {} still short", q.page),
+                        Err(e) => tracing::warn!("[xpomelo] refetch failed: {e}"),
+                    }
+                }
+            }
+            let page = match fetched {
                 Ok(html) => {
                     let cards = parse_listing(&html);
-                    let more = cards.len() >= 40 || html.contains(&format!("page={}", q.page + 1));
+                    let more = raw_card_count(&html) >= PAGE_SIZE
+                        || html.contains(&format!("page={}", q.page + 1));
                     Ok((cards, more, result_count(&html)))
                 }
                 // Past the last page xPomelo answers 404: the end, not an error.
@@ -776,6 +795,31 @@ fn dedupe(items: Vec<MediaItem>) -> Vec<MediaItem> {
         .collect()
 }
 
+/// Result cards per xPomelo page (ads not counted).
+const PAGE_SIZE: usize = 80;
+
+/// Result cards on a page before any filtering (ad cards excluded).
+fn raw_card_count(html: &str) -> usize {
+    html.split(r#"<div class="qy-mod-li"#)
+        .skip(1)
+        .filter(|b| !b.split('"').next().unwrap_or("").contains("ad-li"))
+        .filter(|b| b.contains("qy-mod-link"))
+        .count()
+}
+
+/// Cards a complete page `page` should have: PAGE_SIZE, or what's left on
+/// the last page by the heading's count. None when it can't be told (no
+/// count and no link to a next page: probably the last page).
+fn expected_cards(html: &str, page: u32) -> Option<usize> {
+    let before = (page.saturating_sub(1) as usize) * PAGE_SIZE;
+    match result_count(html) {
+        Some(total) => Some((total as usize).saturating_sub(before).min(PAGE_SIZE)),
+        None => html
+            .contains(&format!("page={}", page + 1))
+            .then_some(PAGE_SIZE),
+    }
+}
+
 /// Result count from the page heading: `<h1 class="main cat-count-header">
 /// Blonde Porn Videos (575,432)</h1>` on category / pornstar pages (it follows
 /// the filters). Search pages have none.
@@ -1037,6 +1081,22 @@ mod tests {
                 "spankbang.com/y/video/other"
             ]
         );
+    }
+
+    #[test]
+    fn expected_cards_per_page() {
+        let card = r#"<div class="qy-mod-li " data-id="x"><a class="qy-mod-link" href="https://x/1"></a></div>"#;
+        let ad = r#"<div class="qy-mod-li hilltop-ad-li"><a class="qy-mod-link" href="https://ad"></a></div>"#;
+        let page = |n: usize, heading: &str| format!("{heading}{}{ad}", card.repeat(n));
+        assert_eq!(raw_card_count(&page(80, "")), 80);
+        let h = r#"<h1 class="main">Blonde Porn Videos (771)</h1>"#;
+        assert_eq!(expected_cards(&page(80, h), 1), Some(80));
+        // Page 10 of 771: 51 left.
+        assert_eq!(expected_cards(&page(51, h), 10), Some(51));
+        assert_eq!(expected_cards(&page(0, h), 11), Some(0));
+        // No count: a next-page link means a full page is due.
+        assert_eq!(expected_cards(r#"<a href="?page=3">"#, 2), Some(80));
+        assert_eq!(expected_cards("", 2), None);
     }
 
     #[test]
