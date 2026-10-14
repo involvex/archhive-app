@@ -27,6 +27,14 @@ export const Route = createFileRoute("/library/online/")({
 });
 
 const PAGE_SIZE = 60;
+/** Keys per query when collecting every matching video for a re-fetch. */
+const REFETCH_QUERY_PAGE = 500;
+
+/** Rough duration of a re-fetch (requests are spaced ~2-3 s apart per site). */
+function refetchMinutes(videos: number): string {
+  const mins = Math.max(1, Math.round((videos * 2.5) / 60));
+  return mins < 90 ? `${mins} min` : `${Math.round(mins / 60)} h`;
+}
 /** Items per "Fetch tags" request (each is one page load on the source site). */
 const DETAILS_BATCH = 5;
 
@@ -290,20 +298,16 @@ function OnlineLibraryPage() {
     }
   }
 
-  async function fetchTags() {
-    const todo = items.filter((i) => !i.details_at && !tried.current.has(i.key));
-    if (todo.length === 0) {
-      toast("Every listed video already has its tags fetched.");
-      return;
-    }
+  /** Fetch (or re-fetch) tags for these videos, DETAILS_BATCH per request. */
+  async function runFetchTags(keys: string[]) {
     stopFetch.current = false;
     let gone = 0;
-    setFetching({ done: 0, todo: todo.length });
-    for (let i = 0; i < todo.length && !stopFetch.current; i += DETAILS_BATCH) {
-      const batch = todo.slice(i, i + DETAILS_BATCH);
-      batch.forEach((b) => tried.current.add(b.key));
+    setFetching({ done: 0, todo: keys.length });
+    for (let i = 0; i < keys.length && !stopFetch.current; i += DETAILS_BATCH) {
+      const batch = keys.slice(i, i + DETAILS_BATCH);
+      batch.forEach((k) => tried.current.add(k));
       try {
-        const result = await api.fetchOnlineDetails(batch.map((b) => b.key));
+        const result = await api.fetchOnlineDetails(batch);
         const byKey = new Map(result.items.map((u) => [u.key, u]));
         // Videos the site removed are dropped from the library and every
         // saved search by the backend.
@@ -312,11 +316,14 @@ function OnlineLibraryPage() {
         setItems((prev) =>
           prev.filter((p) => !removed.has(p.key)).map((p) => byKey.get(p.key) ?? p),
         );
+        if (removed.size > 0) {
+          setSelected((prev) => new Set([...prev].filter((k) => !removed.has(k))));
+        }
       } catch (e) {
         toast.error(String(e));
         break;
       }
-      setFetching({ done: Math.min(i + DETAILS_BATCH, todo.length), todo: todo.length });
+      setFetching({ done: Math.min(i + DETAILS_BATCH, keys.length), todo: keys.length });
     }
     setFetching(null);
     if (gone > 0) {
@@ -327,6 +334,46 @@ function OnlineLibraryPage() {
       void loadMeta();
     }
     if (tagsOpen) void loadTags();
+  }
+
+  /** Listed videos whose tags were never fetched. */
+  async function fetchTags() {
+    const todo = items.filter((i) => !i.details_at && !tried.current.has(i.key));
+    if (todo.length === 0) {
+      toast("Every listed video already has its tags fetched.");
+      return;
+    }
+    await runFetchTags(todo.map((i) => i.key));
+  }
+
+  /** The selected videos, fetched again even if done before. */
+  async function refetchSelected() {
+    if (selected.size === 0) return;
+    await runFetchTags([...selected]);
+  }
+
+  /** Every video matching the current filters (all pages, not only the
+   * loaded ones), fetched again even if done before. */
+  async function refetchAllShown() {
+    if (total === 0) return;
+    if (
+      !window.confirm(
+        `Fetch tags again for all ${total.toLocaleString()} videos matching the current filters? That is one page load per video on its site, about ${refetchMinutes(total)}. You can stop it any time.`,
+      )
+    )
+      return;
+    const keys: string[] = [];
+    try {
+      for (let offset = 0; ; offset += REFETCH_QUERY_PAGE) {
+        const page = await api.queryOnlineItems({ ...query, offset, limit: REFETCH_QUERY_PAGE });
+        keys.push(...page.items.map((i) => i.key));
+        if (page.items.length < REFETCH_QUERY_PAGE) break;
+      }
+    } catch (e) {
+      toast.error(String(e));
+      return;
+    }
+    await runFetchTags(keys);
   }
 
   const scopeLabel = search ? "this saved search" : "the Online library";
@@ -590,6 +637,18 @@ function OnlineLibraryPage() {
               Fetch tags{missingDetails > 0 ? ` (${missingDetails})` : ""}
             </Button>
           )}
+          {!fetching && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => void refetchAllShown()}
+              disabled={total === 0}
+              title="Fetch tags again for every video matching the current filters, including ones done before"
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              Re-fetch all shown
+            </Button>
+          )}
         </div>
 
         {tagsOpen && (
@@ -648,6 +707,16 @@ function OnlineLibraryPage() {
               onClick={() => setSelected(new Set(items.map((i) => i.key)))}
             >
               Select all loaded
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={selected.size === 0 || Boolean(fetching)}
+              onClick={() => void refetchSelected()}
+              title="Read tags, performers and channel again from each selected video's page"
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              Fetch tags {selected.size || ""}
             </Button>
             <Button
               size="sm"
