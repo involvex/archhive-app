@@ -61,11 +61,13 @@ function errorText(e: unknown): string {
 }
 
 /** A page adding fewer new videos than this share of the listing's usual
- * page size (at most 24) loads the next one too. */
-const MIN_NEW_SHARE = 0.4;
-const MIN_NEW_PER_PAGE = 24;
-/** Most extra pages fetched to top up one short page. */
-const MAX_FILL_PAGES = 2;
+ * page size (at most MIN_NEW_PER_PAGE) is nearly empty: load the next one
+ * too. Kept low: every extra page is more requests (three for an xPomelo
+ * length range), and xPomelo rate limits after about 15. */
+const MIN_NEW_SHARE = 0.2;
+const MIN_NEW_PER_PAGE = 12;
+/** Most extra pages fetched to top up one nearly empty page. */
+const MAX_FILL_PAGES = 1;
 
 /** Same video re-listed under another link: same title and length. */
 function repeatKey(i: MediaItem): string | null {

@@ -807,17 +807,13 @@ fn raw_card_count(html: &str) -> usize {
         .count()
 }
 
-/// Cards a complete page `page` should have: PAGE_SIZE, or what's left on
-/// the last page by the heading's count. None when it can't be told (no
-/// count and no link to a next page: probably the last page).
+/// Cards page `page` should have: a full PAGE_SIZE when it links to a next
+/// page; None for the last page. (The heading's count is approximate, so
+/// it can't tell how many the last page holds; trusting it made the app
+/// refetch complete last pages and run into the rate limit.)
 fn expected_cards(html: &str, page: u32) -> Option<usize> {
-    let before = (page.saturating_sub(1) as usize) * PAGE_SIZE;
-    match result_count(html) {
-        Some(total) => Some((total as usize).saturating_sub(before).min(PAGE_SIZE)),
-        None => html
-            .contains(&format!("page={}", page + 1))
-            .then_some(PAGE_SIZE),
-    }
+    html.contains(&format!("page={}", page + 1))
+        .then_some(PAGE_SIZE)
 }
 
 /// Result count from the page heading: `<h1 class="main cat-count-header">
@@ -1087,16 +1083,15 @@ mod tests {
     fn expected_cards_per_page() {
         let card = r#"<div class="qy-mod-li " data-id="x"><a class="qy-mod-link" href="https://x/1"></a></div>"#;
         let ad = r#"<div class="qy-mod-li hilltop-ad-li"><a class="qy-mod-link" href="https://ad"></a></div>"#;
-        let page = |n: usize, heading: &str| format!("{heading}{}{ad}", card.repeat(n));
-        assert_eq!(raw_card_count(&page(80, "")), 80);
+        assert_eq!(raw_card_count(&format!("{}{ad}", card.repeat(80))), 80);
+        // A next-page link means a full page is due; the last page has no
+        // expectation (the heading's count is approximate).
         let h = r#"<h1 class="main">Blonde Porn Videos (771)</h1>"#;
-        assert_eq!(expected_cards(&page(80, h), 1), Some(80));
-        // Page 10 of 771: 51 left.
-        assert_eq!(expected_cards(&page(51, h), 10), Some(51));
-        assert_eq!(expected_cards(&page(0, h), 11), Some(0));
-        // No count: a next-page link means a full page is due.
-        assert_eq!(expected_cards(r#"<a href="?page=3">"#, 2), Some(80));
-        assert_eq!(expected_cards("", 2), None);
+        assert_eq!(
+            expected_cards(&format!(r#"{h}<a href="?page=3">"#), 2),
+            Some(80)
+        );
+        assert_eq!(expected_cards(h, 10), None);
     }
 
     #[test]

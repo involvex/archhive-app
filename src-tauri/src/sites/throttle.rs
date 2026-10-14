@@ -60,9 +60,10 @@ fn host_key(url: &str) -> String {
 }
 
 /// Spacing for hosts with stricter limits than [`MIN_GAP`] + jitter:
-/// (host, minimum gap, extra random jitter). xPomelo answers 429 after
-/// roughly a dozen requests in 25 s at the default pace.
-const SLOW_HOSTS: &[(&str, Duration, u64)] = &[("xpomelo.com", Duration::from_millis(4000), 3000)];
+/// (host, minimum gap, extra random jitter). xPomelo answered 429 after
+/// about a dozen requests in 25 s at the default pace, and Cloudflare 1015
+/// after ~15 requests at 4-7 s apart.
+const SLOW_HOSTS: &[(&str, Duration, u64)] = &[("xpomelo.com", Duration::from_millis(6000), 4000)];
 
 /// Test-request interval while backing off: strict hosts count every
 /// request against the block, so they are asked less often.
@@ -191,7 +192,7 @@ mod tests {
 
     #[test]
     fn slow_hosts_get_their_own_pace() {
-        assert_eq!(pace_for("xpomelo.com").0, Duration::from_millis(4000));
+        assert_eq!(pace_for("xpomelo.com").0, Duration::from_millis(6000));
         assert_eq!(pace_for("pornhub.com"), (MIN_GAP, JITTER_MS));
         let now = Instant::now();
         let mut s = HostState::default();
