@@ -332,3 +332,25 @@ CREATE TABLE IF NOT EXISTS online_dismissed (
     PRIMARY KEY (scope, item_key)
 );
 "#;
+
+/// Full fetches of saved searches: where each one is, so it can pause on
+/// rate limits and resume (also after the app restarts).
+pub const MIGRATION_023: &str = r#"
+CREATE TABLE IF NOT EXISTS online_crawls (
+    search_id TEXT PRIMARY KEY,
+    next_page INTEGER NOT NULL,
+    pages_done INTEGER NOT NULL DEFAULT 0,
+    new_items INTEGER NOT NULL DEFAULT 0,
+    site_total INTEGER,
+    state TEXT NOT NULL,
+    message TEXT,
+    resume_at TEXT,
+    updated_at TEXT NOT NULL
+);
+"#;
+
+/// Full fetches keep their slice queue (JSON) so big xPomelo searches,
+/// split under its 10-page cap, resume where they were.
+pub const MIGRATION_024: &str = r#"
+ALTER TABLE online_crawls ADD COLUMN plan TEXT;
+"#;

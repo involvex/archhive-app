@@ -238,6 +238,15 @@ pub fn run() {
             });
         }
 
+        // Full fetches of saved searches interrupted by closing the app.
+        {
+            let state = state.clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_secs(20)).await;
+                state.resume_full_fetches();
+            });
+        }
+
         // One-time repair: downloads that kept a second `.remux.mp4` copy.
         {
             let db = state.db.clone();
@@ -420,6 +429,9 @@ pub fn run() {
             commands::clear_online_history,
             commands::delete_online_items,
             commands::delete_online_matching,
+            commands::start_full_fetch,
+            commands::stop_full_fetch,
+            commands::list_full_fetches,
             commands::list_unenriched_scenes,
             commands::search_stashdb_scenes,
             commands::search_stashdb_performers,

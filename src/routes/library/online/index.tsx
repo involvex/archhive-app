@@ -5,6 +5,7 @@ import { ArrowLeft, Globe, Minus, Plus, RefreshCw, Square, Tags, Trash2 } from "
 import { api } from "@/lib/api/client";
 import type {
   MediaItem,
+  OnlineCrawl,
   OnlineItem,
   OnlineQuery,
   OnlineSearchInfo,
@@ -58,6 +59,35 @@ function toMediaItem(i: OnlineItem): MediaItem {
     tags: i.tags,
     channel: i.channel,
   };
+}
+
+/** One-line status of a full fetch. */
+function crawlLabel(c: OnlineCrawl | null): string {
+  if (!c) return "Fetch all pages to get every result of this search.";
+  const progress = `${c.pages_done} ${c.pages_done === 1 ? "page" : "pages"}, ${c.new_items} new${
+    c.site_total ? ` (site lists ${c.site_total.toLocaleString()})` : ""
+  }`;
+  // xPomelo lists 10 pages per listing; bigger searches run as slices.
+  const part =
+    c.slices_total > 1
+      ? ` · part ${Math.min(c.slices_done + 1, c.slices_total)} of ${c.slices_total}${
+          c.slice_label ? ` (${c.slice_label})` : ""
+        }`
+      : "";
+  switch (c.state) {
+    case "running":
+      return `Fetching all: page ${c.next_page}${part} · ${progress}`;
+    case "paused":
+      return `Paused (rate limited) — retrying ${
+        c.resume_at ? `at ${new Date(c.resume_at).toLocaleTimeString()}` : "soon"
+      }${part} · ${progress}`;
+    case "done":
+      return `All pages fetched · ${progress}`;
+    case "stopped":
+      return `Stopped at page ${c.next_page}${part} · ${progress}`;
+    default:
+      return `Stopped by an error: ${c.message ?? "unknown"} · ${progress}`;
+  }
 }
 
 function relative(iso?: string): string {
@@ -120,6 +150,54 @@ function OnlineLibraryPage() {
     setInfo(i);
   }, []);
 
+  // Full fetch of this saved search (background job), polled while active.
+  const [crawl, setCrawl] = useState<OnlineCrawl | null>(null);
+  const crawlActive = crawl?.state === "running" || crawl?.state === "paused";
+  const lastCrawlCount = useRef(0);
+  useEffect(() => {
+    if (!searchId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setCrawl(null);
+      return;
+    }
+    let cancelled = false;
+    let timer: number | undefined;
+    const tick = async () => {
+      const all = await api.listFullFetches().catch(() => [] as OnlineCrawl[]);
+      if (cancelled) return;
+      const mine = all.find((c) => c.search_id === searchId) ?? null;
+      setCrawl(mine);
+      if (mine && mine.new_items !== lastCrawlCount.current) {
+        lastCrawlCount.current = mine.new_items;
+        void loadMeta();
+      }
+      const active = mine?.state === "running" || mine?.state === "paused";
+      if (active) timer = window.setTimeout(() => void tick(), 4000);
+    };
+    void tick();
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [searchId, crawlActive, loadMeta]);
+
+  async function startFullFetch(restart: boolean) {
+    if (!searchId) return;
+    try {
+      setCrawl(await api.startFullFetch(searchId, restart));
+      toast.success(
+        "Fetching every page in the background. It pauses by itself on rate limits and carries on afterwards.",
+      );
+    } catch (e) {
+      toast.error(String(e));
+    }
+  }
+
+  async function stopFullFetch() {
+    if (!searchId) return;
+    await api.stopFullFetch(searchId).catch(() => {});
+    setCrawl((c) => (c ? { ...c, state: "stopped" } : c));
+  }
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadMeta();
@@ -398,6 +476,33 @@ function OnlineLibraryPage() {
             <Globe className="h-3.5 w-3.5" />
             Live
           </Button>
+          <div className="flex w-full flex-wrap items-center gap-2 border-t border-[var(--color-border)] pt-2">
+            <span className="min-w-0 flex-1 text-[var(--color-muted-foreground)]">
+              {crawlLabel(crawl)}
+            </span>
+            {crawlActive ? (
+              <Button size="sm" variant="outline" onClick={() => void stopFullFetch()}>
+                <Square className="h-3.5 w-3.5" />
+                Stop
+              </Button>
+            ) : (
+              <>
+                {crawl && crawl.state !== "done" && (
+                  <Button size="sm" onClick={() => void startFullFetch(false)}>
+                    Resume (page {crawl.next_page})
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  variant={crawl && crawl.state !== "done" ? "outline" : "default"}
+                  onClick={() => void startFullFetch(Boolean(crawl))}
+                  title="Fetch every page of this search with its filters, slowly, pausing on rate limits"
+                >
+                  {crawl ? "Fetch all again" : "Fetch all pages"}
+                </Button>
+              </>
+            )}
+          </div>
         </div>
       ) : (
         <div className="flex items-center gap-2 text-xs text-[var(--color-muted-foreground)]">

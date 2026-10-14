@@ -1439,3 +1439,28 @@ pub fn delete_online_matching(
 ) -> CmdResult<u32> {
     map_err(state.db.delete_online_matching(&query))
 }
+
+#[tauri::command]
+pub fn start_full_fetch(
+    state: State<'_, Arc<AppState>>,
+    id: String,
+    restart: Option<bool>,
+) -> CmdResult<crate::models::OnlineCrawl> {
+    map_err(
+        state
+            .inner()
+            .start_full_fetch(&id, restart.unwrap_or(false)),
+    )
+}
+
+#[tauri::command]
+pub fn stop_full_fetch(state: State<'_, Arc<AppState>>, id: String) -> CmdResult<()> {
+    map_err(state.stop_full_fetch(&id))
+}
+
+#[tauri::command]
+pub fn list_full_fetches(
+    state: State<'_, Arc<AppState>>,
+) -> CmdResult<Vec<crate::models::OnlineCrawl>> {
+    map_err(state.db.list_online_crawls())
+}

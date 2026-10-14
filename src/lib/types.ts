@@ -699,3 +699,21 @@ export interface OnlineUpdateResult {
   total: number;
   stopped?: string;
 }
+
+/** Progress of a full fetch of a saved search (mirrors OnlineCrawl). */
+export interface OnlineCrawl {
+  search_id: string;
+  next_page: number;
+  pages_done: number;
+  new_items: number;
+  site_total?: number;
+  state: "running" | "paused" | "done" | "stopped" | "error";
+  message?: string;
+  resume_at?: string;
+  updated_at: string;
+  /** Big searches run as slices (xPomelo shows 10 pages per listing). */
+  slices_done: number;
+  slices_total: number;
+  /** Current slice, e.g. "20–30 min, Pornhub". */
+  slice_label?: string;
+}

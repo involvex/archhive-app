@@ -15,8 +15,8 @@
 
 use crate::error::{AppError, AppResult};
 use crate::models::{
-    BrowseKind, BrowseOptions, BrowseOrientation, BrowsePage, BrowseQuery, DownloadPlan,
-    DownloadTool, FilterOption, MediaItem, SiteCategory,
+    BrowseFilters, BrowseKind, BrowseOptions, BrowseOrientation, BrowsePage, BrowseQuery,
+    DownloadPlan, DownloadTool, FilterOption, MediaItem, SiteCategory,
 };
 use crate::sites::{SiteAdapter, SiteContext};
 use async_trait::async_trait;
@@ -344,6 +344,78 @@ impl SiteAdapter for XpomeloAdapter {
     }
 }
 
+/// xPomelo serves at most this many pages of any listing (page 11 is a 404
+/// however many results the heading reports).
+pub(crate) const MAX_PAGES: u32 = 10;
+/// Results one listing can show: MAX_PAGES full pages.
+pub(crate) const MAX_RESULTS: u32 = MAX_PAGES * PAGE_SIZE as u32;
+
+/// Slices a full fetch starts from: a length range becomes its buckets
+/// (each its own listing of up to MAX_PAGES pages).
+pub(crate) fn crawl_start(filters: &BrowseFilters) -> Vec<BrowseFilters> {
+    let buckets = duration_buckets(filters.duration.as_deref());
+    if buckets.len() > 1 {
+        buckets
+            .into_iter()
+            .map(|b| BrowseFilters {
+                duration: Some(b.to_string()),
+                ..filters.clone()
+            })
+            .collect()
+    } else {
+        vec![filters.clone()]
+    }
+}
+
+/// Narrower, non-overlapping slices for a listing with more results than
+/// MAX_PAGES can show: by length bucket first, then by source site
+/// (paysites and unsupported sources left out). Empty when it can't be
+/// split any further.
+pub(crate) fn crawl_split(filters: &BrowseFilters) -> Vec<BrowseFilters> {
+    let one_bucket = filters
+        .duration
+        .as_deref()
+        .is_some_and(|d| DURATION_BUCKETS.contains(&d));
+    if !one_bucket {
+        return DURATION_BUCKETS
+            .iter()
+            .map(|b| BrowseFilters {
+                duration: Some((*b).to_string()),
+                ..filters.clone()
+            })
+            .collect();
+    }
+    if filters.source.is_some() {
+        return Vec::new();
+    }
+    SOURCES
+        .iter()
+        .filter(|s| source_label(s) == **s)
+        .map(|s| BrowseFilters {
+            source: Some((*s).to_string()),
+            ..filters.clone()
+        })
+        .collect()
+}
+
+/// Short description of a slice for progress messages.
+pub(crate) fn crawl_slice_label(filters: &BrowseFilters) -> String {
+    let length = match filters.duration.as_deref() {
+        Some("1m") => "1–5 min",
+        Some("5m") => "5–10 min",
+        Some("10m") => "10–20 min",
+        Some("20m") => "20–30 min",
+        Some("30m") => "30+ min",
+        _ => "",
+    };
+    [length, filters.source.as_deref().unwrap_or("")]
+        .iter()
+        .filter(|p| !p.is_empty())
+        .copied()
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 /// Source menu label: paysites and unsupported sources are marked.
 fn source_label(source: &str) -> String {
     let lower = source.to_ascii_lowercase();
@@ -428,6 +500,19 @@ fn is_rate_limit(e: &AppError) -> bool {
         || m.contains("pausing")
 }
 
+/// HTTP 5xx: xPomelo's own server isn't answering (Cloudflare 520-526,
+/// 502/503/504) or a connection that couldn't be made at all.
+fn is_site_down(e: &AppError) -> bool {
+    let m = e.to_string();
+    (500..=599).any(|code| m.contains(&format!("HTTP {code}")))
+        || m.contains("error sending request")
+        || m.contains("connection")
+}
+
+const SITE_DOWN: &str = "xPomelo is down right now: its server isn't answering (Cloudflare \
+     error 52x). Nothing to fix in the app; try again later. Saved searches still open \
+     from the Online library.";
+
 const RATE_LIMITED: &str = "xPomelo's Cloudflare is rate limiting this connection (error 1015). \
      ArcHive has paused xPomelo requests and tries again on its own; the block \
      usually lifts within 10-60 minutes. Saved searches still open from the \
@@ -478,6 +563,7 @@ async fn fetch(
     {
         Ok(html) => Ok(html),
         Err(e) if is_rate_limit(&e) => Err(AppError::Site(RATE_LIMITED.to_string())),
+        Err(e) if is_site_down(&e) => Err(AppError::Site(SITE_DOWN.to_string())),
         Err(e) if is_bot_check(&e) => {
             #[cfg(target_os = "android")]
             {
@@ -1093,6 +1179,39 @@ mod tests {
     }
 
     #[test]
+    fn crawl_slices_split_by_length_then_source() {
+        let base = BrowseFilters {
+            duration: Some("10m+".into()),
+            sort: Some("date".into()),
+            ..Default::default()
+        };
+        let start = crawl_start(&base);
+        assert_eq!(
+            start
+                .iter()
+                .map(|f| f.duration.clone().unwrap())
+                .collect::<Vec<_>>(),
+            ["10m", "20m", "30m"]
+        );
+        assert_eq!(start[0].sort.as_deref(), Some("date"));
+        assert_eq!(crawl_start(&BrowseFilters::default()).len(), 1);
+        // No length yet: split by bucket; one bucket: by free source.
+        assert_eq!(crawl_split(&BrowseFilters::default()).len(), 5);
+        let by_source = crawl_split(&start[0]);
+        assert!(by_source
+            .iter()
+            .any(|f| f.source.as_deref() == Some("Pornhub")));
+        assert!(!by_source
+            .iter()
+            .any(|f| f.source.as_deref() == Some("Brazzers")));
+        assert!(!by_source
+            .iter()
+            .any(|f| f.source.as_deref() == Some("Beeg")));
+        assert!(crawl_split(&by_source[0]).is_empty());
+        assert_eq!(crawl_slice_label(&by_source[0]), "10–20 min, Pornhub");
+    }
+
+    #[test]
     fn duration_ranges_map_to_buckets() {
         assert_eq!(duration_buckets(None), Vec::<&str>::new());
         assert_eq!(duration_buckets(Some("10m")), ["10m"]);
@@ -1174,6 +1293,19 @@ mod tests {
             Some(80)
         );
         assert_eq!(expected_cards(h, 10), None);
+    }
+
+    #[test]
+    fn site_down_errors() {
+        assert!(is_site_down(&AppError::Site(
+            "HTTP 522 <unknown status code> for https://xpomelo.com/".into()
+        )));
+        assert!(is_site_down(&AppError::Site(
+            "HTTP 503 Service Unavailable for x".into()
+        )));
+        assert!(!is_site_down(&AppError::Site(
+            "HTTP 404 Not Found for x".into()
+        )));
     }
 
     #[test]

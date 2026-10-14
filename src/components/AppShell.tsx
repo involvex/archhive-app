@@ -1,3 +1,4 @@
+import { useFullFetchNotifications } from "@/lib/hooks/useFullFetchNotifications";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -71,6 +72,8 @@ const pluginNavItems = getPluginNavItems().map((item) => ({
 }));
 
 export function AppShell({ children }: { children: React.ReactNode }) {
+  // Popups when a saved search's full fetch pauses, finishes or fails.
+  useFullFetchNotifications();
   const navigate = useNavigate();
   const location = useLocation();
   const openTabRef = useRef<(to: string) => void>((to) => navigate({ to }));

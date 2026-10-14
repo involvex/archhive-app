@@ -2379,6 +2379,223 @@ impl AppState {
         Ok(result)
     }
 
+    /// Start (or resume) fetching every page of a saved search into its
+    /// Online library slice in the background. Uses the saved filters as
+    /// they are, at the normal per-site pace; a rate limit pauses the job
+    /// (5, 10, 20, then 30 minutes) and it carries on from the same page.
+    /// `restart` starts over from page 1.
+    pub fn start_full_fetch(
+        self: &std::sync::Arc<Self>,
+        id: &str,
+        restart: bool,
+    ) -> AppResult<crate::models::OnlineCrawl> {
+        self.db
+            .get_saved_search(id)?
+            .ok_or_else(|| crate::error::AppError::NotFound(format!("saved search {id}")))?;
+        crawl_flags(|f| {
+            f.stop.remove(id);
+        });
+        let mut crawl = match self.db.get_online_crawl(id)? {
+            Some(c) if !restart && c.state != "done" => c,
+            _ => crate::models::OnlineCrawl {
+                search_id: id.to_string(),
+                next_page: 1,
+                ..Default::default()
+            },
+        };
+        if crawl_flags(|f| f.running.contains(id)) {
+            return Ok(crawl);
+        }
+        crawl.state = "running".into();
+        crawl.message = None;
+        crawl.resume_at = None;
+        self.db.put_online_crawl(&crawl)?;
+        crawl_flags(|f| {
+            f.running.insert(id.to_string());
+        });
+        let state = self.clone();
+        let id = id.to_string();
+        tauri::async_runtime::spawn(async move {
+            state.run_full_fetch(&id).await;
+            crawl_flags(|f| {
+                f.running.remove(&id);
+            });
+        });
+        Ok(crawl)
+    }
+
+    /// Stop a full fetch after its current request; Start resumes it.
+    pub fn stop_full_fetch(&self, id: &str) -> AppResult<()> {
+        let running = crawl_flags(|f| {
+            f.stop.insert(id.to_string());
+            f.running.contains(id)
+        });
+        if !running {
+            if let Some(mut c) = self.db.get_online_crawl(id)? {
+                if c.state != "done" {
+                    c.state = "stopped".into();
+                    c.resume_at = None;
+                    self.db.put_online_crawl(&c)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Full fetches interrupted by closing the app carry on at start-up.
+    pub fn resume_full_fetches(self: &std::sync::Arc<Self>) {
+        let Ok(crawls) = self.db.list_online_crawls() else {
+            return;
+        };
+        for c in crawls
+            .into_iter()
+            .filter(|c| c.state == "running" || c.state == "paused")
+        {
+            if let Err(e) = self.start_full_fetch(&c.search_id, false) {
+                tracing::warn!("[online] could not resume full fetch: {e}");
+            }
+        }
+    }
+
+    async fn run_full_fetch(&self, id: &str) {
+        let stopped = || crawl_flags(|f| f.stop.contains(id));
+        let Ok(Some(search)) = self.db.get_saved_search(id) else {
+            return;
+        };
+        let Ok(Some(mut crawl)) = self.db.get_online_crawl(id) else {
+            return;
+        };
+        let xpomelo = search.site_id == "xpomelo";
+        // Slice queue: one listing for most sites; xPomelo's length range
+        // starts as its buckets, and slices over its 10-page cap are split.
+        let mut plan: Vec<CrawlSlice> = crawl
+            .plan
+            .as_deref()
+            .and_then(|p| serde_json::from_str(p).ok())
+            .filter(|p: &Vec<CrawlSlice>| !p.is_empty())
+            .unwrap_or_else(|| {
+                let start = if xpomelo {
+                    crate::sites::adapters::xpomelo::crawl_start(&search.filters)
+                } else {
+                    vec![search.filters.clone()]
+                };
+                start.into_iter().map(CrawlSlice::new).collect()
+            });
+        let save = |crawl: &mut crate::models::OnlineCrawl, plan: &[CrawlSlice]| {
+            crawl.plan = serde_json::to_string(plan).ok();
+            let _ = self.db.put_online_crawl(crawl);
+        };
+        let mut backoff_mins = 5i64;
+        let mut errors = 0u32;
+        loop {
+            if stopped() {
+                crawl.state = "stopped".into();
+                crawl.resume_at = None;
+                save(&mut crawl, &plan);
+                break;
+            }
+            let Some(idx) = plan.iter().position(|s| !s.done) else {
+                crawl.state = "done".into();
+                let _ = self.db.mark_online_search_updated(id);
+                save(&mut crawl, &plan);
+                tracing::info!(
+                    "[online] full fetch of {} done: {} pages, {} new",
+                    search.name,
+                    crawl.pages_done,
+                    crawl.new_items
+                );
+                break;
+            };
+            let page = plan[idx].next_page.max(1);
+            crawl.next_page = page;
+            let fetched = self
+                .browse(
+                    &search.site_id,
+                    search.kind,
+                    &search.slug,
+                    page,
+                    search.orientation,
+                    plan[idx].filters.clone(),
+                )
+                .await;
+            let outcome = match fetched {
+                Ok(d) if d.from_cache => Err("the site refused the request".to_string()),
+                Ok(d) => Ok(d),
+                Err(e) => Err(e.to_string()),
+            };
+            match outcome {
+                Ok(data) => {
+                    errors = 0;
+                    backoff_mins = 5;
+                    let rank = (crawl.pages_done as i64) * 1000;
+                    crawl.new_items += self
+                        .db
+                        .record_online_items(&data.items, Some((id, rank)))
+                        .unwrap_or(0);
+                    crawl.pages_done += 1;
+                    if crawl.site_total.is_none() && data.total.is_some() {
+                        crawl.site_total = data.total;
+                    }
+                    crawl.message = None;
+                    crawl.resume_at = None;
+                    let slice = &mut plan[idx];
+                    let too_big = xpomelo
+                        && page == 1
+                        && data
+                            .total
+                            .is_some_and(|t| t > crate::sites::adapters::xpomelo::MAX_RESULTS);
+                    let splits = if too_big {
+                        crate::sites::adapters::xpomelo::crawl_split(&slice.filters)
+                    } else {
+                        Vec::new()
+                    };
+                    if !splits.is_empty() {
+                        // Page 1 is kept; the narrower slices cover the rest.
+                        slice.done = true;
+                        plan.extend(splits.into_iter().map(CrawlSlice::new));
+                    } else {
+                        slice.next_page = page + 1;
+                        let capped = xpomelo && page >= crate::sites::adapters::xpomelo::MAX_PAGES;
+                        if !data.has_more || capped {
+                            slice.done = true;
+                        }
+                    }
+                    save(&mut crawl, &plan);
+                }
+                Err(msg) if is_rate_limit_message(&msg) => {
+                    // Rate limited or the site is down: pause, then try the
+                    // same page again.
+                    let wait = chrono::Duration::minutes(backoff_mins);
+                    crawl.state = "paused".into();
+                    crawl.message = Some(msg);
+                    crawl.resume_at = Some((chrono::Utc::now() + wait).to_rfc3339());
+                    save(&mut crawl, &plan);
+                    let until = std::time::Instant::now()
+                        + std::time::Duration::from_secs(backoff_mins as u64 * 60);
+                    while std::time::Instant::now() < until && !stopped() {
+                        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                    }
+                    backoff_mins = (backoff_mins * 2).min(30);
+                    if !stopped() {
+                        crawl.state = "running".into();
+                        crawl.resume_at = None;
+                        save(&mut crawl, &plan);
+                    }
+                }
+                Err(msg) => {
+                    errors += 1;
+                    if errors >= 3 {
+                        crawl.state = "error".into();
+                        crawl.message = Some(msg);
+                        save(&mut crawl, &plan);
+                        break;
+                    }
+                    tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+                }
+            }
+        }
+    }
+
     /// Tags / performers / channel for Online library items from each
     /// video's own page (for xPomelo results: the linked site). Requests go
     /// out one at a time at the per-site pace; failures are skipped.
@@ -2884,5 +3101,79 @@ mod update_filter_tests {
         assert_eq!(period_covering(&periods, 400), None);
         let xp = [o("30", "Past month"), o("365", "Past year")];
         assert_eq!(period_covering(&xp, 3).as_deref(), Some("30"));
+    }
+}
+
+#[derive(Default)]
+struct CrawlFlags {
+    running: std::collections::HashSet<String>,
+    stop: std::collections::HashSet<String>,
+}
+
+fn crawl_flags<T>(f: impl FnOnce(&mut CrawlFlags) -> T) -> T {
+    static FLAGS: std::sync::LazyLock<std::sync::Mutex<CrawlFlags>> =
+        std::sync::LazyLock::new(Default::default);
+    let mut guard = FLAGS.lock().unwrap_or_else(|e| e.into_inner());
+    f(&mut guard)
+}
+
+/// Errors worth waiting out rather than giving up on: "slow down" (429,
+/// Cloudflare 1015, ArcHive pausing) and the site being down (5xx / 52x,
+/// no connection).
+fn is_rate_limit_message(msg: &str) -> bool {
+    let m = msg.to_ascii_lowercase();
+    [
+        "429",
+        "1015",
+        "rate limit",
+        "too many requests",
+        "pausing",
+        "refused",
+        "is down",
+        "error sending request",
+        "http 5",
+    ]
+    .iter()
+    .any(|w| m.contains(w))
+}
+
+/// One listing of a full fetch: its filters and how far it got.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct CrawlSlice {
+    filters: crate::models::BrowseFilters,
+    next_page: u32,
+    done: bool,
+    /// "20–30 min, Pornhub" for progress messages.
+    #[serde(default)]
+    label: String,
+}
+
+impl CrawlSlice {
+    fn new(filters: crate::models::BrowseFilters) -> Self {
+        Self {
+            label: crate::sites::adapters::xpomelo::crawl_slice_label(&filters),
+            filters,
+            next_page: 1,
+            done: false,
+        }
+    }
+}
+
+#[cfg(test)]
+mod crawl_pause_tests {
+    use super::is_rate_limit_message;
+
+    #[test]
+    fn waits_out_rate_limits_and_outages() {
+        assert!(is_rate_limit_message(
+            "xPomelo's Cloudflare is rate limiting (error 1015)"
+        ));
+        assert!(is_rate_limit_message(
+            "site error: xPomelo is down right now"
+        ));
+        assert!(is_rate_limit_message(
+            "HTTP 522 <unknown status code> for https://x"
+        ));
+        assert!(!is_rate_limit_message("HTTP 404 Not Found for https://x"));
     }
 }

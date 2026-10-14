@@ -5,7 +5,7 @@
 use super::Database;
 use crate::error::{AppError, AppResult};
 use crate::models::{
-    MediaItem, OnlineItem, OnlinePage, OnlineQuery, OnlineSearchInfo, OnlineTagCount,
+    MediaItem, OnlineCrawl, OnlineItem, OnlinePage, OnlineQuery, OnlineSearchInfo, OnlineTagCount,
 };
 use rusqlite::{params, params_from_iter, OptionalExtension};
 
@@ -44,6 +44,42 @@ fn map_item(row: &rusqlite::Row<'_>) -> rusqlite::Result<OnlineItem> {
         last_seen: row.get(10)?,
         details_at: row.get(11)?,
     })
+}
+
+fn map_crawl(r: &rusqlite::Row<'_>) -> rusqlite::Result<OnlineCrawl> {
+    Ok(OnlineCrawl {
+        search_id: r.get(0)?,
+        next_page: r.get::<_, i64>(1)? as u32,
+        pages_done: r.get::<_, i64>(2)? as u32,
+        new_items: r.get::<_, i64>(3)? as u32,
+        site_total: r.get::<_, Option<i64>>(4)?.map(|t| t as u32),
+        state: r.get(5)?,
+        message: r.get(6)?,
+        resume_at: r.get(7)?,
+        updated_at: r.get(8)?,
+        ..crawl_plan_summary(r.get(9)?)
+    })
+}
+
+/// Slice counts and current slice label from a stored plan.
+fn crawl_plan_summary(plan: Option<String>) -> OnlineCrawl {
+    let slices: Vec<serde_json::Value> = plan
+        .as_deref()
+        .and_then(|p| serde_json::from_str(p).ok())
+        .unwrap_or_default();
+    let done = |s: &serde_json::Value| s.get("done").and_then(|d| d.as_bool()) == Some(true);
+    OnlineCrawl {
+        slices_done: slices.iter().filter(|s| done(s)).count() as u32,
+        slices_total: slices.len() as u32,
+        slice_label: slices
+            .iter()
+            .find(|s| !done(s))
+            .and_then(|s| s.get("label").and_then(|l| l.as_str()))
+            .filter(|l| !l.is_empty())
+            .map(str::to_string),
+        plan,
+        ..Default::default()
+    }
 }
 
 fn replace_tags(conn: &rusqlite::Connection, key: &str, tags: &[String]) -> rusqlite::Result<()> {
@@ -484,6 +520,68 @@ impl Database {
             all.offset += 500;
         }
         self.delete_online_items(q.search_id.as_deref(), &keys)
+    }
+
+    pub fn get_online_crawl(&self, search_id: &str) -> AppResult<Option<OnlineCrawl>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        Ok(conn
+            .query_row(
+                "SELECT search_id, next_page, pages_done, new_items, site_total, state, message,
+                        resume_at, updated_at, plan
+                 FROM online_crawls WHERE search_id = ?1",
+                params![search_id],
+                map_crawl,
+            )
+            .optional()?)
+    }
+
+    pub fn list_online_crawls(&self) -> AppResult<Vec<OnlineCrawl>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let mut stmt = conn.prepare(
+            "SELECT search_id, next_page, pages_done, new_items, site_total, state, message,
+                    resume_at, updated_at, plan
+             FROM online_crawls ORDER BY updated_at DESC",
+        )?;
+        let rows = stmt
+            .query_map([], map_crawl)?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    pub fn put_online_crawl(&self, c: &OnlineCrawl) -> AppResult<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        conn.execute(
+            "INSERT INTO online_crawls (search_id, next_page, pages_done, new_items, site_total,
+                 state, message, resume_at, updated_at, plan)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+             ON CONFLICT(search_id) DO UPDATE SET next_page = excluded.next_page,
+                 pages_done = excluded.pages_done, new_items = excluded.new_items,
+                 site_total = excluded.site_total, state = excluded.state,
+                 message = excluded.message, resume_at = excluded.resume_at,
+                 updated_at = excluded.updated_at, plan = excluded.plan",
+            params![
+                c.search_id,
+                c.next_page,
+                c.pages_done,
+                c.new_items,
+                c.site_total,
+                c.state,
+                c.message,
+                c.resume_at,
+                chrono::Utc::now().to_rfc3339(),
+                c.plan,
+            ],
+        )?;
+        Ok(())
     }
 
     /// Forget browsing history (items not in any saved search).

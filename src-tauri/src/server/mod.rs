@@ -269,6 +269,15 @@ impl LanServer {
             .route("/api/online/details", post(online_details_lan))
             .route("/api/online/history", delete(online_clear_lan))
             .route("/api/online/delete", post(online_delete_lan))
+            .route("/api/online/crawls", get(online_crawls_lan))
+            .route(
+                "/api/online/searches/{id}/fetch-all",
+                post(online_crawl_start_lan),
+            )
+            .route(
+                "/api/online/searches/{id}/fetch-all/stop",
+                post(online_crawl_stop_lan),
+            )
             .route(
                 "/api/online/delete-matching",
                 post(online_delete_matching_lan),
@@ -2262,4 +2271,43 @@ async fn online_delete_matching_lan(
         .delete_online_matching(&q)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(Json(serde_json::json!({ "removed": removed })))
+}
+
+async fn online_crawls_lan(
+    State(state): State<ApiState>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let crawls = state
+        .app
+        .db
+        .list_online_crawls()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(serde_json::json!(crawls)))
+}
+
+#[derive(Deserialize)]
+struct CrawlStartBody {
+    restart: Option<bool>,
+}
+
+async fn online_crawl_start_lan(
+    State(state): State<ApiState>,
+    Path(id): Path<String>,
+    Json(body): Json<CrawlStartBody>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let crawl = state
+        .app
+        .start_full_fetch(&id, body.restart.unwrap_or(false))
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    Ok(Json(serde_json::json!(crawl)))
+}
+
+async fn online_crawl_stop_lan(
+    State(state): State<ApiState>,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    state
+        .app
+        .stop_full_fetch(&id)
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    Ok(Json(serde_json::json!({ "ok": true })))
 }

@@ -56,6 +56,7 @@ import type {
   SettingsBackupImportResult,
   StashBoxEndpoint,
   StashSceneMatch,
+  OnlineCrawl,
   OnlineItem,
   OnlinePage,
   OnlineQuery,
@@ -377,6 +378,30 @@ export const api = {
       return res.removed;
     }
     return localInvoke<number>("delete_online_matching", { query });
+  },
+
+  /** Fetch every page of a saved search in the background (paced, pausing
+   * on rate limits). `restart` starts over from page 1. */
+  async startFullFetch(id: string, restart = false): Promise<OnlineCrawl> {
+    return localOrRemote<OnlineCrawl>(
+      "start_full_fetch",
+      { id, restart },
+      `/api/online/searches/${encodeURIComponent(id)}/fetch-all`,
+      { method: "POST", body: JSON.stringify({ restart }) },
+    );
+  },
+
+  async stopFullFetch(id: string): Promise<void> {
+    await localOrRemote<unknown>(
+      "stop_full_fetch",
+      { id },
+      `/api/online/searches/${encodeURIComponent(id)}/fetch-all/stop`,
+      { method: "POST", body: "{}" },
+    );
+  },
+
+  async listFullFetches(): Promise<OnlineCrawl[]> {
+    return localOrRemote<OnlineCrawl[]>("list_full_fetches", undefined, "/api/online/crawls");
   },
 
   async clearOnlineHistory(): Promise<number> {

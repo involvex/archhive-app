@@ -1430,3 +1430,39 @@ pub struct OnlineUpdateResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stopped: Option<String>,
 }
+
+/// Progress of a full fetch of a saved search (all pages, paced, pausing on
+/// rate limits).
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct OnlineCrawl {
+    pub search_id: String,
+    /// Next site page to fetch.
+    pub next_page: u32,
+    pub pages_done: u32,
+    /// Videos added to the saved search so far.
+    pub new_items: u32,
+    /// Result count the site reports, when it does.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub site_total: Option<u32>,
+    /// "running", "paused" (rate limited, waiting), "done", "stopped",
+    /// "error".
+    pub state: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    /// When a paused fetch tries again (RFC 3339).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resume_at: Option<String>,
+    pub updated_at: String,
+    /// Big searches are fetched as slices (xPomelo shows 10 pages per
+    /// listing): how many are finished, how many there are, and the
+    /// current one ("20–30 min, Pornhub").
+    #[serde(default)]
+    pub slices_done: u32,
+    #[serde(default)]
+    pub slices_total: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slice_label: Option<String>,
+    /// The slice queue (JSON), backend only.
+    #[serde(skip)]
+    pub plan: Option<String>,
+}
