@@ -23,7 +23,8 @@ OUT="${2:?usage: sign-android-apk.sh <unsigned.apk> <signed-output.apk>}"
 
 SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
 [[ -n "$SDK" && -d "$SDK/build-tools" ]] || { echo "ANDROID_HOME with build-tools is required" >&2; exit 1; }
-BT="$(ls -d "$SDK"/build-tools/*/ | sort -V | tail -1)"
+BT="$(ls -d "$SDK"/build-tools/*/ 2>/dev/null | sort -V | tail -1 || true)"
+[[ -n "$BT" ]] || { echo "No build-tools versions found in $SDK/build-tools" >&2; exit 1; }
 ZIPALIGN="$BT/zipalign"
 APKSIGNER="$BT/apksigner"
 [[ -x "$ZIPALIGN" && -x "$APKSIGNER" ]] || { echo "zipalign/apksigner not found in $BT" >&2; exit 1; }

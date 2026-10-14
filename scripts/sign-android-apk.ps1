@@ -35,6 +35,7 @@ if (-not (Test-Path $btRoot)) { throw "Android build-tools not found under ${sdk
 $bt = Get-ChildItem $btRoot -Directory |
     Sort-Object { try { [version]$_.Name } catch { [version]"0.0" } } |
     Select-Object -Last 1
+if (-not $bt) { throw "No build-tools versions found in $btRoot" }
 $isWin = $IsWindows -or ($env:OS -eq "Windows_NT")
 $zipalign = Join-Path $bt.FullName ($(if ($isWin) { "zipalign.exe" } else { "zipalign" }))
 $apksigner = Join-Path $bt.FullName ($(if ($isWin) { "apksigner.bat" } else { "apksigner" }))
