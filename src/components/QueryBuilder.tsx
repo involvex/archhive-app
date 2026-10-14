@@ -13,6 +13,16 @@ export interface BuilderQuery {
 
 export const EMPTY_BUILDER: BuilderQuery = { groups: [], exclude: [], boost: [] };
 
+/** The query as text: `(a OR b) AND (c) NOT (d OR e)`, plus boosts. */
+export function builderExpression(q: BuilderQuery): string {
+  const quote = (t: string) => (t.includes(" ") ? `"${t}"` : t);
+  const parts = q.groups.filter((g) => g.length > 0).map((g) => `(${g.map(quote).join(" OR ")})`);
+  let out = parts.join(" AND ");
+  if (q.exclude.length) out += `${out ? " " : ""}NOT (${q.exclude.map(quote).join(" OR ")})`;
+  if (q.boost.length) out += `${out ? " · " : ""}rank higher: ${q.boost.map(quote).join(", ")}`;
+  return out;
+}
+
 export function builderTermCount(q: BuilderQuery): number {
   return q.groups.reduce((n, g) => n + g.length, 0) + q.exclude.length + q.boost.length;
 }
@@ -50,21 +60,27 @@ function TermList({
         : "bg-[var(--color-secondary)]";
   return (
     <div className="flex flex-wrap items-center gap-1.5">
-      {terms.map((t) => (
-        <span
-          key={t}
-          className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs ${chip}`}
-        >
-          {tone === "exclude" ? "−" : tone === "boost" ? "+" : ""}
-          {t}
-          <button
-            type="button"
-            aria-label={`Remove ${t}`}
-            onClick={() => onChange(terms.filter((x) => x !== t))}
-            className="opacity-70 hover:opacity-100"
+      {terms.map((t, i) => (
+        <span key={t} className="inline-flex items-center gap-1.5">
+          {tone !== "boost" && i > 0 && (
+            <span className="text-[10px] font-semibold text-[var(--color-muted-foreground)]">
+              OR
+            </span>
+          )}
+          <span
+            className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs ${chip}`}
           >
-            <X className="h-3 w-3" />
-          </button>
+            {tone === "exclude" ? "−" : tone === "boost" ? "+" : ""}
+            {t}
+            <button
+              type="button"
+              aria-label={`Remove ${t}`}
+              onClick={() => onChange(terms.filter((x) => x !== t))}
+              className="opacity-70 hover:opacity-100"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </span>
         </span>
       ))}
       <Input
@@ -102,6 +118,11 @@ export function QueryBuilder({
   };
   return (
     <div className="space-y-3 rounded-md border border-[var(--color-border)] p-2">
+      {builderTermCount(value) > 0 && (
+        <p className="break-words rounded bg-[var(--color-muted)] px-2 py-1 font-mono text-[11px]">
+          {builderExpression(value)}
+        </p>
+      )}
       <p className="text-[11px] text-[var(--color-muted-foreground)]">
         Each group needs at least one of its terms (synonyms, similar tags); all groups must match.
         Terms are words or phrases in titles, tags and performers; end with * for a prefix (tit* =
