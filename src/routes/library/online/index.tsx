@@ -30,6 +30,13 @@ const PAGE_SIZE = 60;
 /** Keys per query when collecting every matching video for a re-fetch. */
 const REFETCH_QUERY_PAGE = 500;
 
+/** A Fetch tags batch with this many removed videos is confirmed first:
+ * more than half of it, and at least SUSPICIOUS_MIN_REMOVED videos. */
+const SUSPICIOUS_MIN_REMOVED = 5;
+function looksSuspicious(removed: number, checked: number): boolean {
+  return removed >= SUSPICIOUS_MIN_REMOVED && removed * 2 > checked;
+}
+
 /** Rough duration of a re-fetch (requests are spaced ~2-3 s apart per site). */
 function refetchMinutes(videos: number): string {
   const mins = Math.max(1, Math.round((videos * 2.5) / 60));
@@ -302,6 +309,10 @@ function OnlineLibraryPage() {
   async function runFetchTags(keys: string[]) {
     stopFetch.current = false;
     let gone = 0;
+    let kept = 0;
+    // Once the user okays a suspicious batch, later ones in this run go
+    // through without asking again.
+    let trustRemovals = false;
     setFetching({ done: 0, todo: keys.length });
     for (let i = 0; i < keys.length && !stopFetch.current; i += DETAILS_BATCH) {
       const batch = keys.slice(i, i + DETAILS_BATCH);
@@ -309,14 +320,32 @@ function OnlineLibraryPage() {
       try {
         const result = await api.fetchOnlineDetails(batch);
         const byKey = new Map(result.items.map((u) => [u.key, u]));
-        // Videos the site removed are dropped from the library and every
-        // saved search by the backend.
-        const removed = new Set(result.removed);
-        gone += removed.size;
-        setItems((prev) =>
-          prev.filter((p) => !removed.has(p.key)).map((p) => byKey.get(p.key) ?? p),
-        );
-        if (removed.size > 0) {
+        setItems((prev) => prev.map((p) => byKey.get(p.key) ?? p));
+        // The backend only reports videos the site removed; they leave the
+        // library here, after asking when the batch looks like a site
+        // problem rather than a few dead links.
+        let removedKeys = result.removed;
+        if (
+          removedKeys.length > 0 &&
+          !trustRemovals &&
+          looksSuspicious(removedKeys.length, result.checked)
+        ) {
+          const ok = window.confirm(
+            `${removedKeys.length} of the ${result.checked} videos just checked look removed from their site. That many at once can mean a site problem instead of dead links.\n\nRemove them from the library and saved searches? (Cancel keeps them and stops Fetch tags.)`,
+          );
+          if (!ok) {
+            kept += removedKeys.length;
+            removedKeys = [];
+            stopFetch.current = true;
+          } else {
+            trustRemovals = true;
+          }
+        }
+        if (removedKeys.length > 0) {
+          await api.deleteOnlineItems(undefined, removedKeys);
+          const removed = new Set(removedKeys);
+          gone += removed.size;
+          setItems((prev) => prev.filter((p) => !removed.has(p.key)));
           setSelected((prev) => new Set([...prev].filter((k) => !removed.has(k))));
         }
       } catch (e) {
@@ -332,6 +361,11 @@ function OnlineLibraryPage() {
         { duration: 8000 },
       );
       void loadMeta();
+    }
+    if (kept > 0) {
+      toast(`Kept ${kept.toLocaleString()} videos that looked removed; Fetch tags stopped.`, {
+        duration: 8000,
+      });
     }
     if (tagsOpen) void loadTags();
   }

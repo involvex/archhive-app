@@ -263,7 +263,7 @@ impl SiteAdapter for XpomeloAdapter {
             );
         }
         let by_duration = query.filters.sort.as_deref() == Some("duration");
-        let mut cards = dedupe(merge_lists(lists, by_duration));
+        let cards = dedupe(merge_lists(lists, by_duration));
         // The default ("Free sites") hides paysites and unsupported sources;
         // picking a source (or "All") shows them.
         let keep_hidden = query.filters.source.is_some();

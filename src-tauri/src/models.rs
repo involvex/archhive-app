@@ -1423,9 +1423,12 @@ pub struct OnlineSearchInfo {
 pub struct OnlineDetailsResult {
     /// Items with their new tags / performers / channel.
     pub items: Vec<OnlineItem>,
-    /// Keys of videos the site removed (dropped from the Online library
-    /// and saved searches).
+    /// Keys of videos the site removed. Not deleted yet: the caller removes
+    /// them (`delete_online_items`), after asking when many look removed.
     pub removed: Vec<String>,
+    /// Videos looked up (removed share = removed / checked).
+    #[serde(default)]
+    pub checked: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

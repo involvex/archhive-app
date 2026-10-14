@@ -1466,7 +1466,19 @@ impl AppState {
         }
     }
 
+    /// Details for one video; a video the site removed also leaves the
+    /// Online library and saved searches (Info dialog, player).
     pub async fn resolve_media_details(&self, url: &str) -> AppResult<MediaItem> {
+        let result = self.read_media_details(url).await;
+        if is_removed_error(&result) {
+            self.forget_removed_video(url);
+        }
+        result
+    }
+
+    /// Details for one video without touching the library: a removed video
+    /// comes back as `NotFound("video removed from the site …")`.
+    async fn read_media_details(&self, url: &str) -> AppResult<MediaItem> {
         let site_id = self
             .sites
             .detect(url)
@@ -1479,7 +1491,6 @@ impl AppState {
         let cookie_key = self.page_cookie_key(url, &site_id);
         match self.site_ctx.fetch_html(url, &cookie_key).await {
             Ok(html) if crate::sites::details::says_video_removed(&html) => {
-                self.forget_removed_video(url);
                 return Err(crate::error::AppError::NotFound(format!(
                     "{REMOVED_VIDEO} ({url})"
                 )));
@@ -1500,7 +1511,6 @@ impl AppState {
             // The video was taken down (every supported site answers 404 or
             // 410): say so instead of asking yt-dlp about it too.
             Err(e) if self.error_means_removed(url, &e.to_string()).await => {
-                self.forget_removed_video(url);
                 return Err(crate::error::AppError::NotFound(format!(
                     "{REMOVED_VIDEO} ({url})"
                 )));
@@ -2740,8 +2750,10 @@ impl AppState {
     /// Tags / performers / channel for Online library items from each
     /// video's own page (for xPomelo results: the linked site). Requests go
     /// out one at a time at the per-site pace; failures are skipped.
-    /// Videos the site has removed (404 / 410) are dropped from the Online
-    /// library and every saved search, and won't come back on Update.
+    ///
+    /// Videos the site removed are only reported (`removed`), not deleted:
+    /// the caller removes them (`delete_online_items`), and can ask first
+    /// when a suspicious share of a batch comes back removed.
     pub async fn fetch_online_details(
         &self,
         keys: &[String],
@@ -2751,17 +2763,18 @@ impl AppState {
             let Some(item) = self.db.get_online_item(key)? else {
                 continue;
             };
-            match self.resolve_media_details(&item.url).await {
+            out.checked += 1;
+            let result = self.read_media_details(&item.url).await;
+            if is_removed_error(&result) {
+                tracing::info!("[online] {} was removed from its site", item.url);
+                out.removed.push(key.clone());
+                continue;
+            }
+            match result {
                 Ok(details) => {
                     if let Some(updated) = self.db.set_online_item_details(key, &details)? {
                         out.items.push(updated);
                     }
-                }
-                Err(crate::error::AppError::NotFound(m)) => {
-                    tracing::info!("[online] {m}; removing it");
-                    self.db
-                        .delete_online_items(None, std::slice::from_ref(key))?;
-                    out.removed.push(key.clone());
                 }
                 Err(e) => tracing::warn!("[online] details for {} failed: {e}", item.url),
             }
@@ -3268,6 +3281,11 @@ fn crawl_flags<T>(f: impl FnOnce(&mut CrawlFlags) -> T) -> T {
 
 /// Error text for a video the site took down (the UI matches on it).
 const REMOVED_VIDEO: &str = "video removed from the site";
+
+/// `read_media_details` found the video removed from its site.
+fn is_removed_error<T>(result: &AppResult<T>) -> bool {
+    matches!(result, Err(crate::error::AppError::NotFound(m)) if m.contains(REMOVED_VIDEO))
+}
 
 /// A home page that is a maintenance / outage notice, or next to empty.
 fn looks_like_maintenance(html: &str) -> bool {

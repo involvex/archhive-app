@@ -697,8 +697,11 @@ export interface OnlineSearchInfo {
 /** Result of a Fetch tags batch (`OnlineDetailsResult`). */
 export interface OnlineDetailsResult {
   items: OnlineItem[];
-  /** Keys of videos the site removed (dropped everywhere). */
+  /** Keys of videos the site removed. Not deleted yet: the page removes
+   * them (`deleteOnlineItems`), asking first when many look removed. */
   removed: string[];
+  /** Videos looked up in this batch. */
+  checked: number;
 }
 
 export interface OnlineUpdateResult {
