@@ -33,6 +33,41 @@ function remoteMediaUrl(path: string, tokenQs: string): string | undefined {
   return `${base}${path}${tokenQs}`;
 }
 
+/** Image hosts that refuse requests without their own site as Referer
+ * (Pornwitch serves PornHub thumbnails from its CDN, 403 otherwise). */
+const REFERER_GATED_HOSTS: { host: string; referer: string }[] = [
+  { host: "cdn.pornwitch.com", referer: "https://pornwitch.com/" },
+];
+
+/**
+ * A remote thumbnail URL the WebView can load: images on Referer-gated hosts
+ * go through the app's media proxy (which sends the right Referer and caches
+ * them); everything else is returned unchanged.
+ */
+export function listingThumbUrl(url: string | undefined): string | undefined {
+  if (!url || !/^https?:\/\//.test(url)) return url;
+  let host = "";
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    return url;
+  }
+  const gated = REFERER_GATED_HOSTS.find((h) => host === h.host);
+  if (!gated) return url;
+  const qs = `?url=${encodeURIComponent(url)}&referer=${encodeURIComponent(gated.referer)}`;
+  const { settings } = useSettingsStore.getState();
+  if (shouldUseRemoteApi()) {
+    return remoteMediaUrl(`/api/media/proxy${qs}`, tokenAmp(remoteAuthToken())) ?? url;
+  }
+  if (getAppRuntime() === "mobile-tauri" && hasLocalBackend()) {
+    return `http://127.0.0.1:${settings.lan_port}/api/media/proxy${qs}`;
+  }
+  if (getAppRuntime() === "desktop-tauri" && settings.lan_enabled) {
+    return `http://127.0.0.1:${settings.lan_port}/api/media/proxy${qs}${tokenAmp(lanAuthToken())}`;
+  }
+  return url;
+}
+
 export function sceneThumbUrl(scene: Scene): string | undefined {
   if (!scene.thumb) return undefined;
 

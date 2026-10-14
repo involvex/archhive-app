@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from "react";
+import { listingThumbUrl } from "@/lib/mediaUrl";
 import type { MediaItem, Scene } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { getAppRuntime } from "@/lib/runtime";
@@ -87,7 +88,7 @@ function getItemDuration(item: CardItem): number | undefined {
 
 function getItemThumb(i: CardItem, thumbSrc?: string): string | undefined {
   if (thumbSrc) return thumbSrc;
-  if (isMediaItem(i)) return i.thumbnail;
+  if (isMediaItem(i)) return listingThumbUrl(i.thumbnail);
   return (i as Scene).thumb;
 }
 

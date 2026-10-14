@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { listingThumbUrl } from "@/lib/mediaUrl";
 import { useNavigate } from "@tanstack/react-router";
 import { api } from "@/lib/api/client";
 import type { MediaItem } from "@/lib/types";
@@ -180,7 +181,7 @@ function BrowseItemDetailsBody({ item, onClose }: { item: MediaItem; onClose: ()
       {data.thumbnail && !thumbFailed && (
         <div className="mb-3 aspect-video overflow-hidden rounded-md bg-[var(--color-muted)]">
           <img
-            src={data.thumbnail}
+            src={listingThumbUrl(data.thumbnail)}
             alt=""
             className="h-full w-full object-cover"
             onError={() => setThumbFailed(true)}
