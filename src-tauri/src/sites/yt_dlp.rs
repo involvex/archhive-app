@@ -756,7 +756,9 @@ fn with_block_hint(detail: &str) -> String {
     } else if detail.contains("403") || detail.contains("Forbidden") || detail.contains("forbidden")
     {
         format!(
-            "{detail} Site is blocking the embedded engine. Import cookies in Settings → Cookies, \
+            "{detail} The site is refusing this request. On a VPN, the site may block its \
+             location: try another location or turn it off. Otherwise import cookies in \
+             Settings → Cookies, \
              update the yt-dlp engine in Settings → Library, or use Remote LAN mode."
         )
     } else {

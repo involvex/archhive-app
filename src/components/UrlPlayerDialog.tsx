@@ -274,9 +274,9 @@ export function UrlPlayerDialog({
               </p>
               {/403|forbidden|blocked/i.test(error) && (
                 <p className="px-4 text-center text-xs text-[var(--color-muted-foreground)]">
-                  This site is blocking the embedded player. Try downloading instead (it sends
-                  Referer/cookie headers), import cookies in Settings → Cookies, or use Remote LAN
-                  mode.
+                  The site refused this request. On a VPN, it may block that location: try another
+                  one or turn the VPN off. Otherwise try downloading (it sends Referer/cookie
+                  headers), import cookies in Settings → Cookies, or use Remote LAN mode.
                 </p>
               )}
             </div>
