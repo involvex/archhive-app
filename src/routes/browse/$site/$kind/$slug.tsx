@@ -60,6 +60,32 @@ function errorText(e: unknown): string {
   return e instanceof Error ? e.message : String(e ?? "");
 }
 
+/** A page adding fewer new videos than this share of the listing's usual
+ * page size (at most 24) loads the next one too. */
+const MIN_NEW_SHARE = 0.4;
+const MIN_NEW_PER_PAGE = 24;
+/** Most extra pages fetched to top up one short page. */
+const MAX_FILL_PAGES = 2;
+
+/** Same video re-listed under another link: same title and length. */
+function repeatKey(i: MediaItem): string | null {
+  const title = i.title.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+  return i.duration && title.length >= 8 ? `${title}|${i.duration}` : null;
+}
+
+/** `incoming` minus videos already in `prev` (by id, or title + length). */
+function newItems(prev: MediaItem[], incoming: MediaItem[]): MediaItem[] {
+  const ids = new Set(prev.map((i) => i.id));
+  const keys = new Set(prev.map(repeatKey).filter(Boolean));
+  return incoming.filter((i) => {
+    const key = repeatKey(i);
+    if (ids.has(i.id) || (key && keys.has(key))) return false;
+    ids.add(i.id);
+    if (key) keys.add(key);
+    return true;
+  });
+}
+
 function normalizeInitialSlug(rawSlug: string): string {
   if (rawSlug === "example") return "";
   if (rawSlug.startsWith("#")) return rawSlug.slice(1).trim();
@@ -206,38 +232,61 @@ function BrowseDetailPage() {
     setCache(cacheKey, { items, page, hasMore, querySlug, filters });
   }, [cacheKey, items, page, hasMore, querySlug, filters, setCache]);
 
+  // The items as of the last render, for topping up short pages, and the
+  // biggest page this listing returned (its usual page size).
+  const itemsRef = useRef(items);
+  const pageSizeRef = useRef(0);
+  useEffect(() => {
+    itemsRef.current = items;
+  });
+
   const load = useCallback(
     async (p: number, append = false) => {
       if (!querySlug.trim()) return;
       setLoading(true);
       setError("");
+      let current = append ? itemsRef.current : [];
+      if (!append) pageSizeRef.current = 0;
+      let pageNo = p;
       try {
         const normalized = normalizeBrowseInput(site, kind as BrowseKind, querySlug.trim());
-        const result = await api.browse(
-          site,
-          normalized.kind,
-          normalized.slug,
-          p,
-          isPornhubAnimal ? orientation : undefined,
-          filters,
-        );
-        setItems((prev) => {
-          if (!append) return result.items;
-          // Sites repeat items across pages; keep the first copy.
-          const seen = new Set(prev.map((i) => i.id));
-          return [...prev, ...result.items.filter((i) => !seen.has(i.id))];
-        });
-        setHasMore(result.has_more);
-        if (!append) setResultTotal(result.total ?? null);
-        setPage(p);
-        setFromCache(Boolean(result.from_cache));
-        setCacheAgeSecs(result.cache_age_secs ?? null);
-        setInitial(false);
+        // A page that adds only a few new videos (aggregators re-list the
+        // same video under other links) is topped up from the next pages.
+        for (let extra = 0; ; extra++) {
+          const result = await api.browse(
+            site,
+            normalized.kind,
+            normalized.slug,
+            pageNo,
+            isPornhubAnimal ? orientation : undefined,
+            filters,
+          );
+          const fresh = newItems(current, result.items);
+          pageSizeRef.current = Math.max(pageSizeRef.current, result.items.length);
+          const enough = Math.min(MIN_NEW_PER_PAGE, Math.ceil(pageSizeRef.current * MIN_NEW_SHARE));
+          current = [...current, ...fresh];
+          setItems(current);
+          setHasMore(result.has_more);
+          if (!append && extra === 0) setResultTotal(result.total ?? null);
+          setPage(pageNo);
+          setFromCache(Boolean(result.from_cache));
+          setCacheAgeSecs(result.cache_age_secs ?? null);
+          setInitial(false);
+          if (
+            !result.has_more ||
+            result.from_cache ||
+            fresh.length >= enough ||
+            extra >= MAX_FILL_PAGES
+          ) {
+            break;
+          }
+          pageNo += 1;
+        }
       } catch (e) {
         // Tauri rejects with plain strings, not Error objects.
         const msg = errorText(e) || "Browse failed";
         setError(msg.replace(/^site error:\s*/i, ""));
-        if (!append) setItems([]);
+        if (current.length === 0) setItems([]);
         console.error(e);
       } finally {
         setLoading(false);
