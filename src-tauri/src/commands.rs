@@ -1421,7 +1421,7 @@ pub async fn update_online_search(
 pub async fn fetch_online_details(
     state: State<'_, Arc<AppState>>,
     keys: Vec<String>,
-) -> CmdResult<Vec<crate::models::OnlineItem>> {
+) -> CmdResult<crate::models::OnlineDetailsResult> {
     state
         .fetch_online_details(&keys)
         .await

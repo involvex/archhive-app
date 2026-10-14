@@ -1406,6 +1406,13 @@ impl AppState {
                     return Ok(self.page_details_item(url, &site_id, d));
                 }
             }
+            // The video was taken down (every supported site answers 404 or
+            // 410): say so instead of asking yt-dlp about it too.
+            Err(e) if is_gone(&e.to_string()) => {
+                return Err(crate::error::AppError::NotFound(format!(
+                    "video removed from the site ({url})"
+                )));
+            }
             Err(e) => tracing::warn!("details page fetch failed for {url}: {e}"),
         }
         self.resolve_media_details_ytdlp(url, site_id).await
@@ -2626,11 +2633,13 @@ impl AppState {
     /// Tags / performers / channel for Online library items from each
     /// video's own page (for xPomelo results: the linked site). Requests go
     /// out one at a time at the per-site pace; failures are skipped.
+    /// Videos the site has removed (404 / 410) are dropped from the Online
+    /// library and every saved search, and won't come back on Update.
     pub async fn fetch_online_details(
         &self,
         keys: &[String],
-    ) -> AppResult<Vec<crate::models::OnlineItem>> {
-        let mut out = Vec::new();
+    ) -> AppResult<crate::models::OnlineDetailsResult> {
+        let mut out = crate::models::OnlineDetailsResult::default();
         for key in keys.iter().take(25) {
             let Some(item) = self.db.get_online_item(key)? else {
                 continue;
@@ -2638,8 +2647,14 @@ impl AppState {
             match self.resolve_media_details(&item.url).await {
                 Ok(details) => {
                     if let Some(updated) = self.db.set_online_item_details(key, &details)? {
-                        out.push(updated);
+                        out.items.push(updated);
                     }
+                }
+                Err(crate::error::AppError::NotFound(m)) => {
+                    tracing::info!("[online] {m}; removing it");
+                    self.db
+                        .delete_online_items(None, std::slice::from_ref(key))?;
+                    out.removed.push(key.clone());
                 }
                 Err(e) => tracing::warn!("[online] details for {} failed: {e}", item.url),
             }
@@ -3147,6 +3162,11 @@ fn crawl_flags<T>(f: impl FnOnce(&mut CrawlFlags) -> T) -> T {
 /// Errors worth waiting out rather than giving up on: "slow down" (429,
 /// Cloudflare 1015, ArcHive pausing) and the site being down (5xx / 52x,
 /// no connection).
+/// A page fetch error saying the video no longer exists.
+fn is_gone(msg: &str) -> bool {
+    msg.contains("HTTP 404") || msg.contains("HTTP 410")
+}
+
 fn is_rate_limit_message(msg: &str) -> bool {
     let m = msg.to_ascii_lowercase();
     [

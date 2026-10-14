@@ -63,11 +63,29 @@ pub fn scrape(site_id: &str, html: &str) -> PageDetails {
             d.description = None;
         }
         "pornhub" => {
+            // Desktop and mobile layouts differ (mobile: the swipeable pill
+            // row above the title, picked by a `platform=mobile` cookie from
+            // a phone browser login); both mark the links the same way.
             d.channel = first_text(&doc, ".video-detailed-info .usernameWrap a")
-                .or_else(|| first_text(&doc, ".videoUploaderBlock .usernameWrap a"));
+                .or_else(|| first_text(&doc, ".videoUploaderBlock .usernameWrap a"))
+                .or_else(|| first_text(&doc, ".userInfoContainer .usernameWrapper a"));
             d.performers = texts(&doc, ".pornstarsWrapper a.pstar-list-btn");
-            tags = texts(&doc, ".categoriesWrapper a.item");
-            tags.extend(texts(&doc, ".tagsWrapper a.item"));
+            d.performers.extend(texts(
+                &doc,
+                r#"a[data-event="video_underplayer"][href^="/pornstar/"]"#,
+            ));
+            tags = texts(
+                &doc,
+                r#"a[data-event="video_underplayer"][data-label="category"]"#,
+            );
+            tags.extend(texts(
+                &doc,
+                r#"a[data-event="video_underplayer"][data-label="tag"]"#,
+            ));
+            if tags.is_empty() {
+                tags = texts(&doc, ".categoriesWrapper a.item");
+                tags.extend(texts(&doc, ".tagsWrapper a.item"));
+            }
             // og:description is site boilerplate ("Watch … on Pornhub.com …").
             d.description = None;
         }
@@ -637,6 +655,20 @@ mod tests {
         assert_eq!(d.tags, vec!["teen", "anal"]);
         assert_eq!(d.duration, Some(640));
         assert!(d.is_useful());
+    }
+
+    #[test]
+    fn pornhub_mobile_layout() {
+        // `platform=mobile`: tags are the pill row above the title.
+        let html = r#"<div class="clearfix videoCtaPill videoCtaMixed">
+              <a href="/video?c=3" data-event="video_underplayer" data-label="category"
+                 class="gtm-event-video-underplayer item"><span>Amateur</span></a></div>
+            <div class="clearfix videoCtaPill videoCtaMixed">
+              <a data-event="video_underplayer" data-label="tag" class="gtm-event-video-underplayer item isTag" href="/video/search?search=prostate+massage"><span>prostate massage</span></a></div>
+            <div class="userInfoContainer"><span class="usernameWrapper"><a href="/model/pinkloving">pinkloving</a></span></div>"#;
+        let d = scrape("pornhub", html);
+        assert_eq!(d.tags, vec!["Amateur", "prostate massage"]);
+        assert_eq!(d.channel.as_deref(), Some("pinkloving"));
     }
 
     #[test]

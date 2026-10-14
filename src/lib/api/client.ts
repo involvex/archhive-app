@@ -57,7 +57,7 @@ import type {
   StashBoxEndpoint,
   StashSceneMatch,
   OnlineCrawl,
-  OnlineItem,
+  OnlineDetailsResult,
   OnlinePage,
   OnlineQuery,
   OnlineSearchInfo,
@@ -348,11 +348,16 @@ export const api = {
   },
 
   /** Tags / performers from each video's own page (max 25 per call). */
-  async fetchOnlineDetails(keys: string[]): Promise<OnlineItem[]> {
-    return localOrRemote<OnlineItem[]>("fetch_online_details", { keys }, "/api/online/details", {
-      method: "POST",
-      body: JSON.stringify({ keys }),
-    });
+  async fetchOnlineDetails(keys: string[]): Promise<OnlineDetailsResult> {
+    return localOrRemote<OnlineDetailsResult>(
+      "fetch_online_details",
+      { keys },
+      "/api/online/details",
+      {
+        method: "POST",
+        body: JSON.stringify({ keys }),
+      },
+    );
   },
 
   /** Remove entries from a saved search (or, without one, from the whole

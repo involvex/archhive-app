@@ -297,14 +297,21 @@ function OnlineLibraryPage() {
       return;
     }
     stopFetch.current = false;
+    let gone = 0;
     setFetching({ done: 0, todo: todo.length });
     for (let i = 0; i < todo.length && !stopFetch.current; i += DETAILS_BATCH) {
       const batch = todo.slice(i, i + DETAILS_BATCH);
       batch.forEach((b) => tried.current.add(b.key));
       try {
-        const updated = await api.fetchOnlineDetails(batch.map((b) => b.key));
-        const byKey = new Map(updated.map((u) => [u.key, u]));
-        setItems((prev) => prev.map((p) => byKey.get(p.key) ?? p));
+        const result = await api.fetchOnlineDetails(batch.map((b) => b.key));
+        const byKey = new Map(result.items.map((u) => [u.key, u]));
+        // Videos the site removed are dropped from the library and every
+        // saved search by the backend.
+        const removed = new Set(result.removed);
+        gone += removed.size;
+        setItems((prev) =>
+          prev.filter((p) => !removed.has(p.key)).map((p) => byKey.get(p.key) ?? p),
+        );
       } catch (e) {
         toast.error(String(e));
         break;
@@ -312,6 +319,13 @@ function OnlineLibraryPage() {
       setFetching({ done: Math.min(i + DETAILS_BATCH, todo.length), todo: todo.length });
     }
     setFetching(null);
+    if (gone > 0) {
+      toast(
+        `Removed ${gone.toLocaleString()} ${gone === 1 ? "video" : "videos"} the site no longer has (from the library and saved searches)`,
+        { duration: 8000 },
+      );
+      void loadMeta();
+    }
     if (tagsOpen) void loadTags();
   }
 

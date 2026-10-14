@@ -1418,6 +1418,16 @@ pub struct OnlineSearchInfo {
     pub updated_at: Option<String>,
 }
 
+/// Result of a Fetch tags batch.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct OnlineDetailsResult {
+    /// Items with their new tags / performers / channel.
+    pub items: Vec<OnlineItem>,
+    /// Keys of videos the site removed (dropped from the Online library
+    /// and saved searches).
+    pub removed: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct OnlineUpdateResult {
     /// Site pages fetched.
