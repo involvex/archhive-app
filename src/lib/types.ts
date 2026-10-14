@@ -675,8 +675,14 @@ export interface OnlineQuery {
   /** Seconds. */
   min_duration?: number;
   max_duration?: number;
-  sort?: "site" | "newest" | "longest" | "shortest" | "title";
+  sort?: "best" | "site" | "newest" | "longest" | "shortest" | "title";
   missing_details?: boolean;
+  /** Query builder: each group needs one of its terms (AND between groups). */
+  groups?: string[][];
+  /** Videos with any of these terms are left out. */
+  exclude_terms?: string[];
+  /** Optional terms that rank matches higher ("best" sort). */
+  boost_terms?: string[];
   limit?: number;
   offset?: number;
 }

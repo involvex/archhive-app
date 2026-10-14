@@ -1396,6 +1396,16 @@ pub struct OnlineQuery {
     /// Only items whose tags were not fetched yet.
     #[serde(default)]
     pub missing_details: bool,
+    /// Query builder: every group needs at least one of its terms (a word
+    /// or phrase in the title, tags or performers; `term*` = prefix).
+    #[serde(default)]
+    pub groups: Vec<Vec<String>>,
+    /// Items with any of these terms are left out.
+    #[serde(default)]
+    pub exclude_terms: Vec<String>,
+    /// Optional terms that only rank matches higher.
+    #[serde(default)]
+    pub boost_terms: Vec<String>,
     #[serde(default)]
     pub limit: u32,
     #[serde(default)]

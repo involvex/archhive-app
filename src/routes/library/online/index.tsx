@@ -1,7 +1,23 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import {
+  QueryBuilder,
+  EMPTY_BUILDER,
+  builderTermCount,
+  type BuilderQuery,
+} from "@/components/QueryBuilder";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "react-hot-toast";
-import { ArrowLeft, Globe, Minus, Plus, RefreshCw, Square, Tags, Trash2 } from "lucide-react";
+import {
+  ArrowLeft,
+  Globe,
+  ListFilter,
+  Minus,
+  Plus,
+  RefreshCw,
+  Square,
+  Tags,
+  Trash2,
+} from "lucide-react";
 import { api } from "@/lib/api/client";
 import type {
   MediaItem,
@@ -56,7 +72,13 @@ const DURATIONS: { id: string; label: string; min?: number; max?: number }[] = [
   { id: "10-30", label: "10–30 min", min: 600, max: 1800 },
 ];
 
-const SORTS: { id: NonNullable<OnlineQuery["sort"]>; label: string; needsSearch?: boolean }[] = [
+const SORTS: {
+  id: NonNullable<OnlineQuery["sort"]>;
+  label: string;
+  needsSearch?: boolean;
+  needsQuery?: boolean;
+}[] = [
+  { id: "best", label: "Best match", needsQuery: true },
   { id: "newest", label: "Newest first" },
   { id: "site", label: "Site order (last update)", needsSearch: true },
   { id: "longest", label: "Longest" },
@@ -225,12 +247,39 @@ function OnlineLibraryPage() {
     return () => window.clearTimeout(t);
   }, [text]);
 
+  // Query builder, remembered per scope (saved search, Bookmarks, all).
+  const builderKey = `online-query:${searchId || "all"}`;
+  const [builder, setBuilderState] = useState<BuilderQuery>(EMPTY_BUILDER);
+  const [builderOpen, setBuilderOpen] = useState(false);
+  const builderCount = builderTermCount(builder);
+  const setBuilder = useCallback(
+    (q: BuilderQuery) => {
+      // Building a query switches to ranking by match.
+      if (builderTermCount(q) > 0 && builderCount === 0) setSort("best");
+      setBuilderState(q);
+      try {
+        localStorage.setItem(builderKey, JSON.stringify(q));
+      } catch {
+        // storage unavailable: the query just isn't remembered
+      }
+    },
+    [builderKey, builderCount],
+  );
+
   useEffect(() => {
+    let saved = EMPTY_BUILDER;
+    try {
+      const raw = localStorage.getItem(builderKey);
+      if (raw) saved = { ...EMPTY_BUILDER, ...(JSON.parse(raw) as BuilderQuery) };
+    } catch {
+      // ignore unreadable storage
+    }
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setSort("newest");
+    setBuilderState(saved);
+    setSort(builderTermCount(saved) > 0 ? "best" : "newest");
     setInclude([]);
     setExclude([]);
-  }, [searchId]);
+  }, [searchId, builderKey]);
 
   const query = useMemo((): OnlineQuery => {
     const d = DURATIONS.find((x) => x.id === duration);
@@ -241,10 +290,13 @@ function OnlineLibraryPage() {
       exclude_tags: exclude,
       min_duration: d?.min,
       max_duration: d?.max,
-      sort,
+      sort: sort === "best" && builderCount === 0 ? "newest" : sort,
+      groups: builder.groups.filter((g) => g.length > 0),
+      exclude_terms: builder.exclude,
+      boost_terms: builder.boost,
       limit: PAGE_SIZE,
     };
-  }, [searchId, debouncedText, include, exclude, duration, sort]);
+  }, [searchId, debouncedText, include, exclude, duration, sort, builder, builderCount]);
 
   const loadPage = useCallback(
     async (offset: number) => {
@@ -669,12 +721,24 @@ function OnlineLibraryPage() {
             onChange={(e) => setSort(e.target.value as NonNullable<OnlineQuery["sort"]>)}
             aria-label="Sort"
           >
-            {SORTS.filter((s) => !s.needsSearch || searchId).map((s) => (
+            {SORTS.filter(
+              (s) => (!s.needsSearch || searchId) && (!s.needsQuery || builderCount > 0),
+            ).map((s) => (
               <option key={s.id} value={s.id}>
                 {s.label}
               </option>
             ))}
           </select>
+          <Button
+            size="sm"
+            variant={builderOpen || builderCount ? "default" : "outline"}
+            onClick={() => setBuilderOpen((v) => !v)}
+            title="Groups of alternatives, exclusions and rank-higher terms"
+          >
+            <ListFilter className="h-3.5 w-3.5" />
+            Query
+            {builderCount > 0 && ` (${builderCount})`}
+          </Button>
           <Button
             size="sm"
             variant={tagsOpen || include.length || exclude.length ? "default" : "outline"}
@@ -713,6 +777,8 @@ function OnlineLibraryPage() {
             </Button>
           )}
         </div>
+
+        {builderOpen && <QueryBuilder value={builder} onChange={setBuilder} />}
 
         {tagsOpen && (
           <div className="space-y-2 rounded-md border border-[var(--color-border)] p-2">

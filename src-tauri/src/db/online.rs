@@ -14,6 +14,47 @@ use rusqlite::{params, params_from_iter, OptionalExtension};
 /// tag counts and removal take it like any saved search id.
 pub const BOOKMARKS: &str = "@bookmarks";
 
+/// An item's title, tags and performers as lowercase words separated by
+/// single spaces, with a space at each end, so ` word ` matches whole words
+/// and phrases (punctuation, JSON quotes and hyphens become spaces).
+const WORDS: &str = "(' ' || replace(replace(replace(replace(replace(replace(replace(\
+     replace(replace(replace(replace(replace(replace(lower(o.title || ' ' || COALESCE(o.tags, '') || ' ' \
+     || COALESCE(o.performers, '')), '\"', ' '), ',', ' '), '[', ' '), ']', ' '), '-', ' '), '.', ' '), \
+     '!', ' '), '?', ' '), ':', ' '), '(', ' '), ')', ' '), '/', ' '), '_', ' ') || ' ')";
+
+/// A builder term as a LIKE pattern on `WORDS`: `big tits` → `% big tits %`,
+/// `tit*` → `% tit%` (prefix). None for an empty term.
+fn term_like(term: &str) -> Option<String> {
+    let t = term.trim().to_lowercase();
+    let (t, prefix) = match t.strip_suffix('*') {
+        Some(rest) => (rest.to_string(), true),
+        None => (t, false),
+    };
+    let words: Vec<String> = t
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '\'' {
+                c
+            } else {
+                ' '
+            }
+        })
+        .collect::<String>()
+        .split_whitespace()
+        .map(|w| w.replace('%', "").replace('_', ""))
+        .filter(|w| !w.is_empty())
+        .collect();
+    if words.is_empty() {
+        return None;
+    }
+    let phrase = words.join(" ");
+    Some(if prefix {
+        format!("% {phrase}%")
+    } else {
+        format!("% {phrase} %")
+    })
+}
+
 fn norm_tag(tag: &str) -> String {
     tag.split_whitespace()
         .collect::<Vec<_>>()
@@ -366,10 +407,45 @@ impl Database {
         if q.missing_details {
             wheres.push("o.details_at IS NULL".into());
         }
+        // Query builder: groups ANDed, terms within a group ORed; exclusions;
+        // a score counting every group / boost term found, for "best".
+        let mut score_parts: Vec<String> = Vec::new();
+        let mut score_args: Vec<rusqlite::types::Value> = Vec::new();
+        let term_cond = format!("{WORDS} LIKE ?");
+        for group in &q.groups {
+            let terms: Vec<String> = group.iter().filter_map(|t| term_like(t)).collect();
+            if terms.is_empty() {
+                continue;
+            }
+            wheres.push(format!(
+                "({})",
+                vec![term_cond.as_str(); terms.len()].join(" OR ")
+            ));
+            for t in &terms {
+                args.push(t.clone().into());
+                score_parts.push(format!("({term_cond})"));
+                score_args.push(t.clone().into());
+            }
+        }
+        for t in q.exclude_terms.iter().filter_map(|t| term_like(t)) {
+            wheres.push(format!("NOT {term_cond}"));
+            args.push(t.into());
+        }
+        for t in q.boost_terms.iter().filter_map(|t| term_like(t)) {
+            score_parts.push(format!("({term_cond})"));
+            score_args.push(t.into());
+        }
         let where_sql = if wheres.is_empty() {
             String::new()
         } else {
             format!(" WHERE {}", wheres.join(" AND "))
+        };
+        let best =
+            !score_parts.is_empty() && matches!(q.sort.as_deref().unwrap_or("best"), "best" | "");
+        let score_sql = if best {
+            format!("({}) DESC, ", score_parts.join(" + "))
+        } else {
+            String::new()
         };
         let order = match q.sort.as_deref().unwrap_or("") {
             "longest" => "o.duration IS NULL, o.duration DESC",
@@ -387,10 +463,13 @@ impl Database {
         )?;
         let limit = if q.limit == 0 { 60 } else { q.limit.min(500) };
         let mut page_args = args.clone();
+        if best {
+            page_args.extend(score_args);
+        }
         page_args.push((limit as i64).into());
         page_args.push((q.offset as i64).into());
         let mut stmt = conn.prepare(&format!(
-            "SELECT {ITEM_COLUMNS} {from}{where_sql} ORDER BY {order} LIMIT ? OFFSET ?"
+            "SELECT {ITEM_COLUMNS} {from}{where_sql} ORDER BY {score_sql}{order} LIMIT ? OFFSET ?"
         ))?;
         let items = stmt
             .query_map(params_from_iter(page_args.iter()), map_item)?
@@ -684,6 +763,63 @@ mod tests {
             tags: tags.iter().map(|t| t.to_string()).collect(),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn query_builder_groups_exclusions_and_ranking() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::new(dir.path().to_path_buf()).unwrap();
+        let page = vec![
+            item(
+                "https://a.com/1",
+                "Prostate massage and blowjob",
+                600,
+                &["handjob"],
+            ),
+            item("https://a.com/2", "Sloppy BJ, prostate milking", 600, &[]),
+            item("https://a.com/3", "Prostate massage solo", 600, &["solo"]),
+            item("https://a.com/4", "Classic glasses blowjob", 600, &[]),
+            item(
+                "https://a.com/5",
+                "Prostate-massage, blowjob & handjob",
+                600,
+                &[],
+            ),
+        ];
+        db.record_online_items(&page, None).unwrap();
+        let q = |groups: Vec<Vec<&str>>, exclude: Vec<&str>, boost: Vec<&str>| OnlineQuery {
+            groups: groups
+                .into_iter()
+                .map(|g| g.into_iter().map(String::from).collect())
+                .collect(),
+            exclude_terms: exclude.into_iter().map(String::from).collect(),
+            boost_terms: boost.into_iter().map(String::from).collect(),
+            limit: 50,
+            ..Default::default()
+        };
+        let titles = |q: OnlineQuery| -> Vec<String> {
+            db.query_online_items(&q)
+                .unwrap()
+                .items
+                .into_iter()
+                .map(|i| i.url)
+                .collect()
+        };
+        // (prostate) AND (blowjob OR bj), no solo; "ass" must not match "glasses".
+        let r = titles(q(
+            vec![vec!["prostate*"], vec!["blowjob", "bj"]],
+            vec!["solo"],
+            vec!["handjob"],
+        ));
+        assert_eq!(r.len(), 3, "{r:?}");
+        assert!(!r.contains(&"https://a.com/3".to_string()));
+        // Boosted / more matches first: #1 and #5 have handjob.
+        assert!(r[..2].contains(&"https://a.com/1".to_string()));
+        assert!(r[..2].contains(&"https://a.com/5".to_string()));
+        assert!(titles(q(vec![vec!["ass"]], vec![], vec![])).is_empty());
+        assert_eq!(term_like("Big-Tits"), Some("% big tits %".into()));
+        assert_eq!(term_like("tit*"), Some("% tit%".into()));
+        assert_eq!(term_like(" , "), None);
     }
 
     #[test]
