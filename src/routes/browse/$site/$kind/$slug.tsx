@@ -668,7 +668,8 @@ function BrowseDetailPage() {
 
         {resultTotal != null && resultTotal > 0 && (
           <p className="text-xs text-[var(--color-muted-foreground)]">
-            {resultTotal.toLocaleString()} {resultTotal === 1 ? "video" : "videos"} on the site
+            {resultTotal.toLocaleString()} {resultTotal === 1 ? "video" : "videos"} on the site{" "}
+            (counts repeat uploads and paysites, which are hidden here)
           </p>
         )}
         {(hiddenCount > 0 || filteredOut > 0) && (

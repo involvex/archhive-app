@@ -189,11 +189,18 @@ impl SiteAdapter for XpomeloAdapter {
         for q in &queries {
             let url = listing_url(q);
             tracing::info!("[xpomelo] browse: {url}");
-            let page = fetch(ctx, &url, q.orientation).await.map(|html| {
-                let cards = parse_listing(&html);
-                let more = cards.len() >= 40 || html.contains(&format!("page={}", q.page + 1));
-                (cards, more, result_count(&html))
-            });
+            let page = match fetch(ctx, &url, q.orientation).await {
+                Ok(html) => {
+                    let cards = parse_listing(&html);
+                    let more = cards.len() >= 40 || html.contains(&format!("page={}", q.page + 1));
+                    Ok((cards, more, result_count(&html)))
+                }
+                // Past the last page xPomelo answers 404: the end, not an error.
+                Err(AppError::Site(m)) if q.page > 1 && m.contains("HTTP 404") => {
+                    Ok((Vec::new(), false, None))
+                }
+                Err(e) => Err(e),
+            };
             // Rate limited: the other buckets would be refused too.
             let limited = matches!(&page, Err(AppError::Site(m)) if m.contains("429") || m.contains("Cloudflare"));
             pages.push(page);
