@@ -96,10 +96,11 @@ function ExpandableList({
   );
 }
 
+/** The video page is read when the listing had no tags: aggregator results
+ * always carry a channel (the source site), so "no metadata at all" almost
+ * never held and the page went unread. */
 function isThinMetadata(item: MediaItem): boolean {
-  return (
-    !item.description && !item.channel && item.performers.length === 0 && item.tags.length === 0
-  );
+  return item.tags.length === 0;
 }
 
 function BrowseItemDetailsBody({ item, onClose }: { item: MediaItem; onClose: () => void }) {

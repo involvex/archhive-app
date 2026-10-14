@@ -1,4 +1,6 @@
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
+import { CARD_GRID } from "@/lib/utils";
+import { TrendingRow } from "@/components/TrendingRow";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api/client";
 import { getPluginBrowseSites } from "@/lib/plugins/loader";
@@ -408,27 +410,7 @@ function FeedPage() {
                       <p className="text-xs font-medium text-[var(--color-muted-foreground)]">
                         {siteName(id)}
                       </p>
-                      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3">
-                        {trending[id].map((item) => (
-                          <SceneCard
-                            key={item.id}
-                            item={item}
-                            onDownload={(m) => {
-                              void api.queueDownload(m.url, m.site_id);
-                            }}
-                            onClick={() => {
-                              navigate({
-                                to: "/browse/$site/$kind/$slug",
-                                params: {
-                                  site: item.site_id,
-                                  kind: "search",
-                                  slug: item.title,
-                                },
-                              });
-                            }}
-                          />
-                        ))}
-                      </div>
+                      <TrendingRow items={trending[id]} />
                     </div>
                   ))}
                 </div>
@@ -503,7 +485,7 @@ function FeedPage() {
               Clear
             </button>
           </div>
-          <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+          <div className={CARD_GRID}>
             {recentVisible.map((snapshot) => (
               <SceneCard
                 key={snapshot.id}

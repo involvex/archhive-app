@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { CARD_GRID } from "@/lib/utils";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api/client";
 import type { MediaItem } from "@/lib/types";
@@ -173,7 +174,7 @@ function CustomBrowsePage() {
       )}
 
       {viewMode === "grid" && (
-        <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+        <div className={CARD_GRID}>
           {items.map((item) => (
             <SceneCard
               key={item.id}

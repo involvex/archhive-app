@@ -1,4 +1,5 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
+import { CARD_GRID } from "@/lib/utils";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api/client";
 import { ConnectionStatusChip } from "@/components/ConnectionStatusChip";
@@ -266,7 +267,7 @@ function HomePage() {
               Clear
             </button>
           </div>
-          <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+          <div className={CARD_GRID}>
             {recentVisible.map((snapshot) => (
               <SceneCard
                 key={snapshot.id}
@@ -313,7 +314,7 @@ function HomePage() {
             }
           />
         ) : (
-          <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+          <div className={CARD_GRID}>
             {scenes.slice(0, 12).map((scene) => (
               <SceneCard
                 key={scene.id}

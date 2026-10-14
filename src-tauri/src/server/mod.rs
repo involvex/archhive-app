@@ -270,6 +270,12 @@ impl LanServer {
             .route("/api/online/details", post(online_details_lan))
             .route("/api/online/history", delete(online_clear_lan))
             .route("/api/online/delete", post(online_delete_lan))
+            .route("/api/online/bookmarks", post(online_bookmark_lan))
+            .route("/api/online/bookmarks/remove", post(online_unbookmark_lan))
+            .route(
+                "/api/online/bookmarks/check",
+                post(online_is_bookmarked_lan),
+            )
             .route("/api/online/crawls", get(online_crawls_lan))
             .route(
                 "/api/online/searches/{id}/fetch-all",
@@ -2282,6 +2288,52 @@ async fn online_delete_lan(
         .delete_online_items(body.search_id.as_deref(), &body.keys)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(Json(serde_json::json!({ "removed": removed })))
+}
+
+#[derive(Deserialize)]
+struct OnlineBookmarkBody {
+    item: crate::models::MediaItem,
+}
+
+#[derive(Deserialize)]
+struct OnlineUrlBody {
+    url: String,
+}
+
+async fn online_bookmark_lan(
+    State(state): State<ApiState>,
+    Json(body): Json<OnlineBookmarkBody>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let key = state
+        .app
+        .db
+        .bookmark_online_item(&body.item)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(serde_json::json!(key)))
+}
+
+async fn online_unbookmark_lan(
+    State(state): State<ApiState>,
+    Json(body): Json<OnlineUrlBody>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    state
+        .app
+        .db
+        .unbookmark_online_item(&crate::sites::urls::video_key(&body.url))
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(serde_json::json!(null)))
+}
+
+async fn online_is_bookmarked_lan(
+    State(state): State<ApiState>,
+    Json(body): Json<OnlineUrlBody>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let yes = state
+        .app
+        .db
+        .is_online_bookmarked(&crate::sites::urls::video_key(&body.url))
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(serde_json::json!(yes)))
 }
 
 async fn online_delete_matching_lan(

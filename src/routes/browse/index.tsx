@@ -1,4 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { TrendingRow } from "@/components/TrendingRow";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api/client";
 import { getCapabilities } from "@/lib/runtime";
@@ -6,7 +7,6 @@ import { getPluginBrowseSites } from "@/lib/plugins/loader";
 import { mergeSiteLists, siteHasCategories } from "@/lib/sites/catalog";
 import { useSettingsStore } from "@/lib/stores/settings";
 import type { BrowseOrientation, PornhubCategoryEntry, SiteInfo } from "@/lib/types";
-import { SceneCard } from "@/components/SceneCard";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -391,33 +391,14 @@ function BrowsePage() {
               ))}
             </div>
           ) : (
-            <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1 snap-x snap-mandatory scrollbar-hide">
-              {Object.values(trending).map((items) =>
-                items.map((item) => (
-                  <div key={item.id} className="shrink-0 w-44 snap-start">
-                    <SceneCard
-                      item={item}
-                      listView={false}
-                      onClick={() => {
-                        navigate({
-                          to: "/browse/$site/$kind/$slug",
-                          params: {
-                            site: item.site_id,
-                            kind: "search",
-                            slug: item.title,
-                          },
-                        });
-                      }}
-                    />
-                  </div>
-                )),
-              )}
+            <>
+              <TrendingRow items={Object.values(trending).flat()} />
               {Object.values(trending).every((items) => items.length === 0) && (
                 <p className="text-xs text-[var(--color-muted-foreground)]">
                   No trending content available yet.
                 </p>
               )}
-            </div>
+            </>
           )}
         </CardContent>
       </Card>

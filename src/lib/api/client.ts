@@ -362,6 +362,28 @@ export const api = {
 
   /** Remove entries from a saved search (or, without one, from the whole
    * library). They stay removed across updates / browsing. */
+  /** Bookmark a browsed video (Online library → Bookmarks). Returns its key. */
+  async bookmarkOnline(item: MediaItem): Promise<string> {
+    return localOrRemote<string>("online_bookmark", { item }, "/api/online/bookmarks", {
+      method: "POST",
+      body: JSON.stringify({ item }),
+    });
+  },
+
+  async unbookmarkOnline(url: string): Promise<void> {
+    await localOrRemote<null>("online_unbookmark", { url }, "/api/online/bookmarks/remove", {
+      method: "POST",
+      body: JSON.stringify({ url }),
+    });
+  },
+
+  async isOnlineBookmarked(url: string): Promise<boolean> {
+    return localOrRemote<boolean>("online_is_bookmarked", { url }, "/api/online/bookmarks/check", {
+      method: "POST",
+      body: JSON.stringify({ url }),
+    });
+  },
+
   async deleteOnlineItems(searchId: string | undefined, keys: string[]): Promise<number> {
     if (shouldUseRemoteApi()) {
       const res = await remoteFetch<{ removed: number }>("/api/online/delete", {

@@ -254,6 +254,9 @@ export interface AppSettings {
   auto_advance_next?: boolean;
   /** Hold a screen wake lock while the player is open (Q33). */
   keep_screen_on?: boolean;
+  /** Keep every browsed result in the Online library (default: only saved
+   * searches and bookmarks). */
+  online_record_all?: boolean;
   /** Dark schedule start time HH:MM (e.g. "19:00"). (#29) */
   theme_schedule_from?: string;
   /** Light schedule start time HH:MM (e.g. "07:00"). (#29) */

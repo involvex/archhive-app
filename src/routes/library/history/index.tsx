@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { CARD_GRID } from "@/lib/utils";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api/client";
 import type { Scene, WatchProgress } from "@/lib/types";
@@ -93,7 +94,7 @@ function HistoryPage() {
 
   function renderGrid(list: { row: WatchProgress; scene: Scene }[]) {
     return (
-      <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+      <div className={CARD_GRID}>
         {list.map(({ row, scene }) => (
           <div key={scene.id} className="relative">
             <SceneCard

@@ -10,6 +10,10 @@ use crate::models::{
 use rusqlite::{params, params_from_iter, OptionalExtension};
 
 /// Tag as stored for lookups: lowercase, single spaces.
+/// Scope (a pseudo saved-search id) holding bookmarked videos; queries,
+/// tag counts and removal take it like any saved search id.
+pub const BOOKMARKS: &str = "@bookmarks";
+
 fn norm_tag(tag: &str) -> String {
     tag.split_whitespace()
         .collect::<Vec<_>>()
@@ -457,7 +461,7 @@ impl Database {
              FROM saved_searches ss
              LEFT JOIN online_search_updates u ON u.search_id = ss.id",
         )?;
-        let rows = stmt
+        let mut rows = stmt
             .query_map([], |r| {
                 Ok(OnlineSearchInfo {
                     search_id: r.get(0)?,
@@ -466,6 +470,16 @@ impl Database {
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
+        let bookmarks: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM saved_search_items WHERE search_id = ?1",
+            params![BOOKMARKS],
+            |r| r.get(0),
+        )?;
+        rows.push(OnlineSearchInfo {
+            search_id: BOOKMARKS.to_string(),
+            item_count: bookmarks as u32,
+            updated_at: None,
+        });
         Ok(rows)
     }
 
@@ -588,6 +602,55 @@ impl Database {
     }
 
     /// Forget browsing history (items not in any saved search).
+    /// Bookmark a video: it joins the Online library (with whatever tags /
+    /// performers it carries) in the `BOOKMARKS` scope, even if it was
+    /// removed before. Returns its key.
+    pub fn bookmark_online_item(&self, item: &MediaItem) -> AppResult<String> {
+        let key = crate::sites::urls::video_key(&item.url);
+        {
+            let conn = self
+                .conn
+                .lock()
+                .map_err(|e| AppError::Other(e.to_string()))?;
+            conn.execute(
+                "DELETE FROM online_dismissed WHERE item_key = ?1 AND scope IN ('', ?2)",
+                params![key, BOOKMARKS],
+            )?;
+        }
+        // Newest bookmark first (the scope lists by rank).
+        let rank = -chrono::Utc::now().timestamp();
+        self.record_online_items(std::slice::from_ref(item), Some((BOOKMARKS, rank)))?;
+        Ok(key)
+    }
+
+    /// Take a video out of the bookmarks (it stays in the Online library).
+    pub fn unbookmark_online_item(&self, key: &str) -> AppResult<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        conn.execute(
+            "DELETE FROM saved_search_items WHERE search_id = ?1 AND item_key = ?2",
+            params![BOOKMARKS, key],
+        )?;
+        Ok(())
+    }
+
+    pub fn is_online_bookmarked(&self, key: &str) -> AppResult<bool> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        Ok(conn
+            .query_row(
+                "SELECT 1 FROM saved_search_items WHERE search_id = ?1 AND item_key = ?2",
+                params![BOOKMARKS, key],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some())
+    }
+
     pub fn clear_online_history(&self) -> AppResult<u32> {
         let conn = self
             .conn
@@ -621,6 +684,32 @@ mod tests {
             tags: tags.iter().map(|t| t.to_string()).collect(),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn bookmarks_survive_history_clear_and_come_back_after_removal() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::new(dir.path().to_path_buf()).unwrap();
+        let a = item("https://www.xvideos.com/video.abc/x", "A", 60, &["solo"]);
+        let key = db.bookmark_online_item(&a).unwrap();
+        assert!(db.is_online_bookmarked(&key).unwrap());
+        assert_eq!(db.clear_online_history().unwrap(), 0);
+        let info = db.online_search_info().unwrap();
+        assert_eq!(
+            info.iter()
+                .find(|i| i.search_id == BOOKMARKS)
+                .map(|i| i.item_count),
+            Some(1)
+        );
+        // Removed everywhere, then bookmarked again: it comes back.
+        db.delete_online_items(None, std::slice::from_ref(&key))
+            .unwrap();
+        assert!(!db.is_online_bookmarked(&key).unwrap());
+        db.bookmark_online_item(&a).unwrap();
+        assert!(db.is_online_bookmarked(&key).unwrap());
+        db.unbookmark_online_item(&key).unwrap();
+        assert!(!db.is_online_bookmarked(&key).unwrap());
+        assert!(db.get_online_item(&key).unwrap().is_some());
     }
 
     #[test]

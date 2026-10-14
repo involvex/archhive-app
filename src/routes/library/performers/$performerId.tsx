@@ -1,4 +1,5 @@
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
+import { CARD_GRID } from "@/lib/utils";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api/client";
 import type { Performer, Scene, StashPerformerMatch } from "@/lib/types";
@@ -332,7 +333,7 @@ function PerformerDetailPage() {
           description={`${performer.name} has no scenes in the library right now.`}
         />
       ) : (
-        <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+        <div className={CARD_GRID}>
           {scenes.map((scene) => (
             <SceneCard
               key={scene.id}

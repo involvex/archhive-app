@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { CARD_GRID } from "@/lib/utils";
 import { History, X } from "lucide-react";
 import { SceneCard } from "@/components/SceneCard";
 import { ScenePlayerDialog } from "@/components/ScenePlayerDialog";
@@ -69,7 +70,7 @@ export function ContinueWatchingRail({ scenes, watchMap, max = 12 }: ContinueWat
           Clear
         </button>
       </div>
-      <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+      <div className={CARD_GRID}>
         {visible.map((snapshot) => (
           <SceneCard
             key={snapshot.id}

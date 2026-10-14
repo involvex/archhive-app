@@ -1,4 +1,5 @@
 import { createFileRoute, useSearch } from "@tanstack/react-router";
+import { CARD_GRID } from "@/lib/utils";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api/client";
 import type { Collection, CollectionType, Scene } from "@/lib/types";
@@ -298,7 +299,7 @@ function CollectionsPage() {
               description="Add scenes from the scene context menu."
             />
           ) : viewMode === "grid" ? (
-            <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+            <div className={CARD_GRID}>
               {scenes.map((scene) => {
                 const thumbSrc = sceneThumbUrl(scene);
                 const canPlay = isVideoScene(scene);

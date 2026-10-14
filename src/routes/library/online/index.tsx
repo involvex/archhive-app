@@ -27,6 +27,8 @@ export const Route = createFileRoute("/library/online/")({
 });
 
 const PAGE_SIZE = 60;
+/** Drop-down value of the Bookmarks scope (`db::online::BOOKMARKS`). */
+const BOOKMARKS = "@bookmarks";
 /** Keys per query when collecting every matching video for a re-fetch. */
 const REFETCH_QUERY_PAGE = 500;
 
@@ -410,13 +412,21 @@ function OnlineLibraryPage() {
     await runFetchTags(keys);
   }
 
-  const scopeLabel = search ? "this saved search" : "the Online library";
+  const bookmarksScope = searchId === BOOKMARKS;
+  const scopeLabel = search
+    ? "this saved search"
+    : bookmarksScope
+      ? "your bookmarks"
+      : "the Online library";
+  const removalNote = bookmarksScope
+    ? "They stay in the Online library."
+    : `They won't come back on Update${search ? "" : " or when browsing"}.`;
 
   async function deleteSelected() {
     if (selected.size === 0) return;
     if (
       !window.confirm(
-        `Remove ${selected.size} ${selected.size === 1 ? "video" : "videos"} from ${scopeLabel}? They won't come back on Update${search ? "" : " or when browsing"}.`,
+        `Remove ${selected.size} ${selected.size === 1 ? "video" : "videos"} from ${scopeLabel}? ${removalNote}`,
       )
     )
       return;
@@ -431,7 +441,7 @@ function OnlineLibraryPage() {
     if (total === 0) return;
     if (
       !window.confirm(
-        `Remove all ${total.toLocaleString()} videos matching the current filters from ${scopeLabel}? They won't come back on Update${search ? "" : " or when browsing"}.`,
+        `Remove all ${total.toLocaleString()} videos matching the current filters from ${scopeLabel}? ${removalNote}`,
       )
     )
       return;
@@ -539,7 +549,11 @@ function OnlineLibraryPage() {
         }
         aria-label="Saved search"
       >
-        <option value="">Everything browsed</option>
+        <option value="">Everything</option>
+        <option value={BOOKMARKS}>
+          Bookmarks (
+          {(info.find((i) => i.search_id === BOOKMARKS)?.item_count ?? 0).toLocaleString()})
+        </option>
         {searches.map((s) => {
           const n = info.find((i) => i.search_id === s.id)?.item_count ?? 0;
           return (
@@ -813,7 +827,9 @@ function OnlineLibraryPage() {
           description={
             search && !searchInfo?.updated_at
               ? "Tap Update to fetch the first pages of this saved search."
-              : "Nothing matches these filters."
+              : bookmarksScope && total === 0
+                ? "No bookmarks yet. While browsing, open a video and tap Bookmark."
+                : "Nothing matches these filters."
           }
         />
       ) : (

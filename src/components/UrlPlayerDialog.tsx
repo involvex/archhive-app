@@ -2,7 +2,15 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, isRoomOfflineError, safeMediaUrl } from "@/lib/api/client";
 import { Button } from "@/components/ui/button";
 import { HlsVideoPlayer, STREAM_URL_EXPIRED_ERROR } from "@/components/HlsVideoPlayer";
-import { AlertCircle, ChevronLeft, ChevronRight, Loader2, X } from "lucide-react";
+import {
+  AlertCircle,
+  Bookmark,
+  BookmarkCheck,
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
+  X,
+} from "lucide-react";
 import type { MediaItem } from "@/lib/types";
 import { ExtLink } from "@/components/ExtLink";
 
@@ -33,6 +41,27 @@ export function UrlPlayerDialog({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [queued, setQueued] = useState(false);
+  // Tags / performers / channel read from the video's own page when the
+  // listing had no tags (null until fetched; `url` ties them to the item).
+  const [details, setDetails] = useState<{ url: string; data: MediaItem } | null>(null);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+  const [bookmarked, setBookmarked] = useState(false);
+  const [bookmarking, setBookmarking] = useState(false);
+
+  // The item with whatever its page added.
+  const shown = useMemo((): MediaItem | null => {
+    if (!item) return null;
+    const d = details?.url === item.url ? details.data : null;
+    if (!d) return item;
+    return {
+      ...item,
+      performers: d.performers.length > 0 ? d.performers : item.performers,
+      tags: d.tags.length > 0 ? d.tags : item.tags,
+      channel: d.channel ?? item.channel,
+      description: d.description ?? item.description,
+      duration: item.duration ?? d.duration,
+    };
+  }, [item, details]);
 
   const index = useMemo(() => {
     if (!item || !playlist?.length) return -1;
@@ -106,6 +135,64 @@ export function UrlPlayerDialog({
     void resolveStream();
   }, [open, item, resolveStream]);
 
+  // Fetch tags from the video's page (one request) when the listing had
+  // none; the backend also stores them on the Online library entry.
+  useEffect(() => {
+    if (!open || !item || item.is_live || item.tags.length > 0) return;
+    let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-open pattern
+    setDetailsLoading(true);
+    api
+      .resolveMediaDetails(item.url)
+      .then((data) => {
+        if (!cancelled) setDetails({ url: item.url, data });
+      })
+      .catch((e: unknown) => {
+        const msg = e instanceof Error ? e.message : String(e ?? "");
+        if (!cancelled && msg.includes("video removed from the site")) onRemoved?.(item);
+      })
+      .finally(() => {
+        if (!cancelled) setDetailsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, item, onRemoved]);
+
+  useEffect(() => {
+    if (!open || !item || item.is_live) return;
+    let cancelled = false;
+    api
+      .isOnlineBookmarked(item.url)
+      .then((yes) => {
+        if (!cancelled) setBookmarked(yes);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+      setBookmarked(false);
+    };
+  }, [open, item]);
+
+  const toggleBookmark = useCallback(async () => {
+    if (!shown) return;
+    setBookmarking(true);
+    try {
+      if (bookmarked) {
+        await api.unbookmarkOnline(shown.url);
+        setBookmarked(false);
+      } else {
+        // Saved with the tags fetched above, so it is searchable right away.
+        await api.bookmarkOnline(shown);
+        setBookmarked(true);
+      }
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBookmarking(false);
+    }
+  }, [shown, bookmarked]);
+
   useEffect(() => {
     if (!open) return;
     function handleKey(e: KeyboardEvent) {
@@ -127,7 +214,7 @@ export function UrlPlayerDialog({
     return () => window.removeEventListener("keydown", handleKey);
   }, [open, onClose, nextItem, prevItem, onSelectItem]);
 
-  if (!open || !item) return null;
+  if (!open || !item || !shown) return null;
 
   return (
     <div
@@ -235,23 +322,29 @@ export function UrlPlayerDialog({
             )}
 
           <dl className="mt-4 space-y-2 text-sm">
-            {item.performers.length > 0 && (
+            {shown.performers.length > 0 && (
               <div>
                 <dt className="text-xs text-[var(--color-muted-foreground)]">Performers</dt>
-                <dd>{item.performers.join(", ")}</dd>
+                <dd>{shown.performers.join(", ")}</dd>
               </div>
             )}
-            {item.channel && (
+            {shown.channel && (
               <div>
                 <dt className="text-xs text-[var(--color-muted-foreground)]">Channel</dt>
-                <dd>{item.channel}</dd>
+                <dd>{shown.channel}</dd>
               </div>
             )}
-            {item.tags.length > 0 && (
+            {detailsLoading && shown.tags.length === 0 && (
+              <div className="flex items-center gap-1.5 text-xs text-[var(--color-muted-foreground)]">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Reading tags from the video page…
+              </div>
+            )}
+            {shown.tags.length > 0 && (
               <div>
                 <dt className="text-xs text-[var(--color-muted-foreground)]">Tags</dt>
                 <dd className="mt-1 flex flex-wrap gap-1">
-                  {item.tags.map((tag) => (
+                  {shown.tags.map((tag) => (
                     <span
                       key={tag}
                       className="rounded bg-[var(--color-secondary)] px-1.5 py-0.5 text-xs"
@@ -262,11 +355,11 @@ export function UrlPlayerDialog({
                 </dd>
               </div>
             )}
-            {item.description && (
+            {shown.description && (
               <div>
                 <dt className="text-xs text-[var(--color-muted-foreground)]">Description</dt>
                 <dd className="text-xs text-[var(--color-muted-foreground)] line-clamp-4">
-                  {item.description}
+                  {shown.description}
                 </dd>
               </div>
             )}
@@ -318,6 +411,26 @@ export function UrlPlayerDialog({
                 className="min-h-10 min-w-[5.5rem]"
               >
                 {loading ? "Retrying…" : "Retry"}
+              </Button>
+            )}
+            {!item.is_live && (
+              <Button
+                variant={bookmarked ? "secondary" : "outline"}
+                onClick={() => void toggleBookmark()}
+                disabled={bookmarking}
+                className="min-h-10 gap-1"
+                title={
+                  bookmarked
+                    ? "Remove from Online library → Bookmarks"
+                    : "Keep in Online library → Bookmarks"
+                }
+              >
+                {bookmarked ? (
+                  <BookmarkCheck className="h-4 w-4" />
+                ) : (
+                  <Bookmark className="h-4 w-4" />
+                )}
+                {bookmarked ? "Bookmarked" : "Bookmark"}
               </Button>
             )}
             <Button

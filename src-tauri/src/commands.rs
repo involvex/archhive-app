@@ -1442,6 +1442,33 @@ pub fn delete_online_items(
     map_err(state.db.delete_online_items(search_id.as_deref(), &keys))
 }
 
+/// Bookmark a browsed video (adds it to the Online library's Bookmarks).
+#[tauri::command]
+pub fn online_bookmark(
+    state: State<'_, Arc<AppState>>,
+    item: crate::models::MediaItem,
+) -> CmdResult<String> {
+    map_err(state.db.bookmark_online_item(&item))
+}
+
+#[tauri::command]
+pub fn online_unbookmark(state: State<'_, Arc<AppState>>, url: String) -> CmdResult<()> {
+    map_err(
+        state
+            .db
+            .unbookmark_online_item(&crate::sites::urls::video_key(&url)),
+    )
+}
+
+#[tauri::command]
+pub fn online_is_bookmarked(state: State<'_, Arc<AppState>>, url: String) -> CmdResult<bool> {
+    map_err(
+        state
+            .db
+            .is_online_bookmarked(&crate::sites::urls::video_key(&url)),
+    )
+}
+
 #[tauri::command]
 pub fn delete_online_matching(
     state: State<'_, Arc<AppState>>,

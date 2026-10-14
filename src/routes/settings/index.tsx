@@ -1613,6 +1613,24 @@ function SettingsPage() {
               </div>
               <div className="flex items-center justify-between gap-3">
                 <div>
+                  <p className="text-sm font-medium">
+                    Keep all browsed videos in the Online library
+                  </p>
+                  <p className="text-xs text-[var(--color-muted-foreground)]">
+                    Off: only saved searches and bookmarked videos are kept. On: every result you
+                    browse (trending rows included) is added too.
+                  </p>
+                </div>
+                <Switch.Root
+                  checked={hostSettings?.online_record_all ?? false}
+                  onCheckedChange={(checked) => patchHostSettings({ online_record_all: checked })}
+                  className="h-5 w-9 shrink-0 rounded-full bg-[var(--color-secondary)] data-[state=checked]:bg-[var(--color-primary)]"
+                >
+                  <Switch.Thumb className="block h-4 w-4 translate-x-0.5 rounded-full bg-white transition data-[state=checked]:translate-x-[18px]" />
+                </Switch.Root>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <div>
                   <p className="text-sm font-medium">Download on Wi-Fi only</p>
                   <p className="text-xs text-[var(--color-muted-foreground)]">
                     When enabled, downloads are queued but wait for a Wi-Fi connection before

@@ -567,6 +567,10 @@ pub struct AppSettings {
     /// Configured stash-box endpoints (StashDB etc). API keys live in vault.
     #[serde(default)]
     pub stashbox_endpoints: Vec<StashBoxEndpoint>,
+    /// Keep every browsed result (trending rows, any listing) in the Online
+    /// library, not only saved searches and bookmarks.
+    #[serde(default)]
+    pub online_record_all: bool,
 }
 
 fn default_phash_threshold() -> u8 {
@@ -735,6 +739,7 @@ impl Default for AppSettings {
             auto_check_binaries: default_auto_check_binaries(),
             binary_backup_path: None,
             stashbox_endpoints: default_stashbox_endpoints(),
+            online_record_all: false,
         }
     }
 }

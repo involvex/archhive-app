@@ -121,7 +121,53 @@ impl AppState {
         self.sites.list()
     }
 
+    /// A listing page the user is browsing. Its results go into the Online
+    /// library when it is a saved search (added to that search), or for any
+    /// listing when Settings → "Keep all browsed videos" is on. Bookmarks
+    /// are added separately.
     pub async fn browse(
+        &self,
+        site_id: &str,
+        kind: BrowseKind,
+        slug: &str,
+        page: u32,
+        orientation: Option<BrowseOrientation>,
+        filters: crate::models::BrowseFilters,
+    ) -> AppResult<crate::models::BrowsePage> {
+        let filters = filters.normalized();
+        let data = self
+            .browse_site(site_id, kind, slug, page, orientation, filters.clone())
+            .await?;
+        if kind != BrowseKind::Livestream && !data.from_cache {
+            let saved = self.db.list_saved_searches().ok().and_then(|all| {
+                all.into_iter().find(|s| {
+                    s.site_id == site_id
+                        && s.kind == kind
+                        && s.slug == slug
+                        && s.orientation.unwrap_or_default() == orientation.unwrap_or_default()
+                        && s.filters.clone().normalized() == filters
+                })
+            });
+            let recorded = match saved {
+                Some(s) => self
+                    .db
+                    .record_online_items(&data.items, Some((&s.id, (page as i64 - 1) * 1000)))
+                    .map(|_| ()),
+                None if self.get_settings().is_ok_and(|s| s.online_record_all) => {
+                    self.db.record_online_items(&data.items, None).map(|_| ())
+                }
+                None => Ok(()),
+            };
+            if let Err(e) = recorded {
+                tracing::warn!("[online] could not record results: {e}");
+            }
+        }
+        Ok(data)
+    }
+
+    /// A listing page from the site (or the browse cache when it fails),
+    /// without touching the Online library.
+    pub async fn browse_site(
         &self,
         site_id: &str,
         kind: BrowseKind,
@@ -150,7 +196,7 @@ impl AppState {
                         .map(|t| t.replace('-', " "))
                         .collect::<Vec<_>>()
                         .join(" ");
-                    return Box::pin(self.browse(
+                    return Box::pin(self.browse_site(
                         site_id,
                         BrowseKind::Search,
                         &combined,
@@ -213,12 +259,6 @@ impl AppState {
                     &page_data,
                     86_400,
                 );
-                // Every result seen goes into the local Online library.
-                if kind != BrowseKind::Livestream {
-                    if let Err(e) = self.db.record_online_items(&page_data.items, None) {
-                        tracing::warn!("[online] could not record results: {e}");
-                    }
-                }
                 Ok(page_data)
             }
             Err(e) => {
@@ -1466,12 +1506,22 @@ impl AppState {
         }
     }
 
-    /// Details for one video; a video the site removed also leaves the
-    /// Online library and saved searches (Info dialog, player).
+    /// Details for one video (Info dialog, player). A video already in the
+    /// Online library gets the tags / performers / channel stored; one the
+    /// site removed leaves the library and saved searches.
     pub async fn resolve_media_details(&self, url: &str) -> AppResult<MediaItem> {
         let result = self.read_media_details(url).await;
         if is_removed_error(&result) {
             self.forget_removed_video(url);
+        }
+        if let Ok(details) = &result {
+            let key = crate::sites::urls::video_key(url);
+            let useful = !details.tags.is_empty() || !details.performers.is_empty();
+            if useful && self.db.get_online_item(&key).ok().flatten().is_some() {
+                if let Err(e) = self.db.set_online_item_details(&key, details) {
+                    tracing::warn!("[online] could not store details for {url}: {e}");
+                }
+            }
         }
         result
     }
@@ -2456,7 +2506,7 @@ impl AppState {
         let mut page = 1;
         while page <= pages.clamp(1, 20) {
             let fetched = self
-                .browse(
+                .browse_site(
                     &search.site_id,
                     search.kind,
                     &search.slug,
@@ -2650,7 +2700,7 @@ impl AppState {
             let page = plan[idx].next_page.max(1);
             crawl.next_page = page;
             let fetched = self
-                .browse(
+                .browse_site(
                     &search.site_id,
                     search.kind,
                     &search.slug,
@@ -2793,7 +2843,7 @@ impl AppState {
             .get_saved_search(id)?
             .ok_or_else(|| crate::error::AppError::NotFound(format!("saved search {id}")))?;
         let page = self
-            .browse(
+            .browse_site(
                 &search.site_id,
                 search.kind,
                 &search.slug,
