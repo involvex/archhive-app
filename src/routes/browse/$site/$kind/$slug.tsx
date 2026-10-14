@@ -139,6 +139,8 @@ function BrowseDetailPage() {
   const [items, setItems] = useState<MediaItem[]>(cached?.items ?? []);
   const [page, setPage] = useState(cached?.page ?? 1);
   const [hasMore, setHasMore] = useState(cached?.hasMore ?? false);
+  // Why the last "load more" failed; pauses infinite scroll until Retry.
+  const [moreError, setMoreError] = useState("");
   // Total matches the site reports for this listing (xPomelo), if any.
   const [resultTotal, setResultTotal] = useState<number | null>(null);
   const [querySlug, setQuerySlug] = useState(cached?.querySlug ?? browseSlug);
@@ -247,6 +249,7 @@ function BrowseDetailPage() {
       if (!querySlug.trim()) return;
       setLoading(true);
       setError("");
+      setMoreError("");
       let current = append ? itemsRef.current : [];
       if (!append) pageSizeRef.current = 0;
       let pageNo = p;
@@ -286,9 +289,16 @@ function BrowseDetailPage() {
         }
       } catch (e) {
         // Tauri rejects with plain strings, not Error objects.
-        const msg = errorText(e) || "Browse failed";
-        setError(msg.replace(/^site error:\s*/i, ""));
-        if (current.length === 0) setItems([]);
+        const msg = (errorText(e) || "Browse failed").replace(/^site error:\s*/i, "");
+        if (current.length === 0) {
+          setError(msg);
+          setItems([]);
+        } else {
+          // Loading more failed (often a rate limit): say so where the
+          // user is looking, and stop auto-loading until Retry.
+          setMoreError(msg);
+          toast.error(msg, { duration: 8000 });
+        }
         console.error(e);
       } finally {
         setLoading(false);
@@ -813,8 +823,8 @@ function BrowseDetailPage() {
         </div>
       )}
 
-      {showItems && hasMore && <div ref={sentinelRef} className="h-4" />}
-      {showItems && hasMore && autoLoadPaused && !loading && (
+      {showItems && hasMore && !moreError && <div ref={sentinelRef} className="h-4" />}
+      {showItems && hasMore && !moreError && autoLoadPaused && !loading && (
         <div className="flex justify-center py-2">
           <Button variant="outline" size="sm" onClick={loadMoreNow}>
             Load more
@@ -825,6 +835,14 @@ function BrowseDetailPage() {
       {loading && showItems && (
         <div className="flex justify-center py-4 text-xs text-[var(--color-muted-foreground)]">
           Loading more...
+        </div>
+      )}
+      {moreError && !loading && showItems && (
+        <div className="flex flex-col items-center gap-2 rounded-md border border-[var(--color-border)] p-3 text-center text-xs">
+          <p className="text-[var(--color-muted-foreground)]">Couldn't load more: {moreError}</p>
+          <Button size="sm" variant="outline" onClick={() => void load(page + 1, true)}>
+            Retry
+          </Button>
         </div>
       )}
 
