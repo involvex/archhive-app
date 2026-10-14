@@ -713,6 +713,9 @@ export interface OnlineDetailsResult {
   removed: string[];
   /** Videos looked up in this batch. */
   checked: number;
+  /** Old key → new key for entries moved from a redirect link (Pornwitch
+   * `/go`) to their real source URL. */
+  rekeyed?: Record<string, string>;
 }
 
 export interface OnlineUpdateResult {

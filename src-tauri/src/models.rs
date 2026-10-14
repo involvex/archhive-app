@@ -1447,6 +1447,10 @@ pub struct OnlineDetailsResult {
     /// Videos looked up (removed share = removed / checked).
     #[serde(default)]
     pub checked: u32,
+    /// Old key → new key for entries moved from a redirect link to their
+    /// real source URL.
+    #[serde(default)]
+    pub rekeyed: std::collections::HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

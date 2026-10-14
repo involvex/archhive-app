@@ -60,6 +60,192 @@ fn notice_says_removed(n: &str) -> bool {
     .any(|w| n.contains(w))
 }
 
+/// Sites on TXXX's platform: pages render with JavaScript, but each video
+/// has a JSON record with its categories, models and uploader.
+const TXXX_HOSTS: &[&str] = &[
+    "txxx.com",
+    "txxx.tube",
+    "hclips.com",
+    "hotmovs.com",
+    "upornia.com",
+    "vxxx.com",
+    "tubepornclassic.com",
+    "voyeurhit.com",
+];
+
+/// `https://txxx.com/videos/21809581/slug/` →
+/// `https://txxx.com/api/json/video/86400/21000000/21809000/21809581.json`.
+pub fn txxx_api_url(url: &str) -> Option<String> {
+    let u = url::Url::parse(url).ok()?;
+    let host = u
+        .host_str()?
+        .trim_start_matches("www.")
+        .to_ascii_lowercase();
+    if !TXXX_HOSTS.contains(&host.as_str()) {
+        return None;
+    }
+    let mut segs = u.path_segments()?;
+    if segs.next()? != "videos" {
+        return None;
+    }
+    let id: u64 = segs.next()?.parse().ok()?;
+    Some(format!(
+        "https://{host}/api/json/video/86400/{}/{}/{id}.json",
+        id / 1_000_000 * 1_000_000,
+        id / 1000 * 1000
+    ))
+}
+
+/// Details from a TXXX-platform video JSON record.
+pub fn parse_txxx_api(raw: &str) -> Option<PageDetails> {
+    let v: serde_json::Value = serde_json::from_str(raw).ok()?;
+    let video = v.get("video").unwrap_or(&v);
+    let titles = |field: &str| -> Vec<String> {
+        match video.get(field) {
+            Some(serde_json::Value::Object(map)) => map
+                .values()
+                .filter_map(|e| e.get("title").and_then(|t| t.as_str()))
+                .map(|t| t.trim().to_string())
+                .filter(|t| !t.is_empty())
+                .collect(),
+            Some(serde_json::Value::Array(list)) => list
+                .iter()
+                .filter_map(|e| e.get("title").and_then(|t| t.as_str()).or(e.as_str()))
+                .map(|t| t.trim().to_string())
+                .filter(|t| !t.is_empty())
+                .collect(),
+            _ => Vec::new(),
+        }
+    };
+    let mut tags = titles("categories");
+    tags.extend(titles("tags"));
+    let channel = video
+        .get("channel")
+        .and_then(|c| c.get("title"))
+        .and_then(|t| t.as_str())
+        .or_else(|| {
+            video
+                .get("user")
+                .and_then(|u| u.get("username"))
+                .and_then(|t| t.as_str())
+        })
+        .map(str::to_string);
+    let duration = video
+        .get("duration")
+        .and_then(|d| d.as_str())
+        .and_then(|d| {
+            d.split(':').try_fold(0u32, |acc, p| {
+                Some(acc * 60 + p.trim().parse::<u32>().ok()?)
+            })
+        });
+    let d = PageDetails {
+        title: video
+            .get("title")
+            .and_then(|t| t.as_str())
+            .map(str::to_string),
+        description: video
+            .get("description")
+            .and_then(|t| t.as_str())
+            .map(str::trim)
+            .filter(|t| !t.is_empty())
+            .map(str::to_string),
+        channel,
+        thumbnail: None,
+        duration,
+        performers: dedupe(titles("models")),
+        tags: dedupe(tags),
+    };
+    Some(d)
+}
+
+/// beeg (a JavaScript app): `https://beeg.com/-0991895581759976` →
+/// `https://store.externulls.com/facts/file/991895581759976`.
+pub fn beeg_api_url(url: &str) -> Option<String> {
+    let u = url::Url::parse(url).ok()?;
+    let host = u
+        .host_str()?
+        .trim_start_matches("www.")
+        .to_ascii_lowercase();
+    if host != "beeg.com" && host != "beeg.porn" {
+        return None;
+    }
+    let seg = u.path_segments()?.next_back()?;
+    let id: u64 = seg.trim_start_matches('-').parse().ok()?;
+    Some(format!("https://store.externulls.com/facts/file/{id}"))
+}
+
+/// Details from beeg's file record: tags (the owner tag is the channel),
+/// title and duration. Braces in tag names ("Big {Tits}") are dropped and
+/// technical tags (resolution, "Index", media orientation, length) skipped.
+pub fn parse_beeg_api(raw: &str) -> Option<PageDetails> {
+    let v: serde_json::Value = serde_json::from_str(raw).ok()?;
+    let mut tags = Vec::new();
+    let mut channel = None;
+    for t in v.get("tags")?.as_array()? {
+        let Some(name) = t.get("tg_name").and_then(|n| n.as_str()) else {
+            continue;
+        };
+        let name = name.replace(['{', '}'], "").trim().to_string();
+        if name.is_empty() {
+            continue;
+        }
+        if t.get("is_owner").and_then(|o| o.as_bool()) == Some(true) {
+            channel.get_or_insert(name);
+            continue;
+        }
+        let lower = name.to_ascii_lowercase();
+        let technical = lower == "index"
+            || lower.ends_with(" media")
+            || lower.starts_with("over ") && lower.ends_with(" min")
+            || lower.starts_with("under ") && lower.ends_with(" min")
+            || (lower.ends_with('p')
+                && lower[..lower.len() - 1].chars().all(|c| c.is_ascii_digit()))
+            || lower == "4k";
+        if !technical {
+            tags.push(name);
+        }
+    }
+    let file = v.get("file");
+    let title = file
+        .and_then(|f| f.get("data"))
+        .and_then(|d| d.as_array())
+        .and_then(|d| {
+            d.iter()
+                .find(|e| e.get("cd_column").and_then(|c| c.as_str()) == Some("sf_name"))
+        })
+        .and_then(|e| e.get("cd_value"))
+        .and_then(|t| t.as_str())
+        .map(str::to_string);
+    let duration = file
+        .and_then(|f| f.get("fl_duration"))
+        .and_then(|d| d.as_u64())
+        .map(|d| d as u32);
+    Some(PageDetails {
+        title,
+        description: None,
+        channel,
+        thumbnail: None,
+        duration,
+        performers: Vec::new(),
+        tags: dedupe(tags),
+    })
+}
+
+/// Parses a site's JSON video record into page details.
+pub type JsonDetailsParser = fn(&str) -> Option<PageDetails>;
+
+/// A JSON record with a video's details, for sites whose pages are
+/// JavaScript apps: its URL and parser.
+pub fn json_details_source(url: &str) -> Option<(String, JsonDetailsParser)> {
+    if let Some(api) = txxx_api_url(url) {
+        return Some((api, parse_txxx_api));
+    }
+    if let Some(api) = beeg_api_url(url) {
+        return Some((api, parse_beeg_api));
+    }
+    None
+}
+
 pub fn scrape(site_id: &str, html: &str) -> PageDetails {
     let doc = Html::parse_document(html);
     let mut d = PageDetails {
@@ -685,6 +871,43 @@ mod tests {
         assert_eq!(d.tags, vec!["teen", "anal"]);
         assert_eq!(d.duration, Some(640));
         assert!(d.is_useful());
+    }
+
+    #[test]
+    fn txxx_api_records() {
+        assert_eq!(
+            txxx_api_url("https://txxx.com/videos/21809581/prostate-massage/").as_deref(),
+            Some("https://txxx.com/api/json/video/86400/21000000/21809000/21809581.json")
+        );
+        assert_eq!(
+            txxx_api_url("https://www.pornhub.com/view_video.php?viewkey=1"),
+            None
+        );
+        let raw = r#"{"video":{"title":"T","duration":"24:51","user":{"username":"low6220"},
+            "channel":[],"models":null,"tags":null,
+            "categories":{"7":{"title":"Big Ass","dir":"big-butt"},"11":{"title":"Blowjob"}}}}"#;
+        let d = parse_txxx_api(raw).unwrap();
+        assert_eq!(d.duration, Some(24 * 60 + 51));
+        assert_eq!(d.channel.as_deref(), Some("low6220"));
+        assert!(d.tags.contains(&"Big Ass".to_string()) && d.tags.contains(&"Blowjob".to_string()));
+    }
+
+    #[test]
+    fn beeg_api_records() {
+        assert_eq!(
+            beeg_api_url("https://beeg.com/-0991895581759976").as_deref(),
+            Some("https://store.externulls.com/facts/file/991895581759976")
+        );
+        let raw = r#"{"tags":[{"tg_name":"Gattouz0","is_owner":true},
+            {"tg_name":"Big {Tits}","is_owner":false},{"tg_name":"1080p"},
+            {"tg_name":"Horizontal {Media}"},{"tg_name":"Over 20 Min"},{"tg_name":"Index"},
+            {"tg_name":"Creampie"}],
+            "file":{"fl_duration":2900,"data":[{"cd_column":"sf_name","cd_value":"Birthday"}]}}"#;
+        let d = parse_beeg_api(raw).unwrap();
+        assert_eq!(d.channel.as_deref(), Some("Gattouz0"));
+        assert_eq!(d.tags, vec!["Big Tits", "Creampie"]);
+        assert_eq!(d.duration, Some(2900));
+        assert_eq!(d.title.as_deref(), Some("Birthday"));
     }
 
     #[test]

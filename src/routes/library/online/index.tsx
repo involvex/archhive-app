@@ -434,7 +434,10 @@ function OnlineLibraryPage() {
       try {
         const result = await api.fetchOnlineDetails(batch);
         const byKey = new Map(result.items.map((u) => [u.key, u]));
-        setItems((prev) => prev.map((p) => byKey.get(p.key) ?? p));
+        // Redirect links resolved to their source URL get a new key.
+        const rekeyed = result.rekeyed ?? {};
+        const keyOf = (k: string) => rekeyed[k] ?? k;
+        setItems((prev) => prev.map((p) => byKey.get(keyOf(p.key)) ?? p));
         // The backend only reports videos the site removed; they leave the
         // library here, after asking when the batch looks like a site
         // problem rather than a few dead links.
@@ -459,7 +462,7 @@ function OnlineLibraryPage() {
           await api.deleteOnlineItems(undefined, removedKeys);
           const removed = new Set(removedKeys);
           gone += removed.size;
-          setItems((prev) => prev.filter((p) => !removed.has(p.key)));
+          setItems((prev) => prev.filter((p) => !removed.has(keyOf(p.key))));
           setSelected((prev) => new Set([...prev].filter((k) => !removed.has(k))));
         }
       } catch (e) {

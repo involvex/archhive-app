@@ -1417,6 +1417,34 @@ impl AppState {
         crate::mobile::standalone::resolve(url).await
     }
 
+    /// A redirect link (Pornwitch `/go?id=`) followed to the video's real
+    /// URL; an Online library entry under the link moves to that URL, so
+    /// later tags, playback and downloads use the source site. Other URLs
+    /// come back unchanged; on failure the link is kept.
+    async fn settle_redirect_url(&self, url: &str) -> String {
+        if !crate::sites::adapters::pornwitch::is_go_url(url) {
+            return url.to_string();
+        }
+        let target = match crate::sites::adapters::pornwitch::follow_go(url).await {
+            Ok(t) => t,
+            Err(e) => {
+                tracing::warn!("[online] could not follow {url}: {e}");
+                return url.to_string();
+            }
+        };
+        let old_key = crate::sites::urls::video_key(url);
+        if self.db.get_online_item(&old_key).ok().flatten().is_some() {
+            let site_id = self
+                .sites
+                .detect(&target)
+                .unwrap_or_else(|| "generic_ytdlp".to_string());
+            if let Err(e) = self.db.rekey_online_item(&old_key, &target, &site_id) {
+                tracing::warn!("[online] could not move {url} to {target}: {e}");
+            }
+        }
+        target
+    }
+
     /// One page load: does the site say this video is gone (404 or a
     /// removed-video notice), rather than refusing the request?
     async fn video_removed(&self, url: &str) -> bool {
@@ -1512,6 +1540,8 @@ impl AppState {
     /// Online library gets the tags / performers / channel stored; one the
     /// site removed leaves the library and saved searches.
     pub async fn resolve_media_details(&self, url: &str) -> AppResult<MediaItem> {
+        let settled = self.settle_redirect_url(url).await;
+        let url = settled.as_str();
         let result = self.read_media_details(url).await;
         if is_removed_error(&result) {
             self.forget_removed_video(url);
@@ -1541,6 +1571,22 @@ impl AppState {
         // tags for most tube sites.
         let scraped = crate::sites::details::SCRAPED_SITES.contains(&site_id.as_str());
         let cookie_key = self.page_cookie_key(url, &site_id);
+        // Sites whose pages are JavaScript apps (TXXX platform, beeg): their
+        // JSON record has the tags.
+        if let Some((api, parse)) = crate::sites::details::json_details_source(url) {
+            match self
+                .site_ctx
+                .fetch_with_headers(&api, &cookie_key, Some(&[("Accept", "application/json")]))
+                .await
+            {
+                Ok(raw) => {
+                    if let Some(d) = parse(&raw).filter(|d| d.is_useful()) {
+                        return Ok(self.page_details_item(url, &site_id, d));
+                    }
+                }
+                Err(e) => tracing::warn!("[details] {api}: {e}"),
+            }
+        }
         match self.site_ctx.fetch_html(url, &cookie_key).await {
             Ok(html) if crate::sites::details::says_video_removed(&html) => {
                 return Err(crate::error::AppError::NotFound(format!(
@@ -1693,6 +1739,8 @@ impl AppState {
     /// Resolve a direct streamable URL for a media item using `yt-dlp --get-url`.
     /// Used by the in-app Watch button to preview a remote video without downloading.
     pub async fn resolve_stream_url(&self, url: &str) -> AppResult<String> {
+        let settled = self.settle_redirect_url(url).await;
+        let url = settled.as_str();
         let result = self.resolve_stream_url_inner(url).await;
         // A refused / missing video may simply be gone: one page load tells
         // (before any bot-check fallback), and a removed video leaves the
@@ -2816,6 +2864,14 @@ impl AppState {
                 continue;
             };
             out.checked += 1;
+            // Pornwitch `/go` links: follow once, store the real URL, read
+            // the tags from the source page.
+            let url = self.settle_redirect_url(&item.url).await;
+            let key = &crate::sites::urls::video_key(&url);
+            if key != &item.key && url != item.url {
+                out.rekeyed.insert(item.key.clone(), key.clone());
+            }
+            let item = crate::models::OnlineItem { url, ..item };
             let result = self.read_media_details(&item.url).await;
             if is_removed_error(&result) {
                 tracing::info!("[online] {} was removed from its site", item.url);

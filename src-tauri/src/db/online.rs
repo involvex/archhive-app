@@ -782,6 +782,64 @@ impl Database {
             .is_some())
     }
 
+    /// Move an entry to its real source URL (a resolved redirect link):
+    /// new key, URL and site; saved searches / bookmarks follow it. When
+    /// the new key already exists, the old entry is merged into it. Returns
+    /// the new key.
+    pub fn rekey_online_item(&self, old_key: &str, url: &str, site_id: &str) -> AppResult<String> {
+        let new_key = crate::sites::urls::video_key(url);
+        let mut conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let tx = conn.transaction()?;
+        if new_key == old_key {
+            tx.execute(
+                "UPDATE online_items SET url = ?2, site_id = ?3 WHERE key = ?1",
+                params![old_key, url, site_id],
+            )?;
+        } else {
+            let exists = tx
+                .query_row(
+                    "SELECT 1 FROM online_items WHERE key = ?1",
+                    params![new_key],
+                    |_| Ok(()),
+                )
+                .optional()?
+                .is_some();
+            tx.execute(
+                "UPDATE OR IGNORE saved_search_items SET item_key = ?2 WHERE item_key = ?1",
+                params![old_key, new_key],
+            )?;
+            tx.execute(
+                "DELETE FROM saved_search_items WHERE item_key = ?1",
+                params![old_key],
+            )?;
+            if exists {
+                tx.execute("DELETE FROM online_items WHERE key = ?1", params![old_key])?;
+                tx.execute(
+                    "DELETE FROM online_item_tags WHERE item_key = ?1",
+                    params![old_key],
+                )?;
+            } else {
+                tx.execute(
+                    "UPDATE online_items SET key = ?2, url = ?3, site_id = ?4 WHERE key = ?1",
+                    params![old_key, new_key, url, site_id],
+                )?;
+                tx.execute(
+                    "UPDATE OR IGNORE online_item_tags SET item_key = ?2 WHERE item_key = ?1",
+                    params![old_key, new_key],
+                )?;
+                tx.execute(
+                    "DELETE FROM online_item_tags WHERE item_key = ?1",
+                    params![old_key],
+                )?;
+            }
+        }
+        tx.commit()?;
+        Ok(new_key)
+    }
+
     pub fn clear_online_history(&self) -> AppResult<u32> {
         let conn = self
             .conn
@@ -877,6 +935,31 @@ mod tests {
         assert!(term_patterns(" , ").is_empty());
         // Plurals: the term "blowjobs" also matches titles saying "blowjob".
         assert_eq!(titles(q(vec![vec!["blowjobs"]], vec![], vec![])).len(), 3);
+    }
+
+    #[test]
+    fn rekey_moves_redirect_links_to_their_source() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::new(dir.path().to_path_buf()).unwrap();
+        let go = item("https://pornwitch.com/go?id=txxx1", "A", 60, &[]);
+        db.record_online_items(std::slice::from_ref(&go), Some(("s1", 5)))
+            .unwrap();
+        let old = crate::sites::urls::video_key(&go.url);
+        let new = db
+            .rekey_online_item(&old, "https://txxx.com/videos/1/a/", "pornwitch")
+            .unwrap();
+        assert_ne!(old, new);
+        assert!(db.get_online_item(&old).unwrap().is_none());
+        let moved = db.get_online_item(&new).unwrap().unwrap();
+        assert_eq!(moved.url, "https://txxx.com/videos/1/a/");
+        let page = db
+            .query_online_items(&OnlineQuery {
+                search_id: Some("s1".into()),
+                limit: 10,
+                ..Default::default()
+            })
+            .unwrap();
+        assert_eq!(page.total, 1);
     }
 
     #[test]

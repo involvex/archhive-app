@@ -399,12 +399,13 @@ fn go_url(site: &str, id: &str) -> String {
     format!("{BASE}/go?id={}", enc(&format!("{site}{id}")))
 }
 
-fn is_go_url(url: &str) -> bool {
+pub(crate) fn is_go_url(url: &str) -> bool {
     url.starts_with(&format!("{BASE}/go?"))
 }
 
-/// Where a `/go` link points (other URLs are returned unchanged).
-async fn follow_go(url: &str) -> AppResult<String> {
+/// Where a `/go` link points, without Pornwitch's tracking parameters
+/// (`?promo=`, `?ats=`); other URLs are returned unchanged.
+pub(crate) async fn follow_go(url: &str) -> AppResult<String> {
     if !is_go_url(url) {
         return Ok(url.to_string());
     }
@@ -428,7 +429,16 @@ async fn follow_go(url: &str) -> AppResult<String> {
                 resp.status()
             ))
         })?;
-    Ok(target.to_string())
+    Ok(strip_tracking(target))
+}
+
+/// Drop the query of a source URL unless it identifies the video
+/// (PornHub's `?viewkey=`): Pornwitch adds affiliate parameters.
+fn strip_tracking(url: &str) -> String {
+    match url.split_once('?') {
+        Some((base, query)) if !query.contains("viewkey=") => base.to_string(),
+        _ => url.to_string(),
+    }
 }
 
 /// "1,356 results" on page 1.
@@ -661,6 +671,17 @@ mod tests {
             "https://www.pornhub.com/view_video.php?viewkey=660ee3061c342"
         );
         assert_eq!(result_count(html), Some(1356));
+    }
+
+    #[test]
+    fn go_targets_lose_tracking_parameters() {
+        assert_eq!(
+            strip_tracking("https://txxx.com/videos/21809581/slug/?promo=46082"),
+            "https://txxx.com/videos/21809581/slug/"
+        );
+        let ph = "https://www.pornhub.com/view_video.php?viewkey=abc";
+        assert_eq!(strip_tracking(ph), ph);
+        assert!(is_go_url("https://pornwitch.com/go?id=txxx1"));
     }
 
     #[test]
