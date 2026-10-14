@@ -465,6 +465,35 @@ pub fn cookie_login_finish(app: AppHandle, save: bool) -> CmdResult<()> {
     map_err(crate::cookie_login::finish(&app, save))
 }
 
+/// Android: open a page in the in-app browser (not the system browser).
+#[tauri::command]
+pub async fn inapp_browse(
+    app: tauri::AppHandle,
+    url: String,
+    title: Option<String>,
+) -> CmdResult<()> {
+    map_err(crate::cookie_login::browse(&app, &url, title.as_deref().unwrap_or("")).await)
+}
+
+/// Android: share a URL, or a library file (`path`, `mime`) to other apps.
+#[tauri::command]
+pub async fn android_share(
+    app: tauri::AppHandle,
+    text: Option<String>,
+    path: Option<String>,
+    mime: Option<String>,
+) -> CmdResult<()> {
+    map_err(
+        crate::cookie_login::share(
+            &app,
+            text.as_deref().unwrap_or(""),
+            path.as_deref().unwrap_or(""),
+            mime.as_deref().unwrap_or(""),
+        )
+        .await,
+    )
+}
+
 #[tauri::command]
 pub fn delete_site_cookies(state: State<'_, Arc<AppState>>, site_id: String) -> CmdResult<()> {
     map_err(state.delete_site_cookies(&site_id))

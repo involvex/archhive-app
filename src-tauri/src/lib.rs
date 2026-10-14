@@ -430,6 +430,8 @@ pub fn run() {
             commands::clear_online_history,
             commands::delete_online_items,
             commands::online_bookmark,
+            commands::inapp_browse,
+            commands::android_share,
             commands::online_unbookmark,
             commands::online_is_bookmarked,
             commands::delete_online_matching,

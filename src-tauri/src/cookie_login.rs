@@ -604,6 +604,29 @@ mod platform {
     pub async fn close_page(app: &AppHandle) {
         let _ = call::<serde_json::Value>(app, "closeResolver", serde_json::json!({})).await;
     }
+
+    /// In-app browser for watching a page (ad blocking, per-site clearing,
+    /// share); returns when the user closes it.
+    pub async fn browse(app: &AppHandle, url: &str, title: &str) -> AppResult<()> {
+        call::<serde_json::Value>(
+            app,
+            "browse",
+            serde_json::json!({ "url": url, "title": title, "adblock": true }),
+        )
+        .await
+        .map(|_| ())
+    }
+
+    /// Android share sheet for a URL / text or a local file.
+    pub async fn share(app: &AppHandle, text: &str, path: &str, mime: &str) -> AppResult<()> {
+        call::<serde_json::Value>(
+            app,
+            "share",
+            serde_json::json!({ "text": text, "path": path, "mime": mime }),
+        )
+        .await
+        .map(|_| ())
+    }
 }
 
 #[cfg(all(mobile, not(target_os = "android")))]
@@ -623,6 +646,36 @@ mod platform {
     ) -> AppResult<Vec<CapturedCookie>> {
         Err(AppError::Other(
             "The login browser is not available on this platform yet.".into(),
+        ))
+    }
+}
+
+/// In-app browser (Android) for a page the app can't play itself.
+pub async fn browse(app: &AppHandle, url: &str, title: &str) -> AppResult<()> {
+    #[cfg(target_os = "android")]
+    {
+        platform::browse(app, url, title).await
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = (app, url, title);
+        Err(AppError::Other(
+            "The in-app browser is only available on Android.".into(),
+        ))
+    }
+}
+
+/// Android share sheet: `text` (a URL) or `path` (a library file, `mime`).
+pub async fn share(app: &AppHandle, text: &str, path: &str, mime: &str) -> AppResult<()> {
+    #[cfg(target_os = "android")]
+    {
+        platform::share(app, text, path, mime).await
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = (app, text, path, mime);
+        Err(AppError::Other(
+            "Sharing is only available on Android.".into(),
         ))
     }
 }

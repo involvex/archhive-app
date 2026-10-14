@@ -9,10 +9,12 @@ import {
   ChevronLeft,
   ChevronRight,
   Loader2,
+  Share2,
   X,
 } from "lucide-react";
 import type { MediaItem } from "@/lib/types";
 import { ExtLink } from "@/components/ExtLink";
+import { isAndroidApp, openExternal, shareUrl } from "@/lib/external";
 
 interface UrlPlayerDialogProps {
   item: MediaItem | null;
@@ -411,6 +413,27 @@ export function UrlPlayerDialog({
                 className="min-h-10 min-w-[5.5rem]"
               >
                 {loading ? "Retrying…" : "Retry"}
+              </Button>
+            )}
+            {error && !item.is_live && isAndroidApp() && (
+              <Button
+                variant="outline"
+                onClick={() => void openExternal(item.url)}
+                className="min-h-10"
+                title="Watch the page in the in-app browser (ads blocked, no system history)"
+              >
+                Open page
+              </Button>
+            )}
+            {isAndroidApp() && (
+              <Button
+                variant="outline"
+                onClick={() => void shareUrl(item.url).catch((e: unknown) => setError(String(e)))}
+                className="min-h-10"
+                title="Copy the link or send it to another app"
+              >
+                <Share2 className="h-4 w-4" />
+                Share
               </Button>
             )}
             {!item.is_live && (

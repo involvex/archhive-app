@@ -3,6 +3,8 @@ package com.archhive.app
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.Dialog
+import android.content.Intent
+import android.net.Uri
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.os.Handler
@@ -13,6 +15,9 @@ import android.view.ViewGroup
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
+import android.webkit.WebSettings
+import android.webkit.WebStorage
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Button
@@ -25,6 +30,9 @@ import app.tauri.plugin.Invoke
 import app.tauri.plugin.JSArray
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
+import androidx.core.content.FileProvider
+import java.io.ByteArrayInputStream
+import java.io.File
 import org.json.JSONObject
 import org.json.JSONTokener
 
@@ -65,6 +73,274 @@ class CookieBrowserPlugin(private val activity: Activity) : Plugin(activity) {
         var url: String = "",
         var referer: String = "",
     )
+
+    class BrowseArgs @JvmOverloads constructor(
+        var url: String = "",
+        var title: String = "",
+        var adblock: Boolean = true,
+    )
+
+    class ShareArgs @JvmOverloads constructor(
+        var text: String = "",
+        var path: String = "",
+        var mime: String = "",
+        var title: String = "Share",
+    )
+
+    /**
+     * Hosts of ad / popunder networks common on tube sites. Requests to them
+     * (and their subdomains) get an empty answer in the in-app browser.
+     */
+    private val adHosts = setOf(
+        "exoclick.com", "exosrv.com", "exdynsrv.com", "realsrv.com", "trafficjunky.com",
+        "trafficjunky.net", "trafficfactory.biz", "juicyads.com", "adsterra.com",
+        "adsterratech.com", "highperformanceformat.com", "profitablecpmrate.com",
+        "popads.net", "popcash.net", "propellerads.com", "propellerclick.com",
+        "hilltopads.net", "hilltopads.com", "adspyglass.com", "tsyndicate.com",
+        "trafficstars.com", "magsrv.com", "a-ads.com", "ero-advertising.com",
+        "plugrush.com", "clickadu.com", "adnium.com", "twinrdsrv.com",
+        "doubleclick.net", "googlesyndication.com", "google-analytics.com",
+        "googletagmanager.com", "adservice.google.com", "scorecardresearch.com",
+        "onclickads.net", "onclkds.com", "richpartners.co", "galaksion.com",
+        "pemsrv.com", "rmhfrtnd.com", "tsyndicate.com", "dtscout.com",
+    )
+
+    private fun isAdHost(host: String?): Boolean {
+        if (host.isNullOrEmpty()) return false
+        var h: String = host.lowercase()
+        while (true) {
+            if (h in adHosts) return true
+            val dot = h.indexOf('.')
+            if (dot < 0 || h.indexOf('.', dot + 1) < 0) return false
+            h = h.substring(dot + 1)
+        }
+    }
+
+    /** Expire every cookie this site set (all its domain levels) and its
+     *  local storage; other sites keep theirs. */
+    private fun clearSiteData(pageUrl: String) {
+        val uri = Uri.parse(pageUrl)
+        val host = uri.host ?: return
+        val cm = CookieManager.getInstance()
+        val parts = host.split('.')
+        val domains = (0 until maxOf(1, parts.size - 1)).map { parts.drop(it).joinToString(".") }
+        for (d in domains) {
+            for (scheme in listOf("https", "http")) {
+                val u = "$scheme://$d/"
+                val header = cm.getCookie(u) ?: continue
+                for (pair in header.split(';')) {
+                    val name = pair.substringBefore('=').trim()
+                    if (name.isEmpty()) continue
+                    for (dom in listOf(d, ".$d")) {
+                        cm.setCookie(u, "$name=; Max-Age=0; Path=/; Domain=$dom")
+                    }
+                    cm.setCookie(u, "$name=; Max-Age=0; Path=/")
+                }
+            }
+            WebStorage.getInstance().deleteOrigin("https://$d")
+            WebStorage.getInstance().deleteOrigin("http://$d")
+        }
+        cm.flush()
+    }
+
+    private fun shareText(text: String, title: String) {
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, text)
+        }
+        activity.startActivity(Intent.createChooser(send, title))
+    }
+
+    /**
+     * Share sheet: a URL / text, or a library file (to video players and
+     * other apps, through the app's FileProvider).
+     */
+    @Command
+    fun share(invoke: Invoke) {
+        val args = invoke.parseArgs(ShareArgs::class.java)
+        activity.runOnUiThread {
+            try {
+                if (args.path.isNotEmpty()) {
+                    val file = File(args.path)
+                    if (!file.exists()) {
+                        invoke.reject("File not found: ${args.path}")
+                        return@runOnUiThread
+                    }
+                    val uri = FileProvider.getUriForFile(
+                        activity, "${activity.packageName}.fileprovider", file,
+                    )
+                    val send = Intent(Intent.ACTION_SEND).apply {
+                        type = args.mime.ifEmpty { "video/*" }
+                        putExtra(Intent.EXTRA_STREAM, uri)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    val chooser = Intent.createChooser(send, args.title)
+                    chooser.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    activity.startActivity(chooser)
+                } else if (args.text.isNotEmpty()) {
+                    shareText(args.text, args.title)
+                } else {
+                    invoke.reject("Nothing to share")
+                    return@runOnUiThread
+                }
+                invoke.resolve()
+            } catch (e: Exception) {
+                Log.e(TAG, "share failed", e)
+                invoke.reject("Share failed: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * In-app browser for watching a page the app can't play itself, instead
+     * of the system browser (and its history). Keeps the WebView's disk cache
+     * and cookies; blocks ad / popunder networks and popups; the toolbar can
+     * clear this site's cookies and storage, or share the page.
+     */
+    @SuppressLint("SetJavaScriptEnabled")
+    @Command
+    fun browse(invoke: Invoke) {
+        val args = invoke.parseArgs(BrowseArgs::class.java)
+        if (!args.url.startsWith("https://") && !args.url.startsWith("http://")) {
+            invoke.reject("Invalid URL")
+            return
+        }
+        activity.runOnUiThread {
+            try {
+                dialog?.dismiss()
+                val cookieManager = CookieManager.getInstance()
+                cookieManager.setAcceptCookie(true)
+                val dlg = Dialog(activity, android.R.style.Theme_Black_NoTitleBar_Fullscreen)
+                var settled = false
+                var blocked = 0
+                val root = LinearLayout(activity).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setBackgroundColor(Color.parseColor("#111114"))
+                }
+                val bar = LinearLayout(activity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(8, 8, 8, 8)
+                }
+                val close = Button(activity).apply { text = "Close" }
+                val title = TextView(activity).apply {
+                    text = args.title.ifEmpty { args.url }
+                    setTextColor(Color.WHITE)
+                    textSize = 13f
+                    maxLines = 2
+                    setPadding(12, 0, 12, 0)
+                }
+                val clear = Button(activity).apply { text = "Clear site" }
+                val shareBtn = Button(activity).apply { text = "Share" }
+                bar.addView(close)
+                bar.addView(title, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+                bar.addView(clear)
+                bar.addView(shareBtn)
+                val progress = ProgressBar(activity, null, android.R.attr.progressBarStyleHorizontal).apply {
+                    isIndeterminate = false
+                    max = 100
+                }
+                val webView = WebView(activity).apply {
+                    settings.javaScriptEnabled = true
+                    settings.domStorageEnabled = true
+                    settings.databaseEnabled = true
+                    settings.cacheMode = WebSettings.LOAD_DEFAULT
+                    settings.loadWithOverviewMode = true
+                    settings.useWideViewPort = true
+                    settings.mediaPlaybackRequiresUserGesture = false
+                    // No popup windows (popunders); window.open() goes nowhere.
+                    settings.setSupportMultipleWindows(false)
+                    settings.javaScriptCanOpenWindowsAutomatically = false
+                    settings.userAgentString = settings.userAgentString.replace("; wv", "")
+                    webViewClient = object : WebViewClient() {
+                        override fun shouldInterceptRequest(
+                            view: WebView,
+                            request: WebResourceRequest,
+                        ): WebResourceResponse? {
+                            if (args.adblock && isAdHost(request.url.host)) {
+                                blocked++
+                                return WebResourceResponse(
+                                    "text/plain", "utf-8", ByteArrayInputStream(ByteArray(0)),
+                                )
+                            }
+                            return null
+                        }
+
+                        override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                            val scheme = request.url.scheme ?: return true
+                            if (scheme != "http" && scheme != "https") return true
+                            // Ad redirects in the main frame are dropped too.
+                            return args.adblock && isAdHost(request.url.host)
+                        }
+
+                        override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
+                            title.text = url ?: ""
+                        }
+
+                        override fun onPageFinished(view: WebView, url: String?) {
+                            val label = view.title?.takeIf { it.isNotBlank() } ?: url ?: ""
+                            title.text = if (blocked > 0) "$label\n$blocked ads blocked" else label
+                        }
+                    }
+                    webChromeClient = object : WebChromeClient() {
+                        override fun onProgressChanged(view: WebView, newProgress: Int) {
+                            progress.progress = newProgress
+                            progress.visibility = if (newProgress >= 100) android.view.View.GONE else android.view.View.VISIBLE
+                        }
+                    }
+                }
+                cookieManager.setAcceptThirdPartyCookies(webView, true)
+                root.addView(bar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+                root.addView(progress, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 6))
+                root.addView(webView, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+                dlg.setContentView(root)
+
+                fun finish() {
+                    if (settled) return
+                    settled = true
+                    cookieManager.flush()
+                    webView.stopLoading()
+                    webView.destroy()
+                    dlg.dismiss()
+                    dialog = null
+                    invoke.resolve()
+                }
+                close.setOnClickListener { finish() }
+                dlg.setOnCancelListener { finish() }
+                clear.setOnClickListener {
+                    val current = webView.url ?: args.url
+                    clearSiteData(current)
+                    webView.clearCache(false)
+                    title.text = "Cookies and storage cleared for ${Uri.parse(current).host ?: "this site"}"
+                    webView.reload()
+                }
+                shareBtn.setOnClickListener {
+                    try {
+                        shareText(webView.url ?: args.url, "Share page")
+                    } catch (e: Exception) {
+                        Log.w(TAG, "share failed", e)
+                    }
+                }
+                dlg.setOnKeyListener { _, keyCode, event ->
+                    if (keyCode == android.view.KeyEvent.KEYCODE_BACK &&
+                        event.action == android.view.KeyEvent.ACTION_UP &&
+                        webView.canGoBack()
+                    ) {
+                        webView.goBack()
+                        true
+                    } else {
+                        false
+                    }
+                }
+                dialog = dlg
+                dlg.show()
+                webView.loadUrl(args.url)
+            } catch (e: Exception) {
+                Log.e(TAG, "failed to open in-app browser", e)
+                invoke.reject("Could not open the in-app browser: ${e.message}")
+            }
+        }
+    }
 
     /**
      * Page resolver used when a site shows a Cloudflare / bot check to the

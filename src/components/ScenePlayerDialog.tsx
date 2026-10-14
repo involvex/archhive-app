@@ -25,6 +25,7 @@ import { HlsVideoPlayer } from "@/components/HlsVideoPlayer";
 import { cn } from "@/lib/utils";
 import { APP_FULLSCREEN_CLASS, usePlayerFullscreen } from "@/lib/hooks/usePlayerFullscreen";
 import { ExtLink } from "@/components/ExtLink";
+import { isAndroidApp, shareFile } from "@/lib/external";
 import type { Scene, WatchProgress } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { formatDuration } from "@/components/SceneCard";
@@ -38,6 +39,7 @@ import {
   Pencil,
   Play,
   RotateCcw,
+  Share2,
   X,
   Zap,
 } from "lucide-react";
@@ -589,6 +591,19 @@ function ScenePlayerBody({
           </div>
         )}
         <div className="flex flex-wrap justify-end gap-2">
+          {isAndroidApp() && hasLocalBackend() && data.path && (
+            <Button
+              variant="outline"
+              onClick={() =>
+                void shareFile(data.path ?? "").catch((e: unknown) => toast.error(String(e)))
+              }
+              className="min-h-10"
+              title="Send the video file to a video player or another app"
+            >
+              <Share2 className="h-3.5 w-3.5" />
+              Share
+            </Button>
+          )}
           {onEdit && (
             <Button
               variant="outline"
