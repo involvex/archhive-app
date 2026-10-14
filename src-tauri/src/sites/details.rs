@@ -30,6 +30,28 @@ impl PageDetails {
     }
 }
 
+/// The page says the video itself is gone (taken down, disabled), as
+/// opposed to the site refusing this request. PornHub serves such pages
+/// with HTTP 200 or 403: the player is replaced by a `.removed` notice
+/// ("This video has been disabled").
+pub fn says_video_removed(html: &str) -> bool {
+    let notice = html.find(r#"class="notice video-notice""#).map(|i| {
+        let end = (i + 400).min(html.len());
+        html[i..html.ceil_char_boundary(end)].to_ascii_lowercase()
+    });
+    notice.is_some_and(|n| {
+        [
+            "has been disabled",
+            "has been removed",
+            "has been deleted",
+            "was deleted",
+            "was removed",
+        ]
+        .iter()
+        .any(|w| n.contains(w))
+    })
+}
+
 pub fn scrape(site_id: &str, html: &str) -> PageDetails {
     let doc = Html::parse_document(html);
     let mut d = PageDetails {
@@ -655,6 +677,16 @@ mod tests {
         assert_eq!(d.tags, vec!["teen", "anal"]);
         assert_eq!(d.duration, Some(640));
         assert!(d.is_useful());
+    }
+
+    #[test]
+    fn removed_video_notice() {
+        let gone = r#"<title>Page Not Found</title><div class="removed">
+            <div class="notice video-notice"><p><span>This video has been disabled</span></p></div></div>"#;
+        assert!(says_video_removed(gone));
+        let other = r#"<div class="notice video-notice"><p>Log in to watch</p></div>"#;
+        assert!(!says_video_removed(other));
+        assert!(!says_video_removed("<p>This video has been disabled</p>"));
     }
 
     #[test]

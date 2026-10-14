@@ -1393,6 +1393,11 @@ impl AppState {
             crate::sites::cookie_keys::host_key(url).unwrap_or_else(|| site_id.clone())
         };
         match self.site_ctx.fetch_html(url, &cookie_key).await {
+            Ok(html) if crate::sites::details::says_video_removed(&html) => {
+                return Err(crate::error::AppError::NotFound(format!(
+                    "video removed from the site ({url})"
+                )));
+            }
             Ok(html) => {
                 let mut d = if scraped {
                     crate::sites::details::scrape(&site_id, &html)
@@ -3164,7 +3169,7 @@ fn crawl_flags<T>(f: impl FnOnce(&mut CrawlFlags) -> T) -> T {
 /// no connection).
 /// A page fetch error saying the video no longer exists.
 fn is_gone(msg: &str) -> bool {
-    msg.contains("HTTP 404") || msg.contains("HTTP 410")
+    msg.contains("HTTP 404") || msg.contains("HTTP 410") || msg.contains("(video removed)")
 }
 
 fn is_rate_limit_message(msg: &str) -> bool {

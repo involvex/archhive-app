@@ -184,7 +184,16 @@ impl SiteContext {
             )));
         }
         if !resp.status().is_success() {
-            return Err(AppError::Site(format!("HTTP {} for {url}", resp.status())));
+            let status = resp.status();
+            // PornHub answers some taken-down videos with 403 plus a
+            // "video has been disabled" page: say it's gone, not refused.
+            let removed = status == reqwest::StatusCode::FORBIDDEN
+                && resp
+                    .text()
+                    .await
+                    .is_ok_and(|body| details::says_video_removed(&body));
+            let note = if removed { " (video removed)" } else { "" };
+            return Err(AppError::Site(format!("HTTP {status} for {url}{note}")));
         }
         throttle::note_ok(url);
         throttle::note_page(url);
