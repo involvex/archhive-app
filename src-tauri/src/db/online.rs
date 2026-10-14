@@ -739,7 +739,8 @@ impl Database {
         Ok(key)
     }
 
-    /// Take a video out of the bookmarks (it stays in the Online library).
+    /// Take a video out of the bookmarks. It leaves the Online library too,
+    /// unless a saved search also holds it.
     pub fn unbookmark_online_item(&self, key: &str) -> AppResult<()> {
         let conn = self
             .conn
@@ -749,6 +750,17 @@ impl Database {
             "DELETE FROM saved_search_items WHERE search_id = ?1 AND item_key = ?2",
             params![BOOKMARKS, key],
         )?;
+        let removed = conn.execute(
+            "DELETE FROM online_items WHERE key = ?1
+             AND key NOT IN (SELECT item_key FROM saved_search_items)",
+            params![key],
+        )?;
+        if removed > 0 {
+            conn.execute(
+                "DELETE FROM online_item_tags WHERE item_key = ?1",
+                params![key],
+            )?;
+        }
         Ok(())
     }
 
@@ -887,6 +899,13 @@ mod tests {
         assert!(db.is_online_bookmarked(&key).unwrap());
         db.unbookmark_online_item(&key).unwrap();
         assert!(!db.is_online_bookmarked(&key).unwrap());
+        // Only bookmarked: un-bookmarking takes it out of the library.
+        assert!(db.get_online_item(&key).unwrap().is_none());
+        // Also in a saved search: it stays.
+        db.bookmark_online_item(&a).unwrap();
+        db.record_online_items(std::slice::from_ref(&a), Some(("s1", 0)))
+            .unwrap();
+        db.unbookmark_online_item(&key).unwrap();
         assert!(db.get_online_item(&key).unwrap().is_some());
     }
 

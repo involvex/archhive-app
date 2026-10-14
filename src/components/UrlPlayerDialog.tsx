@@ -26,6 +26,12 @@ interface UrlPlayerDialogProps {
   /** The site removed this video (the backend already dropped it from the
    * Online library); lets the page take it off its list too. */
   onRemoved?: (item: MediaItem) => void;
+  /** Tags / performers / channel read from the video page (the backend has
+   * stored them if the video is in the Online library). */
+  onDetails?: (item: MediaItem, details: MediaItem) => void;
+  /** Bookmarked / un-bookmarked here (un-bookmarking can take a video out
+   * of the Online library). */
+  onBookmarkChange?: (item: MediaItem, bookmarked: boolean) => void;
 }
 
 export function UrlPlayerDialog({
@@ -35,6 +41,8 @@ export function UrlPlayerDialog({
   onClose,
   onSelectItem,
   onRemoved,
+  onDetails,
+  onBookmarkChange,
 }: UrlPlayerDialogProps) {
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
@@ -147,7 +155,9 @@ export function UrlPlayerDialog({
     api
       .resolveMediaDetails(item.url)
       .then((data) => {
-        if (!cancelled) setDetails({ url: item.url, data });
+        if (cancelled) return;
+        setDetails({ url: item.url, data });
+        onDetails?.(item, data);
       })
       .catch((e: unknown) => {
         const msg = e instanceof Error ? e.message : String(e ?? "");
@@ -159,7 +169,7 @@ export function UrlPlayerDialog({
     return () => {
       cancelled = true;
     };
-  }, [open, item, onRemoved]);
+  }, [open, item, onRemoved, onDetails]);
 
   useEffect(() => {
     if (!open || !item || item.is_live) return;
@@ -183,17 +193,19 @@ export function UrlPlayerDialog({
       if (bookmarked) {
         await api.unbookmarkOnline(shown.url);
         setBookmarked(false);
+        onBookmarkChange?.(shown, false);
       } else {
         // Saved with the tags fetched above, so it is searchable right away.
         await api.bookmarkOnline(shown);
         setBookmarked(true);
+        onBookmarkChange?.(shown, true);
       }
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setBookmarking(false);
     }
-  }, [shown, bookmarked]);
+  }, [shown, bookmarked, onBookmarkChange]);
 
   useEffect(() => {
     if (!open) return;

@@ -599,6 +599,36 @@ function OnlineLibraryPage() {
     [loadMeta],
   );
 
+  // Tags read in the player were stored by the backend; show them here too.
+  const onWatchDetails = useCallback((item: MediaItem, d: MediaItem) => {
+    setItems((prev) =>
+      prev.map((p) =>
+        p.key === item.id
+          ? {
+              ...p,
+              tags: d.tags.length ? d.tags : p.tags,
+              performers: d.performers.length ? d.performers : p.performers,
+              channel: d.channel ?? p.channel,
+              details_at: p.details_at ?? new Date().toISOString(),
+            }
+          : p,
+      ),
+    );
+  }, []);
+
+  // Un-bookmarked in the player: gone from Bookmarks (and from the library
+  // when no saved search holds it).
+  const onWatchBookmark = useCallback(
+    (item: MediaItem, bookmarked: boolean) => {
+      if (!bookmarked && searchId === BOOKMARKS) {
+        setItems((prev) => prev.filter((p) => p.key !== item.id));
+        setTotal((t) => Math.max(0, t - 1));
+      }
+      void loadMeta();
+    },
+    [searchId, loadMeta],
+  );
+
   const toggleSelected = useCallback((key: string) => {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -1033,6 +1063,8 @@ function OnlineLibraryPage() {
         onClose={() => setWatchItem(null)}
         onSelectItem={setWatchItem}
         onRemoved={onWatchRemoved}
+        onDetails={onWatchDetails}
+        onBookmarkChange={onWatchBookmark}
       />
     </div>
   );
