@@ -13,6 +13,9 @@ interface UrlPlayerDialogProps {
   open: boolean;
   onClose: () => void;
   onSelectItem?: (item: MediaItem) => void;
+  /** The site removed this video (the backend already dropped it from the
+   * Online library); lets the page take it off its list too. */
+  onRemoved?: (item: MediaItem) => void;
 }
 
 export function UrlPlayerDialog({
@@ -21,6 +24,7 @@ export function UrlPlayerDialog({
   open,
   onClose,
   onSelectItem,
+  onRemoved,
 }: UrlPlayerDialogProps) {
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
@@ -82,17 +86,18 @@ export function UrlPlayerDialog({
       }
       setStreamUrl(await api.resolveStreamUrl(item.url));
     } catch (e: unknown) {
-      if (typeof e === "string" && e.trim()) {
-        setError(e);
-      } else if (e instanceof Error && e.message) {
-        setError(e.message);
-      } else {
-        setError("Failed to resolve stream URL");
-      }
+      const msg =
+        typeof e === "string" && e.trim()
+          ? e
+          : e instanceof Error && e.message
+            ? e.message
+            : "Failed to resolve stream URL";
+      setError(msg);
+      if (msg.includes("video removed from the site")) onRemoved?.(item);
     } finally {
       setLoading(false);
     }
-  }, [item]);
+  }, [item, onRemoved]);
 
   useEffect(() => {
     if (!open || !item) return;

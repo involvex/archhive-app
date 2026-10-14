@@ -1377,6 +1377,38 @@ impl AppState {
         crate::mobile::standalone::resolve(url).await
     }
 
+    /// One page load: does the site say this video is gone (404 / 410 or
+    /// a removed-video notice), rather than refusing the request?
+    async fn video_removed(&self, url: &str) -> bool {
+        let site_id = self
+            .sites
+            .detect(url)
+            .unwrap_or_else(|| "custom".to_string());
+        let cookie_key = self.page_cookie_key(url, &site_id);
+        match self.site_ctx.fetch_html(url, &cookie_key).await {
+            Ok(html) => crate::sites::details::says_video_removed(&html),
+            Err(e) => is_gone(&e.to_string()),
+        }
+    }
+
+    /// Drop a removed video from the Online library and every saved search
+    /// (it won't come back on Update).
+    fn forget_removed_video(&self, url: &str) {
+        let key = crate::sites::urls::video_key(url);
+        if let Err(e) = self.db.delete_online_items(None, &[key]) {
+            tracing::warn!("[online] could not drop removed video {url}: {e}");
+        }
+    }
+
+    /// Vault entry for reading a video page: the site's own, or the host's.
+    fn page_cookie_key(&self, url: &str, site_id: &str) -> String {
+        if self.sites.get(site_id).is_some() && site_id != "custom" {
+            site_id.to_string()
+        } else {
+            crate::sites::cookie_keys::host_key(url).unwrap_or_else(|| site_id.to_string())
+        }
+    }
+
     pub async fn resolve_media_details(&self, url: &str) -> AppResult<MediaItem> {
         let site_id = self
             .sites
@@ -1387,15 +1419,12 @@ impl AppState {
         // tag / category / model links). yt-dlp is the fallback; it has no
         // tags for most tube sites.
         let scraped = crate::sites::details::SCRAPED_SITES.contains(&site_id.as_str());
-        let cookie_key = if self.sites.get(&site_id).is_some() && site_id != "custom" {
-            site_id.clone()
-        } else {
-            crate::sites::cookie_keys::host_key(url).unwrap_or_else(|| site_id.clone())
-        };
+        let cookie_key = self.page_cookie_key(url, &site_id);
         match self.site_ctx.fetch_html(url, &cookie_key).await {
             Ok(html) if crate::sites::details::says_video_removed(&html) => {
+                self.forget_removed_video(url);
                 return Err(crate::error::AppError::NotFound(format!(
-                    "video removed from the site ({url})"
+                    "{REMOVED_VIDEO} ({url})"
                 )));
             }
             Ok(html) => {
@@ -1414,8 +1443,9 @@ impl AppState {
             // The video was taken down (every supported site answers 404 or
             // 410): say so instead of asking yt-dlp about it too.
             Err(e) if is_gone(&e.to_string()) => {
+                self.forget_removed_video(url);
                 return Err(crate::error::AppError::NotFound(format!(
-                    "video removed from the site ({url})"
+                    "{REMOVED_VIDEO} ({url})"
                 )));
             }
             Err(e) => tracing::warn!("details page fetch failed for {url}: {e}"),
@@ -1545,6 +1575,21 @@ impl AppState {
     /// Used by the in-app Watch button to preview a remote video without downloading.
     pub async fn resolve_stream_url(&self, url: &str) -> AppResult<String> {
         let result = self.resolve_stream_url_inner(url).await;
+        // A refused / missing video may simply be gone: one page load tells
+        // (before any bot-check fallback), and a removed video leaves the
+        // Online library and saved searches as with Fetch tags.
+        if let Err(e) = &result {
+            let msg = e.to_string().to_ascii_lowercase();
+            let suspicious = ["403", "404", "410", "unavailable", "removed", "disabled"]
+                .iter()
+                .any(|w| msg.contains(w));
+            if suspicious && self.video_removed(url).await {
+                self.forget_removed_video(url);
+                return Err(crate::error::AppError::NotFound(format!(
+                    "{REMOVED_VIDEO} ({url}); it was taken out of the Online library and saved searches"
+                )));
+            }
+        }
         #[cfg(desktop)]
         if let Err(e) = &result {
             let msg = e.to_string();
@@ -3167,6 +3212,9 @@ fn crawl_flags<T>(f: impl FnOnce(&mut CrawlFlags) -> T) -> T {
 /// Errors worth waiting out rather than giving up on: "slow down" (429,
 /// Cloudflare 1015, ArcHive pausing) and the site being down (5xx / 52x,
 /// no connection).
+/// Error text for a video the site took down (the UI matches on it).
+const REMOVED_VIDEO: &str = "video removed from the site";
+
 /// A page fetch error saying the video no longer exists.
 fn is_gone(msg: &str) -> bool {
     msg.contains("HTTP 404") || msg.contains("HTTP 410") || msg.contains("(video removed)")

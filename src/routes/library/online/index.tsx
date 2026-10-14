@@ -433,6 +433,18 @@ function OnlineLibraryPage() {
     return list.slice(0, 200);
   }, [tagCounts, tagFind, include, exclude]);
 
+  const onWatchRemoved = useCallback(
+    (item: MediaItem) => {
+      setItems((prev) => prev.filter((p) => p.key !== item.id));
+      setTotal((t) => Math.max(0, t - 1));
+      toast("The site removed this video; it was taken out of the library and saved searches.", {
+        duration: 8000,
+      });
+      void loadMeta();
+    },
+    [loadMeta],
+  );
+
   const toggleSelected = useCallback((key: string) => {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -815,6 +827,7 @@ function OnlineLibraryPage() {
         open={watchItem !== null}
         onClose={() => setWatchItem(null)}
         onSelectItem={setWatchItem}
+        onRemoved={onWatchRemoved}
       />
     </div>
   );
