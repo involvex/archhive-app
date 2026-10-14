@@ -433,6 +433,14 @@ function OnlineLibraryPage() {
     return list.slice(0, 200);
   }, [tagCounts, tagFind, include, exclude]);
 
+  const toggleSelected = useCallback((key: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
   const handleCardClick = useCallback(
     (item: CardItem) => {
       if (!("site_id" in item)) return;
@@ -440,14 +448,9 @@ function OnlineLibraryPage() {
         setWatchItem(item);
         return;
       }
-      setSelected((prev) => {
-        const next = new Set(prev);
-        if (next.has(item.id)) next.delete(item.id);
-        else next.add(item.id);
-        return next;
-      });
+      toggleSelected(item.id);
     },
-    [selecting],
+    [selecting, toggleSelected],
   );
   const media = useMemo(() => items.map(toMediaItem), [items]);
   const missingDetails = items.filter((i) => !i.details_at).length;
@@ -770,22 +773,32 @@ function OnlineLibraryPage() {
       ) : (
         <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 md:grid-cols-4 md:gap-3 lg:grid-cols-5 xl:grid-cols-6">
           {media.map((item) => (
-            <SceneCard
+            // SceneCard ignores taps in selection mode (pages own selection),
+            // so the wrapper toggles it.
+            <div
               key={item.id}
-              item={item}
-              compactActions
-              onDownload={(i) =>
-                void api
-                  .queueDownload(i.url, i.site_id, i.title)
-                  .then(() => toast.success("Added to downloads"))
-                  .catch((e) => toast.error(String(e)))
-              }
-              onInfo={setInfoItem}
-              onWatch={setWatchItem}
-              onClick={handleCardClick}
-              selectionMode={selecting}
-              selected={selected.has(item.id)}
-            />
+              role={selecting ? "button" : undefined}
+              aria-pressed={selecting ? selected.has(item.id) : undefined}
+              onClick={() => {
+                if (selecting) toggleSelected(item.id);
+              }}
+            >
+              <SceneCard
+                item={item}
+                compactActions
+                onDownload={(i) =>
+                  void api
+                    .queueDownload(i.url, i.site_id, i.title)
+                    .then(() => toast.success("Added to downloads"))
+                    .catch((e) => toast.error(String(e)))
+                }
+                onInfo={setInfoItem}
+                onWatch={setWatchItem}
+                onClick={handleCardClick}
+                selectionMode={selecting}
+                selected={selected.has(item.id)}
+              />
+            </div>
           ))}
         </div>
       )}
