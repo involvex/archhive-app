@@ -10,7 +10,7 @@
 use crate::sites::registry::SiteRegistry;
 
 /// Adapter ids that don't own a site's cookies (they front many sites).
-const SHARED_IDS: &[&str] = &["generic_ytdlp", "custom", "xpomelo"];
+const SHARED_IDS: &[&str] = &["generic_ytdlp", "custom", "xpomelo", "pornwitch"];
 
 /// `https://www.SpankBang.com/x` or `spankbang.com` → `host-spankbang-com`.
 pub fn host_key(url_or_domain: &str) -> Option<String> {

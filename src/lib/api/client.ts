@@ -431,6 +431,21 @@ export const api = {
     );
   },
 
+  /** Search phrases the site suggests (`remote_suggest` sites; cached). */
+  async siteSuggest(
+    siteId: string,
+    text: string,
+    orientation?: BrowseOrientation,
+  ): Promise<string[]> {
+    const params = new URLSearchParams({ q: text });
+    if (orientation) params.set("orientation", orientation);
+    return localOrRemote<string[]>(
+      "site_suggest",
+      { siteId, text, orientation: orientation ?? null },
+      `/api/sites/${encodeURIComponent(siteId)}/suggest?${params}`,
+    );
+  },
+
   async queueDownload(url: string, adapter?: string, title?: string): Promise<DownloadJob> {
     const job = await localOrRemote<DownloadJob>(
       "queue_download",

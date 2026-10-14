@@ -4,6 +4,7 @@ pub mod custom;
 pub mod eporner;
 pub mod generic_ytdlp;
 pub mod pornhub;
+pub mod pornwitch;
 pub mod reddit;
 pub mod redgifs;
 pub mod stripchat;

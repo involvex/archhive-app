@@ -87,6 +87,13 @@ export const SITE_CATALOG: SiteInfo[] = [
     requires_cookies: false,
   },
   {
+    id: "pornwitch",
+    display_name: "Pornwitch",
+    base_url: "https://pornwitch.com",
+    supported_kinds: ["category", "search"] as BrowseKind[],
+    requires_cookies: false,
+  },
+  {
     id: "youtube",
     display_name: "YouTube",
     base_url: "https://www.youtube.com",
@@ -132,6 +139,7 @@ const CATEGORY_SITE_IDS = new Set([
   "youporn",
   "eporner",
   "xpomelo",
+  "pornwitch",
   "thisvid",
   "chaturbate",
 ]);

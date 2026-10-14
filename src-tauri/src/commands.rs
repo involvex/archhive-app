@@ -55,6 +55,16 @@ pub async fn browse(
 }
 
 #[tauri::command]
+pub async fn site_suggest(
+    state: State<'_, Arc<AppState>>,
+    site_id: String,
+    text: String,
+    orientation: Option<crate::models::BrowseOrientation>,
+) -> CmdResult<Vec<String>> {
+    map_err(state.site_suggest(&site_id, &text, orientation).await)
+}
+
+#[tauri::command]
 pub async fn list_site_categories(
     state: State<'_, Arc<AppState>>,
     site_id: String,

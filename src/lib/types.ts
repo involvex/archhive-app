@@ -76,6 +76,8 @@ export interface BrowseOptions {
   sources?: FilterOption[];
   /** Category group with the site's complete tag list (autocomplete, include / exclude). */
   tag_index_group?: string;
+  /** The site suggests search phrases as you type (`api.siteSuggest`). */
+  remote_suggest?: boolean;
 }
 
 /** Mirrors `models::BrowseFilters`: option ids, omitted = site default. */

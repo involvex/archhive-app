@@ -1127,6 +1127,23 @@ impl AppState {
     /// (e.g. XVIDEOS letter "a"). Served from memory / disk with no expiry:
     /// the site is only asked again when there is no copy yet or the user
     /// taps Refresh (`refresh`). A failed refresh keeps the cached copy.
+    /// Search phrases the site suggests for `text` (adapters cache them).
+    pub async fn site_suggest(
+        &self,
+        site_id: &str,
+        text: &str,
+        orientation: Option<crate::models::BrowseOrientation>,
+    ) -> AppResult<Vec<String>> {
+        let adapter = self
+            .sites
+            .get(site_id)
+            .ok_or_else(|| crate::error::AppError::NotFound(format!("site {site_id}")))?;
+        if !adapter.browse_options().remote_suggest {
+            return Ok(Vec::new());
+        }
+        adapter.suggest(&self.site_ctx, text, orientation).await
+    }
+
     pub async fn list_site_categories(
         &self,
         site_id: &str,

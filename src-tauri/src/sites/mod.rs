@@ -1,6 +1,7 @@
 use crate::error::{AppError, AppResult};
 use crate::models::{
-    BrowseKind, BrowseOptions, BrowsePage, BrowseQuery, DownloadPlan, MediaItem, SiteCategory,
+    BrowseKind, BrowseOptions, BrowseOrientation, BrowsePage, BrowseQuery, DownloadPlan, MediaItem,
+    SiteCategory,
 };
 use crate::vault::CookieVault;
 use async_trait::async_trait;
@@ -245,6 +246,17 @@ pub trait SiteAdapter: Send + Sync {
         _ctx: &SiteContext,
         _group: &str,
     ) -> AppResult<Vec<SiteCategory>> {
+        Ok(Vec::new())
+    }
+
+    /// Search phrases the site suggests for `text` (sites with
+    /// `browse_options().remote_suggest`).
+    async fn suggest(
+        &self,
+        _ctx: &SiteContext,
+        _text: &str,
+        _orientation: Option<BrowseOrientation>,
+    ) -> AppResult<Vec<String>> {
         Ok(Vec::new())
     }
 

@@ -143,6 +143,7 @@ impl LanServer {
             .route("/api/sites", get(list_sites))
             .route("/api/sites/{id}/browse", get(browse))
             .route("/api/sites/{id}/categories", get(site_categories))
+            .route("/api/sites/{id}/suggest", get(site_suggest))
             .route("/api/downloads", get(list_downloads).post(queue_download))
             .route("/api/downloads/bulk", post(queue_bulk_import))
             .route("/api/downloads/{id}/cancel", post(cancel_download))
@@ -456,6 +457,28 @@ async fn browse(
         .await
         .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
     Ok(Json(serde_json::json!(page)))
+}
+
+async fn site_suggest(
+    State(state): State<ApiState>,
+    Path(id): Path<String>,
+    Query(params): Query<std::collections::HashMap<String, String>>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let orientation = params
+        .get("orientation")
+        .map(|o| parse_orientation(o))
+        .transpose()
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    let words = state
+        .app
+        .site_suggest(
+            &id,
+            params.get("q").map(String::as_str).unwrap_or(""),
+            orientation,
+        )
+        .await
+        .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
+    Ok(Json(serde_json::json!(words)))
 }
 
 async fn site_categories(

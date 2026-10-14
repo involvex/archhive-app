@@ -229,6 +229,9 @@ pub struct BrowseOptions {
     /// hold only the popular ones).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tag_index_group: Option<String>,
+    /// The site suggests search phrases as you type (`site_suggest`).
+    #[serde(default)]
+    pub remote_suggest: bool,
 }
 
 /// Separator for combined tags in a Tag/Category slug (`milf,anal`). Tag slugs

@@ -102,6 +102,11 @@ function normalizePornhubCategorySlug(raw: string): string {
   return hit?.slug ?? raw;
 }
 
+/** Pause in typing before asking the site for suggestions. */
+const REMOTE_SUGGEST_DELAY_MS = 400;
+/** Site suggestions already fetched this session (`site|orientation|text`). */
+const REMOTE_SUGGEST_CACHE = new Map<string, string[]>();
+
 function BrowseDetailPage() {
   const { site, kind, slug } = Route.useParams();
   const navigate = useNavigate();
@@ -117,7 +122,8 @@ function BrowseDetailPage() {
   );
   const isPornhubAnimal =
     (site === "pornhub" && (kind === "category" || kind === "tag" || kind === "search")) ||
-    (site === "chaturbate" && (kind === "livestream" || kind === "tag" || kind === "search"));
+    (site === "chaturbate" && (kind === "livestream" || kind === "tag" || kind === "search")) ||
+    (site === "pornwitch" && (kind === "category" || kind === "search"));
   const ORIENT_TABS: { value: BrowseOrientation; label: string }[] = [
     { value: "straight", label: "Straight" },
     { value: "gay", label: "Gay" },
@@ -184,24 +190,69 @@ function BrowseDetailPage() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [site, suggestTags, tagGroupKey]);
+  // Sites that suggest phrases themselves (Pornwitch): ask once typing
+  // pauses, for the tag being typed (an excluded "-tag" without its dash).
+  const remoteSuggest = Boolean(siteInfo?.browse_options?.remote_suggest);
+  const remoteText = typedTag.replace(/^-/, "").trim();
+  const suggestOrientation = isPornhubAnimal ? orientation : undefined;
+  const [remoteWords, setRemoteWords] = useState<{ key: string; words: string[] }>({
+    key: "",
+    words: [],
+  });
+  const remoteKey = `${site}|${suggestOrientation ?? ""}|${remoteText}`;
+  useEffect(() => {
+    if (!remoteSuggest || remoteText.length < 2) return;
+    const hit = REMOTE_SUGGEST_CACHE.get(remoteKey);
+    if (hit) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setRemoteWords({ key: remoteKey, words: hit });
+      return;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      api
+        .siteSuggest(site, remoteText, suggestOrientation)
+        .then((words) => {
+          REMOTE_SUGGEST_CACHE.set(remoteKey, words);
+          if (!cancelled) setRemoteWords({ key: remoteKey, words });
+        })
+        .catch(() => {});
+    }, REMOTE_SUGGEST_DELAY_MS);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [remoteSuggest, remoteKey]);
   const tagSuggestions = useMemo(() => {
     if (!typedTag) return [];
     const prefix = querySlug.includes(",")
       ? `${querySlug.slice(0, querySlug.lastIndexOf(",") + 1)}`
       : "";
-    return tagIndex
-      .filter(
-        (c) =>
-          c.slug.toLowerCase().startsWith(typedTag) || c.name.toLowerCase().startsWith(typedTag),
-      )
-      .sort((a, b) => (b.count ?? 0) - (a.count ?? 0))
-      .slice(0, 50)
-      .map((c): Suggestion => ({
-        value: `${prefix}${c.slug}`,
-        label: c.name,
-        hint: c.count != null ? c.count.toLocaleString() : undefined,
-      }));
-  }, [tagIndex, typedTag, querySlug]);
+    const dash = typedTag.startsWith("-") ? "-" : "";
+    const remote: Suggestion[] =
+      remoteWords.key === remoteKey
+        ? remoteWords.words.map((w) => ({
+            value: `${prefix}${dash}${w}`,
+            label: `${dash}${w}`,
+            hint: "suggested",
+          }))
+        : [];
+    return remote.concat(
+      tagIndex
+        .filter(
+          (c) =>
+            c.slug.toLowerCase().startsWith(typedTag) || c.name.toLowerCase().startsWith(typedTag),
+        )
+        .sort((a, b) => (b.count ?? 0) - (a.count ?? 0))
+        .slice(0, 50)
+        .map((c): Suggestion => ({
+          value: `${prefix}${c.slug}`,
+          label: c.name,
+          hint: c.count != null ? c.count.toLocaleString() : undefined,
+        })),
+    );
+  }, [tagIndex, typedTag, querySlug, remoteWords, remoteKey]);
   const filtersKey = browseFiltersKey(filters);
   // Site filters are edited as a draft and only load results on Apply, so
   // changing several settings costs one request instead of one per tap.
@@ -689,7 +740,7 @@ function BrowseDetailPage() {
             placeholder={
               suggestTags ? `Type a ${kind} (comma-separate to combine)` : `Enter ${kind} slug...`
             }
-            suggestions={suggestTags ? tagSuggestions : []}
+            suggestions={suggestTags || remoteSuggest ? tagSuggestions : []}
             value={querySlug}
             onValueChange={(v) => setQuerySlug(v.startsWith("#") ? v.slice(1) : v)}
             className="h-10"

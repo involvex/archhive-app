@@ -20,9 +20,10 @@
 
 ## Aggregators
 
-| Site ID | Display Name | Browse kinds            | Cookies |
-| ------- | ------------ | ----------------------- | ------- |
-| xpomelo | xPomelo      | search, category, model | No      |
+| Site ID   | Display Name | Browse kinds            | Cookies |
+| --------- | ------------ | ----------------------- | ------- |
+| xpomelo   | xPomelo      | search, category, model | No      |
+| pornwitch | Pornwitch    | category, search        | No      |
 
 xPomelo hosts nothing: each result links to its source tube (PornHub,
 XVIDEOS, xHamster, XNXX, Eporner, SpankBang, …). Items keep the source URL
@@ -33,6 +34,17 @@ required and excluded categories (`/category/a%2Cb%2C-c`). Results from
 paysites (Brazzers, FapHouse, Clips4Sale, …) and unsupported sources (Beeg,
 SxyPrn, VipTube) are hidden unless the Source filter is set.
 Cloudflare blocks HTTP/1.1 clients on this site; the main HTTP/2 client passes.
+
+Pornwitch also hosts nothing. Its search matches titles plus the source
+site's tags, and every word is required (synonyms and plurals count), so a
+tag combination `a,b,-c` runs as the query `a b -c`; a Search keeps the
+site's own syntax (`"exact phrase"`, `-word`). PornHub, XVIDEOS, xHamster and
+Eporner results get their source URL (and adapter) straight from the card;
+TXXX, beeg and paysite results keep Pornwitch's `/go?id=` link, which is
+followed (one request) only when played or downloaded. Pages after the first
+continue from the previous page's last-card cursor. Word suggestions come
+from `/suggest` (`GET /api/sites/{id}/suggest?q=`), debounced and cached;
+requests to pornwitch.com are spaced 2.5–4.5 s apart.
 
 ### Bot checks (Cloudflare)
 
@@ -149,20 +161,21 @@ Every page also has on-device filters (words, `-exclude`, length) over
 loaded results. Category / tag indexes come from `list_categories()`
 (`list_site_categories` command, `GET /api/sites/{id}/categories`).
 
-| Site       | Sort                                    | Date / Length / Quality         | Categories            |
-| ---------- | --------------------------------------- | ------------------------------- | --------------------- |
-| PornHub    | newest, views, rating, longest, hottest | period, duration, HD            | JSON-embedded catalog |
-| XVIDEOS    | relevance, date, rating, views, length  | period, duration, HD/1080p      | `/tags` (top 400)     |
-| XNXX       | views, random                           | period, duration, HD/Full HD    | `/tags` (top 400)     |
-| xHamster   | search: 5 sorts; category: newest/best  | duration, 720p/1080p/4K         | `/categories`         |
-| YouPorn    | relevance, date, views, rating, length  | —                               | `/categories/`        |
-| Eporner    | 7 API `order` values                    | —                               | `/cats/`              |
-| xPomelo    | relevance, date, views, length          | period, duration, HD/4K, source | `data-tags` JSON (6k) |
-| ThotHub    | KVS `sort_by` (5)                       | —                               | —                     |
-| ThisVid    | KVS `sort_by` (5)                       | —                               | `/categories/`        |
-| Reddit     | hot, new, top, rising                   | period (top)                    | —                     |
-| RedGifs    | trending, latest, top                   | —                               | —                     |
-| Chaturbate | —                                       | —                               | top hashtags API      |
+| Site       | Sort                                    | Date / Length / Quality                | Categories            |
+| ---------- | --------------------------------------- | -------------------------------------- | --------------------- |
+| PornHub    | newest, views, rating, longest, hottest | period, duration, HD                   | JSON-embedded catalog |
+| XVIDEOS    | relevance, date, rating, views, length  | period, duration, HD/1080p             | `/tags` (top 400)     |
+| XNXX       | views, random                           | period, duration, HD/Full HD           | `/tags` (top 400)     |
+| xHamster   | search: 5 sorts; category: newest/best  | duration, 720p/1080p/4K                | `/categories`         |
+| YouPorn    | relevance, date, views, rating, length  | —                                      | `/categories/`        |
+| Eporner    | 7 API `order` values                    | —                                      | `/cats/`              |
+| xPomelo    | relevance, date, views, length          | period, duration, HD/4K, source        | `data-tags` JSON (6k) |
+| Pornwitch  | hottest, newest, oldest, longest, short | period, minutes range, 720p–4K, source | `/categories` (180)   |
+| ThotHub    | KVS `sort_by` (5)                       | —                                      | —                     |
+| ThisVid    | KVS `sort_by` (5)                       | —                                      | `/categories/`        |
+| Reddit     | hot, new, top, rising                   | period (top)                           | —                     |
+| RedGifs    | trending, latest, top                   | —                                      | —                     |
+| Chaturbate | —                                       | —                                      | top hashtags API      |
 
 ## SCrawler Parity Roadmap
 

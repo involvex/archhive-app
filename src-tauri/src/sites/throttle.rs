@@ -63,7 +63,11 @@ fn host_key(url: &str) -> String {
 /// (host, minimum gap, extra random jitter). xPomelo answered 429 after
 /// about a dozen requests in 25 s at the default pace, and Cloudflare 1015
 /// after ~15 requests at 4-7 s apart.
-const SLOW_HOSTS: &[(&str, Duration, u64)] = &[("xpomelo.com", Duration::from_millis(6000), 4000)];
+/// Pornwitch showed no limit, but is a small site: kept unhurried too.
+const SLOW_HOSTS: &[(&str, Duration, u64)] = &[
+    ("xpomelo.com", Duration::from_millis(6000), 4000),
+    ("pornwitch.com", Duration::from_millis(2500), 2000),
+];
 
 /// Test-request interval while backing off: strict hosts count every
 /// request against the block, so they are asked less often.

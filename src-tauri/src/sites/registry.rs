@@ -1,9 +1,10 @@
 use crate::models::SiteInfo;
 use crate::sites::adapters::{
     chaturbate::ChaturbateAdapter, custom::CustomUrlAdapter, eporner::EpornerAdapter,
-    generic_ytdlp::GenericYtDlpAdapter, reddit::RedditAdapter, redgifs::RedgifsAdapter,
-    stripchat::StripchatAdapter, thothub::ThotHubAdapter, xpomelo::XpomeloAdapter, PornhubAdapter,
-    XHamsterAdapter, XVideosAdapter, XnxxAdapter, YouPornAdapter,
+    generic_ytdlp::GenericYtDlpAdapter, pornwitch::PornwitchAdapter, reddit::RedditAdapter,
+    redgifs::RedgifsAdapter, stripchat::StripchatAdapter, thothub::ThotHubAdapter,
+    xpomelo::XpomeloAdapter, PornhubAdapter, XHamsterAdapter, XVideosAdapter, XnxxAdapter,
+    YouPornAdapter,
 };
 use crate::sites::SiteAdapter;
 use std::sync::Arc;
@@ -25,6 +26,7 @@ impl SiteRegistry {
             Arc::new(XHamsterAdapter),
             Arc::new(XVideosAdapter),
             Arc::new(XpomeloAdapter),
+            Arc::new(PornwitchAdapter),
             Arc::new(RedditAdapter),
             Arc::new(RedgifsAdapter),
             Arc::new(CustomUrlAdapter),
@@ -123,6 +125,7 @@ mod tests {
         assert_eq!(d("https://thisvid.com/videos/x/"), "thisvid");
         assert_eq!(d("https://www.redgifs.com/watch/x"), "redgifs");
         assert_eq!(d("https://xpomelo.com/category/x"), "xpomelo");
+        assert_eq!(d("https://pornwitch.com/search/hottest"), "pornwitch");
         assert_eq!(
             d("https://www.pornhub.com/view_video.php?viewkey=1"),
             "pornhub"
