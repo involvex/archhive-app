@@ -302,15 +302,15 @@ impl QueryText for BrowseQuery {
     }
 }
 
-/// A tag as query words: an excluded multi-word tag excludes each word.
+/// A tag as query words. An excluded multi-word tag is excluded as a
+/// phrase (`-"big tits"`): `-big -tits` would drop anything mentioning
+/// either word.
 fn tag_word(tag: &str) -> String {
-    let tag = tag.trim().to_lowercase();
-    match tag.strip_prefix('-') {
-        Some(rest) => rest
-            .split_whitespace()
-            .map(|w| format!("-{w}"))
-            .collect::<Vec<_>>()
-            .join(" "),
+    let tag = tag.trim().to_lowercase().replace('"', "");
+    match tag.strip_prefix('-').map(str::trim) {
+        Some(rest) if rest.contains(' ') => format!("-\"{rest}\""),
+        Some(rest) if !rest.is_empty() => format!("-{rest}"),
+        Some(_) => String::new(),
         None => tag,
     }
 }
@@ -599,7 +599,7 @@ mod tests {
         );
         assert_eq!(
             query.text(),
-            "prostate-massage blowjob -solo pov -gay -big -tits"
+            "prostate-massage blowjob -solo pov -gay -\"big tits\""
         );
         let search = q(
             BrowseKind::Search,
