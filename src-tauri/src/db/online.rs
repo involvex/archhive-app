@@ -41,8 +41,7 @@ fn term_like(term: &str) -> Option<String> {
         })
         .collect::<String>()
         .split_whitespace()
-        .map(|w| w.replace('%', "").replace('_', ""))
-        .filter(|w| !w.is_empty())
+        .map(str::to_string)
         .collect();
     if words.is_empty() {
         return None;
