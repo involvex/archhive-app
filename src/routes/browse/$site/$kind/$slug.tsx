@@ -346,6 +346,8 @@ function BrowseDetailPage() {
         if (current.length === 0) {
           setError(msg);
           setItems([]);
+          // Also as a toast: the page may be scrolled or behind a sheet.
+          toast.error(msg, { id: "browse-error", duration: 8000 });
         } else {
           // Loading more failed (often a rate limit): say so where the
           // user is looking, and stop auto-loading until Retry.

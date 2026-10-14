@@ -2566,17 +2566,27 @@ impl AppState {
                     } else {
                         Vec::new()
                     };
+                    let mut resorts = Vec::new();
                     if !splits.is_empty() {
                         // Page 1 is kept; the narrower slices cover the rest.
                         slice.done = true;
                         plan.extend(splits.into_iter().map(CrawlSlice::new));
                     } else {
+                        if too_big && !slice.resort {
+                            // Narrowest slice and still over the cap: also
+                            // walk it in the site's other sort orders, each
+                            // reaching a different top 800 (repeats are
+                            // dropped when recorded).
+                            resorts =
+                                crate::sites::adapters::xpomelo::crawl_resorts(&slice.filters);
+                        }
                         slice.next_page = page + 1;
                         let capped = xpomelo && page >= crate::sites::adapters::xpomelo::MAX_PAGES;
                         if !data.has_more || capped {
                             slice.done = true;
                         }
                     }
+                    plan.extend(resorts.into_iter().map(CrawlSlice::resorted));
                     save(&mut crawl, &plan);
                 }
                 Err(msg) if is_rate_limit_message(&msg) => {
@@ -3163,6 +3173,10 @@ struct CrawlSlice {
     /// "20–30 min, Pornhub" for progress messages.
     #[serde(default)]
     label: String,
+    /// Another sort order of a slice that couldn't be split (not resorted
+    /// again).
+    #[serde(default)]
+    resort: bool,
 }
 
 impl CrawlSlice {
@@ -3172,7 +3186,22 @@ impl CrawlSlice {
             filters,
             next_page: 1,
             done: false,
+            resort: false,
         }
+    }
+
+    fn resorted(filters: crate::models::BrowseFilters) -> Self {
+        let mut slice = Self::new(filters);
+        let order =
+            crate::sites::adapters::xpomelo::crawl_sort_label(slice.filters.sort.as_deref());
+        slice.label = [slice.label.as_str(), order]
+            .iter()
+            .filter(|p| !p.is_empty())
+            .copied()
+            .collect::<Vec<_>>()
+            .join(", ");
+        slice.resort = true;
+        slice
     }
 }
 

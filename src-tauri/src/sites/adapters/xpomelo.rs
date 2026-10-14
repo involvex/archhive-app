@@ -167,17 +167,9 @@ impl SiteAdapter for XpomeloAdapter {
 
     async fn browse(&self, ctx: &SiteContext, query: BrowseQuery) -> AppResult<BrowsePage> {
         // A range ("10m+") is several of the site's buckets: fetch the same
-        // page of each and merge them.
-        // Low ranges ("10m+", "5m+", "under 10") come from the unfiltered
-        // listing, kept to the length here: one request per page and the
-        // site's own order, where buckets cost one request each (about 37
-        // of 80 videos on a page are 10+ minutes).
-        let local_range = local_length_range(query.filters.duration.as_deref());
-        let buckets = if local_range.is_some() {
-            Vec::new()
-        } else {
-            duration_buckets(query.filters.duration.as_deref())
-        };
+        // page of each and merge them. (Filtering the unfiltered listing in
+        // the app instead reached only what its 10 pages hold.)
+        let buckets = duration_buckets(query.filters.duration.as_deref());
         let queries: Vec<BrowseQuery> = if buckets.len() > 1 {
             buckets
                 .iter()
@@ -272,14 +264,6 @@ impl SiteAdapter for XpomeloAdapter {
         }
         let by_duration = query.filters.sort.as_deref() == Some("duration");
         let mut cards = dedupe(merge_lists(lists, by_duration));
-        if let Some((min, max)) = local_range {
-            cards.retain(|c| {
-                c.duration
-                    .is_some_and(|d| d >= min && max.is_none_or(|m| d < m))
-            });
-            // The heading counts the unfiltered listing.
-            total = None;
-        }
         // The default ("Free sites") hides paysites and unsupported sources;
         // picking a source (or "All") shows them.
         let keep_hidden = query.filters.source.is_some();
@@ -396,6 +380,34 @@ pub(crate) fn crawl_split(filters: &BrowseFilters) -> Vec<BrowseFilters> {
             ..filters.clone()
         })
         .collect()
+}
+
+/// xPomelo's orders: relevance (the default) plus its `sort` values.
+const CRAWL_SORTS: &[Option<&str>] = &[None, Some("date"), Some("views"), Some("duration")];
+
+/// The same listing in xPomelo's other sort orders, for a slice that is
+/// over MAX_RESULTS and can't be split any further: each order shows a
+/// different top MAX_RESULTS.
+pub(crate) fn crawl_resorts(filters: &BrowseFilters) -> Vec<BrowseFilters> {
+    CRAWL_SORTS
+        .iter()
+        .filter(|s| **s != filters.sort.as_deref())
+        .map(|s| BrowseFilters {
+            sort: s.map(str::to_string),
+            ..filters.clone()
+        })
+        .collect()
+}
+
+/// "by newest" etc. for progress messages.
+pub(crate) fn crawl_sort_label(sort: Option<&str>) -> &'static str {
+    match sort {
+        None => "by relevance",
+        Some("date") => "by newest",
+        Some("views") => "by most viewed",
+        Some("duration") => "by longest",
+        Some(_) => "",
+    }
 }
 
 /// Short description of a slice for progress messages.
@@ -867,17 +879,6 @@ fn duration_buckets(value: Option<&str>) -> Vec<&'static str> {
         .collect()
 }
 
-/// Ranges filtered in the app from the unfiltered listing: (min, max) in
-/// seconds, max exclusive.
-fn local_length_range(value: Option<&str>) -> Option<(u32, Option<u32>)> {
-    match value? {
-        "10m+" => Some((600, None)),
-        "5m+" => Some((300, None)),
-        "-10m" => Some((0, Some(600))),
-        _ => None,
-    }
-}
-
 /// Last page of each bucket listing (by its page-1 URL) seen to have no
 /// next page, so later pages of a range skip it instead of asking for a
 /// page that doesn't exist.
@@ -1162,10 +1163,23 @@ mod tests {
     }
 
     #[test]
-    fn low_ranges_filter_locally_and_buckets_remember_their_end() {
-        assert_eq!(local_length_range(Some("10m+")), Some((600, None)));
-        assert_eq!(local_length_range(Some("-10m")), Some((0, Some(600))));
-        assert_eq!(local_length_range(Some("20m+")), None);
+    fn resort_passes_use_the_other_orders() {
+        let f = BrowseFilters {
+            sort: Some("date".into()),
+            duration: Some("10m".into()),
+            source: Some("Pornhub".into()),
+            ..Default::default()
+        };
+        let sorts: Vec<_> = crawl_resorts(&f).into_iter().map(|r| r.sort).collect();
+        assert_eq!(
+            sorts,
+            vec![None, Some("views".into()), Some("duration".into())]
+        );
+        assert!(crawl_resorts(&f).iter().all(|r| r.duration == f.duration));
+    }
+
+    #[test]
+    fn buckets_remember_their_end() {
         assert!(!bucket_ended_before(
             "https://xpomelo.com/x?duration=20m",
             3
