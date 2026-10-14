@@ -1417,8 +1417,8 @@ impl AppState {
         crate::mobile::standalone::resolve(url).await
     }
 
-    /// One page load: does the site say this video is gone (404 / 410 or
-    /// a removed-video notice), rather than refusing the request?
+    /// One page load: does the site say this video is gone (404 or a
+    /// removed-video notice), rather than refusing the request?
     async fn video_removed(&self, url: &str) -> bool {
         let site_id = self
             .sites
@@ -1432,19 +1432,21 @@ impl AppState {
     }
 
     /// A video page fetch error that proves the video is gone: the site's
-    /// own removed-video notice, or 404 / 410 while the site itself is up
+    /// own removed-video notice, or 404 while the site itself is up
     /// (a site in maintenance or misconfigured may answer 404 for every
     /// page, which must not empty the library).
     async fn error_means_removed(&self, url: &str, msg: &str) -> bool {
         if msg.contains("(video removed)") {
             return true;
         }
-        if !(msg.contains("HTTP 404") || msg.contains("HTTP 410")) {
+        // Only 404: PornHub answers 410 ("This page is not available") for
+        // videos blocked in the viewer's region / for their VPN address.
+        if !msg.contains("HTTP 404") {
             return false;
         }
         let up = self.site_is_up(url).await;
         if !up {
-            tracing::warn!("[online] {url} answered 404/410 but its site looks down; keeping it");
+            tracing::warn!("[online] {url} answered 404 but its site looks down; keeping it");
         }
         up
     }
@@ -1558,8 +1560,8 @@ impl AppState {
                     return Ok(self.page_details_item(url, &site_id, d));
                 }
             }
-            // The video was taken down (every supported site answers 404 or
-            // 410): say so instead of asking yt-dlp about it too.
+            // The video was taken down (every supported site answers 404):
+            // say so instead of asking yt-dlp about it too.
             Err(e) if self.error_means_removed(url, &e.to_string()).await => {
                 return Err(crate::error::AppError::NotFound(format!(
                     "{REMOVED_VIDEO} ({url})"

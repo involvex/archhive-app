@@ -361,9 +361,18 @@ impl SidecarRunner {
         args: &[String],
     ) -> AppResult<String> {
         self.run_capture(name, args).await.map_err(|e| {
+            // 410 is what PornHub (and others) answer for a video blocked in
+            // the viewer's region or for their VPN address, not a deletion.
+            if is_region_blocked(&e.to_string()) {
+                return AppError::Other(format!(
+                    "The site won't show this video to your connection (HTTP 410, \"This page \
+                     is not available\"). It is usually blocked in your region or for your \
+                     VPN's location; try another VPN location. ({e})"
+                ));
+            }
             if is_gone(&e.to_string()) {
                 return AppError::Other(format!(
-                    "The source site says this video no longer exists (HTTP 404/410) — it \
+                    "The source site says this video no longer exists (HTTP 404) — it \
                      was probably removed. ({e})"
                 ));
             }
@@ -723,8 +732,14 @@ fn looks_like_media_path(s: &str) -> bool {
 }
 
 /// yt-dlp could reach the site but the video page is gone.
+/// 404: the video was deleted. (410 is a region / VPN block, see
+/// `is_region_blocked`.)
 fn is_gone(detail: &str) -> bool {
-    detail.contains("HTTP Error 404") || detail.contains("HTTP Error 410")
+    detail.contains("HTTP Error 404")
+}
+
+fn is_region_blocked(detail: &str) -> bool {
+    detail.contains("HTTP Error 410")
 }
 
 /// Append actionable guidance to site-block errors (403/Forbidden). Embedded
@@ -733,6 +748,11 @@ fn is_gone(detail: &str) -> bool {
 fn with_block_hint(detail: &str) -> String {
     if is_gone(detail) {
         format!("{detail} The video was probably removed from the source site.")
+    } else if is_region_blocked(detail) {
+        format!(
+            "{detail} The site won't show this video to your connection; it is usually \
+             blocked in your region or for your VPN's location."
+        )
     } else if detail.contains("403") || detail.contains("Forbidden") || detail.contains("forbidden")
     {
         format!(
