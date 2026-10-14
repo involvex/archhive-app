@@ -22,9 +22,11 @@ const WORDS: &str = "(' ' || replace(replace(replace(replace(replace(replace(rep
      || COALESCE(o.performers, '')), '\"', ' '), ',', ' '), '[', ' '), ']', ' '), '-', ' '), '.', ' '), \
      '!', ' '), '?', ' '), ':', ' '), '(', ' '), ')', ' '), '/', ' '), '_', ' ') || ' ')";
 
-/// A builder term as a LIKE pattern on `WORDS`: `big tits` → `% big tits %`,
-/// `tit*` → `% tit%` (prefix). None for an empty term.
-fn term_like(term: &str) -> Option<String> {
+/// A builder term as LIKE patterns on `WORDS`, any of which matches:
+/// `big tit` → `% big tit %`, `% big tits %`; `pussies` → also `% pussy %`
+/// (singular / plural of the last word); `tit*` → `% tit%` (prefix only).
+/// Empty for an empty term.
+fn term_patterns(term: &str) -> Vec<String> {
     let t = term.trim().to_lowercase();
     let (t, prefix) = match t.strip_suffix('*') {
         Some(rest) => (rest.to_string(), true),
@@ -43,15 +45,47 @@ fn term_like(term: &str) -> Option<String> {
         .split_whitespace()
         .map(str::to_string)
         .collect();
-    if words.is_empty() {
+    let Some((last, head)) = words.split_last() else {
+        return Vec::new();
+    };
+    let head = head.iter().map(|w| format!("{w} ")).collect::<String>();
+    if prefix {
+        return vec![format!("% {head}{last}%")];
+    }
+    let mut forms = vec![last.clone()];
+    if last.len() >= 3 {
+        if let Some(stem) = last.strip_suffix("ies") {
+            forms.push(format!("{stem}y"));
+        } else if let Some(stem) = last.strip_suffix("es") {
+            forms.push(stem.to_string());
+            forms.push(format!("{stem}e"));
+        } else if let Some(stem) = last.strip_suffix('s') {
+            forms.push(stem.to_string());
+        }
+        if let Some(stem) = last.strip_suffix('y') {
+            forms.push(format!("{stem}ies"));
+        }
+        if !last.ends_with('s') {
+            forms.push(format!("{last}s"));
+            forms.push(format!("{last}es"));
+        }
+    }
+    let mut seen = std::collections::HashSet::new();
+    forms
+        .into_iter()
+        .filter(|f| f.len() >= 2 && seen.insert(f.clone()))
+        .map(|f| format!("% {head}{f} %"))
+        .collect()
+}
+
+/// SQL condition for one term (any of its patterns) and its arguments.
+fn term_condition(term: &str) -> Option<(String, Vec<String>)> {
+    let pats = term_patterns(term);
+    if pats.is_empty() {
         return None;
     }
-    let phrase = words.join(" ");
-    Some(if prefix {
-        format!("% {phrase}%")
-    } else {
-        format!("% {phrase} %")
-    })
+    let cond = vec![format!("{WORDS} LIKE ?"); pats.len()].join(" OR ");
+    Some((format!("({cond})"), pats))
 }
 
 fn norm_tag(tag: &str) -> String {
@@ -410,29 +444,33 @@ impl Database {
         // a score counting every group / boost term found, for "best".
         let mut score_parts: Vec<String> = Vec::new();
         let mut score_args: Vec<rusqlite::types::Value> = Vec::new();
-        let term_cond = format!("{WORDS} LIKE ?");
         for group in &q.groups {
-            let terms: Vec<String> = group.iter().filter_map(|t| term_like(t)).collect();
+            let terms: Vec<(String, Vec<String>)> =
+                group.iter().filter_map(|t| term_condition(t)).collect();
             if terms.is_empty() {
                 continue;
             }
             wheres.push(format!(
                 "({})",
-                vec![term_cond.as_str(); terms.len()].join(" OR ")
+                terms
+                    .iter()
+                    .map(|(c, _)| c.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" OR ")
             ));
-            for t in &terms {
-                args.push(t.clone().into());
-                score_parts.push(format!("({term_cond})"));
-                score_args.push(t.clone().into());
+            for (cond, pats) in &terms {
+                args.extend(pats.iter().map(|p| p.clone().into()));
+                score_parts.push(cond.clone());
+                score_args.extend(pats.iter().map(|p| p.clone().into()));
             }
         }
-        for t in q.exclude_terms.iter().filter_map(|t| term_like(t)) {
-            wheres.push(format!("NOT {term_cond}"));
-            args.push(t.into());
+        for (cond, pats) in q.exclude_terms.iter().filter_map(|t| term_condition(t)) {
+            wheres.push(format!("NOT {cond}"));
+            args.extend(pats.into_iter().map(Into::into));
         }
-        for t in q.boost_terms.iter().filter_map(|t| term_like(t)) {
-            score_parts.push(format!("({term_cond})"));
-            score_args.push(t.into());
+        for (cond, pats) in q.boost_terms.iter().filter_map(|t| term_condition(t)) {
+            score_parts.push(cond);
+            score_args.extend(pats.into_iter().map(Into::into));
         }
         let where_sql = if wheres.is_empty() {
             String::new()
@@ -816,9 +854,14 @@ mod tests {
         assert!(r[..2].contains(&"https://a.com/1".to_string()));
         assert!(r[..2].contains(&"https://a.com/5".to_string()));
         assert!(titles(q(vec![vec!["ass"]], vec![], vec![])).is_empty());
-        assert_eq!(term_like("Big-Tits"), Some("% big tits %".into()));
-        assert_eq!(term_like("tit*"), Some("% tit%".into()));
-        assert_eq!(term_like(" , "), None);
+        let p = term_patterns("Big-Tit");
+        assert!(p.contains(&"% big tit %".to_string()) && p.contains(&"% big tits %".to_string()));
+        assert!(term_patterns("pussies").contains(&"% pussy %".to_string()));
+        assert!(term_patterns("blowjob").contains(&"% blowjobs %".to_string()));
+        assert_eq!(term_patterns("tit*"), vec!["% tit%".to_string()]);
+        assert!(term_patterns(" , ").is_empty());
+        // Plurals: the term "blowjobs" also matches titles saying "blowjob".
+        assert_eq!(titles(q(vec![vec!["blowjobs"]], vec![], vec![])).len(), 3);
     }
 
     #[test]

@@ -3,8 +3,10 @@ import {
   QueryBuilder,
   EMPTY_BUILDER,
   builderTermCount,
+  builderExpression,
   type BuilderQuery,
 } from "@/components/QueryBuilder";
+import { loadViews, saveViews, type OnlineView } from "@/lib/onlineViews";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "react-hot-toast";
 import {
@@ -38,8 +40,10 @@ import { useInfiniteScroll } from "@/lib/hooks/useInfiniteScroll";
 
 export const Route = createFileRoute("/library/online/")({
   component: OnlineLibraryPage,
-  validateSearch: (s: Record<string, unknown>): { search?: string } =>
-    typeof s.search === "string" && s.search ? { search: s.search } : {},
+  validateSearch: (s: Record<string, unknown>): { search?: string; view?: string } => ({
+    ...(typeof s.search === "string" && s.search ? { search: s.search } : {}),
+    ...(typeof s.view === "string" && s.view ? { view: s.view } : {}),
+  }),
 });
 
 const PAGE_SIZE = 60;
@@ -145,7 +149,7 @@ function relative(iso?: string): string {
  * "Update" (a few pages, slowly) and "Fetch tags" ask the sites.
  */
 function OnlineLibraryPage() {
-  const { search: searchParam } = Route.useSearch();
+  const { search: searchParam, view: viewParam } = Route.useSearch();
   const navigate = useNavigate();
   const searchId = searchParam ?? "";
 
@@ -247,8 +251,14 @@ function OnlineLibraryPage() {
     return () => window.clearTimeout(t);
   }, [text]);
 
-  // Query builder, remembered per scope (saved search, Bookmarks, all).
-  const builderKey = `online-query:${searchId || "all"}`;
+  // Filtered views: saved queries listed next to saved searches.
+  const [views, setViews] = useState<OnlineView[]>(() => loadViews());
+  const activeView = views.find((v) => v.id === viewParam && v.scope === searchId);
+  // Query builder, remembered per scope (saved search, Bookmarks, all) or
+  // taken from the open filtered view.
+  const builderKey = activeView
+    ? `online-view:${activeView.id}`
+    : `online-query:${searchId || "all"}`;
   const [builder, setBuilderState] = useState<BuilderQuery>(EMPTY_BUILDER);
   const [builderOpen, setBuilderOpen] = useState(false);
   const builderCount = builderTermCount(builder);
@@ -266,6 +276,48 @@ function OnlineLibraryPage() {
     [builderKey, builderCount],
   );
 
+  /** Save the query: updates the open filtered view, or creates one. */
+  const saveView = useCallback(() => {
+    const all = loadViews();
+    if (activeView) {
+      const next = all.map((v) =>
+        v.id === activeView.id ? { ...v, query: builder, duration } : v,
+      );
+      saveViews(next);
+      setViews(next);
+      toast.success(`Saved "${activeView.name}"`);
+      return;
+    }
+    const base = searchId === BOOKMARKS ? "Bookmarks" : (search?.name ?? "Everything");
+    const name = window.prompt(
+      "Name for this filtered view",
+      `${base}: ${builderExpression(builder)}`,
+    );
+    if (!name?.trim()) return;
+    const view: OnlineView = {
+      id: crypto.randomUUID(),
+      name: name.trim(),
+      scope: searchId,
+      query: builder,
+      duration,
+    };
+    const next = [...all, view];
+    saveViews(next);
+    setViews(next);
+    void navigate({
+      to: "/library/online",
+      search: { ...(searchId ? { search: searchId } : {}), view: view.id },
+    });
+  }, [activeView, builder, duration, searchId, search, navigate]);
+
+  const deleteView = useCallback(() => {
+    if (!activeView || !window.confirm(`Delete the filtered view "${activeView.name}"?`)) return;
+    const next = loadViews().filter((v) => v.id !== activeView.id);
+    saveViews(next);
+    setViews(next);
+    void navigate({ to: "/library/online", search: searchId ? { search: searchId } : {} });
+  }, [activeView, searchId, navigate]);
+
   useEffect(() => {
     let saved = EMPTY_BUILDER;
     try {
@@ -274,7 +326,13 @@ function OnlineLibraryPage() {
     } catch {
       // ignore unreadable storage
     }
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    const view = loadViews().find((v) => `online-view:${v.id}` === builderKey);
+    if (view) {
+      saved = view.query;
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setDuration(view.duration ?? "");
+      setBuilderOpen(true);
+    }
     setBuilderState(saved);
     setSort(builderTermCount(saved) > 0 ? "best" : "newest");
     setInclude([]);
@@ -592,13 +650,19 @@ function OnlineLibraryPage() {
 
       <select
         className="h-10 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-3 text-sm md:max-w-md"
-        value={searchId}
-        onChange={(e) =>
+        value={activeView ? `view:${activeView.id}` : searchId}
+        onChange={(e) => {
+          const v = e.target.value;
+          const view = v.startsWith("view:") ? views.find((x) => `view:${x.id}` === v) : null;
           void navigate({
             to: "/library/online",
-            search: e.target.value ? { search: e.target.value } : {},
-          })
-        }
+            search: view
+              ? { ...(view.scope ? { search: view.scope } : {}), view: view.id }
+              : v
+                ? { search: v }
+                : {},
+          });
+        }}
         aria-label="Saved search"
       >
         <option value="">Everything</option>
@@ -614,6 +678,15 @@ function OnlineLibraryPage() {
             </option>
           );
         })}
+        {views.length > 0 && (
+          <optgroup label="Filtered views">
+            {views.map((v) => (
+              <option key={v.id} value={`view:${v.id}`}>
+                {v.name}
+              </option>
+            ))}
+          </optgroup>
+        )}
       </select>
 
       {search ? (
@@ -778,7 +851,23 @@ function OnlineLibraryPage() {
           )}
         </div>
 
-        {builderOpen && <QueryBuilder value={builder} onChange={setBuilder} />}
+        {activeView && (
+          <div className="flex items-center justify-between gap-2 text-xs text-[var(--color-muted-foreground)]">
+            <span className="min-w-0 truncate">Filtered view: {activeView.name}</span>
+            <Button size="sm" variant="ghost" onClick={deleteView}>
+              <Trash2 className="h-3.5 w-3.5" />
+              Delete view
+            </Button>
+          </div>
+        )}
+        {builderOpen && (
+          <QueryBuilder
+            value={builder}
+            onChange={setBuilder}
+            onSave={saveView}
+            saveLabel={activeView ? "Save view" : "Save as view"}
+          />
+        )}
 
         {tagsOpen && (
           <div className="space-y-2 rounded-md border border-[var(--color-border)] p-2">

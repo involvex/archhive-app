@@ -108,9 +108,14 @@ function TermList({
 export function QueryBuilder({
   value,
   onChange,
+  onSave,
+  saveLabel = "Save",
 }: {
   value: BuilderQuery;
   onChange: (q: BuilderQuery) => void;
+  /** Save the query (e.g. as a filtered view). */
+  onSave?: () => void;
+  saveLabel?: string;
 }) {
   const setGroup = (i: number, terms: string[]) => {
     const groups = value.groups.map((g, j) => (j === i ? terms : g));
@@ -118,6 +123,21 @@ export function QueryBuilder({
   };
   return (
     <div className="space-y-3 rounded-md border border-[var(--color-border)] p-2">
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={builderTermCount(value) === 0}
+          onClick={() => onChange(EMPTY_BUILDER)}
+        >
+          Clear
+        </Button>
+        {onSave && (
+          <Button size="sm" disabled={builderTermCount(value) === 0} onClick={onSave}>
+            {saveLabel}
+          </Button>
+        )}
+      </div>
       {builderTermCount(value) > 0 && (
         <p className="break-words rounded bg-[var(--color-muted)] px-2 py-1 font-mono text-[11px]">
           {builderExpression(value)}
@@ -174,11 +194,6 @@ export function QueryBuilder({
           tone="boost"
         />
       </div>
-      {builderTermCount(value) > 0 && (
-        <Button size="sm" variant="ghost" onClick={() => onChange(EMPTY_BUILDER)}>
-          Clear query
-        </Button>
-      )}
     </div>
   );
 }
