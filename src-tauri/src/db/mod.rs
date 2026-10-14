@@ -5,7 +5,7 @@ use crate::db::migrations::{
     MIGRATION_001, MIGRATION_002, MIGRATION_003, MIGRATION_004, MIGRATION_005, MIGRATION_006,
     MIGRATION_007, MIGRATION_008, MIGRATION_009, MIGRATION_010, MIGRATION_011, MIGRATION_012,
     MIGRATION_013, MIGRATION_014, MIGRATION_015, MIGRATION_016, MIGRATION_017, MIGRATION_018,
-    MIGRATION_019, MIGRATION_020, MIGRATION_021,
+    MIGRATION_019, MIGRATION_020, MIGRATION_021, MIGRATION_022,
 };
 use crate::error::{AppError, AppResult};
 use crate::models::{
@@ -171,6 +171,7 @@ impl Database {
             conn.execute_batch(MIGRATION_020)?;
         }
         conn.execute_batch(MIGRATION_021)?;
+        conn.execute_batch(MIGRATION_022)?;
         // Backfill the default StashDB endpoint for DBs created before it
         // existed (fresh DBs get it via AppSettings::default).
         {

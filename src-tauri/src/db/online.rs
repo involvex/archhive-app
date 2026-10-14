@@ -80,6 +80,19 @@ impl Database {
                 continue;
             }
             let key = crate::sites::urls::video_key(&item.url);
+            let dismissed = |scope: &str| -> rusqlite::Result<bool> {
+                tx.query_row(
+                    "SELECT 1 FROM online_dismissed WHERE scope = ?1 AND item_key = ?2",
+                    params![scope, key],
+                    |_| Ok(()),
+                )
+                .optional()
+                .map(|r| r.is_some())
+            };
+            // Deleted from history: not recorded again.
+            if dismissed("")? {
+                continue;
+            }
             let existing: Option<Option<String>> = tx
                 .query_row(
                     "SELECT details_at FROM online_items WHERE key = ?1",
@@ -141,6 +154,10 @@ impl Database {
                 }
             }
             if let Some((search_id, base_rank)) = search {
+                // Removed from this saved search: Update doesn't re-add it.
+                if dismissed(search_id)? {
+                    continue;
+                }
                 let added = tx.execute(
                     "INSERT OR IGNORE INTO saved_search_items (search_id, item_key, rank, first_seen)
                      VALUES (?1, ?2, ?3, ?4)",
@@ -413,6 +430,62 @@ impl Database {
         Ok(rows)
     }
 
+    /// Remove entries: from one saved search (`search_id`), or from the
+    /// library altogether. Either way they are remembered as removed so
+    /// updates / browsing don't bring them back. Returns how many went.
+    pub fn delete_online_items(&self, search_id: Option<&str>, keys: &[String]) -> AppResult<u32> {
+        let mut conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let tx = conn.transaction()?;
+        let scope = search_id.filter(|s| !s.is_empty()).unwrap_or("");
+        let mut removed = 0u32;
+        for key in keys {
+            let n = if scope.is_empty() {
+                tx.execute(
+                    "DELETE FROM saved_search_items WHERE item_key = ?1",
+                    params![key],
+                )?;
+                tx.execute(
+                    "DELETE FROM online_item_tags WHERE item_key = ?1",
+                    params![key],
+                )?;
+                tx.execute("DELETE FROM online_items WHERE key = ?1", params![key])?
+            } else {
+                tx.execute(
+                    "DELETE FROM saved_search_items WHERE search_id = ?1 AND item_key = ?2",
+                    params![scope, key],
+                )?
+            };
+            tx.execute(
+                "INSERT OR IGNORE INTO online_dismissed (scope, item_key) VALUES (?1, ?2)",
+                params![scope, key],
+            )?;
+            removed += n as u32;
+        }
+        tx.commit()?;
+        Ok(removed)
+    }
+
+    /// Remove everything the query currently shows (all pages).
+    pub fn delete_online_matching(&self, q: &OnlineQuery) -> AppResult<u32> {
+        let mut all = q.clone();
+        all.offset = 0;
+        all.limit = 500;
+        let mut keys = Vec::new();
+        loop {
+            let page = self.query_online_items(&all)?;
+            let n = page.items.len();
+            keys.extend(page.items.into_iter().map(|i| i.key));
+            if n < 500 {
+                break;
+            }
+            all.offset += 500;
+        }
+        self.delete_online_items(q.search_id.as_deref(), &keys)
+    }
+
     /// Forget browsing history (items not in any saved search).
     pub fn clear_online_history(&self) -> AppResult<u32> {
         let conn = self
@@ -528,8 +601,36 @@ mod tests {
         assert_eq!(q(&|q| q.include_tags = vec!["teacher".into()]).total, 1);
         assert_eq!(q(&|q| q.missing_details = true).total, 2);
 
+        // Removing from the search: gone there, and Update doesn't re-add it.
+        let short = q(&|q| q.max_duration = Some(600));
+        assert_eq!(short.total, 1);
+        assert_eq!(
+            db.delete_online_matching(&OnlineQuery {
+                search_id: Some("s1".into()),
+                max_duration: Some(600),
+                ..Default::default()
+            })
+            .unwrap(),
+            1
+        );
+        assert_eq!(q(&|_| {}).total, 2);
+        assert_eq!(db.record_online_items(&page, Some(("s1", 0))).unwrap(), 0);
+        assert_eq!(q(&|_| {}).total, 2);
+        // Deleting from history removes it everywhere and for good.
+        let long_key = crate::sites::urls::video_key("https://spankbang.com/x/video/y");
+        assert_eq!(db.delete_online_items(None, &[long_key]).unwrap(), 1);
+        assert_eq!(q(&|_| {}).total, 1);
+        db.record_online_items(&page, None).unwrap();
+        assert_eq!(
+            db.query_online_items(&OnlineQuery::default())
+                .unwrap()
+                .total,
+            2
+        );
+
         db.mark_online_search_updated("s1").unwrap();
-        // History-only items are removed, saved-search ones kept.
-        assert_eq!(db.clear_online_history().unwrap(), 0);
+        // History-only items are removed (the trailer, taken out of s1),
+        // saved-search ones kept.
+        assert_eq!(db.clear_online_history().unwrap(), 1);
     }
 }

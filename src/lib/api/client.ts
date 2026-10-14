@@ -354,6 +354,31 @@ export const api = {
     });
   },
 
+  /** Remove entries from a saved search (or, without one, from the whole
+   * library). They stay removed across updates / browsing. */
+  async deleteOnlineItems(searchId: string | undefined, keys: string[]): Promise<number> {
+    if (shouldUseRemoteApi()) {
+      const res = await remoteFetch<{ removed: number }>("/api/online/delete", {
+        method: "POST",
+        body: JSON.stringify({ search_id: searchId ?? null, keys }),
+      });
+      return res.removed;
+    }
+    return localInvoke<number>("delete_online_items", { searchId: searchId ?? null, keys });
+  },
+
+  /** Remove everything the query matches (all pages). */
+  async deleteOnlineMatching(query: OnlineQuery): Promise<number> {
+    if (shouldUseRemoteApi()) {
+      const res = await remoteFetch<{ removed: number }>("/api/online/delete-matching", {
+        method: "POST",
+        body: JSON.stringify(query),
+      });
+      return res.removed;
+    }
+    return localInvoke<number>("delete_online_matching", { query });
+  },
+
   async clearOnlineHistory(): Promise<number> {
     if (shouldUseRemoteApi()) {
       const res = await remoteFetch<{ removed: number }>("/api/online/history", {

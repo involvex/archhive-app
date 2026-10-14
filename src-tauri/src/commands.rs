@@ -1422,3 +1422,20 @@ pub async fn fetch_online_details(
 pub fn clear_online_history(state: State<'_, Arc<AppState>>) -> CmdResult<u32> {
     map_err(state.db.clear_online_history())
 }
+
+#[tauri::command]
+pub fn delete_online_items(
+    state: State<'_, Arc<AppState>>,
+    search_id: Option<String>,
+    keys: Vec<String>,
+) -> CmdResult<u32> {
+    map_err(state.db.delete_online_items(search_id.as_deref(), &keys))
+}
+
+#[tauri::command]
+pub fn delete_online_matching(
+    state: State<'_, Arc<AppState>>,
+    query: crate::models::OnlineQuery,
+) -> CmdResult<u32> {
+    map_err(state.db.delete_online_matching(&query))
+}

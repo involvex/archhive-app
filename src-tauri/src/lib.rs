@@ -418,6 +418,8 @@ pub fn run() {
             commands::update_online_search,
             commands::fetch_online_details,
             commands::clear_online_history,
+            commands::delete_online_items,
+            commands::delete_online_matching,
             commands::list_unenriched_scenes,
             commands::search_stashdb_scenes,
             commands::search_stashdb_performers,

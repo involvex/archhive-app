@@ -168,7 +168,16 @@ impl SiteAdapter for XpomeloAdapter {
     async fn browse(&self, ctx: &SiteContext, query: BrowseQuery) -> AppResult<BrowsePage> {
         // A range ("10m+") is several of the site's buckets: fetch the same
         // page of each and merge them.
-        let buckets = duration_buckets(query.filters.duration.as_deref());
+        // Low ranges ("10m+", "5m+", "under 10") come from the unfiltered
+        // listing, kept to the length here: one request per page and the
+        // site's own order, where buckets cost one request each (about 37
+        // of 80 videos on a page are 10+ minutes).
+        let local_range = local_length_range(query.filters.duration.as_deref());
+        let buckets = if local_range.is_some() {
+            Vec::new()
+        } else {
+            duration_buckets(query.filters.duration.as_deref())
+        };
         let queries: Vec<BrowseQuery> = if buckets.len() > 1 {
             buckets
                 .iter()
@@ -187,6 +196,15 @@ impl SiteAdapter for XpomeloAdapter {
         // limits bursts.
         let mut pages = Vec::with_capacity(queries.len());
         for q in &queries {
+            // A bucket that ended on an earlier page isn't asked again.
+            let first_page_url = listing_url(&BrowseQuery {
+                page: 1,
+                ..q.clone()
+            });
+            if buckets.len() > 1 && bucket_ended_before(&first_page_url, q.page) {
+                pages.push(Ok((Vec::new(), false, None)));
+                continue;
+            }
             let url = listing_url(q);
             tracing::info!("[xpomelo] browse: {url}");
             let mut fetched = fetch(ctx, &url, q.orientation).await;
@@ -220,6 +238,11 @@ impl SiteAdapter for XpomeloAdapter {
                 }
                 Err(e) => Err(e),
             };
+            if buckets.len() > 1 {
+                if let Ok((_, false, _)) = &page {
+                    note_bucket_end(&first_page_url, q.page);
+                }
+            }
             // Rate limited: the other buckets would be refused too.
             let limited = matches!(&page, Err(AppError::Site(m)) if m.contains("429") || m.contains("Cloudflare"));
             pages.push(page);
@@ -248,7 +271,15 @@ impl SiteAdapter for XpomeloAdapter {
             );
         }
         let by_duration = query.filters.sort.as_deref() == Some("duration");
-        let cards = dedupe(merge_lists(lists, by_duration));
+        let mut cards = dedupe(merge_lists(lists, by_duration));
+        if let Some((min, max)) = local_range {
+            cards.retain(|c| {
+                c.duration
+                    .is_some_and(|d| d >= min && max.is_none_or(|m| d < m))
+            });
+            // The heading counts the unfiltered listing.
+            total = None;
+        }
         // The default ("Free sites") hides paysites and unsupported sources;
         // picking a source (or "All") shows them.
         let keep_hidden = query.filters.source.is_some();
@@ -750,6 +781,40 @@ fn duration_buckets(value: Option<&str>) -> Vec<&'static str> {
         .collect()
 }
 
+/// Ranges filtered in the app from the unfiltered listing: (min, max) in
+/// seconds, max exclusive.
+fn local_length_range(value: Option<&str>) -> Option<(u32, Option<u32>)> {
+    match value? {
+        "10m+" => Some((600, None)),
+        "5m+" => Some((300, None)),
+        "-10m" => Some((0, Some(600))),
+        _ => None,
+    }
+}
+
+/// Last page of each bucket listing (by its page-1 URL) seen to have no
+/// next page, so later pages of a range skip it instead of asking for a
+/// page that doesn't exist.
+static BUCKET_END: LazyLock<std::sync::Mutex<std::collections::HashMap<String, u32>>> =
+    LazyLock::new(Default::default);
+
+fn bucket_ended_before(first_page_url: &str, page: u32) -> bool {
+    BUCKET_END
+        .lock()
+        .ok()
+        .and_then(|m| m.get(first_page_url).copied())
+        .is_some_and(|last| page > last)
+}
+
+fn note_bucket_end(first_page_url: &str, page: u32) {
+    if let Ok(mut m) = BUCKET_END.lock() {
+        if m.len() > 500 {
+            m.clear();
+        }
+        m.insert(first_page_url.to_string(), page);
+    }
+}
+
 /// Interleave bucket listings (longest first when sorting by duration).
 fn merge_lists(lists: Vec<Vec<MediaItem>>, by_duration: bool) -> Vec<MediaItem> {
     let mut iters: Vec<_> = lists.into_iter().map(Vec::into_iter).collect();
@@ -1008,6 +1073,23 @@ mod tests {
         assert_eq!(items[0].channel.as_deref(), Some("Pornhub"));
         assert_eq!(items[1].site_id, "xpomelo");
         assert_eq!(items[1].duration, Some(3723));
+    }
+
+    #[test]
+    fn low_ranges_filter_locally_and_buckets_remember_their_end() {
+        assert_eq!(local_length_range(Some("10m+")), Some((600, None)));
+        assert_eq!(local_length_range(Some("-10m")), Some((0, Some(600))));
+        assert_eq!(local_length_range(Some("20m+")), None);
+        assert!(!bucket_ended_before(
+            "https://xpomelo.com/x?duration=20m",
+            3
+        ));
+        note_bucket_end("https://xpomelo.com/x?duration=20m", 2);
+        assert!(bucket_ended_before("https://xpomelo.com/x?duration=20m", 3));
+        assert!(!bucket_ended_before(
+            "https://xpomelo.com/x?duration=20m",
+            2
+        ));
     }
 
     #[test]

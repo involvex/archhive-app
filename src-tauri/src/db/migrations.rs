@@ -322,3 +322,13 @@ CREATE TABLE IF NOT EXISTS online_search_updates (
     updated_at TEXT NOT NULL
 );
 "#;
+
+/// Online library entries the user removed: per saved search, or ''
+/// for browsing history. Updates and browsing don't bring them back.
+pub const MIGRATION_022: &str = r#"
+CREATE TABLE IF NOT EXISTS online_dismissed (
+    scope TEXT NOT NULL,
+    item_key TEXT NOT NULL,
+    PRIMARY KEY (scope, item_key)
+);
+"#;

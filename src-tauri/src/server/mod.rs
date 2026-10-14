@@ -268,6 +268,11 @@ impl LanServer {
             .route("/api/online/searches/{id}/update", post(online_update_lan))
             .route("/api/online/details", post(online_details_lan))
             .route("/api/online/history", delete(online_clear_lan))
+            .route("/api/online/delete", post(online_delete_lan))
+            .route(
+                "/api/online/delete-matching",
+                post(online_delete_matching_lan),
+            )
             .route("/api/stashbox/unenriched", get(list_unenriched_lan))
             .route(
                 "/api/stashbox/search-scenes",
@@ -2225,6 +2230,36 @@ async fn online_clear_lan(
         .app
         .db
         .clear_online_history()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(serde_json::json!({ "removed": removed })))
+}
+
+#[derive(Deserialize)]
+struct OnlineDeleteBody {
+    search_id: Option<String>,
+    keys: Vec<String>,
+}
+
+async fn online_delete_lan(
+    State(state): State<ApiState>,
+    Json(body): Json<OnlineDeleteBody>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let removed = state
+        .app
+        .db
+        .delete_online_items(body.search_id.as_deref(), &body.keys)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(serde_json::json!({ "removed": removed })))
+}
+
+async fn online_delete_matching_lan(
+    State(state): State<ApiState>,
+    Json(q): Json<crate::models::OnlineQuery>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let removed = state
+        .app
+        .db
+        .delete_online_matching(&q)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(Json(serde_json::json!({ "removed": removed })))
 }

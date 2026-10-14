@@ -99,6 +99,9 @@ function OnlineLibraryPage() {
   const [pages, setPages] = useState(3);
   const [updating, setUpdating] = useState(false);
   const [fetching, setFetching] = useState<{ done: number; todo: number } | null>(null);
+  // Select mode: tap cards to pick them for removal.
+  const [selecting, setSelecting] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const stopFetch = useRef(false);
   const tried = useRef(new Set<string>());
 
@@ -234,6 +237,36 @@ function OnlineLibraryPage() {
     if (tagsOpen) void loadTags();
   }
 
+  const scopeLabel = search ? "this saved search" : "the Online library";
+
+  async function deleteSelected() {
+    if (selected.size === 0) return;
+    if (
+      !window.confirm(
+        `Remove ${selected.size} ${selected.size === 1 ? "video" : "videos"} from ${scopeLabel}? They won't come back on Update${search ? "" : " or when browsing"}.`,
+      )
+    )
+      return;
+    const removed = await api.deleteOnlineItems(searchId || undefined, [...selected]);
+    toast.success(`Removed ${removed.toLocaleString()}`);
+    setSelected(new Set());
+    setSelecting(false);
+    await Promise.all([loadMeta(), loadPage(0)]);
+  }
+
+  async function deleteShown() {
+    if (total === 0) return;
+    if (
+      !window.confirm(
+        `Remove all ${total.toLocaleString()} videos matching the current filters from ${scopeLabel}? They won't come back on Update${search ? "" : " or when browsing"}.`,
+      )
+    )
+      return;
+    const removed = await api.deleteOnlineMatching({ ...query, offset: 0 });
+    toast.success(`Removed ${removed.toLocaleString()}`);
+    await Promise.all([loadMeta(), loadPage(0)]);
+  }
+
   async function clearHistory() {
     if (!window.confirm("Remove browsing history that isn't part of a saved search?")) return;
     const removed = await api.clearOnlineHistory();
@@ -261,9 +294,22 @@ function OnlineLibraryPage() {
     return list.slice(0, 200);
   }, [tagCounts, tagFind, include, exclude]);
 
-  const handleCardClick = useCallback((item: CardItem) => {
-    if ("site_id" in item) setWatchItem(item);
-  }, []);
+  const handleCardClick = useCallback(
+    (item: CardItem) => {
+      if (!("site_id" in item)) return;
+      if (!selecting) {
+        setWatchItem(item);
+        return;
+      }
+      setSelected((prev) => {
+        const next = new Set(prev);
+        if (next.has(item.id)) next.delete(item.id);
+        else next.add(item.id);
+        return next;
+      });
+    },
+    [selecting],
+  );
   const media = useMemo(() => items.map(toMediaItem), [items]);
   const missingDetails = items.filter((i) => !i.details_at).length;
 
@@ -470,9 +516,58 @@ function OnlineLibraryPage() {
         )}
       </div>
 
-      <p className="text-xs text-[var(--color-muted-foreground)]">
-        {total.toLocaleString()} {total === 1 ? "video" : "videos"}
-      </p>
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <span className="flex-1 text-[var(--color-muted-foreground)]">
+          {total.toLocaleString()} {total === 1 ? "video" : "videos"}
+          {selecting && ` · ${selected.size} selected`}
+        </span>
+        {selecting ? (
+          <>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setSelected(new Set(items.map((i) => i.key)))}
+            >
+              Select all loaded
+            </Button>
+            <Button
+              size="sm"
+              variant="destructive"
+              disabled={selected.size === 0}
+              onClick={() => void deleteSelected()}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Remove {selected.size || ""}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                setSelecting(false);
+                setSelected(new Set());
+              }}
+            >
+              Done
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button size="sm" variant="outline" onClick={() => setSelecting(true)}>
+              Select
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={total === 0}
+              onClick={() => void deleteShown()}
+              title="Remove every video matching the current filters (e.g. pick Under 10 min first)"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Remove all shown
+            </Button>
+          </>
+        )}
+      </div>
 
       {items.length === 0 && !loading ? (
         <EmptyState
@@ -500,6 +595,8 @@ function OnlineLibraryPage() {
               onInfo={setInfoItem}
               onWatch={setWatchItem}
               onClick={handleCardClick}
+              selectionMode={selecting}
+              selected={selected.has(item.id)}
             />
           ))}
         </div>
