@@ -32,24 +32,32 @@ impl PageDetails {
 
 /// The page says the video itself is gone (taken down, disabled), as
 /// opposed to the site refusing this request. PornHub serves such pages
-/// with HTTP 200 or 403: the player is replaced by a `.removed` notice
-/// ("This video has been disabled").
+/// with HTTP 200 or 403: the player is replaced by a removed-video notice
+/// ("This video has been disabled") — `.video-notice` in the desktop
+/// layout, `.removedVideoContent` in the mobile one.
 pub fn says_video_removed(html: &str) -> bool {
-    let notice = html.find(r#"class="notice video-notice""#).map(|i| {
-        let end = (i + 400).min(html.len());
-        html[i..html.ceil_char_boundary(end)].to_ascii_lowercase()
-    });
-    notice.is_some_and(|n| {
-        [
-            "has been disabled",
-            "has been removed",
-            "has been deleted",
-            "was deleted",
-            "was removed",
-        ]
-        .iter()
-        .any(|w| n.contains(w))
+    const NOTICES: &[&str] = &[
+        r#"class="notice video-notice""#,
+        r#"class="removedVideoContent""#,
+    ];
+    NOTICES.iter().any(|marker| {
+        html.find(marker).is_some_and(|i| {
+            let end = (i + 400).min(html.len());
+            notice_says_removed(&html[i..html.ceil_char_boundary(end)].to_ascii_lowercase())
+        })
     })
+}
+
+fn notice_says_removed(n: &str) -> bool {
+    [
+        "has been disabled",
+        "has been removed",
+        "has been deleted",
+        "was deleted",
+        "was removed",
+    ]
+    .iter()
+    .any(|w| n.contains(w))
 }
 
 pub fn scrape(site_id: &str, html: &str) -> PageDetails {
@@ -684,6 +692,11 @@ mod tests {
         let gone = r#"<title>Page Not Found</title><div class="removed">
             <div class="notice video-notice"><p><span>This video has been disabled</span></p></div></div>"#;
         assert!(says_video_removed(gone));
+        // Mobile layout (platform=mobile cookie).
+        let mobile = r#"<div id="messageWrapper"><div class="removedVideoContent">
+                <i class="ph-icon-error"></i>
+                <p class="upperCase">This video has been disabled.</p></div></div>"#;
+        assert!(says_video_removed(mobile));
         let other = r#"<div class="notice video-notice"><p>Log in to watch</p></div>"#;
         assert!(!says_video_removed(other));
         assert!(!says_video_removed("<p>This video has been disabled</p>"));
