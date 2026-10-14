@@ -1396,6 +1396,9 @@ pub struct OnlineQuery {
     /// Only items whose tags were not fetched yet.
     #[serde(default)]
     pub missing_details: bool,
+    /// Only items with no tags (fetched or not, channel or not).
+    #[serde(default)]
+    pub no_tags: bool,
     /// Query builder: every group needs at least one of its terms (a word
     /// or phrase in the title, tags or performers; `term*` = prefix).
     #[serde(default)]

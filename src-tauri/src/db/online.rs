@@ -440,6 +440,9 @@ impl Database {
         if q.missing_details {
             wheres.push("o.details_at IS NULL".into());
         }
+        if q.no_tags {
+            wheres.push("(o.tags IS NULL OR o.tags IN ('', '[]'))".into());
+        }
         // Query builder: groups ANDed, terms within a group ORed; exclusions;
         // a score counting every group / boost term found, for "best".
         let mut score_parts: Vec<String> = Vec::new();

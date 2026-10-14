@@ -261,6 +261,7 @@ function OnlineLibraryPage() {
     : `online-query:${searchId || "all"}`;
   const [builder, setBuilderState] = useState<BuilderQuery>(EMPTY_BUILDER);
   const [builderOpen, setBuilderOpen] = useState(false);
+  const [noTags, setNoTags] = useState(false);
   const builderCount = builderTermCount(builder);
   const setBuilder = useCallback(
     (q: BuilderQuery) => {
@@ -349,12 +350,13 @@ function OnlineLibraryPage() {
       min_duration: d?.min,
       max_duration: d?.max,
       sort: sort === "best" && builderCount === 0 ? "newest" : sort,
+      no_tags: noTags || undefined,
       groups: builder.groups.filter((g) => g.length > 0),
       exclude_terms: builder.exclude,
       boost_terms: builder.boost,
       limit: PAGE_SIZE,
     };
-  }, [searchId, debouncedText, include, exclude, duration, sort, builder, builderCount]);
+  }, [searchId, debouncedText, include, exclude, duration, sort, builder, builderCount, noTags]);
 
   const loadPage = useCallback(
     async (offset: number) => {
@@ -832,6 +834,14 @@ function OnlineLibraryPage() {
               </option>
             ))}
           </select>
+          <Button
+            size="sm"
+            variant={noTags ? "default" : "outline"}
+            onClick={() => setNoTags((v) => !v)}
+            title="Only videos without tags (with or without a channel); then Re-fetch all shown"
+          >
+            No tags
+          </Button>
           <Button
             size="sm"
             variant={builderOpen || builderCount ? "default" : "outline"}

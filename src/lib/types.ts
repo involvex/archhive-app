@@ -677,6 +677,8 @@ export interface OnlineQuery {
   max_duration?: number;
   sort?: "best" | "site" | "newest" | "longest" | "shortest" | "title";
   missing_details?: boolean;
+  /** Only videos without tags (whether or not they have a channel). */
+  no_tags?: boolean;
   /** Query builder: each group needs one of its terms (AND between groups). */
   groups?: string[][];
   /** Videos with any of these terms are left out. */
