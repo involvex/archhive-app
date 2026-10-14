@@ -35,7 +35,10 @@ fn map_item(row: &rusqlite::Row<'_>) -> rusqlite::Result<OnlineItem> {
         url: row.get(1)?,
         site_id: row.get(2)?,
         title: row.get(3)?,
-        thumbnail: row.get(4)?,
+        // Entries saved before a thumbnail fix still show (urls::repair_thumbnail).
+        thumbnail: row
+            .get::<_, Option<String>>(4)?
+            .map(|t| crate::sites::urls::repair_thumbnail(&t)),
         duration: row.get::<_, Option<i64>>(5)?.map(|d| d as u32),
         channel: row.get(6)?,
         performers: parse_list(row.get(7)?),

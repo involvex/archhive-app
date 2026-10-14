@@ -60,6 +60,21 @@ pub fn with_query(url: &str, pairs: &[(&str, &str)]) -> String {
     out
 }
 
+/// Thumbnail URLs aggregators list that the source site doesn't serve, mapped
+/// to where it does: xPomelo lists PornZog thumbnails on the main domain
+/// (`pornzog.com/media/…`, HTTP 404); its image host is `tn1.pornzog.com`.
+pub fn repair_thumbnail(url: &str) -> String {
+    for prefix in [
+        "https://pornzog.com/media/",
+        "https://www.pornzog.com/media/",
+    ] {
+        if let Some(rest) = url.strip_prefix(prefix) {
+            return format!("https://tn1.pornzog.com/media/{rest}");
+        }
+    }
+    url.to_string()
+}
+
 /// Decode HTML entities (`&#39;`, `&amp;`, `&quot;`, …) from scraped text.
 pub fn html_unescape(s: &str) -> String {
     html_escape::decode_html_entities(s).to_string()
@@ -342,6 +357,16 @@ fn extract_username_from_url(url: &str, domain: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pornzog_thumbnails_use_the_image_host() {
+        assert_eq!(
+            repair_thumbnail("https://pornzog.com/media/videos/tmb/026/473/018/1.jpg"),
+            "https://tn1.pornzog.com/media/videos/tmb/026/473/018/1.jpg"
+        );
+        let other = "https://ei.phncdn.com/videos/x.jpg";
+        assert_eq!(repair_thumbnail(other), other);
+    }
 
     #[test]
     fn path_slug_hardening() {

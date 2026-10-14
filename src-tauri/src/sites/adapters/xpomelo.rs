@@ -1030,11 +1030,11 @@ fn parse_listing(html: &str) -> Vec<MediaItem> {
                 let src = crate::sites::urls::html_unescape(&c[1]);
                 if let Some(original) = original_thumb(&src) {
                     // The source site's own CDN: no request to xPomelo.
-                    original
+                    crate::sites::urls::repair_thumbnail(&original)
                 } else if src.starts_with('/') {
                     format!("{BASE}{src}")
                 } else {
-                    src
+                    crate::sites::urls::repair_thumbnail(&src)
                 }
             });
             let duration = DUR.captures(block).and_then(|c| {
