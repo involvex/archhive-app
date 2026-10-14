@@ -57,6 +57,7 @@ class CookieBrowserPlugin(private val activity: Activity) : Plugin(activity) {
 
     companion object {
         private const val TAG = "CookieBrowserPlugin"
+        private const val EASYLIST_URL = "https://easylist.to/easylist/easylist.txt"
     }
 
     class OpenArgs @JvmOverloads constructor(
@@ -115,11 +116,73 @@ class CookieBrowserPlugin(private val activity: Activity) : Plugin(activity) {
         return parts.takeLast(2).joinToString(".")
     }
 
+    /** Ad-server domains from EasyList (its `||domain^` rules), cached in
+     *  the app's files and refreshed every few days. Empty until loaded. */
+    @Volatile private var listHosts: Set<String> = emptySet()
+    @Volatile private var listLoading = false
+
+    private fun listFile() = File(activity.filesDir, "adblock-easylist-domains.txt")
+
+    /** Load the cached EasyList domains, downloading the list first when
+     *  it is missing or older than 4 days (its own update interval). Runs
+     *  in the background; blocking uses the built-in list until then. */
+    private fun ensureFilterList() {
+        if (listLoading) return
+        listLoading = true
+        Thread {
+            try {
+                val file = listFile()
+                val stale = !file.exists() ||
+                    System.currentTimeMillis() - file.lastModified() > 4L * 24 * 3600 * 1000
+                if (stale) {
+                    try {
+                        val conn = java.net.URL(EASYLIST_URL).openConnection() as java.net.HttpURLConnection
+                        conn.connectTimeout = 15000
+                        conn.readTimeout = 30000
+                        val domains = HashSet<String>()
+                        conn.inputStream.bufferedReader().useLines { lines ->
+                            for (line in lines) parseRule(line)?.let { domains.add(it) }
+                        }
+                        if (domains.size > 1000) {
+                            file.writeText(domains.joinToString("\n"))
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "EasyList download failed; using the cached copy", e)
+                    }
+                }
+                if (file.exists() && (listHosts.isEmpty() || stale)) {
+                    listHosts = file.readLines().filter { it.isNotBlank() }.toHashSet()
+                    Log.i(TAG, "ad blocking: ${listHosts.size} EasyList domains")
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "EasyList load failed", e)
+            } finally {
+                listLoading = false
+            }
+        }.start()
+    }
+
+    /** `||ads.example.com^` (optionally with `$options`) → `ads.example.com`.
+     *  Rules limited to some sites (`domain=`), paths, wildcards and
+     *  element-hiding rules are skipped: only whole ad-server domains. */
+    private fun parseRule(raw: String): String? {
+        val line = raw.trim()
+        if (!line.startsWith("||")) return null
+        val body = line.substring(2)
+        val rule = body.substringBefore('$')
+        if (body.contains('$') && body.substringAfter('$').contains("domain=")) return null
+        val host = rule.removeSuffix("^").lowercase()
+        if (host.isEmpty() || !host.contains('.')) return null
+        if (host.any { !(it.isLetterOrDigit() || it == '.' || it == '-') }) return null
+        return host
+    }
+
     private fun isAdHost(host: String?): Boolean {
         if (host.isNullOrEmpty()) return false
+        val fromList = listHosts
         var h: String = host.lowercase()
         while (true) {
-            if (h in adHosts) return true
+            if (h in adHosts || h in fromList) return true
             val dot = h.indexOf('.')
             if (dot < 0 || h.indexOf('.', dot + 1) < 0) return false
             h = h.substring(dot + 1)
@@ -246,6 +309,7 @@ class CookieBrowserPlugin(private val activity: Activity) : Plugin(activity) {
                 // play when ad requests fail); remembered across sessions.
                 val prefs = activity.getSharedPreferences("archhive_browser", Context.MODE_PRIVATE)
                 var adblock = prefs.getBoolean("adblock", false)
+                if (adblock) ensureFilterList()
                 val adsBtn = Button(activity)
                 fun adsLabel() { adsBtn.text = if (adblock) "Ads: off" else "Ads: on" }
                 adsLabel()
@@ -341,6 +405,7 @@ class CookieBrowserPlugin(private val activity: Activity) : Plugin(activity) {
                 adsBtn.setOnClickListener {
                     adblock = !adblock
                     prefs.edit().putBoolean("adblock", adblock).apply()
+                    if (adblock) ensureFilterList()
                     adsLabel()
                     webView.reload()
                 }
