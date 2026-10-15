@@ -38,3 +38,6 @@ src-tauri/binaries/*
 # Generated plugin registry
 src/lib/plugins/registry.generated.ts
 .cline
+
+# Signed APK from `bun run sign:apk`
+/ArcHive-android.apk

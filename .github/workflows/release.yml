@@ -80,7 +80,8 @@ jobs:
       - uses: android-actions/setup-android@v4
         with:
           # Default still requests obsolete `tools` package which sdkmanager no longer ships.
-          packages: platform-tools
+          # build-tools: zipalign + apksigner for the signing step.
+          packages: platform-tools build-tools;35.0.0
 
       - name: Setup NDK
         id: setup-ndk
@@ -131,12 +132,26 @@ jobs:
           NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
 
-      - name: Collect APK
+      # The release build has no signingConfig, so Gradle emits
+      # app-universal-release-unsigned.apk — Android refuses to install it.
+      # Align + sign it; with the ANDROID_KEYSTORE_* secrets unset a throwaway
+      # key is used (installs, but can't update a differently signed install).
+      - name: Sign APK
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          APK=$(find src-tauri/gen/android/app/build/outputs/apk -name "*release*.apk" | head -1)
+          # Only Gradle's release outputs (apk/<flavor>/release/), never a
+          # debug build. Fallback: an APK Gradle already signed itself.
+          OUT=src-tauri/gen/android/app/build/outputs/apk
+          APK=$(find "$OUT" -path "*/release/*" -name "*-release-unsigned.apk" | sort | head -1)
+          if [ -z "$APK" ]; then
+            APK=$(find "$OUT" -path "*/release/*" -name "*-release.apk" | sort | head -1)
+          fi
           if [ -z "$APK" ]; then echo "Release APK not found"; find src-tauri/gen/android -name "*.apk"; exit 1; fi
-          mkdir -p release-artifacts
-          cp "$APK" release-artifacts/ArcHive-android.apk
+          bash scripts/sign-android-apk.sh "$APK" release-artifacts/ArcHive-android.apk
 
       - uses: actions/upload-artifact@v4
         with:

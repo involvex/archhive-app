@@ -46,4 +46,33 @@ bun run build:apk:release  # Release APK under src-tauri/gen/android/.../release
 - **Windows job:** Bun, Rust, sidecar binaries (`setup-binaries.ps1`), Tauri desktop bundle
 - **Android job:** Bun, Rust, Android SDK, NDK r27 (`NDK_HOME` required for `tauri android init`), Java 17, `scripts/android-regen.sh` + `tauri icon`
 
-No secrets required for unsigned APK + NSIS upload. Add code signing later if needed.
+## Android signing
+
+`tauri android build` (release) has no signing config, so Gradle produces
+`app-universal-release-unsigned.apk`, which Android refuses to install. The
+release workflow runs [`scripts/sign-android-apk.sh`](../scripts/sign-android-apk.sh)
+to zipalign (16 KB pages) and sign it. Set these repository secrets so every
+release uses the same key — updates then install over the previous version:
+
+| Secret                      | Value                                   |
+| --------------------------- | --------------------------------------- |
+| `ANDROID_KEYSTORE_BASE64`   | `base64 -w0 release.jks`                |
+| `ANDROID_KEYSTORE_PASSWORD` | keystore password                       |
+| `ANDROID_KEY_ALIAS`         | key alias                               |
+| `ANDROID_KEY_PASSWORD`      | key password (if it differs from above) |
+
+Create a key once with
+`keytool -genkeypair -keystore release.jks -alias archhive -keyalg RSA -keysize 2048 -validity 10000`
+and keep it safe: losing it means users must uninstall to update.
+
+Without the secrets the workflow signs with a throwaway key and warns: the APK
+installs, but a later build signed with a different key can't update it.
+Locally:
+
+- Windows: `bun run sign:apk` signs the release APK from
+  `bun run build:apk:release` into `ArcHive-android.apk` at the repo root
+  (`scripts/sign-android-apk.ps1`; pass `-In`, `-Out`, `-Keystore`,
+  `-KeyAlias` to override). Passwords come from the same
+  `ANDROID_KEYSTORE_PASSWORD` / `ANDROID_KEY_PASSWORD` variables.
+- macOS / Linux: `bash scripts/sign-android-apk.sh <unsigned.apk> <out.apk>`
+  with the same environment variables. The Windows installer needs no secrets.
