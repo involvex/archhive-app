@@ -23,3 +23,11 @@
 # youtubedl-android native/Python bridge
 -keep class com.yausername.** { *; }
 -dontwarn com.yausername.**
+
+# Apache Commons Compress — youtubedl-android's ZipUtils unzips the Python
+# runtime via commons-compress ZipFile, whose ExtraFieldUtils static registry
+# reflectively instantiates ZipExtraField impls (AsiExtraField, ...). R8 must
+# not strip or merge those classes/constructors: release boot otherwise dies
+# with "class ...AsiExtraField is not a concrete class" (seen v0.6.0, OnePlus 7T).
+-keep class org.apache.commons.compress.** { *; }
+-dontwarn org.apache.commons.compress.**
