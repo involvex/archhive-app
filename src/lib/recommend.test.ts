@@ -2,11 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   buildAffinity,
   defaultRecPrefs,
+  emptyAffinity,
+  rankMediaItems,
   recommendScenes,
   resolveRecPrefs,
   type RecPrefs,
 } from "./recommend";
-import type { Scene, WatchProgress } from "./types";
+import type { MediaItem, Scene, WatchProgress } from "./types";
 
 function scene(partial: Partial<Scene> & { id: string }): Scene {
   return {
@@ -31,6 +33,17 @@ const NOW = Date.parse("2026-10-15T00:00:00Z");
 
 function prefs(overrides: Partial<RecPrefs> = {}): RecPrefs {
   return { ...defaultRecPrefs(), ...overrides };
+}
+
+function media(partial: Partial<MediaItem> & { id: string }): MediaItem {
+  return {
+    title: partial.id,
+    url: `https://example.com/${partial.id}`,
+    site_id: "chaturbate",
+    performers: [],
+    tags: [],
+    ...partial,
+  };
 }
 
 describe("buildAffinity", () => {
@@ -125,5 +138,43 @@ describe("resolveRecPrefs", () => {
   it("falls back to defaults for missing settings", () => {
     const resolved = resolveRecPrefs({} as never);
     expect(resolved).toEqual(defaultRecPrefs());
+  });
+});
+
+describe("rankMediaItems", () => {
+  const library = [scene({ id: "w", performers: ["Ann"], tags: ["solo"] })];
+  const history = [row({ scene_id: "w", watched: true })];
+  const affinity = buildAffinity(library, history, NOW);
+  const items = [
+    media({ id: "match", performers: ["Ann"], tags: ["solo"], viewers: 10 }),
+    media({ id: "miss", performers: ["Zed"], viewers: 99999 }),
+    media({ id: "dup", performers: ["Ann"], url: "https://example.com/match" }),
+  ];
+
+  it("ranks affinity overlap above viewer counts and dedupes by url", () => {
+    const ranked = rankMediaItems(items, affinity, prefs(), 10);
+    expect(ranked.map((r) => r.item.id)).toEqual(["match"]);
+    expect(ranked[0].reasons.join(" ")).toContain("Ann");
+  });
+
+  it("uses viewers only as a tiebreak", () => {
+    const tied = [
+      media({ id: "low", tags: ["solo"], viewers: 5 }),
+      media({ id: "high", tags: ["solo"], viewers: 5000 }),
+    ];
+    const ranked = rankMediaItems(tied, affinity, prefs(), 10);
+    expect(ranked.map((r) => r.item.id)).toEqual(["high", "low"]);
+  });
+
+  it("honors excluded tags, preferred boosts, and the enabled flag", () => {
+    expect(rankMediaItems(items, affinity, prefs({ excludedTags: ["solo"] }), 10)).toEqual([]);
+    const boosted = rankMediaItems(
+      [media({ id: "pref", tags: ["unrelated"] })],
+      emptyAffinity(),
+      prefs({ preferredTags: ["unrelated"] }),
+      10,
+    );
+    expect(boosted.map((r) => r.item.id)).toEqual(["pref"]);
+    expect(rankMediaItems(items, affinity, prefs({ enabled: false }), 10)).toEqual([]);
   });
 });
