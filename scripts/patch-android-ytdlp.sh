@@ -89,6 +89,33 @@ else
   echo "youtubedl-android Gradle deps already present (pin $YOUTUBE_DL_ANDROID_VERSION)."
 fi
 
+# Chaquopy opens native libs (libpython.zip.so) by file path at runtime, so
+# they must be extracted at install (legacy packaging), matching
+# android:extractNativeLibs="true" in the manifest. Without this, release
+# builds keep .so uncompressed in-APK and YoutubeDL.init fails with ENOENT.
+if ! grep -q 'useLegacyPackaging' "$GRADLE"; then
+  python3 - "$GRADLE" <<'PY'
+import sys
+from pathlib import Path
+path = Path(sys.argv[1])
+text = path.read_text()
+block = '''    packaging {
+        // youtubedl-android/Chaquopy need on-disk native libs (libpython.zip.so)
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+'''
+needle = "\n    buildTypes {"
+idx = text.find(needle)
+if idx < 0:
+    raise SystemExit("Could not find buildTypes block")
+text = text[:idx] + "\n" + block + text[idx:]
+path.write_text(text)
+print("Enabled legacy native-lib packaging (extract .so at install)")
+PY
+fi
+
 if [[ ! -f "$PROGUARD_OVERLAY" ]]; then
   echo "Missing overlay: $PROGUARD_OVERLAY" >&2
   exit 1

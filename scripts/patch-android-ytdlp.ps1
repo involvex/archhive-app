@@ -93,6 +93,28 @@ if ($gradle -notmatch 'youtubedl-android ships native libs') {
     }
 }
 
+# Chaquopy opens native libs (libpython.zip.so) by file path at runtime, so
+# they must be extracted at install (legacy packaging), matching
+# android:extractNativeLibs="true" in the manifest. Without this, release
+# builds keep .so uncompressed in-APK and YoutubeDL.init fails with ENOENT.
+if ($gradle -notmatch 'useLegacyPackaging') {
+    $packagingBlock = @'
+    packaging {
+        // youtubedl-android/Chaquopy need on-disk native libs (libpython.zip.so)
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+'@
+    if ($gradle -match '(?m)^(    buildTypes \{)') {
+        $gradle = $gradle -replace '(?m)^(    buildTypes \{)', "$packagingBlock`r`n`$1"
+        $changed = $true
+        Write-Host "Enabled legacy native-lib packaging (extract .so at install)"
+    } else {
+        Write-Warning "Could not find buildTypes block in $gradlePath"
+    }
+}
+
 if ($changed) {
     Set-Content -Path $gradlePath -Value $gradle -NoNewline
 } else {
