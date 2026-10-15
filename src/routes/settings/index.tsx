@@ -2700,6 +2700,100 @@ function SettingsPage() {
               </Button>
             </CardContent>
           </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Recommended for you</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-xs text-[var(--color-muted-foreground)]">
+                Score unwatched library scenes from your watch history. Boost or exclude tags and
+                performers with comma-separated lists.
+              </p>
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={hostSettings?.rec_enabled ?? true}
+                  onChange={(e) => patchHostSettings({ rec_enabled: e.target.checked })}
+                  className="rounded"
+                />
+                Show recommendations on the Dashboard
+              </label>
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={hostSettings?.rec_hide_watched ?? true}
+                  onChange={(e) => patchHostSettings({ rec_hide_watched: e.target.checked })}
+                  className="rounded"
+                />
+                Hide watched scenes
+              </label>
+              <label className="block text-sm">
+                <span className="mb-1 block text-xs text-[var(--color-muted-foreground)]">
+                  Preferred tags (boost)
+                </span>
+                <Input
+                  value={(hostSettings?.rec_preferred_tags ?? []).join(", ")}
+                  onChange={(e) =>
+                    patchHostSettings({
+                      rec_preferred_tags: e.target.value
+                        .split(",")
+                        .map((s) => s.trim())
+                        .filter(Boolean),
+                    })
+                  }
+                  placeholder="e.g. solo, hd"
+                />
+              </label>
+              <label className="block text-sm">
+                <span className="mb-1 block text-xs text-[var(--color-muted-foreground)]">
+                  Preferred performers (boost)
+                </span>
+                <Input
+                  value={(hostSettings?.rec_preferred_performers ?? []).join(", ")}
+                  onChange={(e) =>
+                    patchHostSettings({
+                      rec_preferred_performers: e.target.value
+                        .split(",")
+                        .map((s) => s.trim())
+                        .filter(Boolean),
+                    })
+                  }
+                  placeholder="e.g. Ann, Bob"
+                />
+              </label>
+              <label className="block text-sm">
+                <span className="mb-1 block text-xs text-[var(--color-muted-foreground)]">
+                  Excluded tags
+                </span>
+                <Input
+                  value={(hostSettings?.rec_excluded_tags ?? []).join(", ")}
+                  onChange={(e) =>
+                    patchHostSettings({
+                      rec_excluded_tags: e.target.value
+                        .split(",")
+                        .map((s) => s.trim())
+                        .filter(Boolean),
+                    })
+                  }
+                  placeholder="e.g. compilation"
+                />
+              </label>
+              <label className="block text-sm">
+                <span className="mb-1 block text-xs text-[var(--color-muted-foreground)]">
+                  Max items ({hostSettings?.rec_max_items ?? 24})
+                </span>
+                <input
+                  type="range"
+                  min={6}
+                  max={48}
+                  step={6}
+                  value={hostSettings?.rec_max_items ?? 24}
+                  onChange={(e) => patchHostSettings({ rec_max_items: Number(e.target.value) })}
+                  className="w-full"
+                />
+              </label>
+            </CardContent>
+          </Card>
         </Tabs.Content>
 
         <Tabs.Content value="diagnostics" className="mt-4 space-y-4">
