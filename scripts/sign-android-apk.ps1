@@ -25,6 +25,19 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# Load repo-root .env (local signing secrets) for vars not already set.
+# CI passes the same values as encrypted secrets instead.
+$dotEnv = Join-Path $PSScriptRoot "..\.env"
+if (Test-Path $dotEnv) {
+    foreach ($line in (Get-Content $dotEnv -Encoding ascii)) {
+        if ($line -match '^\s*#' -or $line -notmatch '^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$') { continue }
+        $name, $value = $Matches[1], $Matches[2]
+        if (-not (Test-Path "env:$name") -or [string]::IsNullOrEmpty((Get-Item "env:$name").Value)) {
+            Set-Item -Path "env:$name" -Value $value
+        }
+    }
+}
+
 if (-not (Test-Path $In)) { throw "APK not found: $In" }
 
 $sdk = if ($env:ANDROID_HOME) { $env:ANDROID_HOME } elseif ($env:ANDROID_SDK_ROOT) { $env:ANDROID_SDK_ROOT } else {
