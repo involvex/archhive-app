@@ -2,7 +2,7 @@ import { createFileRoute, useSearch } from "@tanstack/react-router";
 import { CARD_GRID } from "@/lib/utils";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api/client";
-import type { Collection, CollectionType, Scene } from "@/lib/types";
+import type { Collection, CollectionType, Scene, SceneFilter } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { SceneCard } from "@/components/SceneCard";
 import { SkeletonGrid } from "@/components/SkeletonGrid";
@@ -43,6 +43,7 @@ function CollectionsPage() {
   const [loading, setLoading] = useState(true);
   const [scenesLoading, setScenesLoading] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
+  const [smartFilter, setSmartFilter] = useState<SceneFilter | undefined>();
   const [pickerOpen, setPickerOpen] = useState<Scene | null>(null);
   const [editScene, setEditScene] = useState<Scene | null>(null);
   const [detailsScene, setDetailsScene] = useState<Scene | null>(null);
@@ -78,6 +79,7 @@ function CollectionsPage() {
         // Only open if we have actual filters
         if (Object.keys(filter).length > 0) {
           // eslint-disable-next-line react-hooks/set-state-in-effect
+          setSmartFilter(filter);
           setShowCreate(true);
         }
       } catch (e) {
@@ -376,6 +378,7 @@ function CollectionsPage() {
         open={showCreate}
         onClose={() => setShowCreate(false)}
         onSubmit={handleCreate}
+        initialFilter={smartFilter}
       />
 
       <CollectionPickerDialog

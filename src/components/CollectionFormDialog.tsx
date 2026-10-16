@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import type { CollectionType, SceneFilter } from "@/lib/types";
 import { Folder, ListTodo, Zap } from "lucide-react";
 import { FilterBuilder } from "@/components/FilterBuilder";
+import { builderExpression } from "@/components/QueryBuilder";
 
 interface CollectionFormDialogProps {
   open: boolean;
@@ -21,15 +22,35 @@ interface CollectionFormDialogProps {
     description?: string;
     filter?: SceneFilter;
   }) => void;
+  /** Opens as a Smart collection with this filter (e.g. from Library). */
+  initialFilter?: SceneFilter;
 }
 
-export function CollectionFormDialog({ open, onClose, onSubmit }: CollectionFormDialogProps) {
+export function CollectionFormDialog({
+  open,
+  onClose,
+  onSubmit,
+  initialFilter,
+}: CollectionFormDialogProps) {
   const [name, setName] = useState("");
   const [type, setType] = useState<CollectionType>("collection");
   const [description, setDescription] = useState("");
   const [filter, setFilter] = useState<SceneFilter>({});
   const [performerInput, setPerformerInput] = useState("");
   const [tagInput, setTagInput] = useState("");
+  const [seeded, setSeeded] = useState<SceneFilter | undefined>();
+  if (open && initialFilter && initialFilter !== seeded) {
+    setSeeded(initialFilter);
+    setType("smart");
+    setFilter(initialFilter);
+    setPerformerInput(initialFilter.performer_names?.join(", ") ?? "");
+    setTagInput(initialFilter.tag_names?.join(", ") ?? "");
+  }
+  const query = builderExpression({
+    groups: filter.groups ?? [],
+    exclude: filter.exclude_terms ?? [],
+    boost: filter.boost_terms ?? [],
+  });
 
   const isSmart = type === "smart";
 
@@ -108,6 +129,11 @@ export function CollectionFormDialog({ open, onClose, onSubmit }: CollectionForm
                 Smart collections automatically include scenes matching the filter below. Scenes are
                 re-evaluated each time the collection is opened.
               </p>
+              {query && (
+                <p className="break-words rounded bg-[var(--color-muted)] px-2 py-1 font-mono text-[11px]">
+                  Query: {query}
+                </p>
+              )}
               <FilterBuilder
                 filter={filter}
                 onChange={setFilter}

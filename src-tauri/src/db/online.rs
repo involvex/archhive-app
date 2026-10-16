@@ -14,15 +14,25 @@ use rusqlite::{params, params_from_iter, OptionalExtension};
 /// tag counts and removal take it like any saved search id.
 pub const BOOKMARKS: &str = "@bookmarks";
 
-/// An item's title, tags and performers as lowercase words separated by
-/// single spaces, with a space at each end, so ` word ` matches whole words
-/// and phrases (punctuation, JSON quotes and hyphens become spaces).
-const WORDS: &str = "(' ' || replace(replace(replace(replace(replace(replace(replace(\
-     replace(replace(replace(replace(replace(replace(lower(o.title || ' ' || COALESCE(o.tags, '') || ' ' \
-     || COALESCE(o.performers, '')), '\"', ' '), ',', ' '), '[', ' '), ']', ' '), '-', ' '), '.', ' '), \
-     '!', ' '), '?', ' '), ':', ' '), '(', ' '), ')', ' '), '/', ' '), '_', ' ') || ' ')";
+/// `text` (an SQL expression) as lowercase words separated by single spaces,
+/// with a space at each end, so ` word ` matches whole words and phrases
+/// (punctuation, JSON quotes and hyphens become spaces).
+pub(crate) fn words_sql(text: &str) -> String {
+    let mut out = format!("lower({text})");
+    for c in [
+        "\"", ",", "[", "]", "-", ".", "!", "?", ":", "(", ")", "/", "_",
+    ] {
+        out = format!("replace({out}, '{c}', ' ')");
+    }
+    format!("(' ' || {out} || ' ')")
+}
 
-/// A builder term as LIKE patterns on `WORDS`, any of which matches:
+/// An online item's title, tags and performers as words (see `words_sql`).
+fn online_words() -> String {
+    words_sql("o.title || ' ' || COALESCE(o.tags, '') || ' ' || COALESCE(o.performers, '')")
+}
+
+/// A builder term as LIKE patterns on a `words_sql` expression, any of which matches:
 /// `big tit` → `% big tit %`, `% big tits %`; `pussies` → also `% pussy %`
 /// (singular / plural of the last word); `tit*` → `% tit%` (prefix only).
 /// Empty for an empty term.
@@ -78,13 +88,14 @@ fn term_patterns(term: &str) -> Vec<String> {
         .collect()
 }
 
-/// SQL condition for one term (any of its patterns) and its arguments.
-fn term_condition(term: &str) -> Option<(String, Vec<String>)> {
+/// SQL condition for one term (any of its patterns) on the `words`
+/// expression (see `words_sql`), and its arguments.
+pub(crate) fn term_condition(words: &str, term: &str) -> Option<(String, Vec<String>)> {
     let pats = term_patterns(term);
     if pats.is_empty() {
         return None;
     }
-    let cond = vec![format!("{WORDS} LIKE ?"); pats.len()].join(" OR ");
+    let cond = vec![format!("{words} LIKE ?"); pats.len()].join(" OR ");
     Some((format!("({cond})"), pats))
 }
 
@@ -445,11 +456,14 @@ impl Database {
         }
         // Query builder: groups ANDed, terms within a group ORed; exclusions;
         // a score counting every group / boost term found, for "best".
+        let words = online_words();
         let mut score_parts: Vec<String> = Vec::new();
         let mut score_args: Vec<rusqlite::types::Value> = Vec::new();
         for group in &q.groups {
-            let terms: Vec<(String, Vec<String>)> =
-                group.iter().filter_map(|t| term_condition(t)).collect();
+            let terms: Vec<(String, Vec<String>)> = group
+                .iter()
+                .filter_map(|t| term_condition(&words, t))
+                .collect();
             if terms.is_empty() {
                 continue;
             }
@@ -467,11 +481,19 @@ impl Database {
                 score_args.extend(pats.iter().map(|p| p.clone().into()));
             }
         }
-        for (cond, pats) in q.exclude_terms.iter().filter_map(|t| term_condition(t)) {
+        for (cond, pats) in q
+            .exclude_terms
+            .iter()
+            .filter_map(|t| term_condition(&words, t))
+        {
             wheres.push(format!("NOT {cond}"));
             args.extend(pats.into_iter().map(Into::into));
         }
-        for (cond, pats) in q.boost_terms.iter().filter_map(|t| term_condition(t)) {
+        for (cond, pats) in q
+            .boost_terms
+            .iter()
+            .filter_map(|t| term_condition(&words, t))
+        {
             score_parts.push(cond);
             score_args.extend(pats.into_iter().map(Into::into));
         }

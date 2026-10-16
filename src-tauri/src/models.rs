@@ -955,6 +955,16 @@ pub struct SceneFilter {
     /// V2 BodyMatch: only scenes with a performer of this hair color.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub performer_hair: Option<String>,
+    /// Query builder (as in `OnlineQuery`): every group needs one of its
+    /// terms in the title, tags or performers.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub groups: Vec<Vec<String>>,
+    /// Query builder: scenes with any of these terms are left out.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub exclude_terms: Vec<String>,
+    /// Query builder: not required, but rank a scene higher.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub boost_terms: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

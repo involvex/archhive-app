@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { toast } from "react-hot-toast";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api/client";
 import { sceneThumbUrl, isVideoScene } from "@/lib/mediaUrl";
 import type { Scene, SceneFilter, SceneSort } from "@/lib/types";
@@ -16,6 +16,12 @@ import { ScenePlayerDialog } from "@/components/ScenePlayerDialog";
 import { SceneBulkEditBar } from "@/components/SceneBulkEditBar";
 import { SceneContextMenu, type SceneContextMenuState } from "@/components/SceneContextMenu";
 import { SceneCard } from "@/components/SceneCard";
+import {
+  QueryBuilder,
+  EMPTY_BUILDER,
+  builderTermCount,
+  type BuilderQuery,
+} from "@/components/QueryBuilder";
 import { SkeletonGrid } from "@/components/SkeletonGrid";
 import { ErrorState } from "@/components/ErrorState";
 import { EmptyState } from "@/components/EmptyState";
@@ -126,6 +132,8 @@ function BodyMatchCupHairInline({
   );
 }
 
+const BUILDER_KEY = "scenes-query-builder";
+
 function ScenesPage() {
   const navigate = useNavigate();
   const urlSearch = Route.useSearch();
@@ -213,6 +221,45 @@ function ScenesPage() {
     (filter.performer_names?.length ?? 0) > 0 ||
     (filter.tag_names?.length ?? 0) > 0;
 
+  // Query builder (groups / exclusions / rank higher), remembered on this
+  // device and sent with the filter; matches rank best-first.
+  const [builder, setBuilderState] = useState<BuilderQuery>(() => {
+    try {
+      const raw = localStorage.getItem(BUILDER_KEY);
+      return raw ? { ...EMPTY_BUILDER, ...(JSON.parse(raw) as BuilderQuery) } : EMPTY_BUILDER;
+    } catch {
+      return EMPTY_BUILDER;
+    }
+  });
+  const setBuilder = useCallback((q: BuilderQuery) => {
+    setBuilderState(q);
+    try {
+      localStorage.setItem(BUILDER_KEY, JSON.stringify(q));
+    } catch {
+      /* storage unavailable */
+    }
+  }, []);
+  const [builderOpen, setBuilderOpen] = useState(false);
+  const builderCount = builderTermCount(builder);
+  const queryFilter = useMemo<SceneFilter>(
+    () =>
+      builderCount > 0
+        ? {
+            ...filter,
+            groups: builder.groups.filter((g) => g.length > 0),
+            exclude_terms: builder.exclude,
+            boost_terms: builder.boost,
+          }
+        : filter,
+    [filter, builder, builderCount],
+  );
+  const filtered = hasFilter || builderCount > 0;
+  const saveSmartCollection = () =>
+    navigate({
+      to: "/library/collections",
+      search: { newSmartFilter: encodeURIComponent(JSON.stringify(queryFilter)) },
+    });
+
   const [genThumbsLoading, setGenThumbsLoading] = useState(false);
   const [genThumbsResult, setGenThumbsResult] = useState("");
   // #26 watch-history map (scene id → progress). Must be declared before any
@@ -274,8 +321,8 @@ function ScenesPage() {
     setError(null);
     setPage(1);
     setHasMore(true);
-    const fetchPromise = hasFilter
-      ? api.listScenesWithFilter(filter, PAGE_SIZE, 0)
+    const fetchPromise = filtered
+      ? api.listScenesWithFilter(queryFilter, PAGE_SIZE, 0)
       : api.listScenes(query || undefined, sort, PAGE_SIZE, 0);
     fetchPromise
       .then((result) => {
@@ -291,15 +338,15 @@ function ScenesPage() {
       .finally(() => setLoading(false));
     refreshWatch();
     refreshUnenriched();
-  }, [query, sort, filter, hasFilter, refreshWatch, refreshUnenriched]);
+  }, [query, sort, filter, queryFilter, filtered, refreshWatch, refreshUnenriched]);
 
   const loadMore = useCallback(() => {
     if (loadingMore || !hasMore) return;
     setLoadingMore(true);
     const nextPage = page + 1;
-    const offset = nextPage * PAGE_SIZE;
-    const fetchPromise = hasFilter
-      ? api.listScenesWithFilter(filter, PAGE_SIZE, offset)
+    const offset = page * PAGE_SIZE;
+    const fetchPromise = filtered
+      ? api.listScenesWithFilter(queryFilter, PAGE_SIZE, offset)
       : api.listScenes(query || undefined, sort, PAGE_SIZE, offset);
     fetchPromise
       .then((result) => {
@@ -312,7 +359,7 @@ function ScenesPage() {
         setError(e instanceof Error ? e.message : "Failed to load more scenes");
       })
       .finally(() => setLoadingMore(false));
-  }, [query, sort, filter, hasFilter, hasMore, page, loadingMore]);
+  }, [query, sort, queryFilter, filtered, hasMore, page, loadingMore]);
 
   function watchState(id: string) {
     return watchFor(watchMap, id);
@@ -699,7 +746,22 @@ function ScenesPage() {
         ) : (
           sortSelect
         )}
+        <Button
+          variant={builderOpen || builderCount ? "default" : "outline"}
+          className="h-10 shrink-0 md:h-9"
+          onClick={() => setBuilderOpen((v) => !v)}
+        >
+          Query{builderCount > 0 && ` (${builderCount})`}
+        </Button>
       </div>
+      {builderOpen && (
+        <QueryBuilder
+          value={builder}
+          onChange={setBuilder}
+          onSave={saveSmartCollection}
+          saveLabel="Save as Smart Collection"
+        />
+      )}
       {isPhone ? (
         <BottomSheet
           open={filtersOpen}
@@ -887,15 +949,7 @@ function ScenesPage() {
             type="button"
             size="sm"
             variant="secondary"
-            onClick={() => {
-              // Navigate to collections page with pre-filled Smart collection form
-              // We'll use URL params to pass the filter
-              const filterJson = encodeURIComponent(JSON.stringify(filter));
-              navigate({
-                to: "/library/collections",
-                search: { newSmartFilter: filterJson },
-              });
-            }}
+            onClick={saveSmartCollection}
             className="h-7"
           >
             <Zap className="h-3.5 w-3.5 mr-1" />

@@ -1451,6 +1451,70 @@ impl Database {
             ));
         }
 
+        // Query builder: groups ANDed, terms within a group ORed, exclusions,
+        // and a score (group + boost terms found) that ranks the best first.
+        // Each scene's words are built once (materialized), not per term.
+        let mut args: Vec<rusqlite::types::Value> = Vec::new();
+        let mut score_parts: Vec<String> = Vec::new();
+        let mut score_args: Vec<rusqlite::types::Value> = Vec::new();
+        let mut with_sql = String::new();
+        if !filter.groups.is_empty()
+            || !filter.exclude_terms.is_empty()
+            || !filter.boost_terms.is_empty()
+        {
+            let words = online::words_sql(
+                "scenes.title || ' ' || COALESCE((SELECT group_concat(qt.name, ' ') FROM scene_tags qst \
+                 JOIN tags qt ON qt.id = qst.tag_id WHERE qst.scene_id = scenes.id), '') || ' ' || \
+                 COALESCE((SELECT group_concat(qp.name, ' ') FROM scene_performers qsp \
+                 JOIN performers qp ON qp.id = qsp.performer_id WHERE qsp.scene_id = scenes.id), '')",
+            );
+            with_sql = format!(
+                "WITH qwords AS MATERIALIZED (SELECT scenes.id AS id, {words} AS w FROM scenes)\n             "
+            );
+            joins.push("JOIN qwords ON qwords.id = scenes.id".to_string());
+            for group in &filter.groups {
+                let terms: Vec<(String, Vec<String>)> = group
+                    .iter()
+                    .filter_map(|t| online::term_condition("qwords.w", t))
+                    .collect();
+                if terms.is_empty() {
+                    continue;
+                }
+                let any = terms
+                    .iter()
+                    .map(|(c, _)| c.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" OR ");
+                conditions.push(format!("({any})"));
+                for (cond, pats) in terms {
+                    args.extend(pats.iter().map(|p| p.clone().into()));
+                    score_parts.push(cond);
+                    score_args.extend(pats.into_iter().map(Into::into));
+                }
+            }
+            for (cond, pats) in filter
+                .exclude_terms
+                .iter()
+                .filter_map(|t| online::term_condition("qwords.w", t))
+            {
+                conditions.push(format!("NOT {cond}"));
+                args.extend(pats.into_iter().map(Into::into));
+            }
+            for (cond, pats) in filter
+                .boost_terms
+                .iter()
+                .filter_map(|t| online::term_condition("qwords.w", t))
+            {
+                score_parts.push(cond);
+                score_args.extend(pats.into_iter().map(Into::into));
+            }
+        }
+        let score_sql = if score_parts.is_empty() {
+            String::new()
+        } else {
+            format!("({}) DESC, ", score_parts.join(" + "))
+        };
+
         let where_clause = if conditions.is_empty() {
             String::new()
         } else {
@@ -1485,15 +1549,18 @@ impl Database {
         let offset_val = offset.unwrap_or(0).min(limit_val * 100);
 
         let sql = format!(
-            "SELECT scenes.id, scenes.title, scenes.path, scenes.thumb, scenes.source_url, scenes.duration, scenes.channel, scenes.file_size, scenes.width, scenes.height, scenes.rating
+            "{with_sql}SELECT scenes.id, scenes.title, scenes.path, scenes.thumb, scenes.source_url, scenes.duration, scenes.channel, scenes.file_size, scenes.width, scenes.height, scenes.rating
              FROM scenes{joins_sql}
              {where_clause}{group_by}
-             ORDER BY scenes.created_at DESC
+             ORDER BY {score_sql}scenes.created_at DESC
              LIMIT ? OFFSET ?"
         );
+        args.extend(score_args);
+        args.push(limit_val.into());
+        args.push(offset_val.into());
 
         let mut stmt = conn.prepare(&sql)?;
-        let rows = stmt.query_map(params![limit_val, offset_val], |row| {
+        let rows = stmt.query_map(rusqlite::params_from_iter(args), |row| {
             Ok((
                 row.get::<_, String>(0)?,
                 row.get::<_, String>(1)?,
@@ -3602,5 +3669,74 @@ mod tests {
             )
             .unwrap();
         assert!(mismatch.is_empty());
+    }
+
+    #[test]
+    fn scene_filter_query_builder_groups_exclusions_and_ranking() {
+        let dir = tempdir().unwrap();
+        let db = Database::new(dir.path().to_path_buf()).unwrap();
+        let add = |title: &str, performers: &[&str], tags: &[&str]| {
+            let p: Vec<String> = performers.iter().map(|s| s.to_string()).collect();
+            let t: Vec<String> = tags.iter().map(|s| s.to_string()).collect();
+            db.insert_scene(
+                title, None, None, &p, &t, None, None, None, None, None, None,
+            )
+            .unwrap();
+        };
+        add("Beach day", &["Alice"], &["Blowjobs", "Outdoor"]);
+        add("Hot blowjob POV", &[], &[]);
+        add("Solo blowjob", &[], &["Solo"]);
+        add("Kitchen talk", &["Betty"], &["Outdoor"]);
+
+        let run = |groups: Vec<Vec<&str>>, exclude: Vec<&str>, boost: Vec<&str>| {
+            let f = crate::models::SceneFilter {
+                groups: groups
+                    .into_iter()
+                    .map(|g| g.into_iter().map(String::from).collect())
+                    .collect(),
+                exclude_terms: exclude.into_iter().map(String::from).collect(),
+                boost_terms: boost.into_iter().map(String::from).collect(),
+                ..Default::default()
+            };
+            let mut titles: Vec<String> = db
+                .list_scenes_with_filter(&f, None, None)
+                .unwrap()
+                .into_iter()
+                .map(|s| s.title)
+                .collect();
+            if f.boost_terms.is_empty() {
+                titles.sort();
+            }
+            titles
+        };
+
+        // Singular matches the plural tag; titles count too.
+        assert_eq!(
+            run(vec![vec!["blowjob"]], vec![], vec![]),
+            ["Beach day", "Hot blowjob POV", "Solo blowjob"]
+        );
+        // Exclusions, and AND between groups (tags and performers).
+        assert_eq!(
+            run(vec![vec!["blowjob"]], vec!["solo"], vec![]),
+            ["Beach day", "Hot blowjob POV"]
+        );
+        assert_eq!(
+            run(vec![vec!["outdoor"], vec!["alice", "pov"]], vec![], vec![]),
+            ["Beach day"]
+        );
+        // Boost terms rank first without being required.
+        assert_eq!(
+            run(vec![vec!["blowjob"]], vec!["solo"], vec!["pov"])[0],
+            "Hot blowjob POV"
+        );
+        // Combines with the tag filter (its JOIN + GROUP BY).
+        let f = crate::models::SceneFilter {
+            tag_names: vec!["Outdoor".to_string()],
+            exclude_terms: vec!["blowjob".to_string()],
+            ..Default::default()
+        };
+        let r = db.list_scenes_with_filter(&f, None, None).unwrap();
+        assert_eq!(r.len(), 1);
+        assert_eq!(r[0].title, "Kitchen talk");
     }
 }

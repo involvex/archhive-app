@@ -366,6 +366,12 @@ export interface SceneFilter {
   performer_cup?: string;
   /** V2 BodyMatch: scenes with a performer of this hair color. */
   performer_hair?: string;
+  /** Query builder: every group needs one of its terms (title, tags, performers). */
+  groups?: string[][];
+  /** Query builder: scenes with any of these terms are left out. */
+  exclude_terms?: string[];
+  /** Query builder: not required, but ranks a scene higher. */
+  boost_terms?: string[];
 }
 
 export type CollectionType = "collection" | "watchlist" | "smart";
