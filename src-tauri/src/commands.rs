@@ -237,6 +237,28 @@ pub fn get_pending_share(app: AppHandle) -> CmdResult<Option<String>> {
     }
 }
 
+/// Share a text file (settings backup JSON) via the Android system share
+/// sheet. Android-only: Web Share with files and `<a download>` are both
+/// unreliable in the WebView, and scoped storage forbids direct writes to
+/// shared Downloads — so the Kotlin plugin writes to app cache and shares
+/// through FileProvider.
+#[tauri::command]
+pub fn share_text_file(
+    app: AppHandle,
+    filename: String,
+    text: String,
+    mime: Option<String>,
+    title: Option<String>,
+) -> CmdResult<()> {
+    map_err(crate::mobile::ytdlp_bridge::share_text_file(
+        &app,
+        &filename,
+        &text,
+        mime.as_deref().unwrap_or("application/json"),
+        title.as_deref().unwrap_or("Share backup"),
+    ))
+}
+
 #[tauri::command]
 pub fn list_scenes(
     state: State<'_, Arc<AppState>>,

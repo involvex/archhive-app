@@ -62,17 +62,37 @@ release uses the same key — updates then install over the previous version:
 | `ANDROID_KEY_PASSWORD`      | key password (if it differs from above) |
 
 Create a key once with
-`keytool -genkeypair -keystore release.jks -alias archhive -keyalg RSA -keysize 2048 -validity 10000`
+`keytool -genkeypair -keystore release.jks -alias archhive -keyalg RSA -keysize 4096 -validity 10000`
 and keep it safe: losing it means users must uninstall to update.
+Store the `.jks` outside the repo (e.g. `~/.archhive/release.jks`); it must
+never be committed. Push the secrets with the GitHub CLI:
+
+```powershell
+gh secret set ANDROID_KEYSTORE_BASE64 < path\to\release.jks.b64  # base64 of the .jks, single line
+gh secret set ANDROID_KEYSTORE_PASSWORD
+gh secret set ANDROID_KEY_ALIAS --body archhive
+gh secret set ANDROID_KEY_PASSWORD  # same as the keystore password for PKCS12
+```
+
+(`gh secret set NAME` without `--body` prompts securely with no shell history.)
 
 Without the secrets the workflow signs with a throwaway key and warns: the APK
 installs, but a later build signed with a different key can't update it.
-Locally:
+Locally, both signing scripts auto-load a repo-root `.env` (gitignored) so you
+don't have to export variables by hand:
+
+```dotenv
+ANDROID_KEYSTORE_BASE64=<base64 of release.jks, single line>
+ANDROID_KEYSTORE_PASSWORD=<keystore password>
+ANDROID_KEY_ALIAS=archhive
+ANDROID_KEY_PASSWORD=<key password>
+```
+
+Explicit environment variables take precedence over `.env`. Then:
 
 - Windows: `bun run sign:apk` signs the release APK from
   `bun run build:apk:release` into `ArcHive-android.apk` at the repo root
   (`scripts/sign-android-apk.ps1`; pass `-In`, `-Out`, `-Keystore`,
-  `-KeyAlias` to override). Passwords come from the same
-  `ANDROID_KEYSTORE_PASSWORD` / `ANDROID_KEY_PASSWORD` variables.
+  `-KeyAlias` to override).
 - macOS / Linux: `bash scripts/sign-android-apk.sh <unsigned.apk> <out.apk>`
   with the same environment variables. The Windows installer needs no secrets.

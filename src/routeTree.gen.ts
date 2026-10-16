@@ -19,6 +19,7 @@ import { Route as FeedIndexRouteImport } from './routes/feed/index'
 import { Route as FilesIndexRouteImport } from './routes/files/index'
 import { Route as LibraryIndexRouteImport } from './routes/library/index'
 import { Route as LiveIndexRouteImport } from './routes/live/index'
+import { Route as RecommendationsIndexRouteImport } from './routes/recommendations/index'
 import { Route as SettingsIndexRouteImport } from './routes/settings/index'
 import { Route as BrowseSiteIndexRouteImport } from './routes/browse/$site/index'
 import { Route as LibraryCollectionsIndexRouteImport } from './routes/library/collections/index'
@@ -80,6 +81,11 @@ const LibraryIndexRoute = LibraryIndexRouteImport.update({
 const LiveIndexRoute = LiveIndexRouteImport.update({
   id: '/live/',
   path: '/live/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RecommendationsIndexRoute = RecommendationsIndexRouteImport.update({
+  id: '/recommendations/',
+  path: '/recommendations/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsIndexRoute = SettingsIndexRouteImport.update({
@@ -155,6 +161,7 @@ export interface FileRoutesByFullPath {
   '/files/': typeof FilesIndexRoute
   '/library/': typeof LibraryIndexRoute
   '/live/': typeof LiveIndexRoute
+  '/recommendations/': typeof RecommendationsIndexRoute
   '/settings/': typeof SettingsIndexRoute
   '/library/performers/$performerId': typeof LibraryPerformersPerformerIdRoute
   '/library/tags/$tagId': typeof LibraryTagsTagIdRoute
@@ -179,6 +186,7 @@ export interface FileRoutesByTo {
   '/files': typeof FilesIndexRoute
   '/library': typeof LibraryIndexRoute
   '/live': typeof LiveIndexRoute
+  '/recommendations': typeof RecommendationsIndexRoute
   '/settings': typeof SettingsIndexRoute
   '/library/performers/$performerId': typeof LibraryPerformersPerformerIdRoute
   '/library/tags/$tagId': typeof LibraryTagsTagIdRoute
@@ -204,6 +212,7 @@ export interface FileRoutesById {
   '/files/': typeof FilesIndexRoute
   '/library/': typeof LibraryIndexRoute
   '/live/': typeof LiveIndexRoute
+  '/recommendations/': typeof RecommendationsIndexRoute
   '/settings/': typeof SettingsIndexRoute
   '/library/performers/$performerId': typeof LibraryPerformersPerformerIdRoute
   '/library/tags/$tagId': typeof LibraryTagsTagIdRoute
@@ -230,6 +239,7 @@ export interface FileRouteTypes {
     | '/files/'
     | '/library/'
     | '/live/'
+    | '/recommendations/'
     | '/settings/'
     | '/library/performers/$performerId'
     | '/library/tags/$tagId'
@@ -254,6 +264,7 @@ export interface FileRouteTypes {
     | '/files'
     | '/library'
     | '/live'
+    | '/recommendations'
     | '/settings'
     | '/library/performers/$performerId'
     | '/library/tags/$tagId'
@@ -278,6 +289,7 @@ export interface FileRouteTypes {
     | '/files/'
     | '/library/'
     | '/live/'
+    | '/recommendations/'
     | '/settings/'
     | '/library/performers/$performerId'
     | '/library/tags/$tagId'
@@ -303,6 +315,7 @@ export interface RootRouteChildren {
   FilesIndexRoute: typeof FilesIndexRoute
   LibraryIndexRoute: typeof LibraryIndexRoute
   LiveIndexRoute: typeof LiveIndexRoute
+  RecommendationsIndexRoute: typeof RecommendationsIndexRoute
   SettingsIndexRoute: typeof SettingsIndexRoute
   LibraryPerformersPerformerIdRoute: typeof LibraryPerformersPerformerIdRoute
   LibraryTagsTagIdRoute: typeof LibraryTagsTagIdRoute
@@ -387,6 +400,13 @@ declare module '@tanstack/react-router' {
       path: '/live'
       fullPath: '/live/'
       preLoaderRoute: typeof LiveIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/recommendations/': {
+      id: '/recommendations/'
+      path: '/recommendations'
+      fullPath: '/recommendations/'
+      preLoaderRoute: typeof RecommendationsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/settings/': {
@@ -487,6 +507,7 @@ const rootRouteChildren: RootRouteChildren = {
   FilesIndexRoute: FilesIndexRoute,
   LibraryIndexRoute: LibraryIndexRoute,
   LiveIndexRoute: LiveIndexRoute,
+  RecommendationsIndexRoute: RecommendationsIndexRoute,
   SettingsIndexRoute: SettingsIndexRoute,
   LibraryPerformersPerformerIdRoute: LibraryPerformersPerformerIdRoute,
   LibraryTagsTagIdRoute: LibraryTagsTagIdRoute,

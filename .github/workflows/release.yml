@@ -143,9 +143,12 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          APK=$(find src-tauri/gen/android/app/build/outputs/apk -name "*release-unsigned.apk" | head -1)
+          # Only Gradle's release outputs (apk/<flavor>/release/), never a
+          # debug build. Fallback: an APK Gradle already signed itself.
+          OUT=src-tauri/gen/android/app/build/outputs/apk
+          APK=$(find "$OUT" -path "*/release/*" -name "*-release-unsigned.apk" | sort | head -1)
           if [ -z "$APK" ]; then
-            APK=$(find src-tauri/gen/android/app/build/outputs/apk -name "*release*.apk" | head -1)
+            APK=$(find "$OUT" -path "*/release/*" -name "*-release.apk" | sort | head -1)
           fi
           if [ -z "$APK" ]; then echo "Release APK not found"; find src-tauri/gen/android -name "*.apk"; exit 1; fi
           bash scripts/sign-android-apk.sh "$APK" release-artifacts/ArcHive-android.apk

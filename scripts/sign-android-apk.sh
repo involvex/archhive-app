@@ -21,9 +21,23 @@ IN="${1:?usage: sign-android-apk.sh <unsigned.apk> <signed-output.apk>}"
 OUT="${2:?usage: sign-android-apk.sh <unsigned.apk> <signed-output.apk>}"
 [[ -f "$IN" ]] || { echo "APK not found: $IN" >&2; exit 1; }
 
+# Load repo-root .env (local signing secrets) for vars not already set.
+# CI passes the same values as encrypted secrets instead (no .env there).
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f "$SCRIPT_DIR/../.env" ]]; then
+  while IFS='=' read -r name value; do
+    [[ "$name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+    if [[ -z "${!name:-}" ]]; then
+      printf -v "$name" '%s' "$value"
+      export "$name"
+    fi
+  done < <(grep '=' "$SCRIPT_DIR/../.env" | grep -v '^[[:space:]]*#')
+fi
+
 SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
 [[ -n "$SDK" && -d "$SDK/build-tools" ]] || { echo "ANDROID_HOME with build-tools is required" >&2; exit 1; }
-BT="$(ls -d "$SDK"/build-tools/*/ | sort -V | tail -1)"
+BT="$(ls -d "$SDK"/build-tools/*/ 2>/dev/null | sort -V | tail -1 || true)"
+[[ -n "$BT" ]] || { echo "No build-tools versions found in $SDK/build-tools" >&2; exit 1; }
 ZIPALIGN="$BT/zipalign"
 APKSIGNER="$BT/apksigner"
 [[ -x "$ZIPALIGN" && -x "$APKSIGNER" ]] || { echo "zipalign/apksigner not found in $BT" >&2; exit 1; }

@@ -1,7 +1,9 @@
 package com.archhive.app
 
 import android.app.Activity
+import android.content.Intent
 import android.util.Log
+import androidx.core.content.FileProvider
 import app.tauri.annotation.Command
 import app.tauri.annotation.TauriPlugin
 import app.tauri.plugin.Invoke
@@ -627,6 +629,42 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
     }
 
     /**
+     * Share a text file (settings backup JSON) via the system share sheet.
+     * Written to app cache + exposed through FileProvider: Web Share with
+     * files and <a download> are both unreliable in the Android WebView, and
+     * scoped storage forbids direct writes to shared Downloads.
+     */
+    @Command
+    fun shareTextFile(invoke: Invoke) {
+        try {
+            val args = invoke.parseArgs(ShareFileArgs::class.java)
+            val safeName = args.filename.replace(Regex("[/\\\\]"), "_").take(128)
+                .ifBlank { "archhive-backup.json" }
+            val dir = File(activity.cacheDir, "shared").apply { mkdirs() }
+            val file = File(dir, safeName)
+            file.writeText(args.text)
+            val uri = FileProvider.getUriForFile(
+                activity, "${activity.packageName}.fileprovider", file
+            )
+            val send = Intent(Intent.ACTION_SEND).apply {
+                type = args.mime.ifBlank { "application/json" }
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            activity.startActivity(Intent.createChooser(send, args.title.ifBlank { "Share backup" }))
+            val ret = JSObject()
+            ret.put("ok", true)
+            invoke.resolve(ret)
+        } catch (e: Exception) {
+            Log.e("YtDlpPlugin", "shareTextFile failed", e)
+            val ret = JSObject()
+            ret.put("ok", false)
+            ret.put("message", e.message ?: "shareTextFile failed")
+            invoke.resolve(ret)
+        }
+    }
+
+    /**
      * Command payload. Plain class with a JVM no-arg constructor + setter so
      * Jackson (no Kotlin module on the Tauri side) can bind {"args": [...]}.
      */
@@ -655,5 +693,12 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
     class OpenFileArgs @JvmOverloads constructor(
         var path: String = "",
         var mime: String = "",
+    )
+
+    class ShareFileArgs @JvmOverloads constructor(
+        var filename: String = "archhive-backup.json",
+        var text: String = "",
+        var mime: String = "application/json",
+        var title: String = "Share backup",
     )
 }

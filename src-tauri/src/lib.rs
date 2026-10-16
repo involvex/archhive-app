@@ -326,6 +326,7 @@ pub fn run() {
             commands::get_network_info,
             commands::queue_bulk_import,
             commands::get_pending_share,
+            commands::share_text_file,
             commands::list_scenes,
             commands::delete_scene,
             commands::ensure_performer,

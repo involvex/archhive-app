@@ -571,6 +571,30 @@ pub struct AppSettings {
     /// library, not only saved searches and bookmarks.
     #[serde(default)]
     pub online_record_all: bool,
+    /// Show the "Recommended for you" rail (default true).
+    #[serde(default = "default_rec_enabled")]
+    pub rec_enabled: bool,
+    /// Hide watched scenes from recommendations (default true).
+    #[serde(default = "default_rec_hide_watched")]
+    pub rec_hide_watched: bool,
+    /// Rank matching live rooms in recommendations (Phase 2; default true).
+    #[serde(default = "default_rec_include_live")]
+    pub rec_include_live: bool,
+    /// Rank saved-search/trending matches (Phase 2; default true).
+    #[serde(default = "default_rec_include_feed")]
+    pub rec_include_feed: bool,
+    /// Max recommendation items (default 24).
+    #[serde(default = "default_rec_max_items")]
+    pub rec_max_items: u32,
+    /// Explicit tag boosts for recommendations.
+    #[serde(default)]
+    pub rec_preferred_tags: Vec<String>,
+    /// Explicit performer boosts for recommendations.
+    #[serde(default)]
+    pub rec_preferred_performers: Vec<String>,
+    /// Tags excluded from recommendations.
+    #[serde(default)]
+    pub rec_excluded_tags: Vec<String>,
 }
 
 fn default_phash_threshold() -> u8 {
@@ -613,6 +637,26 @@ fn default_trending_sites() -> Vec<String> {
 
 fn default_download_max_retries() -> u32 {
     2
+}
+
+fn default_rec_enabled() -> bool {
+    true
+}
+
+fn default_rec_hide_watched() -> bool {
+    true
+}
+
+fn default_rec_include_live() -> bool {
+    true
+}
+
+fn default_rec_include_feed() -> bool {
+    true
+}
+
+fn default_rec_max_items() -> u32 {
+    24
 }
 
 fn default_auto_check_binaries() -> bool {
@@ -740,6 +784,14 @@ impl Default for AppSettings {
             binary_backup_path: None,
             stashbox_endpoints: default_stashbox_endpoints(),
             online_record_all: false,
+            rec_enabled: default_rec_enabled(),
+            rec_hide_watched: default_rec_hide_watched(),
+            rec_include_live: default_rec_include_live(),
+            rec_include_feed: default_rec_include_feed(),
+            rec_max_items: default_rec_max_items(),
+            rec_preferred_tags: Vec::new(),
+            rec_preferred_performers: Vec::new(),
+            rec_excluded_tags: Vec::new(),
         }
     }
 }

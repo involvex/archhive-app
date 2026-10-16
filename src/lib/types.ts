@@ -277,6 +277,22 @@ export interface AppSettings {
   auto_check_binaries?: boolean;
   /** Stash-box endpoints (API keys stay in the encrypted vault). */
   stashbox_endpoints?: StashBoxEndpoint[];
+  /** Show the "Recommended for you" rail (default true). */
+  rec_enabled?: boolean;
+  /** Hide watched scenes from recommendations (default true). */
+  rec_hide_watched?: boolean;
+  /** Rank matching live rooms in recommendations (Phase 2; default true). */
+  rec_include_live?: boolean;
+  /** Rank saved-search/trending matches in recommendations (Phase 2; default true). */
+  rec_include_feed?: boolean;
+  /** Max recommendation items (default 24). */
+  rec_max_items?: number;
+  /** Explicit tag boosts for recommendations. */
+  rec_preferred_tags?: string[];
+  /** Explicit performer boosts for recommendations. */
+  rec_preferred_performers?: string[];
+  /** Tags excluded from recommendations. */
+  rec_excluded_tags?: string[];
 }
 
 export interface MergeDuplicatesResult {

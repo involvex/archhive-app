@@ -1336,6 +1336,22 @@ export const api = {
     return localInvoke<SettingsBackup>("export_settings_backup");
   },
 
+  /**
+   * Share a text file via the Android system share sheet. Android-only:
+   * Web Share with files and `<a download>` are unreliable in the WebView.
+   */
+  async shareTextFile(filename: string, text: string, title?: string): Promise<void> {
+    if (getAppRuntime() !== "mobile-tauri") {
+      throw new Error("File sharing requires the Android app runtime.");
+    }
+    await localInvoke<void>("share_text_file", {
+      filename,
+      text,
+      mime: "application/json",
+      title: title ?? "Share backup",
+    });
+  },
+
   async importSettingsBackup(
     backup: SettingsBackup,
     options?: SettingsBackupImportOptions,

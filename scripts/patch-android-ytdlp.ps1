@@ -106,23 +106,44 @@ if ($gradle -notmatch 'youtubedl-android ships native libs') {
     }
 }
 
-# youtubedl-android unpacks libpython.zip.so / libffmpeg.zip.so from the
-# installed native library dir at runtime. Modern AGP keeps .so files
-# compressed-in-APK (extractNativeLibs=false), so YoutubeDL.init / FFmpeg.init
-# fail with "not initialized". Legacy packaging extracts them on install.
-if ($gradle -notmatch 'useLegacyPackaging') {
-    $legacy = @"
-    packaging {
-        // youtubedl-android needs extracted native libs (libpython.zip.so etc.)
-        jniLibs.useLegacyPackaging = true
-    }
-"@
-    if ($gradle -match '(?m)^android \{') {
-        $gradle = $gradle -replace '(?m)^(android \{)', "`$1`r`n$legacy"
+# R8 minification keeps breaking release builds: v0.6.0 boot-crashed (commons-compress
+# reflection), v0.6.1/v0.6.2 broke every plugin invoke (Jackson Args creators stripped),
+# while debug builds with identical code worked. Release parity with debug > APK size,
+# so disable minification for the release buildType.
+if ($gradle -notmatch [regex]::Escape('isMinifyEnabled = false // r8-off marker')) {
+    if ($gradle -match '(?s)getByName\("release"\)\s*\{[^}]*?isMinifyEnabled\s*=\s*true') {
+        # Replace the release-block assignment (the debug block keeps its own).
+        $gradle = [regex]::Replace(
+            $gradle,
+            '(?s)(getByName\("release"\)\s*\{[^}]*?)isMinifyEnabled\s*=\s*true',
+            "`$1isMinifyEnabled = false // r8-off marker"
+        )
         $changed = $true
-        Write-Host "Enabled jniLibs.useLegacyPackaging (extractNativeLibs) for youtubedl-android"
+        Write-Host "Disabled R8 minification for release buildType (debug parity)."
     } else {
-        Write-Warning "Could not find android block in $gradlePath (useLegacyPackaging not set)"
+        Write-Warning "Release buildType has no isMinifyEnabled = true to disable in $gradlePath"
+    }
+}
+
+# Chaquopy opens native libs (libpython.zip.so) by file path at runtime, so
+# they must be extracted at install (legacy packaging), matching
+# android:extractNativeLibs="true" in the manifest. Without this, release
+# builds keep .so uncompressed in-APK and YoutubeDL.init fails with ENOENT.
+if ($gradle -notmatch 'useLegacyPackaging') {
+    $packagingBlock = @'
+    packaging {
+        // youtubedl-android/Chaquopy need on-disk native libs (libpython.zip.so)
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+'@
+    if ($gradle -match '(?m)^(    buildTypes \{)') {
+        $gradle = $gradle -replace '(?m)^(    buildTypes \{)', "$packagingBlock`r`n`$1"
+        $changed = $true
+        Write-Host "Enabled legacy native-lib packaging (extract .so at install)"
+    } else {
+        Write-Warning "Could not find buildTypes block in $gradlePath"
     }
 }
 
