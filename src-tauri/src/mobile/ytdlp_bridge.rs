@@ -159,6 +159,26 @@ impl<R: Runtime> YtDlpPluginState<R> {
         };
         Ok(text)
     }
+
+    /// Share a text file (settings backup) via the Android share sheet.
+    #[cfg(target_os = "android")]
+    fn share_file(&self, filename: &str, text: &str, mime: &str, title: &str) -> AppResult<()> {
+        use serde_json::json;
+        let payload = json!({ "filename": filename, "text": text, "mime": mime, "title": title });
+        let response: PluginResponse =
+            self.handle()?
+                .run_mobile_plugin("shareTextFile", payload)
+                .map_err(|e| AppError::Download(format!("shareTextFile failed: {e}")))?;
+        if response.ok.unwrap_or(false) {
+            Ok(())
+        } else {
+            Err(AppError::Download(
+                response
+                    .message
+                    .unwrap_or_else(|| "shareTextFile failed".into()),
+            ))
+        }
+    }
 }
 
 /// Build the Tauri plugin. Pass to `Builder::plugin(...)`.
@@ -245,6 +265,27 @@ pub fn update(app: &AppHandle) -> AppResult<String> {
         let _ = app;
         Err(AppError::Download(
             "youtubedl-android is only available on Android".into(),
+        ))
+    }
+}
+
+/// Share a text file (settings backup) via the Android share sheet.
+pub fn share_text_file(
+    app: &AppHandle,
+    filename: &str,
+    text: &str,
+    mime: &str,
+    title: &str,
+) -> AppResult<()> {
+    #[cfg(target_os = "android")]
+    {
+        with_plugin_state(app, |state| state.share_file(filename, text, mime, title))
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = (app, filename, text, mime, title);
+        Err(AppError::Download(
+            "File sharing is only available on Android".into(),
         ))
     }
 }

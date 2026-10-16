@@ -1,5 +1,5 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api/client";
 import { ConnectionStatusChip } from "@/components/ConnectionStatusChip";
 import { getCapabilities } from "@/lib/runtime";
@@ -17,7 +17,8 @@ import { ErrorState } from "@/components/ErrorState";
 import { EmptyState } from "@/components/EmptyState";
 import { SceneCard } from "@/components/SceneCard";
 import { useRecentlyViewedStore } from "@/lib/stores/recentlyViewed";
-import { Compass, Link2, Radio, Film, History, Newspaper, X } from "lucide-react";
+import { recommendScenes, resolveRecPrefs } from "@/lib/recommend";
+import { Compass, Link2, Radio, Film, History, Newspaper, Sparkles, X } from "lucide-react";
 
 export const Route = createFileRoute("/")({
   component: HomePage,
@@ -100,6 +101,11 @@ function HomePage() {
   }
 
   const videoScenes = scenes.filter(isVideoScene);
+  const recommendations = useMemo(() => {
+    const prefs = resolveRecPrefs(settings);
+    if (!prefs.enabled) return [];
+    return recommendScenes(scenes, [...watchMap.values()], prefs).slice(0, 6);
+  }, [scenes, watchMap, settings]);
   // Rail shows stored snapshots; fall back to the live scene object when available.
   const recentVisible = recent.slice(0, 12);
   function handlePlayRecent(snapshot: Scene) {
@@ -275,6 +281,43 @@ function HomePage() {
                 watch={watchState(snapshot.id)}
                 onClick={(item) => handlePlayRecent(item as Scene)}
               />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {recommendations.length > 0 && (
+        <div>
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="flex items-center gap-2 text-lg font-semibold">
+              <Sparkles className="h-4 w-4 text-[var(--color-primary)]" />
+              Recommended for you
+            </h3>
+            <Link
+              to="/recommendations"
+              className="text-xs text-[var(--color-muted-foreground)] hover:text-[var(--color-foreground)]"
+            >
+              View all
+            </Link>
+          </div>
+          <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+            {recommendations.map(({ scene, reasons }) => (
+              <div key={scene.id}>
+                <SceneCard
+                  item={scene}
+                  thumbSrc={sceneThumbUrl(scene)}
+                  watch={watchState(scene.id)}
+                  onClick={(item) => handlePlay(item as Scene)}
+                />
+                {reasons.length > 0 && (
+                  <p
+                    className="mt-1 truncate text-[11px] text-[var(--color-muted-foreground)]"
+                    title={reasons.join(" · ")}
+                  >
+                    {reasons.join(" · ")}
+                  </p>
+                )}
+              </div>
             ))}
           </div>
         </div>
