@@ -93,6 +93,25 @@ if ($gradle -notmatch 'youtubedl-android ships native libs') {
     }
 }
 
+# R8 minification keeps breaking release builds: v0.6.0 boot-crashed (commons-compress
+# reflection), v0.6.1/v0.6.2 broke every plugin invoke (Jackson Args creators stripped),
+# while debug builds with identical code worked. Release parity with debug > APK size,
+# so disable minification for the release buildType.
+if ($gradle -notmatch [regex]::Escape('isMinifyEnabled = false // r8-off marker')) {
+    if ($gradle -match '(?s)getByName\("release"\)\s*\{[^}]*?isMinifyEnabled\s*=\s*true') {
+        # Replace the release-block assignment (the debug block keeps its own).
+        $gradle = [regex]::Replace(
+            $gradle,
+            '(?s)(getByName\("release"\)\s*\{[^}]*?)isMinifyEnabled\s*=\s*true',
+            "`$1isMinifyEnabled = false // r8-off marker"
+        )
+        $changed = $true
+        Write-Host "Disabled R8 minification for release buildType (debug parity)."
+    } else {
+        Write-Warning "Release buildType has no isMinifyEnabled = true to disable in $gradlePath"
+    }
+}
+
 # Chaquopy opens native libs (libpython.zip.so) by file path at runtime, so
 # they must be extracted at install (legacy packaging), matching
 # android:extractNativeLibs="true" in the manifest. Without this, release
