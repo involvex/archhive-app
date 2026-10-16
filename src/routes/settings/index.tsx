@@ -1012,6 +1012,17 @@ function SettingsPage() {
       const backup = await api.exportSettingsBackup();
       const text = JSON.stringify(backup, null, 2);
       const filename = `archhive-settings-backup-${Date.now()}.json`;
+
+      // Android WebView: neither Web Share with files nor <a download>
+      // reliably surfaces the file — share it through the system sheet
+      // (FileProvider) so it can be saved to Drive/Files.
+      if (runtime === "mobile-tauri") {
+        await api.shareTextFile(filename, text, "ArcHive settings backup");
+        setBackupStatus(
+          `Shared ${backup.cookies.length} cookie site(s). Save the file from the share sheet.`,
+        );
+        return;
+      }
       const file = new File([text], filename, { type: "application/json" });
 
       // Android WebView: <a download> often does nothing useful — use Share sheet.
@@ -1040,9 +1051,7 @@ function SettingsPage() {
       a.remove();
       URL.revokeObjectURL(url);
       setBackupStatus(
-        runtime === "mobile-tauri"
-          ? `Export started as ${filename}. Check Downloads / Files if the share sheet did not open.`
-          : `Exported settings + ${backup.cookies.length} cookie site(s). Keep this file private — it contains secrets.`,
+        `Exported settings + ${backup.cookies.length} cookie site(s). Keep this file private — it contains secrets.`,
       );
     } catch (e) {
       if (e instanceof Error && e.name === "AbortError") {
