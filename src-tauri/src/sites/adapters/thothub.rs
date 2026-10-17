@@ -82,45 +82,47 @@ impl SiteAdapter for ThotHubAdapter {
     }
     async fn resolve_stream_url(&self, ctx: &SiteContext, url: &str) -> AppResult<String> {
         // Prefer HTTP KVS extraction (works on Android without yt-dlp ThotHub support).
-        if let Ok(Some(stream_url)) =
-            crate::sites::extractors::thothub::extract_stream_url(ctx, url).await
-        {
-            return Ok(maybe_loopback_proxy(ctx, &stream_url, BASE));
-        }
-
-        #[cfg(mobile)]
-        {
-            return Err(crate::error::AppError::Other(
-                "Could not extract a ThotHub stream from the page. \
-                 Import cookies for thothub in Settings, connect Remote LAN to a desktop host, \
-                 or download the video first."
-                    .to_string(),
-            ));
-        }
-
-        #[cfg(not(mobile))]
-        {
-            let runner = crate::sites::yt_dlp::SidecarRunner::new(ctx.app().clone());
-            let cookies = ctx.cookie_file_for_site(self.id());
-            let mut args = vec![
-                url.to_string(),
-                "--get-url".to_string(),
-                "--no-warnings".to_string(),
-                "--no-playlist".to_string(),
-            ];
-            if let Some(cookies) = cookies.as_ref() {
-                args.push("--cookies".to_string());
-                args.push(cookies.to_string_lossy().to_string());
+        match crate::sites::extractors::thothub::extract_stream_url(ctx, url).await {
+            Ok(crate::sites::extractors::thothub::ThotHubStream::Url(stream_url)) => {
+                return Ok(maybe_loopback_proxy(ctx, &stream_url, BASE));
             }
-            let raw = runner.run_capture_for_stream_url("yt-dlp", &args).await?;
-            let stream_url = raw
-                .lines()
-                .map(str::trim)
-                .find(|line| !line.is_empty())
-                .ok_or_else(|| crate::error::AppError::Other("No stream URL resolved".to_string()))?
-                .to_string();
-            Ok(maybe_loopback_proxy(ctx, &stream_url, BASE))
+            Ok(crate::sites::extractors::thothub::ThotHubStream::LoginRequired) => {
+                // KVS serves a player-less shell for gated videos. yt-dlp has no
+                // ThotHub extractor at all, so falling through would only produce a
+                // confusing "Unsupported URL" — ask for the session instead.
+                return Err(crate::error::AppError::Site(
+                    "ThotHub needs a site session for this video. Capture cookies first: \
+                     Settings → Cookies → ThotHub → Catch cookies in-app, log in, then retry."
+                        .to_string(),
+                ));
+            }
+            // Page loaded but had no player, or the probe failed — try yt-dlp below.
+            _ => {}
         }
+
+        // Fallback: yt-dlp resolves the stream. Desktop uses the sidecar binary;
+        // Android routes through the youtubedl-android plugin bridge (same path
+        // downloads use), so playback works wherever downloads work.
+        let runner = crate::sites::yt_dlp::SidecarRunner::new(ctx.app().clone());
+        let cookies = ctx.cookie_file_for_site(self.id());
+        let mut args = vec![
+            url.to_string(),
+            "--get-url".to_string(),
+            "--no-warnings".to_string(),
+            "--no-playlist".to_string(),
+        ];
+        if let Some(cookies) = cookies.as_ref() {
+            args.push("--cookies".to_string());
+            args.push(cookies.to_string_lossy().to_string());
+        }
+        let raw = runner.run_capture_for_stream_url("yt-dlp", &args).await?;
+        let stream_url = raw
+            .lines()
+            .map(str::trim)
+            .find(|line| !line.is_empty())
+            .ok_or_else(|| crate::error::AppError::Other("No stream URL resolved".to_string()))?
+            .to_string();
+        Ok(maybe_loopback_proxy(ctx, &stream_url, BASE))
     }
 }
 

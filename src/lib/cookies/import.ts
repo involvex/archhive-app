@@ -16,6 +16,18 @@ export const SITE_COOKIE_DOMAINS: Record<string, string[]> = {
   xhamster: ["xhamster.com", "xhamster.desi", "xhamster.one"],
   xvideos: ["xvideos.com"],
   thisvid: ["thisvid.com"],
+  chaturbate: ["chaturbate.com"],
+  stripchat: ["stripchat.com"],
+  thothub: ["thethothub.com", "thothub.to"],
+  eporner: ["eporner.com"],
+  youporn: ["youporn.com"],
+  xnxx: ["xnxx.com"],
+  reddit: ["reddit.com", "redd.it"],
+  redgifs: ["redgifs.com"],
+  twitter: ["twitter.com", "x.com"],
+  instagram: ["instagram.com"],
+  tiktok: ["tiktok.com"],
+  youtube: ["youtube.com", "googlevideo.com", "google.com"],
 };
 
 export const COOKIE_EXTENSION_URL =
@@ -129,4 +141,99 @@ export function importCookiesFromJson(raw: string, siteId: string): string {
 export function buildCookieBookmarklet(siteUrl: string): string {
   const target = siteUrl.replace(/"/g, "%22");
   return `javascript:(function(){window.open("${target}","_blank");alert("1) Log in on this tab\\n2) Open Cookie-Editor → Export → JSON\\n3) Paste JSON in ArcHive Settings → Cookies");})();`;
+}
+
+/**
+ * Parse a `Cookie:` request header ("k=v; k2=v2") into cookie objects.
+ *
+ * Used by the Android in-app harvest, which can read the WebView `CookieManager`
+ * only as a flat header string. `domain` should be the host the harvest ran on;
+ * path/secure/expiry are not known and default to "/" / false / session.
+ */
+export function parseCookieHeader(header: string, domain: string): BrowserCookieExport[] {
+  const host = domain.trim();
+  const cookies: BrowserCookieExport[] = [];
+  for (const part of header.split(";")) {
+    const trimmed = part.trim();
+    if (!trimmed) continue;
+    const eq = trimmed.indexOf("=");
+    if (eq <= 0) continue;
+    const name = trimmed.slice(0, eq).trim();
+    const value = trimmed.slice(eq + 1);
+    if (!name) continue;
+    cookies.push({
+      name,
+      value,
+      domain: host || ".",
+      path: "/",
+      hostOnly: !host.startsWith("."),
+    });
+  }
+  return cookies;
+}
+
+/** Convert a harvest header + domain straight to Netscape file text. */
+export function cookieHeaderToNetscape(header: string, domain: string): string {
+  const cookies = parseCookieHeader(header, domain);
+  if (cookies.length === 0) {
+    throw new Error("No cookies captured. Log in on the site, then try again.");
+  }
+  return jsonToNetscape(cookies);
+}
+
+function isCookieLike(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Record<string, unknown>;
+  return typeof record.name === "string" && typeof record.value === "string";
+}
+
+function cookieArrayFromJson(raw: string): BrowserCookieExport[] | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  // Cookie-Editor exports a bare array; the console snippet too. Also accept
+  // { cookies: [...] } wrappers used by some exporters.
+  const candidate = Array.isArray(parsed)
+    ? parsed
+    : parsed &&
+        typeof parsed === "object" &&
+        Array.isArray((parsed as { cookies?: unknown }).cookies)
+      ? ((parsed as { cookies: unknown[] }).cookies as unknown[])
+      : null;
+  if (!candidate || candidate.length === 0) return null;
+  if (!candidate.every(isCookieLike)) return null;
+  return candidate as BrowserCookieExport[];
+}
+
+/**
+ * Heuristic: does this shared/pasted text look like a browser cookie JSON export?
+ *
+ * Deliberately strict (a JSON array of {name, value, ...} objects) so ordinary
+ * shared URLs are never mistaken for cookies.
+ */
+export function looksLikeCookieExport(raw: string): boolean {
+  const text = raw.trim();
+  if (!text.startsWith("[") && !text.startsWith("{")) return false;
+  return cookieArrayFromJson(text) !== null;
+}
+
+/** Best-effort site id for a cookie JSON export, based on its domains. */
+export function guessCookieSiteFromText(raw: string): string | null {
+  const cookies = cookieArrayFromJson(raw);
+  if (!cookies) return null;
+  for (const [siteId, domains] of Object.entries(SITE_COOKIE_DOMAINS)) {
+    if (
+      cookies.some(
+        (cookie) =>
+          typeof cookie.domain === "string" &&
+          domains.some((domain) => cookie.domain.includes(domain)),
+      )
+    ) {
+      return siteId;
+    }
+  }
+  return null;
 }

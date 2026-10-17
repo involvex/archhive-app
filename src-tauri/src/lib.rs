@@ -179,6 +179,12 @@ pub fn run() {
     #[cfg(mobile)]
     let builder = builder.plugin(mobile::share::init());
 
+    #[cfg(mobile)]
+    let builder = builder.plugin(mobile::cookie_harvest::init());
+
+    #[cfg(mobile)]
+    let builder = builder.plugin(mobile::termux_bridge::init());
+
     let builder = builder.setup(|app| {
         let data_dir = app
             .path()
@@ -290,6 +296,10 @@ pub fn run() {
             commands::list_cookie_sites,
             commands::save_site_cookies,
             commands::delete_site_cookies,
+            commands::catch_login_cookies,
+            commands::poll_cookie_harvest,
+            commands::termux_status,
+            commands::termux_push_cookies,
             commands::export_settings_backup,
             commands::import_settings_backup,
             commands::resolve_standalone,

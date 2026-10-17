@@ -3,6 +3,16 @@ use crate::sites::SiteContext;
 use regex::Regex;
 use std::sync::OnceLock;
 
+/// Outcome of probing a ThotHub / KVS video page.
+pub enum ThotHubStream {
+    /// A playable (possibly KVS-deobfuscated) stream URL.
+    Url(String),
+    /// The page is the KVS "login required" shell — the user needs a site session.
+    LoginRequired,
+    /// Page loaded but carried no player (layout change / not a video page).
+    NotFound,
+}
+
 /// Best-effort direct MP4 extraction for ThotHub / Kernel Video Sharing pages.
 ///
 /// KVS players embed `video_url` / `video_alt_url*` (and `license_code`) in a
@@ -10,11 +20,24 @@ use std::sync::OnceLock;
 /// older ones prefix obfuscated URLs with `function/0/` which we decode using
 /// the same license-token swap as yt-dlp's generic KVS extractor.
 ///
-/// Returns `Ok(None)` when nothing playable is found so callers can fall back
-/// to yt-dlp (desktop) or surface a clear error (mobile).
-pub async fn extract_stream_url(ctx: &SiteContext, url: &str) -> AppResult<Option<String>> {
+/// KVS gates videos behind a login: without a site session the page is a tiny
+/// shell with no player config, which is reported as [`ThotHubStream::LoginRequired`]
+/// so callers can ask for cookies instead of failing on `Unsupported URL`.
+pub async fn extract_stream_url(ctx: &SiteContext, url: &str) -> AppResult<ThotHubStream> {
     let html = ctx.fetch_html(url, "thothub").await?;
-    Ok(pick_best_stream(&html, url))
+    if let Some(stream) = pick_best_stream(&html, url) {
+        return Ok(ThotHubStream::Url(stream));
+    }
+    if is_login_gated(&html) {
+        return Ok(ThotHubStream::LoginRequired);
+    }
+    Ok(ThotHubStream::NotFound)
+}
+
+/// KVS replaces the player config with a login redirect for gated videos:
+/// `pageContext = { videoId: '...', loginUrl: 'https://<host>/login-required/' }`.
+fn is_login_gated(html: &str) -> bool {
+    html.contains("login-required") || html.contains("loginUrl")
 }
 
 fn pick_best_stream(html: &str, page_url: &str) -> Option<String> {
@@ -227,5 +250,18 @@ var playercfg = {
             url.contains("/get_file/") && url.contains("720p"),
             "expected 720p get_file url, got {url}"
         );
+    }
+
+    #[test]
+    fn detects_login_gated_shell() {
+        // Real shape served for a gated video (the player config is replaced).
+        let html = r#"<script>
+		var pageContext = {
+									videoId: '916235',						loginUrl: 'https://thethothub.com/login-required/',
+			animation: '200'
+		};
+	</script>"#;
+        assert!(is_login_gated(html));
+        assert!(!is_login_gated(FIXTURE));
     }
 }

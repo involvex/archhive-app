@@ -2,21 +2,21 @@
 
 ## Tier A — yt-dlp (browse + download)
 
-| Site ID   | Display Name | Browse kinds                                 | Cookies                     |
-| --------- | ------------ | -------------------------------------------- | --------------------------- |
-| youtube   | YouTube      | channel, search, video                       | Optional                    |
-| tiktok    | TikTok       | channel, search, video                       | No                          |
-| twitter   | Twitter / X  | channel, video                               | Recommended                 |
-| instagram | Instagram    | channel, video                               | Yes                         |
-| thisvid   | ThisVid      | tag, search, video                           | Yes                         |
-| thothub   | ThotHub      | tag, model, search, video                    | Optional (`thethothub.com`) |
-| pornhub   | PornHub      | category, tag, search, channel, model, video | Yes                         |
-| youporn   | YouPorn      | category, model, search, video               | Optional                    |
-| xnxx      | XNXX         | search, tag, channel, video                  | Optional                    |
-| xhamster  | xHamster     | tag, search, channel, video                  | Yes                         |
-| xvideos   | XVIDEOS      | tag, search, channel, video                  | Yes                         |
-| reddit    | Reddit       | channel, search, video                       | OAuth for subreddits        |
-| eporner   | Eporner      | search, tag, category, video                 | No                          |
+| Site ID   | Display Name | Browse kinds                                 | Cookies              |
+| --------- | ------------ | -------------------------------------------- | -------------------- |
+| youtube   | YouTube      | channel, search, video                       | Optional             |
+| tiktok    | TikTok       | channel, search, video                       | No                   |
+| twitter   | Twitter / X  | channel, video                               | Recommended          |
+| instagram | Instagram    | channel, video                               | Yes                  |
+| thisvid   | ThisVid      | tag, search, video                           | Yes                  |
+| thothub   | ThotHub      | tag, model, search, video                    | Yes for gated videos |
+| pornhub   | PornHub      | category, tag, search, channel, model, video | Yes                  |
+| youporn   | YouPorn      | category, model, search, video               | Optional             |
+| xnxx      | XNXX         | search, tag, channel, video                  | Optional             |
+| xhamster  | xHamster     | tag, search, channel, video                  | Yes                  |
+| xvideos   | XVIDEOS      | tag, search, channel, video                  | Yes                  |
+| reddit    | Reddit       | channel, search, video                       | OAuth for subreddits |
+| eporner   | Eporner      | search, tag, category, video                 | No                   |
 
 ## Tier B — Live Cam Sites (scraping + webview bridge)
 

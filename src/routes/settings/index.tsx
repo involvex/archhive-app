@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api/client";
 import { resolveAppVersion } from "@/lib/appVersion";
 import { ConnectionStatusChip } from "@/components/ConnectionStatusChip";
@@ -7,6 +7,7 @@ import {
   buildCookieBookmarklet,
   COOKIE_EXTENSION_URL,
   COOKIE_IMPORT_STEPS,
+  cookieHeaderToNetscape,
   importCookiesFromJson,
   importCookiesFromDevToolsTable,
   DEVTOOLS_COOKIE_CONSOLE_SNIPPET,
@@ -39,6 +40,7 @@ import type {
   OrphanSidecar,
   SiteInfo,
   SidecarProbe,
+  TermuxStatus,
   ThumbCacheStats,
   AppSettings,
   AppTheme,
@@ -184,6 +186,9 @@ function SettingsPage() {
   const [cookieJson, setCookieJson] = useState("");
   const [cookieTable, setCookieTable] = useState("");
   const [cookieStatus, setCookieStatus] = useState("");
+  const [catchingCookies, setCatchingCookies] = useState(false);
+  const [termux, setTermux] = useState<TermuxStatus | null>(null);
+  const [termuxStatus, setTermuxStatus] = useState("");
   const [duplicates, setDuplicates] = useState<DuplicateGroup[]>([]);
   const [dupSelections, setDupSelections] = useState<Record<string, string>>({});
   const [deleteDupFiles, setDeleteDupFiles] = useState(false);
@@ -767,6 +772,107 @@ function SettingsPage() {
     await refreshCookies();
   }
 
+  // ---- Android in-app cookie harvest (manual "Save cookies") ----
+  const catchCancelledRef = useRef(false);
+  useEffect(
+    () => () => {
+      catchCancelledRef.current = true;
+    },
+    [],
+  );
+
+  function hostOf(url: string): string {
+    try {
+      return new URL(url).hostname;
+    } catch {
+      return "";
+    }
+  }
+
+  async function catchLoginCookies() {
+    if (!selectedSite) {
+      setCookieStatus("Select a site first.");
+      return;
+    }
+    setCookieStatus("Opening the in-app login window — log in there, then tap “Save cookies”.");
+    try {
+      await api.openCookieLogin(selectedSite);
+    } catch (e) {
+      setCookieStatus(e instanceof Error ? e.message : "Could not open the login window.");
+      return;
+    }
+
+    const site = selectedSite;
+    const fallbackDomain = hostOf(cookieSitesList.find((s) => s.id === site)?.base_url ?? "");
+    // ~11 minutes at 2s intervals — a poll counter avoids impure Date.now() in render scope.
+    const maxAttempts = 330;
+    let attempts = 0;
+    catchCancelledRef.current = false;
+    setCatchingCookies(true);
+
+    const poll = async () => {
+      if (catchCancelledRef.current) return;
+      try {
+        const result = await api.pollCookieHarvest();
+        if (result.state === "harvest" && result.harvest) {
+          const domain = result.harvest.domain || fallbackDomain;
+          const netscape = cookieHeaderToNetscape(result.harvest.cookie_header, domain);
+          const count = netscape.split("\n").filter((l) => l && !l.startsWith("#")).length;
+          await api.saveSiteCookies(site, netscape);
+          setCookieText(netscape);
+          setCookieStatus(`Saved ${count} cookies for ${site}.`);
+          setCatchingCookies(false);
+          await refreshCookies();
+          return;
+        }
+        if (result.state === "cancelled") {
+          setCookieStatus(`Cookie capture for ${site} was cancelled — nothing saved.`);
+          setCatchingCookies(false);
+          return;
+        }
+        if (result.state === "timeout") {
+          setCookieStatus(`Cookie capture for ${site} timed out after 10 minutes — nothing saved.`);
+          setCatchingCookies(false);
+          return;
+        }
+      } catch (e) {
+        setCookieStatus(e instanceof Error ? e.message : "Cookie capture failed.");
+        setCatchingCookies(false);
+        return;
+      }
+      if (attempts++ >= maxAttempts) {
+        setCookieStatus(
+          "Cookie capture timed out. Try again and tap “Save cookies” within 10 minutes.",
+        );
+        setCatchingCookies(false);
+        return;
+      }
+      window.setTimeout(poll, 2000);
+    };
+    window.setTimeout(poll, 2000);
+  }
+
+  // ---- Termux handoff (custom fork RUN_COMMAND bridge) ----
+  useEffect(() => {
+    if (runtime !== "mobile-tauri") return;
+    void api
+      .termuxStatus()
+      .then(setTermux)
+      .catch(() => setTermux(null));
+  }, [runtime]);
+
+  async function pushCookiesToTermux(siteId: string) {
+    setTermuxStatus(`Sending ${siteId} cookies to Termux…`);
+    try {
+      await api.termuxPushCookies(siteId);
+      setTermuxStatus(
+        `Wrote ~/arc-hive/${siteId}.cookies in Termux. If nothing happens, set allow-external-apps = true in Termux's termux.properties.`,
+      );
+    } catch (e) {
+      setTermuxStatus(e instanceof Error ? e.message : "Termux handoff failed.");
+    }
+  }
+
   async function installBinary(name: "yt-dlp" | "gallery-dl") {
     setInstallingBinary(name);
     setBinaryInstallStatus(`Installing ${name}…`);
@@ -1150,7 +1256,9 @@ function SettingsPage() {
     }
   }
 
-  const cookieSitesList = sites.filter((s) => s.requires_cookies);
+  // Every site is offered: capture helps wherever there is a login, not only the
+  // adapters flagged `requires_cookies` (twitter, eporner, xnxx, xhamster, youporn…).
+  const cookieSitesList = [...sites].sort((a, b) => a.display_name.localeCompare(b.display_name));
   // #48: Android engine-plugin signal for the Media tools card.
   const engineStatus =
     runtime === "mobile-tauri" && !versionsLoading ? enginePluginStatus(binaryVersions) : null;
@@ -2310,7 +2418,23 @@ function SettingsPage() {
                 <Button variant="outline" onClick={() => void copyConsoleSnippet()}>
                   Copy console snippet
                 </Button>
+                {runtime === "mobile-tauri" && (
+                  <Button
+                    onClick={() => void catchLoginCookies()}
+                    disabled={!selectedSite || catchingCookies}
+                  >
+                    {catchingCookies ? "Login window open…" : "Catch cookies in-app"}
+                  </Button>
+                )}
               </div>
+              {runtime === "mobile-tauri" && (
+                <p className="text-xs text-[var(--color-muted-foreground)]">
+                  In-app capture opens the site login inside ArcHive; tap “Save cookies” there once
+                  you are logged in (10 minute limit). Cancel/Back/timeout saves nothing, so a
+                  half-finished login can never overwrite a good session. HttpOnly-only sessions
+                  still need the DevTools / JSON import below.
+                </p>
+              )}
               <textarea
                 className="min-h-20 w-full rounded-md border border-[var(--color-border)] bg-transparent px-3 py-2 text-xs font-mono"
                 placeholder="Paste DevTools Application → Cookies table rows (Name, Value, Domain…)"
@@ -2341,6 +2465,14 @@ function SettingsPage() {
               {cookieStatus && (
                 <p className="text-xs text-[var(--color-muted-foreground)]">{cookieStatus}</p>
               )}
+              {runtime === "mobile-tauri" && termux && (
+                <p className="text-xs text-[var(--color-muted-foreground)]">
+                  Termux bridge: {termux.available ? "ready" : termux.message}
+                </p>
+              )}
+              {termuxStatus && (
+                <p className="text-xs text-[var(--color-muted-foreground)]">{termuxStatus}</p>
+              )}
               {cookieSites.length > 0 && (
                 <ul className="space-y-2 text-sm">
                   {cookieSites.map((c) => (
@@ -2351,9 +2483,19 @@ function SettingsPage() {
                           ({c.updated_at})
                         </span>
                       </span>
-                      <Button variant="outline" onClick={() => void removeCookies(c.site_id)}>
-                        Remove
-                      </Button>
+                      <span className="flex gap-2">
+                        {runtime === "mobile-tauri" && termux?.available && (
+                          <Button
+                            variant="outline"
+                            onClick={() => void pushCookiesToTermux(c.site_id)}
+                          >
+                            → Termux
+                          </Button>
+                        )}
+                        <Button variant="outline" onClick={() => void removeCookies(c.site_id)}>
+                          Remove
+                        </Button>
+                      </span>
                     </li>
                   ))}
                 </ul>

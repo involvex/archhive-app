@@ -422,6 +422,71 @@ pub fn delete_site_cookies(state: State<'_, Arc<AppState>>, site_id: String) -> 
     map_err(state.delete_site_cookies(&site_id))
 }
 
+/// Open the in-app login window that harvests a site's session cookies from a
+/// WebView (Android only). The frontend then polls [`poll_cookie_harvest`].
+#[tauri::command]
+pub fn catch_login_cookies(app: AppHandle, site_id: String) -> CmdResult<()> {
+    let url = crate::mobile::cookie_harvest::login_url_for_site(&site_id)
+        .map(str::to_string)
+        .ok_or_else(|| {
+            format!("No known login page for '{site_id}'. Use the DevTools / JSON import instead.")
+        })?;
+    map_err(crate::mobile::cookie_harvest::open_login(&app, &site_id, &url))
+}
+
+/// Take + clear the in-app login window state.
+///
+/// `state: "pending"` while the window is still open; otherwise `"harvest"`
+/// (with the cookie jar), `"cancelled"` or `"timeout"`.
+#[tauri::command]
+pub fn poll_cookie_harvest(
+    app: AppHandle,
+) -> CmdResult<crate::mobile::cookie_harvest::HarvestPoll> {
+    map_err(crate::mobile::cookie_harvest::poll(&app))
+}
+
+/// Availability of the Termux RUN_COMMAND bridge (custom fork, Android only).
+#[tauri::command]
+pub fn termux_status(app: AppHandle) -> CmdResult<crate::mobile::termux_bridge::TermuxStatus> {
+    map_err(crate::mobile::termux_bridge::status(&app))
+}
+
+/// Push the stored Netscape cookie jar for a site into the Termux home
+/// (`$HOME/arc-hive/<site>.cookies`) via the RUN_COMMAND intent, for manual
+/// `yt-dlp` workflows inside Termux.
+#[tauri::command]
+pub fn termux_push_cookies(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    site_id: String,
+) -> CmdResult<()> {
+    // Site ids become a path component inside Termux own home; keep it strict.
+    let safe = site_id.trim().to_ascii_lowercase();
+    if safe.is_empty()
+        || !safe
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    {
+        return Err("Invalid site id".into());
+    }
+
+    let netscape = map_err(state.vault.export_netscape(&safe))?
+        .ok_or_else(|| format!("No cookies stored for '{safe}'. Catch or import cookies first."))?;
+
+    let home = crate::mobile::termux_bridge::TERMUX_HOME;
+    let dir = format!("{home}/arc-hive");
+    let file = format!("{dir}/{safe}.cookies");
+    let script = format!("mkdir -p \"{dir}\" && cat > \"{file}\"");
+    let cmd = crate::mobile::termux_bridge::RunCommand {
+        executable: crate::mobile::termux_bridge::TERMUX_SH.to_string(),
+        arguments: vec!["-c".to_string(), script],
+        stdin: Some(netscape),
+        workdir: Some(home.to_string()),
+        label: Some(format!("ArcHive cookies: {safe}")),
+    };
+    map_err(crate::mobile::termux_bridge::send_run_command(&app, &cmd))
+}
+
 #[tauri::command]
 pub fn export_settings_backup(
     state: State<'_, Arc<AppState>>,
