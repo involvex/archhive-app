@@ -132,11 +132,12 @@ pub async fn resolve_kvs_stream(
 /// for these KVS sites): login-gated, private, bot-checked or placeholder.
 pub fn is_final_kvs_error(err: &crate::error::AppError) -> bool {
     let msg = err.to_string();
+    // Whole verdict phrases: "No player … may be private" is not a verdict.
     [
-        "needs a site session",
-        "private",
-        "bot check",
-        "placeholder clip",
+        "needs a site session for this video",
+        "This is a private",
+        "is showing a bot check",
+        "served its placeholder clip",
     ]
     .iter()
     .any(|m| msg.contains(m))
@@ -444,6 +445,16 @@ var playercfg = {
 		};
 	</script>"#;
         assert!(is_login_gated(html));
+        let verdict = |m: &str| is_final_kvs_error(&crate::error::AppError::Site(m.to_string()));
+        assert!(verdict(
+            "ThotHub needs a site session for this video. Log in via …"
+        ));
+        assert!(verdict(
+            "This is a private ThotHub video — only logged-in members …"
+        ));
+        assert!(!verdict(
+            "No player on this ThotHub page — the video may be private or …"
+        ));
         assert!(!is_login_gated(FIXTURE));
     }
 }
