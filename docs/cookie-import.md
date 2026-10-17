@@ -23,6 +23,11 @@ Implementation: `src-tauri/src/cookie_login.rs` (desktop window + Android bridge
 
 ArcHive converts JSON to Netscape format and saves it in the encrypted vault.
 
+## DevTools table (no extension)
+
+F12 → **Application → Cookies** → select the domain → select the table rows → copy → paste
+into **Settings → Cookies** → **Import DevTools table**.
+
 ## Bookmarklet (login shortcut)
 
 1. Select a site in Settings → Cookies.
@@ -34,14 +39,32 @@ ArcHive converts JSON to Netscape format and saves it in the encrypted vault.
 
 Export or build a Netscape cookie file and paste into the Netscape textarea → **Save Netscape Cookies**.
 
-## Supported sites (cookie-required)
+## Site cookie domains used on import
 
-| Site ID  | Domains filtered on import  |
-| -------- | --------------------------- |
-| pornhub  | pornhub.com                 |
-| xhamster | xhamster.com, xhamster.desi |
-| xvideos  | xvideos.com                 |
-| thisvid  | thisvid.com                 |
+Every site is selectable in the Cookies tab (in-app capture needs a server-side login page,
+which these all have). This table lists the cookie domains ArcHive keeps when importing or
+capturing a jar.
+
+| Site ID    | Domains filtered on import               |
+| ---------- | ---------------------------------------- |
+| pornhub    | pornhub.com                              |
+| xhamster   | xhamster.com, xhamster.desi              |
+| xvideos    | xvideos.com                              |
+| thisvid    | thisvid.com                              |
+| chaturbate | chaturbate.com                           |
+| stripchat  | stripchat.com                            |
+| thothub    | thethothub.com, thothub.to               |
+| eporner    | eporner.com                              |
+| youporn    | youporn.com                              |
+| xnxx       | xnxx.com                                 |
+| reddit     | reddit.com, redd.it                      |
+| redgifs    | redgifs.com                              |
+| twitter    | twitter.com, x.com                       |
+| instagram  | instagram.com                            |
+| tiktok     | tiktok.com                               |
+| youtube    | youtube.com, googlevideo.com, google.com |
+
+`thothub.tv` is intentionally absent — it is a parked ad domain now.
 
 Lines exported as `#HttpOnly_<domain>` are treated as cookies, not comments.
 

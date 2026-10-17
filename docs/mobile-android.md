@@ -209,6 +209,7 @@ Video playback uses `GET /api/scenes/{id}/media` and `GET /api/files/stream` wit
 | `.\scripts\apply-android-patches.ps1`  | Atomic LAN + yt-dlp patch apply                        |
 | `.\scripts\validate-android-build.ps1` | Fail if overlays / cleartext / YtDlpPlugin incomplete  |
 | `.\scripts\patch-android-lan.ps1`      | Allow HTTP + mDNS multicast on Android                 |
+| `.\scripts\patch-android-cookie.ps1`   | CookieLoginActivity + Termux RUN_COMMAND bridge        |
 | `.\scripts\patch-android-share.ps1`    | Share-sheet target (SEND text/plain to Bulk import)    |
 
 ## Share target (Android share sheet)
@@ -233,3 +234,21 @@ adb shell am start -a android.intent.action.SEND --es android.intent.extra.TEXT 
 Then confirm the Downloads tab opens with the URL in Bulk import. For multiple
 URLs, share text containing several links or use `SEND_MULTIPLE` — they land as
 newline-separated lines.
+
+## Cookie capture + optional Termux handoff
+
+Android can harvest a site session with no browser or extension: **Settings → Cookies →
+Catch cookies in-app** opens the site login in an in-app WebView (`CookieLoginActivity`,
+installed by `scripts/patch-android-cookie.ps1`). Capture is **manual** — the window stays
+open until you tap **Save cookies**; Cancel / Back / the 10 minute timeout save nothing, so a
+half-finished multi-step login (e.g. Stripchat via the X OAuth flow) cannot overwrite a good
+session. The frontend pulls the result with `poll_cookie_harvest` (take + clear), and a
+raw share-text cookie export is offered for import through a dialog.
+
+Optional: with the custom Termux fork
+([involvex/termux-app](https://github.com/involvex/termux-app), `com.involvex.termux_app`),
+**Settings → Cookies → → Termux** pushes a stored jar into `~/arc-hive/<site>.cookies` via the
+fork's `RUN_COMMAND` service. Needs `allow-external-apps = true` in Termux; ArcHive works
+fully without it.
+
+Supported sites, HttpOnly limits and the full flow: [cookie-import.md](./cookie-import.md).

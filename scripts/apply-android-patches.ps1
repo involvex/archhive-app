@@ -39,4 +39,9 @@ if ($LASTEXITCODE -ne 0 -and $null -ne $LASTEXITCODE) {
     throw "patch-android-share.ps1 failed with exit code $LASTEXITCODE"
 }
 
-Write-Host "Android patches applied (LAN + yt-dlp + share)."
+& (Join-Path $PSScriptRoot "patch-android-cookie.ps1") -GenAndroid $gen
+if ($LASTEXITCODE -ne 0 -and $null -ne $LASTEXITCODE) {
+    throw "patch-android-cookie.ps1 failed with exit code $LASTEXITCODE"
+}
+
+Write-Host "Android patches applied (LAN + yt-dlp + share + cookie/Termux)."

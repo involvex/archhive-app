@@ -407,4 +407,17 @@ var playercfg = {
             "expected 720p get_file url, got {url}"
         );
     }
+
+    #[test]
+    fn detects_login_gated_shell() {
+        // Real shape served for a gated video (the player config is replaced).
+        let html = r#"<script>
+		var pageContext = {
+									videoId: '916235',						loginUrl: 'https://thethothub.com/login-required/',
+			animation: '200'
+		};
+	</script>"#;
+        assert!(is_login_gated(html));
+        assert!(!is_login_gated(FIXTURE));
+    }
 }

@@ -7,6 +7,13 @@ interface ShareState {
   /** Take + clear. Returns the text or null when empty. */
   takePendingShare: () => string | null;
   clearPendingShare: () => void;
+  /**
+   * Shared cookie JSON waiting for the user to confirm which site it belongs to.
+   * Kept separate from `pendingShare` so it never lands in the Bulk-import flow.
+   */
+  pendingCookieImport: string | null;
+  setPendingCookieImport: (text: string) => void;
+  clearPendingCookieImport: () => void;
 }
 
 export const useShareStore = create<ShareState>()((set, get) => ({
@@ -28,4 +35,14 @@ export const useShareStore = create<ShareState>()((set, get) => ({
     return current;
   },
   clearPendingShare: () => set({ pendingShare: null }),
+
+  pendingCookieImport: null,
+  setPendingCookieImport: (text) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    // First share wins while the dialog is open; a second one replaces it so the
+    // user can correct a misfire without reloading.
+    set({ pendingCookieImport: trimmed });
+  },
+  clearPendingCookieImport: () => set({ pendingCookieImport: null }),
 }));

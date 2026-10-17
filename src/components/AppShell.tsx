@@ -35,6 +35,8 @@ import { useTheme } from "@/lib/hooks/useTheme";
 import { isMobileDevice, isTauri } from "@/lib/tauri";
 import { pollPendingShare } from "@/lib/share";
 import { useShareStore } from "@/lib/stores/share";
+import { looksLikeCookieExport } from "@/lib/cookies/import";
+import { CookieShareImportDialog } from "@/components/CookieShareImportDialog";
 import type { AppTheme } from "@/lib/types";
 import {
   rememberLocation,
@@ -152,6 +154,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     const check = async () => {
       const text = await pollPendingShare();
       if (cancelled || !text) return;
+      // Shared cookie JSON never goes to the Bulk-import flow: offer a one-tap vault import.
+      if (looksLikeCookieExport(text)) {
+        useShareStore.getState().setPendingCookieImport(text);
+        return;
+      }
       useShareStore.getState().setPendingShare(text);
       if (!location.pathname.startsWith("/downloads")) {
         navigate({ to: "/downloads" });
@@ -539,6 +546,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       {isMobile && (
         <>
+          <CookieShareImportDialog />
           <button
             type="button"
             onPointerDown={onFabPointerDown}

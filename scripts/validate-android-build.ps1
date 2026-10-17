@@ -33,6 +33,8 @@ if (-not (Test-Path $gen)) {
 
 $plugin = Join-Path $gen "app\src\main\java\com\archhive\app\YtDlpPlugin.kt"
 $sharePlugin = Join-Path $gen "app\src\main\java\com\archhive\app\ShareIntentPlugin.kt"
+$cookiePlugin = Join-Path $gen "app\src\main\java\com\archhive\app\CookieHarvestPlugin.kt"
+$termuxPlugin = Join-Path $gen "app\src\main\java\com\archhive\app\TermuxBridgePlugin.kt"
 $mainActivity = Join-Path $gen "app\src\main\java\com\archhive\app\MainActivity.kt"
 $fgService = Join-Path $gen "app\src\main\java\com\archhive\app\DownloadForegroundService.kt"
 $resumeWorker = Join-Path $gen "app\src\main\java\com\archhive\app\PendingResumeWorker.kt"
@@ -47,6 +49,12 @@ if (-not (Test-Path $plugin)) {
 }
 if (-not (Test-Path $sharePlugin)) {
     Add-Fail "Missing ShareIntentPlugin.kt (run scripts/apply-android-patches.ps1)"
+}
+if (-not (Test-Path $cookiePlugin)) {
+    Add-Fail "Missing CookieHarvestPlugin.kt (run scripts/apply-android-patches.ps1)"
+}
+if (-not (Test-Path $termuxPlugin)) {
+    Add-Fail "Missing TermuxBridgePlugin.kt (run scripts/apply-android-patches.ps1)"
 }
 if ((Test-Path $mainActivity) -and ((Get-Content $mainActivity -Raw) -notmatch 'ShareIntentPlugin')) {
     Add-Fail "MainActivity.kt missing share-intent forwarding (run scripts/apply-android-patches.ps1)"
@@ -100,6 +108,12 @@ if (-not (Test-Path $manifest)) {
     }
     if ($mf -notmatch 'android\.intent\.action\.SEND') {
         Add-Fail "AndroidManifest missing share-target SEND intent-filter"
+    }
+    if ($mf -notmatch 'CookieLoginActivity') {
+        Add-Fail "AndroidManifest missing CookieLoginActivity (cookie harvest)"
+    }
+    if ($mf -notmatch 'com\.involvex\.termux_app\.permission\.RUN_COMMAND') {
+        Add-Fail "AndroidManifest missing Termux RUN_COMMAND permission"
     }
     if ($mf -notmatch 'supportsPictureInPicture') {
         Add-Warn "AndroidManifest may be missing PiP support (patch-android-lan)"

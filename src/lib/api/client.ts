@@ -17,6 +17,8 @@ import type {
   BrowseFilters,
   CookieLoginResult,
   CookieSiteInfo,
+  CookieHarvestPoll,
+  TermuxStatus,
   FilesListResponse,
   DirBrowseResponse,
   SidecarProbe,
@@ -1109,6 +1111,37 @@ export const api = {
       return;
     }
     await remoteFetch<void>(`/api/cookies/${siteId}`, { method: "DELETE" });
+  },
+
+  /**
+   * Open the in-app login window that harvests a site's session cookies from an
+   * Android WebView. Android only — desktop throws a clear error. The caller then
+   * polls {@link pollCookieHarvest} until it returns a terminal state.
+   */
+  async openCookieLogin(siteId: string): Promise<void> {
+    await localInvoke("catch_login_cookies", { siteId });
+  },
+
+  /**
+   * Poll the in-app login window. `state: "pending"` while it is still open;
+   * `"harvest"` carries the jar, `"cancelled"`/`"timeout"` are terminal with no
+   * cookies (so a cancel stops the caller's poll loop immediately).
+   */
+  async pollCookieHarvest(): Promise<CookieHarvestPoll> {
+    return localInvoke<CookieHarvestPoll>("poll_cookie_harvest");
+  },
+
+  /** Availability of the Termux RUN_COMMAND bridge (Android only). */
+  async termuxStatus(): Promise<TermuxStatus> {
+    return localInvoke<TermuxStatus>("termux_status");
+  },
+
+  /**
+   * Push the stored cookie jar for a site into Termux (`$HOME/arc-hive/<site>.cookies`)
+   * via the RUN_COMMAND intent (Android only).
+   */
+  async termuxPushCookies(siteId: string): Promise<void> {
+    await localInvoke("termux_push_cookies", { siteId });
   },
 
   async resolveStandalone(url: string): Promise<MediaItem> {
