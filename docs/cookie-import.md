@@ -24,8 +24,10 @@ On Android you can harvest a session without a browser or extension:
 
 4. The harvest is written straight into the encrypted vault — no copy/paste.
 
-> `thothub.tv` is a parked ad domain now (it redirects to a casino landing page). The real
-> site is **`thethothub.com`**, which is what the built-in login link uses.
+> **ThotHub domain notes.** `thothub.tv` is a parked ad domain now (it redirects to a casino
+> landing page). The real site is **`thethothub.com`** (mirrors: `thothub.to`, `thothub.org`).
+> Its `/login/` path is only a fancybox _popup fragment_ — opened directly it renders as a
+> bare, unstyled form, so the capture window opens the **homepage** and you log in from there.
 
 Note: a WebView only exposes non-HttpOnly cookies. Sites that keep _all_ auth state in
 HttpOnly cookies must use the DevTools / Cookie-Editor JSON import below (those see HttpOnly).

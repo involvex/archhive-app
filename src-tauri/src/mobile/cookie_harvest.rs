@@ -25,12 +25,16 @@ const PLUGIN_UNAVAILABLE: &str = "Cookie harvest plugin unavailable (CookieHarve
 /// in the Cookies tab. Unknown sites fall back to the adapter base URL; callers
 /// should prefer [`login_url_for_site`].
 ///
-/// Note: `thothub.tv` is a **parked ad domain** now (it redirects to a casino
-/// landing page) — the real site is `thethothub.com`.
+/// Entry-point notes:
+/// - `thothub.tv` is a **parked ad domain** now (it redirects to a casino landing
+///   page); the real site is `thethothub.com` (mirrors: `thothub.to`, `thothub.org`).
+/// - ThotHub's login is a fancybox *popup fragment*: visiting `/login/` directly
+///   renders the bare form with no stylesheet or site chrome, which looks like a
+///   dodgy 2001-era page. Open the homepage instead and use its own login modal.
 pub const SITE_LOGINS: &[(&str, &str)] = &[
     ("chaturbate", "https://chaturbate.com/auth/login/"),
     ("stripchat", "https://stripchat.com/"),
-    ("thothub", "https://thethothub.com/login/"),
+    ("thothub", "https://thethothub.com/"),
     ("eporner", "https://www.eporner.com/login/"),
     ("pornhub", "https://www.pornhub.com/login"),
     ("youporn", "https://www.youporn.com/login/"),
@@ -237,10 +241,13 @@ mod tests {
 
     #[test]
     fn known_sites_resolve_to_login_urls() {
-        // Regression: thothub.tv is a parked ad domain now.
+        // Regression: thothub.tv is a parked ad domain now, and ThotHub's /login/ path is
+        // a bare popup fragment with no stylesheet (looks like a scam page) — the capture
+        // window must open the real site instead.
         let thothub = login_url_for_site("thothub").unwrap();
-        assert!(thothub.contains("thethothub.com"), "{thothub}");
+        assert_eq!(thothub, "https://thethothub.com/");
         assert!(!thothub.contains("thothub.tv"), "{thothub}");
+        assert!(!thothub.ends_with("/login/"), "{thothub}");
         assert!(login_url_for_site("chaturbate")
             .unwrap()
             .contains("chaturbate"));
