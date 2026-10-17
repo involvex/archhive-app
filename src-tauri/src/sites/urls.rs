@@ -41,6 +41,25 @@ pub fn query_slug(slug: &str) -> String {
     url::form_urlencoded::byte_serialize(slug.trim().as_bytes()).collect()
 }
 
+/// Append `key=value` query pairs to `url` (values are percent-encoded;
+/// pairs with empty values are skipped).
+pub fn with_query(url: &str, pairs: &[(&str, &str)]) -> String {
+    let pairs: Vec<_> = pairs.iter().filter(|(_, v)| !v.is_empty()).collect();
+    if pairs.is_empty() {
+        return url.to_string();
+    }
+    let mut out = url.to_string();
+    let mut sep = if url.contains('?') { '&' } else { '?' };
+    for (k, v) in pairs {
+        out.push(sep);
+        out.push_str(k);
+        out.push('=');
+        out.push_str(&query_slug(v));
+        sep = '&';
+    }
+    out
+}
+
 /// Decode HTML entities (`&#39;`, `&amp;`, `&quot;`, …) from scraped text.
 pub fn html_unescape(s: &str) -> String {
     html_escape::decode_html_entities(s).to_string()

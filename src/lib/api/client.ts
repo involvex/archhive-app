@@ -14,6 +14,8 @@ import type {
   LibraryStorageStats,
   DownloadJob,
   DuplicateGroup,
+  BrowseFilters,
+  CookieLoginResult,
   CookieSiteInfo,
   CookieHarvestPoll,
   TermuxStatus,
@@ -38,6 +40,7 @@ import type {
   Collection,
   CreateCollectionRequest,
   UpdateCollectionRequest,
+  SiteCategory,
   SiteInfo,
   Tag,
   UpdateSceneRequest,
@@ -203,6 +206,30 @@ async function localOrRemote<T>(
   return localInvoke<T>(command, args);
 }
 
+/** Mirrors `BrowseFilters::cache_key` in models.rs. */
+export function browseFiltersKey(filters?: BrowseFilters): string {
+  if (
+    !filters ||
+    !(
+      filters.sort ||
+      filters.period ||
+      filters.duration ||
+      filters.quality ||
+      filters.include ||
+      filters.exclude ||
+      filters.tag
+    )
+  ) {
+    return "";
+  }
+  const base = `|s=${filters.sort ?? ""}|p=${filters.period ?? ""}|d=${filters.duration ?? ""}|q=${filters.quality ?? ""}`;
+  const withCats =
+    filters.include || filters.exclude
+      ? `${base}|i=${filters.include ?? ""}|x=${filters.exclude ?? ""}`
+      : base;
+  return filters.tag ? `${withCats}|t=${filters.tag}` : withCats;
+}
+
 export interface ScanProgress {
   scanned: number;
   added: number;
@@ -224,11 +251,17 @@ export const api = {
     slug: string,
     page = 1,
     orientation?: BrowseOrientation,
+    filters?: BrowseFilters,
   ): Promise<BrowsePage> {
     const orientParam = orientation ? `&orientation=${orientation}` : "";
+    const filterParams = Object.entries(filters ?? {})
+      .filter(([, v]) => Boolean(v))
+      .map(([k, v]) => `&${k}=${encodeURIComponent(String(v))}`)
+      .join("");
     const cacheArgs = {
       siteId,
-      kind,
+      // Keep sorted/filtered pages apart in the offline cache.
+      kind: `${kind}${browseFiltersKey(filters)}`,
       slug,
       page,
       orientation: orientation ?? null,
@@ -237,8 +270,8 @@ export const api = {
     try {
       const result = await localOrRemote<BrowsePage>(
         "browse",
-        { siteId, kind, slug, page, orientation },
-        `/api/sites/${siteId}/browse?kind=${kind}&slug=${encodeURIComponent(slug)}&page=${page}${orientParam}`,
+        { siteId, kind, slug, page, orientation, filters: filters ?? null },
+        `/api/sites/${siteId}/browse?kind=${kind}&slug=${encodeURIComponent(slug)}&page=${page}${orientParam}${filterParams}`,
       );
       // Dual-write to device SQLite so Remote LAN listings survive going offline.
       if (isTauri() && !result.from_cache) {
@@ -267,6 +300,16 @@ export const api = {
       }
       throw err;
     }
+  },
+
+  /** A site's category / tag index (empty when the site has none). */
+  async listSiteCategories(siteId: string, group?: string): Promise<SiteCategory[]> {
+    const qs = group ? `?group=${encodeURIComponent(group)}` : "";
+    return localOrRemote<SiteCategory[]>(
+      "list_site_categories",
+      { siteId, group: group ?? null },
+      `/api/sites/${encodeURIComponent(siteId)}/categories${qs}`,
+    );
   },
 
   async queueDownload(url: string, adapter?: string, title?: string): Promise<DownloadJob> {
@@ -512,6 +555,7 @@ export const api = {
     kind: BrowseKind;
     slug: string;
     orientation?: BrowseOrientation;
+    filters?: BrowseFilters;
   }): Promise<SavedSearch> {
     if (shouldUseRemoteApi()) {
       return remoteFetch<SavedSearch>("/api/saved-searches", {
@@ -1043,6 +1087,22 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ cookies }),
     });
+  },
+
+  /**
+   * Open the in-app login browser for `siteId` and store the captured cookies
+   * (on this device, or on the LAN host in Remote LAN mode). Resolves once the
+   * user saves; rejects with "Login cancelled." when they back out.
+   */
+  async loginForCookies(siteId: string): Promise<CookieLoginResult> {
+    const result = await localInvoke<CookieLoginResult>("cookie_login", { siteId });
+    await api.saveSiteCookies(siteId, result.netscape);
+    return result;
+  },
+
+  /** Desktop: save (`true`) or cancel (`false`) the open login window. */
+  async finishCookieLogin(save: boolean): Promise<void> {
+    await localInvoke("cookie_login_finish", { save });
   },
 
   async deleteSiteCookies(siteId: string): Promise<void> {

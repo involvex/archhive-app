@@ -18,6 +18,27 @@ export const PORNHUB_ORIENTATIONS: { id: BrowseOrientation; label: string }[] = 
   { id: "transgender", label: "Trans" },
 ];
 
+/** "Language in videos" listings (/language/<id>), browsed as `language-<id>`. */
+export const PORNHUB_LANGUAGES = [
+  "arabic",
+  "chinese",
+  "czech",
+  "dutch",
+  "filipino",
+  "french",
+  "german",
+  "hindi",
+  "italian",
+  "japanese",
+  "persian",
+  "polish",
+  "portuguese",
+  "russian",
+  "spanish",
+  "thai",
+  "ukrainian",
+].map((id) => ({ slug: `language-${id}`, name: id.charAt(0).toUpperCase() + id.slice(1) }));
+
 /** Static catalog — straight and lesbian lists use separate entries per orientation. */
 export const PORNHUB_CATEGORIES: PornhubCategory[] = [
   // Straight — popular
@@ -98,6 +119,8 @@ export function categoryBrowseSlug(cat: PornhubCategory): string {
 
 /** Resolve a numeric category id back to a display name when possible. */
 export function categoryDisplayLabel(slug: string, orientation?: BrowseOrientation): string {
+  const language = PORNHUB_LANGUAGES.find((l) => l.slug === slug);
+  if (language) return `${language.name} (spoken)`;
   if (!/^\d+$/.test(slug)) return slug;
   const matches = PORNHUB_CATEGORIES.filter((c) => String(c.categoryId) === slug);
   if (orientation) {

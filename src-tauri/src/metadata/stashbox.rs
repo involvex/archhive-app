@@ -25,14 +25,15 @@ pub const STASHDB_ENDPOINT: &str = "https://stashdb.org/graphql";
 
 /// Shared scene selection — every field here exists on stash-box `Scene`:
 /// `images` (not `image`), `performers` as appearances wrapping `performer`,
-/// `date` (present on all box versions; `release_date` only on newer ones).
+/// `release_date` (StashDB removed the old `date` field; boxes that only
+/// know `date` are retried via [`StashBoxClient::graphql_scenes`]).
 /// Kept in one place and interpolated into each query so the field lists
 /// can't drift apart (unknown fields fail the whole call server-side).
 /// `concat!` can't take a const, so the full documents are built once via
 /// `LazyLock` instead of per call.
 const SCENE_SELECTION: &str = r#"id
     title
-    date
+    release_date
     details
     duration
     images { url }
@@ -161,6 +162,15 @@ impl StashBoxClient {
                     .filter_map(|e| e.get("message").and_then(|m| m.as_str()))
                     .collect::<Vec<_>>()
                     .join("; ");
+                // StashDB reports a missing/invalid key as a GraphQL error
+                // with HTTP 200, not a 401.
+                if msg.to_ascii_lowercase().contains("not authorized") {
+                    return Err(AppError::InvalidInput(format!(
+                        "stash-box rejected the request as not authorized — check the API key \
+                         for {} in Settings → Metadata",
+                        self.endpoint
+                    )));
+                }
                 return Err(AppError::Site(format!(
                     "stash-box GraphQL error: {}",
                     if msg.is_empty() {
@@ -172,6 +182,18 @@ impl StashBoxClient {
             }
         }
         Ok(body.get("data").cloned().unwrap_or(Value::Null))
+    }
+
+    /// Scene queries select `release_date`; older stash-box versions only
+    /// have `date`, so retry once with that field when the box rejects it.
+    async fn graphql_scenes(&self, query: &str, variables: Value) -> AppResult<Value> {
+        match self.graphql(query, variables.clone()).await {
+            Err(AppError::Site(msg)) if msg.contains("release_date") => {
+                self.graphql(&query.replace("release_date", "date"), variables)
+                    .await
+            }
+            other => other,
+        }
     }
 
     /// Test credentials with a cheap query. Returns box name when known.
@@ -201,7 +223,7 @@ impl StashBoxClient {
             ));
         }
         let data = self
-            .graphql(
+            .graphql_scenes(
                 FIND_BY_FINGERPRINTS_QUERY.as_str(),
                 json!({ "fingerprints": [inputs] }),
             )
@@ -229,7 +251,7 @@ impl StashBoxClient {
             return Err(AppError::InvalidInput("stash_id is required".into()));
         }
         let data = self
-            .graphql(FIND_SCENE_QUERY.as_str(), json!({ "id": stash_id }))
+            .graphql_scenes(FIND_SCENE_QUERY.as_str(), json!({ "id": stash_id }))
             .await?;
         let raw = data.get("findScene").cloned().unwrap_or(Value::Null);
         if raw.is_null() {
@@ -249,7 +271,7 @@ impl StashBoxClient {
             return Err(AppError::InvalidInput("title is required".into()));
         }
         let data = self
-            .graphql(SEARCH_SCENES_QUERY.as_str(), json!({ "title": title }))
+            .graphql_scenes(SEARCH_SCENES_QUERY.as_str(), json!({ "title": title }))
             .await?;
         let raw = data
             .get("queryScenes")

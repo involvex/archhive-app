@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api/client";
 import { getCapabilities } from "@/lib/runtime";
 import { getPluginBrowseSites } from "@/lib/plugins/loader";
-import { mergeSiteLists } from "@/lib/sites/catalog";
+import { mergeSiteLists, siteHasCategories } from "@/lib/sites/catalog";
 import { useSettingsStore } from "@/lib/stores/settings";
 import type { BrowseOrientation, PornhubCategoryEntry, SiteInfo } from "@/lib/types";
 import { SceneCard } from "@/components/SceneCard";
@@ -13,7 +13,6 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ConnectionStatusChip } from "@/components/ConnectionStatusChip";
 import {
-  Globe,
   Link2,
   Search,
   Clock,
@@ -26,15 +25,17 @@ import {
   Bookmark,
   RefreshCw,
   Trash2,
+  X,
   Zap,
   ZapOff,
 } from "lucide-react";
 import { isMobileDevice } from "@/lib/tauri";
 import { usePullToRefresh } from "@/lib/hooks/usePullToRefresh";
 import { useSavedSearches } from "@/lib/hooks/useSavedSearches";
-import { useTrending } from "@/lib/hooks/useTrending";
+import { clearTrendingCache, useTrending } from "@/lib/hooks/useTrending";
 import { useRefreshGuard } from "@/lib/hooks/useRefreshGuard";
 import { NewMatchesCard } from "@/components/NewMatchesCard";
+import { SitePicker } from "@/components/SitePicker";
 
 const ORIENTATIONS: { value: BrowseOrientation; label: string }[] = [
   { value: "straight", label: "Straight" },
@@ -70,7 +71,16 @@ function useRecentSearches() {
     });
   }, []);
 
-  return { recent, addRecent };
+  const clearRecent = useCallback(() => {
+    setRecent([]);
+    try {
+      localStorage.removeItem("archhive_recent_searches");
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  return { recent, addRecent, clearRecent };
 }
 
 function BrowsePage() {
@@ -78,7 +88,7 @@ function BrowsePage() {
   const navigate = useNavigate();
   const { settings } = useSettingsStore();
   const isMobile = isMobileDevice();
-  const { recent, addRecent } = useRecentSearches();
+  const { recent, addRecent, clearRecent } = useRecentSearches();
   const [sites, setSites] = useState<SiteInfo[]>(() => mergeSiteLists([], getPluginBrowseSites()));
 
   const [selectedSite, setSelectedSite] = useState("auto");
@@ -107,6 +117,8 @@ function BrowsePage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void reloadSites();
   }, [reloadSites]);
+
+  const selectedSiteInfo = sites.find((s) => s.id === selectedSite);
 
   const handleSearch = useCallback(() => {
     let slug = searchInput.trim();
@@ -158,10 +170,6 @@ function BrowsePage() {
       setUrlLoading(false);
     }
   }, [urlInput]);
-
-  const handleSiteChip = useCallback((siteId: string) => {
-    setSelectedSite(siteId);
-  }, []);
 
   const [categories, setCategories] = useState<PornhubCategoryEntry[]>([]);
   const [catOrientation, setCatOrientation] = useState<BrowseOrientation>("straight");
@@ -227,7 +235,11 @@ function BrowsePage() {
   const { refresh: handleRefresh } = useRefreshGuard(browseRefresh);
 
   const { containerRef, pullDistance, refreshing } = usePullToRefresh({
-    onRefresh: handleRefresh,
+    // An explicit pull bypasses the 10-minute trending cache.
+    onRefresh: () => {
+      clearTrendingCache();
+      return handleRefresh();
+    },
     disabled: false,
   });
 
@@ -289,52 +301,45 @@ function BrowsePage() {
 
       <Card>
         <CardContent className="p-4 space-y-3">
-          <div className="flex flex-col sm:flex-row gap-2">
-            <div className="flex-1 flex gap-2">
-              <select
-                className="h-10 shrink-0 rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-3 text-sm"
-                value={selectedSite}
-                onChange={(e) => setSelectedSite(e.target.value)}
-              >
-                <option value="auto">Auto-detect</option>
-                {sites.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.display_name}
-                  </option>
-                ))}
-              </select>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <SitePicker
+              sites={sites}
+              value={selectedSite}
+              onChange={setSelectedSite}
+              className="w-full sm:w-56 sm:shrink-0"
+            />
+            <div className="flex flex-1 gap-2">
               <Input
-                placeholder='Search (e.g. "model name", "#tag", or paste URL)'
+                placeholder="Search, #tag or paste a URL"
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-                className="flex-1"
+                className="h-10 flex-1"
               />
+              <Button
+                onClick={handleSearch}
+                disabled={!searchInput.trim()}
+                className="h-10 shrink-0"
+              >
+                <Search className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">Browse</span>
+              </Button>
             </div>
-            <Button onClick={handleSearch} disabled={!searchInput.trim()} className="h-10 shrink-0">
-              <Search className="h-4 w-4 sm:mr-2" />
-              <span className="hidden sm:inline">Browse</span>
-            </Button>
           </div>
 
-          <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1 snap-x snap-mandatory scrollbar-hide">
-            {sites.map((site) => (
-              <button
-                key={site.id}
-                type="button"
-                onClick={() => handleSiteChip(site.id)}
-                className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-medium transition shrink-0 snap-start ${
-                  selectedSite === site.id
-                    ? "bg-[var(--color-primary)] text-[var(--color-primary-foreground)]"
-                    : "bg-[var(--color-secondary)] hover:bg-[var(--color-muted)]"
-                }`}
-              >
-                <Globe className="h-3 w-3" />
-                {site.display_name}
-                {site.requires_cookies && <span className="text-[10px] opacity-70">(cookies)</span>}
-              </button>
-            ))}
-          </div>
+          {selectedSiteInfo && siteHasCategories(selectedSiteInfo) && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="w-full sm:w-auto"
+              onClick={() =>
+                navigate({ to: "/browse/$site", params: { site: selectedSiteInfo.id } })
+              }
+            >
+              <Tags className="h-4 w-4 mr-1.5" />
+              {selectedSiteInfo.display_name} categories
+            </Button>
+          )}
         </CardContent>
       </Card>
 
@@ -398,7 +403,7 @@ function BrowsePage() {
                           params: {
                             site: item.site_id,
                             kind: "search",
-                            slug: encodeURIComponent(item.title),
+                            slug: item.title,
                           },
                         });
                       }}
@@ -512,33 +517,45 @@ function BrowsePage() {
       {recent.length > 0 && (
         <Card>
           <CardContent className="p-4 space-y-3">
-            <div className="flex items-center gap-2 text-sm font-medium">
-              <Clock className="h-4 w-4" />
-              Recent searches
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <Clock className="h-4 w-4" />
+                Recent searches
+              </div>
+              <button
+                type="button"
+                onClick={clearRecent}
+                className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs text-[var(--color-muted-foreground)] hover:text-[var(--color-foreground)]"
+                title="Clear recent searches"
+              >
+                <X className="h-3 w-3" /> Clear
+              </button>
             </div>
-            <div className="grid gap-1">
+            <div className="grid grid-cols-1 gap-1">
               {recent.map((r) => (
                 <button
                   key={`${r.site}-${r.kind}-${r.slug}`}
                   type="button"
-                  className="flex items-center justify-between rounded-md px-3 py-2 text-sm hover:bg-[var(--color-muted)] transition text-left"
+                  className="flex min-w-0 items-center justify-between gap-2 rounded-md px-3 py-2 text-sm hover:bg-[var(--color-muted)] transition text-left"
                   onClick={() => {
                     setSelectedSite(r.site);
                     setSearchInput(r.slug);
                     navigate({
                       to: "/browse/$site/$kind/$slug",
-                      params: { site: r.site, kind: r.kind, slug: encodeURIComponent(r.slug) },
+                      params: { site: r.site, kind: r.kind, slug: r.slug },
                     });
                   }}
                 >
-                  <span className="flex items-center gap-2">
-                    <span className="text-xs text-[var(--color-muted-foreground)] capitalize">
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className="shrink-0 text-xs text-[var(--color-muted-foreground)] capitalize">
                       {r.site}
                     </span>
-                    <span className="text-xs text-[var(--color-muted-foreground)]">{r.kind}:</span>
-                    <span>{r.slug}</span>
+                    <span className="shrink-0 text-xs text-[var(--color-muted-foreground)]">
+                      {r.kind}:
+                    </span>
+                    <span className="truncate">{r.slug}</span>
                   </span>
-                  <ArrowRight className="h-3.5 w-3.5 text-[var(--color-muted-foreground)]" />
+                  <ArrowRight className="h-3.5 w-3.5 shrink-0 text-[var(--color-muted-foreground)]" />
                 </button>
               ))}
             </div>
@@ -591,28 +608,33 @@ function BrowsePage() {
               watch it for new content.
             </p>
           ) : (
-            <div className="grid gap-1">
+            <div className="grid grid-cols-1 gap-1">
               {saved.map((s) => (
                 <div
                   key={s.id}
-                  className="flex items-center justify-between gap-2 rounded-md px-3 py-2 text-sm hover:bg-[var(--color-muted)] transition"
+                  // min-w-0: grid items default to their content width, so a
+                  // long name pushed the action buttons off-screen on phones.
+                  className="flex min-w-0 items-center justify-between gap-1 rounded-md py-2 pr-1 pl-3 text-sm hover:bg-[var(--color-muted)] transition"
                 >
                   <button
                     type="button"
                     className="flex min-w-0 flex-1 items-center gap-2 text-left"
                     onClick={() => {
+                      // The router encodes params itself; pre-encoding broke
+                      // combined slugs ("milf,anal" → "milf%252Canal").
                       navigate({
                         to: "/browse/$site/$kind/$slug",
-                        params: { site: s.site_id, kind: s.kind, slug: encodeURIComponent(s.slug) },
+                        params: { site: s.site_id, kind: s.kind, slug: s.slug },
+                        search: { orientation: s.orientation, ...s.filters },
                       });
                     }}
                   >
-                    <span className="min-w-0 flex-1 truncate">
-                      <span className="font-medium">{s.name}</span>{" "}
-                      <span className="text-xs text-[var(--color-muted-foreground)]">
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-medium">{s.name}</span>
+                      <span className="block truncate text-xs text-[var(--color-muted-foreground)]">
                         {s.last_checked_at
-                          ? `· checked ${new Date(s.last_checked_at).toLocaleString()}`
-                          : "· never checked"}
+                          ? `Checked ${new Date(s.last_checked_at).toLocaleString()}`
+                          : "Never checked"}
                       </span>
                     </span>
                     {s.new_count > 0 && (

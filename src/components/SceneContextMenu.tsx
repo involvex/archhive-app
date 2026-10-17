@@ -1,5 +1,6 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { getCapabilities } from "@/lib/runtime";
+import { isMobileDevice } from "@/lib/tauri";
 import { isVideoScene } from "@/lib/mediaUrl";
 import type { Scene } from "@/lib/types";
 import { ShortcutBadge } from "@/components/ui/shortcut-badge";
@@ -45,6 +46,21 @@ export function SceneContextMenu({
 }: SceneContextMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
   const caps = getCapabilities();
+  // Phones get a bottom sheet (large targets, above the system nav bar)
+  // instead of a desktop right-click popup at the touch point.
+  const sheet = isMobileDevice();
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+
+  // Desktop: keep the popup inside the window (flip up/left near edges).
+  useLayoutEffect(() => {
+    if (!menu || sheet || !ref.current) return;
+    const { width, height } = ref.current.getBoundingClientRect();
+    const margin = 8;
+    const left = Math.max(margin, Math.min(menu.x, window.innerWidth - width - margin));
+    const top =
+      menu.y + height + margin > window.innerHeight ? Math.max(margin, menu.y - height) : menu.y;
+    setPos({ left, top });
+  }, [menu, sheet]);
 
   useEffect(() => {
     if (!menu) return;
@@ -136,7 +152,8 @@ export function SceneContextMenu({
         onOpenExplorer?.(menu.scene);
         onClose();
       },
-      show: caps.localIpc && Boolean(menu.scene.path) && Boolean(onOpenExplorer),
+      // Revealing a file in a folder window is a desktop concept.
+      show: !sheet && caps.localIpc && Boolean(menu.scene.path) && Boolean(onOpenExplorer),
     },
     {
       label: "Open with default app",
@@ -157,27 +174,61 @@ export function SceneContextMenu({
     },
   ];
 
+  const visible = items.filter((item) => item.show !== false);
+
+  if (sheet) {
+    return (
+      <div className="fixed inset-0 z-[110] flex items-end bg-black/50" role="presentation">
+        <div
+          ref={ref}
+          role="menu"
+          className="max-h-[80dvh] w-full overflow-y-auto rounded-t-2xl border-t border-[var(--color-border)] bg-[var(--color-card)] px-2 pt-2 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-lg"
+        >
+          <div className="mx-auto mb-2 h-1 w-10 rounded-full bg-[var(--color-muted)]" />
+          <p className="truncate px-3 pb-2 text-sm font-medium">{menu.scene.title}</p>
+          {visible.map((item) => (
+            <button
+              key={item.label}
+              type="button"
+              role="menuitem"
+              className={`flex w-full items-center rounded-md px-3 py-3 text-left text-base active:bg-[var(--color-muted)] ${
+                item.danger ? "text-red-400" : ""
+              }`}
+              onClick={item.action}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       ref={ref}
+      role="menu"
       className="fixed z-[110] min-w-[180px] rounded-md border border-[var(--color-border)] bg-[var(--color-card)] py-1 shadow-lg"
-      style={{ left: menu.x, top: menu.y }}
+      style={{
+        left: pos?.left ?? menu.x,
+        top: pos?.top ?? menu.y,
+        visibility: pos ? "visible" : "hidden",
+      }}
     >
-      {items
-        .filter((item) => item.show !== false)
-        .map((item) => (
-          <button
-            key={item.label}
-            type="button"
-            className={`flex w-full items-center justify-between px-3 py-1.5 text-left text-sm hover:bg-[var(--color-muted)] ${
-              item.danger ? "text-red-400" : ""
-            }`}
-            onClick={item.action}
-          >
-            <span>{item.label}</span>
-            {item.shortcut && <ShortcutBadge keys={item.shortcut} />}
-          </button>
-        ))}
+      {visible.map((item) => (
+        <button
+          key={item.label}
+          type="button"
+          role="menuitem"
+          className={`flex w-full items-center justify-between px-3 py-1.5 text-left text-sm hover:bg-[var(--color-muted)] ${
+            item.danger ? "text-red-400" : ""
+          }`}
+          onClick={item.action}
+        >
+          <span>{item.label}</span>
+          {item.shortcut && <ShortcutBadge keys={item.shortcut} />}
+        </button>
+      ))}
     </div>
   );
 }

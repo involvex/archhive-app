@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { HlsVideoPlayer, STREAM_URL_EXPIRED_ERROR } from "@/components/HlsVideoPlayer";
 import { AlertCircle, ChevronLeft, ChevronRight, Loader2, X } from "lucide-react";
 import type { MediaItem } from "@/lib/types";
+import { ExtLink } from "@/components/ExtLink";
 
 interface UrlPlayerDialogProps {
   item: MediaItem | null;
@@ -266,8 +267,10 @@ export function UrlPlayerDialog({
             )}
             <div>
               <dt className="text-xs text-[var(--color-muted-foreground)]">Source URL</dt>
-              <dd className="break-all font-mono text-xs text-[var(--color-muted-foreground)]">
-                {item.url}
+              <dd className="break-all font-mono text-xs">
+                <ExtLink href={item.url} title="Open in browser">
+                  {item.url}
+                </ExtLink>
               </dd>
             </div>
           </dl>

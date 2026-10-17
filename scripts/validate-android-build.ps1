@@ -38,6 +38,7 @@ $termuxPlugin = Join-Path $gen "app\src\main\java\com\archhive\app\TermuxBridgeP
 $mainActivity = Join-Path $gen "app\src\main\java\com\archhive\app\MainActivity.kt"
 $fgService = Join-Path $gen "app\src\main\java\com\archhive\app\DownloadForegroundService.kt"
 $resumeWorker = Join-Path $gen "app\src\main\java\com\archhive\app\PendingResumeWorker.kt"
+$cookieBrowser = Join-Path $gen "app\src\main\java\com\archhive\app\CookieBrowserPlugin.kt"
 $gradle = Join-Path $gen "app\build.gradle.kts"
 $proguard = Join-Path $gen "app\proguard-rules.pro"
 $manifest = Join-Path $gen "app\src\main\AndroidManifest.xml"
@@ -64,6 +65,9 @@ if (-not (Test-Path $fgService)) {
 if (-not (Test-Path $resumeWorker)) {
     Add-Fail "Missing PendingResumeWorker.kt"
 }
+if (-not (Test-Path $cookieBrowser)) {
+    Add-Fail "Missing CookieBrowserPlugin.kt (run scripts/apply-android-patches.ps1)"
+}
 
 if (-not (Test-Path $gradle)) {
     Add-Fail "Missing app/build.gradle.kts"
@@ -78,8 +82,11 @@ if (-not (Test-Path $gradle)) {
     if ($gradleText -notmatch 'work-runtime-ktx') {
         Add-Warn "build.gradle.kts missing work-runtime-ktx (PendingResumeWorker)"
     }
-    if ($gradleText -notmatch 'manifestPlaceholders\["usesCleartextTraffic"\]\s*=\s*"true"') {
-        Add-Fail "build.gradle.kts missing usesCleartextTraffic=true placeholder (LAN HTTP)"
+    if ($gradleText -notmatch 'useLegacyPackaging\s*=\s*true') {
+        Add-Fail "build.gradle.kts missing jniLibs.useLegacyPackaging = true (youtubedl-android cannot init without extracted native libs)"
+    }
+    if ($gradleText -match 'manifestPlaceholders\["usesCleartextTraffic"\]\s*=\s*"false"') {
+        Add-Fail "build.gradle.kts still sets usesCleartextTraffic=false (release WebView cannot reach the 127.0.0.1 media server)"
     }
 }
 

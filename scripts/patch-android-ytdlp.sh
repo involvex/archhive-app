@@ -45,6 +45,10 @@ if [[ -f "$OVERLAYS/PendingResumeWorker.kt" ]]; then
   cp "$OVERLAYS/PendingResumeWorker.kt" "$PLUGIN_DEST_DIR/PendingResumeWorker.kt"
   echo "Installed PendingResumeWorker.kt"
 fi
+if [[ -f "$OVERLAYS/CookieBrowserPlugin.kt" ]]; then
+  cp "$OVERLAYS/CookieBrowserPlugin.kt" "$PLUGIN_DEST_DIR/CookieBrowserPlugin.kt"
+  echo "Installed CookieBrowserPlugin.kt"
+fi
 
 if ! grep -q 'youtubedl-android:library' "$GRADLE"; then
   python3 - "$GRADLE" "$YOUTUBE_DL_ANDROID_VERSION" "$WORK_RUNTIME_KTX_VERSION" <<'PY'
@@ -143,6 +147,28 @@ if [[ ! -f "$PROGUARD_OVERLAY" ]]; then
   exit 1
 fi
 
+# youtubedl-android unpacks libpython.zip.so / libffmpeg.zip.so from the installed
+# native library dir; modern AGP leaves .so files inside the APK
+# (extractNativeLibs=false) and YoutubeDL.init fails. Use legacy packaging.
+if ! grep -q 'useLegacyPackaging' "$GRADLE"; then
+  python3 - "$GRADLE" <<'PY'
+import re, sys
+from pathlib import Path
+path = Path(sys.argv[1])
+text = path.read_text()
+block = '''    packaging {
+        // youtubedl-android needs extracted native libs (libpython.zip.so etc.)
+        jniLibs.useLegacyPackaging = true
+    }
+'''
+new, n = re.subn(r'(?m)^(android \{)\n', lambda m: m.group(1) + "\n" + block, text, count=1)
+if n == 0:
+    raise SystemExit("Could not find android block for useLegacyPackaging")
+path.write_text(new)
+print("Enabled jniLibs.useLegacyPackaging (extractNativeLibs) for youtubedl-android")
+PY
+fi
+
 if [[ -f "$PROGUARD" ]] && grep -q 'YtDlpPlugin' "$PROGUARD"; then
   echo "ProGuard YtDlp keep rules already present."
 else
@@ -156,6 +182,28 @@ else
   } > "$PROGUARD.tmp"
   mv "$PROGUARD.tmp" "$PROGUARD"
   echo "Wrote ProGuard keep rules to $PROGUARD"
+fi
+
+# Projects patched before these rules existed: keep the libraries
+# youtubedl-android drives reflectively (R8 broke release-build init).
+if ! grep -q 'org.apache.commons.compress' "$PROGUARD"; then
+  cat >> "$PROGUARD" <<'PG'
+
+-keep class org.apache.commons.compress.** { *; }
+-keep class org.apache.commons.io.** { *; }
+-keep class com.fasterxml.jackson.** { *; }
+-keepattributes Signature,*Annotation*,InnerClasses,EnclosingMethod
+-dontwarn org.apache.commons.compress.**
+-dontwarn org.apache.commons.io.**
+-dontwarn com.fasterxml.jackson.**
+PG
+  echo "Added youtubedl-android library ProGuard keeps."
+fi
+
+# Projects patched before the cookie login browser existed: add its keeps.
+if ! grep -q 'CookieBrowserPlugin' "$PROGUARD"; then
+  printf '\n-keep class com.archhive.app.CookieBrowserPlugin { *; }\n-keep class com.archhive.app.CookieBrowserPlugin$OpenArgs { *; }\n' >> "$PROGUARD"
+  echo "Added CookieBrowserPlugin ProGuard keeps."
 fi
 
 echo "Android YtDlp overlay patch complete (youtubedl-android $YOUTUBE_DL_ANDROID_VERSION)."

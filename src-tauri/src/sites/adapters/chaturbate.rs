@@ -38,6 +38,28 @@ impl SiteAdapter for ChaturbateAdapter {
         true
     }
 
+    fn browse_options(&self) -> crate::models::BrowseOptions {
+        crate::models::BrowseOptions {
+            has_categories: true,
+            ..Default::default()
+        }
+    }
+
+    /// Currently popular room hashtags (JSON `{"all_tags": [...]}`).
+    async fn list_categories(
+        &self,
+        ctx: &SiteContext,
+    ) -> AppResult<Vec<crate::models::SiteCategory>> {
+        let body = ctx
+            .fetch_json_api(
+                &format!("{BASE}/api/ts/hashtags/top_tags/?count=120"),
+                self.id(),
+                &format!("{BASE}/"),
+            )
+            .await?;
+        Ok(parse_top_tags(&body))
+    }
+
     async fn browse(&self, ctx: &SiteContext, query: BrowseQuery) -> AppResult<BrowsePage> {
         match query.kind {
             BrowseKind::Model => self.browse_model(ctx, query).await,
@@ -206,19 +228,48 @@ struct HttpRoom {
     gender: Option<String>,
 }
 
+fn parse_top_tags(body: &str) -> Vec<crate::models::SiteCategory> {
+    let json: serde_json::Value = serde_json::from_str(body).unwrap_or_default();
+    json.get("all_tags")
+        .or_else(|| json.get("tags"))
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|t| {
+                    t.as_str()
+                        .or_else(|| t.get("name").and_then(|n| n.as_str()))
+                        .or_else(|| t.get("hashtag").and_then(|n| n.as_str()))
+                })
+                .filter(|t| !t.is_empty())
+                .map(|t| crate::models::SiteCategory {
+                    name: format!("#{t}"),
+                    slug: t.to_string(),
+                    kind: BrowseKind::Tag,
+                    thumbnail: None,
+                    count: None,
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 fn http_room_to_item(room: &HttpRoom) -> MediaItem {
     let room_url = format!("{BASE}/{}/", room.username);
     let embed_url = format!("{BASE}/embed/{}/", room.username);
+    // Room subjects embed `<a href="/tag/x/">#x</a>` markup; show the
+    // username as the card title (like Stripchat) and keep the cleaned
+    // subject as the description.
+    let subject = crate::sites::listing::strip_html_tags(&room.title);
     MediaItem {
         id: Uuid::new_v4().to_string(),
-        title: room.title.clone(),
+        title: room.username.clone(),
         url: room_url,
         thumbnail: room.thumbnail.clone(),
         duration: None,
         site_id: "chaturbate".to_string(),
         performers: vec![room.username.clone()],
         tags: vec![],
-        description: None,
+        description: (!subject.is_empty() && subject != room.username).then_some(subject),
         channel: Some(room.username.clone()),
         is_live: Some(true),
         viewers: room.viewers,
@@ -602,6 +653,14 @@ fn url_slug(slug: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_top_tags() {
+        let tags = parse_top_tags(r#"{"all_tags":["18","ebony",""]}"#);
+        assert_eq!(tags.len(), 2);
+        assert_eq!(tags[1].slug, "ebony");
+        assert_eq!(tags[1].name, "#ebony");
+    }
 
     #[test]
     fn parse_api_json_reads_chaturbate_ts_fields() {

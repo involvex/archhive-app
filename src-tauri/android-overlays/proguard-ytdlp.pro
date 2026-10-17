@@ -8,6 +8,12 @@
 -keep class com.archhive.app.** { *; }
 -keepattributes Signature,InnerClasses,EnclosingMethod
 
+# Plugin argument classes (YtDlpPlugin$Args, $MediaArgs, CookieBrowserPlugin$OpenArgs, ...):
+# Tauri builds them reflectively from JSON via Jackson, so R8 must keep their
+# no-arg constructors and fields. Without this, release builds fail with
+# "Cannot construct instance of YtDlpPlugin$Args (no Creators ...)".
+-keep class com.archhive.app.**Args { *; }
+
 # Tauri plugin framework (annotations + Plugin base used by register_android_plugin)
 -keep class app.tauri.** { *; }
 -keep @app.tauri.annotation.TauriPlugin class * { *; }
@@ -26,3 +32,10 @@
 # with "class ...AsiExtraField is not a concrete class" (seen v0.6.0, OnePlus 7T).
 -keep class org.apache.commons.compress.** { *; }
 -dontwarn org.apache.commons.compress.**
+# ...and the libraries it drives reflectively during YoutubeDL.init /
+# FFmpeg.init (zip unpacking, JSON).
+-keep class org.apache.commons.io.** { *; }
+-keep class com.fasterxml.jackson.** { *; }
+-keepattributes Signature,*Annotation*,InnerClasses,EnclosingMethod
+-dontwarn org.apache.commons.io.**
+-dontwarn com.fasterxml.jackson.**

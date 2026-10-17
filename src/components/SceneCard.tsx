@@ -9,6 +9,7 @@ import {
   Check,
   Clock,
   Download,
+  Eye,
   Info,
   Play,
   Pencil,
@@ -26,6 +27,12 @@ export interface CardWatchState {
 type CardItem = MediaItem | Scene;
 
 export type { CardItem };
+
+function formatViewers(n: number): string {
+  if (n >= 10_000) return `${Math.round(n / 1000)}k`;
+  if (n >= 1_000) return `${(n / 1000).toFixed(1)}k`;
+  return String(n);
+}
 
 interface SceneCardProps {
   item: CardItem;
@@ -47,6 +54,11 @@ interface SceneCardProps {
    * files play without a LAN connection. Explicit `false` hides it.
    */
   offline?: boolean | null;
+  /**
+   * Phone grids: Info / Download become small icon buttons on the thumbnail
+   * instead of a full-width button row under the title.
+   */
+  compactActions?: boolean;
 }
 
 function isMediaItem(item: CardItem): item is MediaItem {
@@ -132,6 +144,7 @@ export function SceneCard({
   listView = false,
   watch,
   offline = null,
+  compactActions = false,
 }: SceneCardProps) {
   const title = getItemTitle(item);
   const performers = getItemPerformers(item);
@@ -463,8 +476,50 @@ export function SceneCard({
           </div>
         )}
 
+        {compactActions && !selectionMode && (onInfo || onDownload) && (
+          <div className="absolute top-1 right-1 z-10 flex gap-1">
+            {onInfo && (
+              <button
+                type="button"
+                className="flex h-7 w-7 items-center justify-center rounded-full bg-black/55 text-white backdrop-blur-sm active:scale-90"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onInfo(item as MediaItem);
+                }}
+                aria-label="Info"
+              >
+                <Info className="h-3.5 w-3.5" />
+              </button>
+            )}
+            {onDownload && (
+              <button
+                type="button"
+                className="flex h-7 w-7 items-center justify-center rounded-full bg-black/55 text-white backdrop-blur-sm active:scale-90"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDownload(item as MediaItem);
+                }}
+                aria-label="Download"
+              >
+                <Download className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+        )}
+
+        {"is_live" in item && item.is_live && (
+          <span className="absolute bottom-1.5 left-1.5 flex items-center gap-1.5 rounded bg-black/75 px-1.5 py-0.5 text-[11px] font-medium text-white">
+            <span className="rounded-sm bg-red-600 px-1 text-[10px] font-bold leading-4">LIVE</span>
+            {item.viewers != null && (
+              <span className="flex items-center gap-0.5 tabular-nums">
+                <Eye className="h-3 w-3" />
+                {formatViewers(item.viewers)}
+              </span>
+            )}
+          </span>
+        )}
         {duration != null && duration > 0 && (
-          <span className="absolute bottom-2 right-2 rounded bg-black/70 px-1.5 py-0.5 text-xs flex items-center gap-1">
+          <span className="absolute bottom-1.5 right-1.5 rounded bg-black/75 px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-white flex items-center gap-1">
             <Clock className="h-3 w-3" />
             {formatDuration(duration)}
             {fileSize != null && fileSize > 0 && (
@@ -569,11 +624,13 @@ export function SceneCard({
           </div>
         )}
 
-        {(channel || performers.length > 0) && (
-          <p className="text-[10px] text-[var(--color-muted-foreground)] truncate">
-            {channel || performers.join(", ")}
-          </p>
-        )}
+        {(channel || performers.length > 0) &&
+          (channel || performers.join(", ")).trim().toLowerCase() !==
+            title.trim().toLowerCase() && (
+            <p className="text-[10px] text-[var(--color-muted-foreground)] truncate">
+              {channel || performers.join(", ")}
+            </p>
+          )}
 
         {tags.length > 0 && (
           <div className="flex flex-wrap gap-1">
@@ -588,7 +645,7 @@ export function SceneCard({
           </div>
         )}
 
-        {hasActions && (
+        {hasActions && !compactActions && (
           <div className="flex gap-1.5 pt-1">
             {onInfo && (
               <Button

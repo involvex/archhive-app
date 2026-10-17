@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- FileProvider roots (ArcHive overlay): shared storage for libraries such as
+     Download/ArcHive, plus app-private dirs used by the default library path,
+     so "Open with default app" can hand any library file to another app. -->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+  <external-path name="my_images" path="." />
+  <cache-path name="my_cache_images" path="." />
+  <files-path name="app_files" path="." />
+  <external-files-path name="app_external_files" path="." />
+</paths>

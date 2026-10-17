@@ -56,6 +56,9 @@ export const useSettingsStore = create<SettingsState>()(
       partialize: (s) => ({ settings: s.settings }) as SettingsState,
       onRehydrateStorage: () => (state) => {
         if (!state) return;
+        if (state.settings.engine_mode === "standalone") {
+          state.updateSettings({ engine_mode: "local" });
+        }
         if (state.settings.remote_token?.trim() === "") {
           state.updateSettings({ remote_token: undefined });
         }
