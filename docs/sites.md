@@ -9,7 +9,7 @@
 | twitter   | Twitter / X  | channel, video                               | Recommended                                                    |
 | instagram | Instagram    | channel, video                               | Yes                                                            |
 | thisvid   | ThisVid      | tag, search, video                           | Yes                                                            |
-| thothub   | ThotHub      | tag, model, search, video                    | Optional (`thethothub.com`)                                    |
+| thothub   | ThotHub      | tag, model, search, video                    | Yes for gated videos (`thethothub.com`)                        |
 | pornhub   | PornHub      | category, tag, search, channel, model, video | Yes                                                            |
 | youporn   | YouPorn      | category, model, search, video               | Optional                                                       |
 | xnxx      | XNXX         | search, tag, channel, video                  | Optional                                                       |

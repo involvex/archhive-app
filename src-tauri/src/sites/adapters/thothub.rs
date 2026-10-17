@@ -101,16 +101,21 @@ impl SiteAdapter for ThotHubAdapter {
         // that loaded the page (otherwise it redirects to the fu.mp4
         // placeholder). The mirror it redirects to refuses the WebView's own
         // Referer, so play it through the loopback proxy with ThotHub's.
-        let resolved =
-            crate::sites::extractors::thothub::resolve_kvs_stream(ctx, url, self.id(), "ThotHub")
-                .await;
-        if let Ok(stream_url) = &resolved {
-            return Ok(maybe_loopback_proxy(ctx, stream_url, BASE));
-        }
-
-        #[cfg(mobile)]
+        let err = match crate::sites::extractors::thothub::resolve_kvs_stream(
+            ctx,
+            url,
+            self.id(),
+            "ThotHub",
+        )
+        .await
         {
-            return resolved;
+            Ok(stream_url) => return Ok(maybe_loopback_proxy(ctx, &stream_url, BASE)),
+            Err(e) => e,
+        };
+        // A login-gated, private or bot-checked page won't play through
+        // yt-dlp either (it has no ThotHub extractor): report why.
+        if crate::sites::extractors::thothub::is_final_kvs_error(&err) {
+            return Err(err);
         }
 
         // Fallback: yt-dlp resolves the stream. Desktop uses the sidecar binary;
@@ -128,7 +133,11 @@ impl SiteAdapter for ThotHubAdapter {
             args.push("--cookies".to_string());
             args.push(cookies.to_string_lossy().to_string());
         }
-        let raw = runner.run_capture_for_stream_url("yt-dlp", &args).await?;
+        let raw = match runner.run_capture_for_stream_url("yt-dlp", &args).await {
+            Ok(raw) => raw,
+            // yt-dlp's "Unsupported URL" says less than the resolver's error.
+            Err(_) => return Err(err),
+        };
         let stream_url = raw
             .lines()
             .map(str::trim)

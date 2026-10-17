@@ -188,6 +188,12 @@ pub fn run() {
 
     let builder = builder.plugin(cookie_login::init());
 
+    #[cfg(mobile)]
+    let builder = builder.plugin(mobile::cookie_harvest::init());
+
+    #[cfg(mobile)]
+    let builder = builder.plugin(mobile::termux_bridge::init());
+
     let builder = builder.setup(|app| {
         let data_dir = app
             .path()

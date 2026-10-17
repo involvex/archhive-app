@@ -469,7 +469,9 @@ pub fn catch_login_cookies(app: AppHandle, site_id: String) -> CmdResult<()> {
         .ok_or_else(|| {
             format!("No known login page for '{site_id}'. Use the DevTools / JSON import instead.")
         })?;
-    map_err(crate::mobile::cookie_harvest::open_login(&app, &site_id, &url))
+    map_err(crate::mobile::cookie_harvest::open_login(
+        &app, &site_id, &url,
+    ))
 }
 
 /// Take + clear the in-app login window state.

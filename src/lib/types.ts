@@ -306,6 +306,38 @@ export interface CookieLoginResult {
   count: number;
 }
 
+/** Android in-app cookie harvest result (see `catch_login_cookies`). */
+export interface CookieHarvest {
+  site_id: string;
+  /** "k=v; k2=v2" cookie header (non-HttpOnly cookies of the session domain). */
+  cookie_header: string;
+  /** Host of the login page; used as the Netscape cookie domain. */
+  domain: string;
+}
+
+/**
+ * State of the Android in-app login window.
+ *
+ * `"pending"` means the window is still open — keep polling. Everything else is
+ * terminal (`"harvest"` carries the jar; `"cancelled"`/`"timeout"` save nothing).
+ */
+export type CookieHarvestState = "pending" | "harvest" | "cancelled" | "timeout";
+
+/** One poll of the in-app login window. */
+export interface CookieHarvestPoll {
+  state: CookieHarvestState;
+  /** Only set when `state === "harvest"`. */
+  harvest: CookieHarvest | null;
+}
+
+/** Availability of the Termux RUN_COMMAND bridge (custom fork). */
+export interface TermuxStatus {
+  installed: boolean;
+  permission_granted: boolean;
+  available: boolean;
+  message: string;
+}
+
 export interface HealthResponse {
   status: string;
   version: string;

@@ -76,6 +76,12 @@ pub async fn resolve_kvs_stream(
             "{site_name} returned HTTP {status} for the video page."
         )));
     }
+    if is_login_gated(&html) && pick_best_stream(&html, page_url).is_none() {
+        return Err(AppError::Site(format!(
+            "{site_name} needs a site session for this video. Log in via Settings → Cookies → \
+             {site_name}, then try again."
+        )));
+    }
     if is_private_video_page(&html) {
         return Err(AppError::Site(format!(
             "This is a private {site_name} video — only logged-in members can watch it. \
@@ -120,6 +126,26 @@ pub async fn resolve_kvs_stream(
         "{site_name} refused the video file (HTTP {}).",
         resp.status()
     )))
+}
+
+/// Resolver errors that yt-dlp can't get past either (it has no extractor
+/// for these KVS sites): login-gated, private, bot-checked or placeholder.
+pub fn is_final_kvs_error(err: &crate::error::AppError) -> bool {
+    let msg = err.to_string();
+    [
+        "needs a site session",
+        "private",
+        "bot check",
+        "placeholder clip",
+    ]
+    .iter()
+    .any(|m| msg.contains(m))
+}
+
+/// KVS replaces the player config with a login redirect for gated videos:
+/// `pageContext = { videoId: '...', loginUrl: 'https://<host>/login-required/' }`.
+fn is_login_gated(html: &str) -> bool {
+    html.contains("login-required") || html.contains("loginUrl")
 }
 
 /// KVS "private video" pages: no player unless the viewer is a member.
