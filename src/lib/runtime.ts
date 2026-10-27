@@ -16,6 +16,8 @@ export interface RuntimeCapabilities {
   libraryScanRemote: boolean;
   showBrowserBanner: boolean;
   lanDiscovery: boolean;
+  /** Desktop app shell (tray, global hotkey, window behaviour). */
+  desktopShell: boolean;
   engineModes: EngineMode[];
 }
 
@@ -41,10 +43,11 @@ export function getCapabilities(runtime: AppRuntime = getAppRuntime()): RuntimeC
         (settings.engine_mode === "local" || settings.engine_mode === "standalone")),
     libraryScanRemote: useRemote && remoteConfigured,
     showBrowserBanner: runtime === "browser",
-    engineModes:
-      runtime === "desktop-tauri"
-        ? ["local", "remote_lan", "standalone"]
-        : ["local", "remote_lan", "standalone"],
+    // "standalone" (YouTube + direct links only) is retired: the on-device
+    // engine runs full yt-dlp, so Local covers it. Old saved values are
+    // migrated to "local" (settings store + backend bootstrap).
+    engineModes: ["local", "remote_lan"],
+    desktopShell: runtime === "desktop-tauri",
   };
 }
 

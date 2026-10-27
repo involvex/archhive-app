@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "react-hot-toast";
-import { sceneMediaUrl, isWebPlayableScene, isHttpMediaSrc, isVideoScene } from "@/lib/mediaUrl";
+import {
+  describePlaybackFailure,
+  sceneMediaUrl,
+  isWebPlayableScene,
+  isHttpMediaSrc,
+  isVideoScene,
+} from "@/lib/mediaUrl";
 import { getAutoAdvanceTarget } from "@/lib/autoAdvance";
 import { useWakeLock } from "@/lib/hooks/useWakeLock";
 import {
@@ -16,6 +22,8 @@ import { getCapabilities, hasLocalBackend } from "@/lib/runtime";
 import { useRecentlyViewedStore } from "@/lib/stores/recentlyViewed";
 import { api } from "@/lib/api/client";
 import { HlsVideoPlayer } from "@/components/HlsVideoPlayer";
+import { cn } from "@/lib/utils";
+import { APP_FULLSCREEN_CLASS, usePlayerFullscreen } from "@/lib/hooks/usePlayerFullscreen";
 import { ExtLink } from "@/components/ExtLink";
 import type { Scene, WatchProgress } from "@/lib/types";
 import { Button } from "@/components/ui/button";
@@ -92,7 +100,8 @@ function ScenePlayerBody({
   const hintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Q40: fullscreen container (double-tap middle zone + action-bar button).
   const playerContainerRef = useRef<HTMLDivElement | null>(null);
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  const fullscreen = usePlayerFullscreen(playerContainerRef);
+  const isFullscreen = fullscreen.isFullscreen;
 
   function flashGestureHint(label: string) {
     setGestureHint(label);
@@ -101,36 +110,12 @@ function ScenePlayerBody({
   }
 
   // Q40: double-tap the middle third (or the action-bar button) toggles
-  // fullscreen. Desktop Fullscreen API with an iOS-Safari video fallback.
+  // fullscreen. Shared hook: HTML Fullscreen API where it works, app-level
+  // fullscreen + immersive Android window in the phone app.
   function toggleFullscreen() {
-    const el = playerContainerRef.current;
-    const video = videoRef.current as
-      | (HTMLVideoElement & {
-          webkitEnterFullscreen?: () => void;
-        })
-      | null;
-    try {
-      if (document.fullscreenElement) {
-        void document.exitFullscreen().catch(() => {});
-        flashGestureHint("Exited fullscreen");
-      } else if (el?.requestFullscreen) {
-        void el.requestFullscreen().catch(() => {});
-        flashGestureHint("Fullscreen");
-      } else {
-        video?.webkitEnterFullscreen?.();
-      }
-    } catch {
-      /* fullscreen unsupported — ignore */
-    }
+    flashGestureHint(isFullscreen ? "Exited fullscreen" : "Fullscreen");
+    fullscreen.toggle();
   }
-
-  useEffect(() => {
-    function onFullscreenChange() {
-      setIsFullscreen(document.fullscreenElement != null);
-    }
-    document.addEventListener("fullscreenchange", onFullscreenChange);
-    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
-  }, []);
 
   useEffect(() => {
     return () => {
@@ -246,6 +231,9 @@ function ScenePlayerBody({
 
   const data = detail ?? scene;
   const mediaSrc = sceneMediaUrl(data);
+  const [playbackError, setPlaybackError] = useState<string | null>(null);
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => setPlaybackError(null), [mediaSrc]);
   const webPlayable = isWebPlayableScene(data) && mediaSrc;
   // Avoid crossOrigin on Android WebView when possible — it can blank playback on CORS hiccups.
   const useCors = isHttpMediaSrc(mediaSrc) && caps.localIpc;
@@ -406,7 +394,10 @@ function ScenePlayerBody({
         {webPlayable ? (
           <div
             ref={playerContainerRef}
-            className="relative touch-pan-y select-none"
+            className={cn(
+              "relative touch-pan-y select-none",
+              fullscreen.appFullscreen && APP_FULLSCREEN_CLASS,
+            )}
             onTouchStart={handleVideoTouchStart}
             onTouchMove={handleVideoTouchMove}
             onTouchEnd={handleVideoTouchEnd}
@@ -415,6 +406,7 @@ function ScenePlayerBody({
               ref={videoRef}
               src={mediaSrc}
               key={mediaSrc}
+              fullscreenButton={false}
               controls
               playsInline
               preload="metadata"
@@ -437,9 +429,23 @@ function ScenePlayerBody({
               onError={(mediaError: MediaError | null) => {
                 if (mediaError) {
                   console.error("Video playback failed", mediaSrc, mediaError);
+                  void describePlaybackFailure(mediaSrc).then(setPlaybackError);
                 }
               }}
             />
+            {playbackError && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 rounded-md bg-black/80 p-4 text-center">
+                <p className="text-sm text-white">{playbackError}</p>
+                {(caps.localIpc || hasLocalBackend()) && data.path && (
+                  <Button
+                    size="sm"
+                    onClick={() => void api.openSceneWithDefault(data.id).catch(console.error)}
+                  >
+                    Open with system player
+                  </Button>
+                )}
+              </div>
+            )}
             {gestureHint && (
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
                 <span className="rounded-md bg-black/70 px-3 py-1.5 text-sm font-medium text-white">

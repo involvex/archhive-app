@@ -17,6 +17,17 @@ use tauri::Emitter;
 use tauri_plugin_shell::ShellExt;
 use tracing;
 
+/// Phones only run the 127.0.0.1 loopback server (on-device engine); never
+/// expose the API on the network from a mobile device.
+fn refuse_lan_hosting_on_mobile() -> AppResult<()> {
+    if cfg!(mobile) {
+        return Err(crate::error::AppError::Other(
+            "LAN hosting is only available in the desktop app".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 pub struct AppState {
     pub db: Arc<Database>,
     pub data_dir: PathBuf,
@@ -117,7 +128,43 @@ impl AppState {
         slug: &str,
         page: u32,
         orientation: Option<BrowseOrientation>,
+        filters: crate::models::BrowseFilters,
     ) -> AppResult<crate::models::BrowsePage> {
+        let filters = filters.normalized();
+        // Combined tags (`a,b`): sites that cannot intersect that many tags
+        // in one URL get a word search for all of them instead.
+        let combined;
+        let (kind, slug) = {
+            let tags = crate::models::split_tags(slug);
+            let combinable = self
+                .sites
+                .get(site_id)
+                .map(|a| a.browse_options().combine_tags as usize)
+                .unwrap_or(0);
+            if matches!(kind, BrowseKind::Tag | BrowseKind::Category) && tags.len() > 1 {
+                if tags.len() <= combinable {
+                    combined = tags.join(",");
+                } else {
+                    combined = tags
+                        .iter()
+                        .map(|t| t.replace('-', " "))
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    return Box::pin(self.browse(
+                        site_id,
+                        BrowseKind::Search,
+                        &combined,
+                        page,
+                        orientation,
+                        filters,
+                    ))
+                    .await;
+                }
+                (kind, combined.as_str())
+            } else {
+                (kind, slug)
+            }
+        };
         // When site is "custom" but the slug is a known site URL, auto-detect
         // the correct adapter so users don't need to manually select the site.
         let effective_site_id = if site_id == "custom" && slug.starts_with("http") {
@@ -135,6 +182,8 @@ impl AppState {
             .ok()
             .and_then(|v| v.as_str().map(|s| s.to_string()))
             .unwrap_or_else(|| format!("{:?}", kind).to_lowercase());
+        // Different sort/filter selections are different pages.
+        let kind_str = format!("{kind_str}{}", filters.cache_key());
         let orient_str = orientation.and_then(|o| {
             serde_json::to_value(o)
                 .ok()
@@ -145,6 +194,7 @@ impl AppState {
             .browse(
                 &self.site_ctx,
                 BrowseQuery {
+                    filters: filters.clone(),
                     kind,
                     slug: slug.to_string(),
                     page,
@@ -906,6 +956,7 @@ impl AppState {
     }
 
     pub async fn ensure_lan_server(self: &Arc<Self>, port: u16) -> AppResult<String> {
+        refuse_lan_hosting_on_mobile()?;
         let open_dev = std::env::var("ARCHIVE_AUTO_LAN").ok().as_deref() == Some("1");
 
         {
@@ -984,6 +1035,7 @@ impl AppState {
     }
 
     pub async fn regenerate_lan_server(self: &Arc<Self>, port: u16) -> AppResult<String> {
+        refuse_lan_hosting_on_mobile()?;
         self.stop_lan_server()?;
         let mut settings = self.get_settings()?;
         settings.lan_token = None;
@@ -1020,16 +1072,103 @@ impl AppState {
         Ok(crate::models::BatchUpdateScenesResult { updated })
     }
 
+    /// A site's category / tag index — or one `group` of a grouped index
+    /// (e.g. XVIDEOS letter "a") — cached in memory for six hours and on disk
+    /// for a week, so the large per-letter indexes are fetched rarely.
+    pub async fn list_site_categories(
+        &self,
+        site_id: &str,
+        group: Option<&str>,
+    ) -> AppResult<Vec<crate::models::SiteCategory>> {
+        use std::collections::HashMap;
+        use std::sync::LazyLock;
+        use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+        type Cache = HashMap<String, (Instant, Vec<crate::models::SiteCategory>)>;
+        static CACHE: LazyLock<std::sync::Mutex<Cache>> =
+            LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
+        const MEMORY_TTL: Duration = Duration::from_secs(6 * 3600);
+        const DISK_TTL_SECS: u64 = 7 * 24 * 3600;
+
+        let adapter = self
+            .sites
+            .get(site_id)
+            .ok_or_else(|| crate::error::AppError::NotFound(format!("site {site_id}")))?;
+        let options = adapter.browse_options();
+        let group = group.map(str::trim).filter(|g| !g.is_empty());
+        if let Some(g) = group {
+            if !options.category_groups.iter().any(|o| o.id == g) {
+                return Err(crate::error::AppError::InvalidInput(format!(
+                    "unknown category group {g:?} for {site_id}"
+                )));
+            }
+        }
+        let key = format!("{site_id}|{}", group.unwrap_or(""));
+        if let Some((at, cats)) = CACHE.lock().ok().and_then(|c| c.get(&key).cloned()) {
+            if at.elapsed() < MEMORY_TTL {
+                return Ok(cats);
+            }
+        }
+
+        // Disk cache: <data>/tag-index/<site>__<group>.json
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let disk_path = self
+            .data_dir
+            .join("tag-index")
+            .join(format!("{site_id}__{}.json", group.unwrap_or("all")));
+        if let Ok(raw) = std::fs::read_to_string(&disk_path) {
+            if let Ok((fetched_at, cats)) =
+                serde_json::from_str::<(u64, Vec<crate::models::SiteCategory>)>(&raw)
+            {
+                if now.saturating_sub(fetched_at) < DISK_TTL_SECS && !cats.is_empty() {
+                    if let Ok(mut c) = CACHE.lock() {
+                        c.insert(key, (Instant::now(), cats.clone()));
+                    }
+                    return Ok(cats);
+                }
+            }
+        }
+
+        let cats = match group {
+            Some(g) => adapter.list_category_group(&self.site_ctx, g).await?,
+            None if options.has_categories => adapter.list_categories(&self.site_ctx).await?,
+            None => Vec::new(),
+        };
+        if !cats.is_empty() {
+            if let Ok(mut c) = CACHE.lock() {
+                c.insert(key, (Instant::now(), cats.clone()));
+            }
+            if let Some(dir) = disk_path.parent() {
+                let _ = std::fs::create_dir_all(dir);
+            }
+            if let Ok(json) = serde_json::to_string(&(now, &cats)) {
+                let _ = std::fs::write(&disk_path, json);
+            }
+        }
+        Ok(cats)
+    }
+
     pub async fn list_pornhub_categories(
         &self,
         orientation: crate::models::BrowseOrientation,
     ) -> AppResult<Vec<crate::models::PornhubCategoryEntry>> {
-        let url = crate::sites::adapters::pornhub::categories_page_url(orientation);
+        use crate::models::BrowseOrientation;
+        use crate::sites::adapters::pornhub;
+        // Trans has no index of its own (/transgender/categories is a 404):
+        // offer the straight catalog, browsed as <category> ∩ Transgender.
+        let source = match orientation {
+            BrowseOrientation::Transgender => BrowseOrientation::Straight,
+            o => o,
+        };
+        let url = pornhub::categories_page_url(source);
         let html = self.site_ctx.fetch_html(&url, "pornhub").await?;
-        Ok(crate::sites::adapters::pornhub::parse_pornhub_categories(
-            &html,
-            orientation,
-        ))
+        let list = pornhub::parse_pornhub_categories(&html, source);
+        if orientation != BrowseOrientation::Transgender {
+            return Ok(list);
+        }
+        Ok(pornhub::trans_catalog(list))
     }
 
     pub fn find_duplicates(&self) -> AppResult<Vec<DuplicateGroup>> {
@@ -1051,6 +1190,18 @@ impl AppState {
 
     pub fn list_cookie_sites(&self) -> AppResult<Vec<CookieSiteInfo>> {
         self.vault.list_sites()
+    }
+
+    /// `(display_name, base_url)` of a registered site, for the login browser.
+    pub fn site_login_info(&self, site_id: &str) -> AppResult<(String, String)> {
+        let adapter = self
+            .sites
+            .get(site_id)
+            .ok_or_else(|| crate::error::AppError::NotFound(format!("site {site_id}")))?;
+        Ok((
+            adapter.display_name().to_string(),
+            adapter.base_url().to_string(),
+        ))
     }
 
     pub fn save_site_cookies(&self, site_id: &str, cookies: &str) -> AppResult<()> {
@@ -1145,11 +1296,69 @@ impl AppState {
     }
 
     pub async fn resolve_media_details(&self, url: &str) -> AppResult<MediaItem> {
-        let runner = crate::sites::yt_dlp::SidecarRunner::new(self.site_ctx.app().clone());
         let site_id = self
             .sites
             .detect(url)
             .unwrap_or_else(|| "custom".to_string());
+        if crate::sites::details::SCRAPED_SITES.contains(&site_id.as_str()) {
+            match self.site_ctx.fetch_html(url, &site_id).await {
+                Ok(html) => {
+                    let d = crate::sites::details::scrape(&site_id, &html);
+                    if d.is_useful() {
+                        return Ok(self.page_details_item(url, &site_id, d));
+                    }
+                }
+                Err(e) => tracing::warn!("details page fetch failed for {url}: {e}"),
+            }
+        }
+        self.resolve_media_details_ytdlp(url, site_id).await
+    }
+
+    fn page_details_item(
+        &self,
+        url: &str,
+        site_id: &str,
+        d: crate::sites::details::PageDetails,
+    ) -> MediaItem {
+        let thumbnail = d.thumbnail.map(|t| match site_id {
+            "thothub" => crate::sites::adapters::pornhub::maybe_loopback_proxy(
+                &self.site_ctx,
+                &t,
+                "https://thethothub.com/",
+            ),
+            "thisvid" => crate::sites::adapters::pornhub::maybe_loopback_proxy(
+                &self.site_ctx,
+                &t,
+                "https://thisvid.com/",
+            ),
+            _ => t,
+        });
+        MediaItem {
+            id: url.to_string(),
+            title: d.title.unwrap_or_else(|| url.to_string()),
+            url: url.to_string(),
+            thumbnail,
+            duration: d.duration,
+            site_id: site_id.to_string(),
+            performers: d.performers,
+            tags: d.tags,
+            description: d.description,
+            channel: d.channel,
+            is_live: None,
+            viewers: None,
+            age: None,
+            gender: None,
+            stream_url: None,
+            embed_url: None,
+        }
+    }
+
+    async fn resolve_media_details_ytdlp(
+        &self,
+        url: &str,
+        site_id: String,
+    ) -> AppResult<MediaItem> {
+        let runner = crate::sites::yt_dlp::SidecarRunner::new(self.site_ctx.app().clone());
         let cookies = self.site_ctx.cookie_file_for_site(&site_id);
         let json = runner.resolve_media_json(url, cookies.as_deref()).await?;
 
@@ -1848,6 +2057,7 @@ impl AppState {
                 &search.slug,
                 1,
                 search.orientation,
+                search.filters.clone(),
             )
             .await?;
         let previous = self.db.saved_search_keys(id)?;

@@ -277,3 +277,9 @@ pub const MIGRATION_019: &str = r#"
 ALTER TABLE scenes ADD COLUMN md5 TEXT;
 UPDATE scenes SET oshash = NULL WHERE oshash IS NOT NULL AND length(oshash) != 16;
 "#;
+
+/// Saved searches remember the listing's sort / filters (JSON `BrowseFilters`),
+/// so checks and re-opens run the same listing that was saved.
+pub const MIGRATION_020: &str = r#"
+ALTER TABLE saved_searches ADD COLUMN filters TEXT;
+"#;

@@ -49,14 +49,16 @@ export function sceneThumbUrl(scene: Scene): string | undefined {
     return convertFileSrc(scene.thumb);
   }
 
-  if (getAppRuntime() === "mobile-tauri" && hasLocalBackend() && settings.lan_enabled) {
+  if (getAppRuntime() === "mobile-tauri" && hasLocalBackend()) {
     return `http://127.0.0.1:${settings.lan_port}/api/scenes/${scene.id}/thumb`;
   }
 
   return scene.thumb;
 }
 
-/** Resolve playable media URL for a library scene (video/audio). */
+/** Resolve playable media URL for a library scene (video/audio).
+ *  On the phone the 127.0.0.1 loopback server always runs, so it does not
+ *  depend on `lan_enabled` (which can still read false while it starts). */
 export function sceneMediaUrl(scene: Scene): string | undefined {
   if (!scene.path) return undefined;
 
@@ -73,7 +75,7 @@ export function sceneMediaUrl(scene: Scene): string | undefined {
     return convertFileSrc(scene.path);
   }
 
-  if (getAppRuntime() === "mobile-tauri" && hasLocalBackend() && settings.lan_enabled) {
+  if (getAppRuntime() === "mobile-tauri" && hasLocalBackend()) {
     return `http://127.0.0.1:${settings.lan_port}/api/scenes/${scene.id}/media`;
   }
 
@@ -106,7 +108,7 @@ export function fileStreamUrl(relativePath: string): string | undefined {
     return `http://127.0.0.1:${settings.lan_port}/api/files/stream?path=${pathParam}${tokenAmp(lanAuthToken())}`;
   }
 
-  if (getAppRuntime() === "mobile-tauri" && hasLocalBackend() && settings.lan_enabled) {
+  if (getAppRuntime() === "mobile-tauri" && hasLocalBackend()) {
     const root = settings.library_path;
     if (root) return `http://127.0.0.1:${settings.lan_port}/api/files/stream?path=${pathParam}`;
   }
@@ -126,4 +128,25 @@ export function isImageFilePath(name: string): boolean {
 export function isHttpMediaSrc(src: string | undefined): boolean {
   if (!src) return false;
   return /^https?:\/\//i.test(src);
+}
+
+/**
+ * Explain why a library file failed to play: probes the stream URL (one
+ * byte) so a missing file or a path outside the library folder isn't
+ * reported as a codec problem.
+ */
+export async function describePlaybackFailure(src: string | undefined): Promise<string> {
+  if (!src) return "No playable URL for this file.";
+  if (!/^https?:/i.test(src)) return "The in-app player could not play this file.";
+  try {
+    const res = await fetch(src, { headers: { Range: "bytes=0-0" } });
+    if (res.status === 404) return "The file is missing on disk (moved or deleted?).";
+    if (res.status === 403) {
+      return "This file is outside the library folder, so the app will not stream it. Check Settings → Library.";
+    }
+    if (!res.ok) return `The media server returned HTTP ${res.status}.`;
+    return "The file is reachable, but its video/audio format can't play in the in-app player.";
+  } catch {
+    return "The on-device media server is not reachable. Restart the app and try again.";
+  }
 }

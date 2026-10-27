@@ -22,6 +22,8 @@ struct ApiState {
     app: Arc<AppState>,
     token: String,
     lan_auth_enabled: bool,
+    /// Bound to 127.0.0.1 only (mobile on-device engine), not a LAN host.
+    loopback: bool,
 }
 
 #[derive(Deserialize)]
@@ -30,6 +32,13 @@ struct BrowseParams {
     slug: String,
     page: Option<u32>,
     orientation: Option<String>,
+    sort: Option<String>,
+    period: Option<String>,
+    duration: Option<String>,
+    quality: Option<String>,
+    include: Option<String>,
+    exclude: Option<String>,
+    tag: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -124,6 +133,7 @@ impl LanServer {
             app,
             token: token.clone(),
             lan_auth_enabled,
+            loopback,
         };
         let api_router = Router::new()
             .route("/api/health", get(health))
@@ -131,6 +141,7 @@ impl LanServer {
             .route("/api/network/info", get(network_info))
             .route("/api/sites", get(list_sites))
             .route("/api/sites/{id}/browse", get(browse))
+            .route("/api/sites/{id}/categories", get(site_categories))
             .route("/api/downloads", get(list_downloads).post(queue_download))
             .route("/api/downloads/bulk", post(queue_bulk_import))
             .route("/api/downloads/{id}/cancel", post(cancel_download))
@@ -367,12 +378,18 @@ async fn health(State(state): State<ApiState>) -> Json<serde_json::Value> {
     let settings = state.app.get_settings().ok();
     let library_path = settings.as_ref().map(|s| s.library_path.clone());
     let port = settings.as_ref().map(|s| s.lan_port).unwrap_or(8787);
-    let ip = crate::discovery::local_ipv4_for_mdns();
-    let lan_url = format!("http://{ip}:{port}");
+    // The mobile loopback server is only reachable on-device: never advertise
+    // a LAN address for it.
+    let lan_url = if state.loopback {
+        format!("http://127.0.0.1:{port}")
+    } else {
+        format!("http://{}:{port}", crate::discovery::local_ipv4_for_mdns())
+    };
     Json(serde_json::json!({
         "status": h.status,
         "version": h.version,
-        "lan": true,
+        "lan": !state.loopback,
+        "loopback": state.loopback,
         "auth_required": state.lan_auth_enabled && !state.token.is_empty(),
         "library_path": library_path,
         "lan_url": lan_url,
@@ -404,10 +421,32 @@ async fn browse(
             &params.slug,
             params.page.unwrap_or(1),
             orientation,
+            crate::models::BrowseFilters {
+                sort: params.sort,
+                period: params.period,
+                duration: params.duration,
+                quality: params.quality,
+                include: params.include,
+                exclude: params.exclude,
+                tag: params.tag,
+            },
         )
         .await
         .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
     Ok(Json(serde_json::json!(page)))
+}
+
+async fn site_categories(
+    State(state): State<ApiState>,
+    Path(id): Path<String>,
+    Query(params): Query<std::collections::HashMap<String, String>>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let cats = state
+        .app
+        .list_site_categories(&id, params.get("group").map(String::as_str))
+        .await
+        .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
+    Ok(Json(serde_json::json!(cats)))
 }
 
 async fn list_downloads(
@@ -861,12 +900,12 @@ struct ResolveBody {
 async fn resolve_media_details(
     State(state): State<ApiState>,
     Json(body): Json<ResolveBody>,
-) -> Result<Json<serde_json::Value>, StatusCode> {
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     let item = state
         .app
         .resolve_media_details(&body.url)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(Json(serde_json::json!(item)))
 }
 
@@ -953,7 +992,7 @@ async fn proxy_remote_media(
         .filter(|c| !c.is_empty())
         .cloned()
         .or_else(|| {
-            let site = site_id_from_referer(&referer);
+            let site = site_id_from_referer(&referer)?;
             state.app.vault.cookie_header(site).ok().flatten()
         });
     if let Some(ref cookie) = cookie {
@@ -1047,23 +1086,27 @@ async fn proxy_remote_media(
     Ok(response)
 }
 
-fn site_id_from_referer(referer: &str) -> &'static str {
-    let lower = referer.to_lowercase();
-    if lower.contains("pornhub") {
-        "pornhub"
-    } else if lower.contains("xvideos") {
-        "xvideos"
-    } else if lower.contains("xhamster") {
-        "xhamster"
-    } else if lower.contains("xnxx") {
-        "xnxx"
-    } else if lower.contains("youporn") {
-        "youporn"
-    } else if lower.contains("redgifs") {
-        "redgifs"
-    } else {
-        "pornhub"
-    }
+/// Site whose vault cookies the proxy may attach, from the Referer it was
+/// given. Unknown sites get none (never another site's cookies).
+fn site_id_from_referer(referer: &str) -> Option<&'static str> {
+    let host = url::Url::parse(referer)
+        .ok()
+        .and_then(|u| u.host_str().map(str::to_ascii_lowercase))?;
+    let host = host.strip_prefix("www.").unwrap_or(&host).to_string();
+    [
+        ("pornhub.com", "pornhub"),
+        ("xvideos.com", "xvideos"),
+        ("xhamster.com", "xhamster"),
+        ("xnxx.com", "xnxx"),
+        ("youporn.com", "youporn"),
+        ("redgifs.com", "redgifs"),
+        ("eporner.com", "eporner"),
+        ("thethothub.com", "thothub"),
+        ("thisvid.com", "thisvid"),
+    ]
+    .into_iter()
+    .find(|(domain, _)| host == *domain || host.ends_with(&format!(".{domain}")))
+    .map(|(_, site)| site)
 }
 
 fn rewrite_m3u8_for_proxy(body: &str, playlist_url: &str, referer: &str, port: u16) -> String {
@@ -1882,4 +1925,21 @@ pub fn generate_token() -> String {
             b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"[idx] as char
         })
         .collect()
+}
+
+#[cfg(test)]
+mod referer_tests {
+    use super::site_id_from_referer as site;
+
+    #[test]
+    fn proxy_cookies_only_for_the_referer_site() {
+        assert_eq!(site("https://www.eporner.com/"), Some("eporner"));
+        assert_eq!(site("https://www.pornhub.com/"), Some("pornhub"));
+        assert_eq!(site("https://de.xhamster.com/videos/x"), Some("xhamster"));
+        assert_eq!(site("https://thethothub.com/"), Some("thothub"));
+        // Unknown or look-alike hosts get no cookies at all.
+        assert_eq!(site("https://example.com/"), None);
+        assert_eq!(site("https://pornhub.com.evil.example/"), None);
+        assert_eq!(site("not a url"), None);
+    }
 }

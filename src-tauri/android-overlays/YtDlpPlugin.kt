@@ -12,6 +12,7 @@ import app.tauri.plugin.Plugin
 import com.yausername.ffmpeg.FFmpeg
 import com.yausername.youtubedl_android.YoutubeDL
 import com.yausername.youtubedl_android.YoutubeDLRequest
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -24,11 +25,19 @@ import java.util.concurrent.TimeUnit
 @TauriPlugin
 class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
 
-    private val scope = CoroutineScope(Dispatchers.IO)
+    // Last-resort guard: an uncaught Throwable in a plugin coroutine (e.g. a
+    // LinkageError from youtubedl-android) must not take the whole app down.
+    private val scope = CoroutineScope(
+        Dispatchers.IO + CoroutineExceptionHandler { _, e ->
+            Log.e("YtDlpPlugin", "Uncaught error in plugin coroutine", e)
+        }
+    )
     @Volatile private var initialized = false
     @Volatile private var ffmpegPath: String? = null
     @Volatile private var ffprobePath: String? = null
     @Volatile private var ffmpegLibDir: String? = null
+    /** Last init failure, surfaced in "not initialized" responses for diagnosis. */
+    @Volatile private var initError: String? = null
 
     /**
      * Lazily initialize YoutubeDL + FFmpeg (idempotent, thread-safe).
@@ -44,7 +53,7 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
             YoutubeDL.getInstance().init(activity)
             try {
                 FFmpeg.getInstance().init(activity)
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 // FFmpeg module may be absent in some builds; yt-dlp can still run.
                 Log.w("YtDlpPlugin", "FFmpeg.init failed (media tools may be unavailable)", e)
             }
@@ -52,10 +61,16 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
             resolveMediaToolsLocked()
             initialized = true
             true
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.e("YtDlpPlugin", "Failed to init YoutubeDL", e)
+            initError = "${e.javaClass.simpleName}: ${e.message ?: ""}"
             false
         }
+    }
+
+    private fun notInitialized(what: String): String {
+        val cause = initError ?: return "$what not initialized"
+        return "$what not initialized ($cause)"
     }
 
     /** FFmpeg.init is async; wait until libavdevice appears in the unpacked tree. */
@@ -184,7 +199,7 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
             val ret = JSObject()
             if (!ensureInitialized()) {
                 ret.put("ok", false)
-                ret.put("message", "YoutubeDL/FFmpeg not initialized")
+                ret.put("message", notInitialized("YoutubeDL/FFmpeg"))
                 invoke.resolve(ret)
                 return@launch
             }
@@ -253,7 +268,7 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
             if (!ensureInitialized()) {
                 val ret = JSObject()
                 ret.put("stdout", "")
-                ret.put("stderr", "YoutubeDL/FFmpeg not initialized")
+                ret.put("stderr", notInitialized("YoutubeDL/FFmpeg"))
                 ret.put("exitCode", -1)
                 invoke.resolve(ret)
                 return@launch
@@ -276,7 +291,7 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
                 ret.put("stderr", stderr)
                 ret.put("exitCode", code)
                 invoke.resolve(ret)
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 val ret = JSObject()
                 ret.put("stdout", "")
                 ret.put("stderr", e.message ?: "Unknown error")
@@ -298,7 +313,7 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
         if (!ensureInitialized()) {
             val ret = JSObject()
             ret.put("stdout", "")
-            ret.put("stderr", "YoutubeDL not initialized")
+            ret.put("stderr", notInitialized("YoutubeDL"))
             ret.put("exitCode", -1)
             invoke.resolve(ret)
             return
@@ -315,7 +330,7 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
                 ret.put("stderr", result.err)
                 ret.put("exitCode", 0)
                 invoke.resolve(ret)
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 val ret = JSObject()
                 ret.put("stdout", "")
                 ret.put("stderr", e.message ?: "Unknown error")
@@ -346,7 +361,7 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
                 val ret = JSObject()
                 ret.put("version", ver ?: "")
                 invoke.resolve(ret)
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 val ret = JSObject()
                 ret.put("version", "")
                 invoke.resolve(ret)
@@ -363,7 +378,7 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
         if (!ensureInitialized()) {
             val ret = JSObject()
             ret.put("success", false)
-            ret.put("message", "YoutubeDL not initialized")
+            ret.put("message", notInitialized("YoutubeDL"))
             invoke.resolve(ret)
             return
         }
@@ -377,7 +392,7 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
                 ret.put("success", true)
                 ret.put("message", "Updated successfully")
                 invoke.resolve(ret)
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 val ret = JSObject()
                 ret.put("success", false)
                 ret.put("message", e.message ?: "Update failed")
@@ -400,7 +415,7 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
             val ret = JSObject()
             ret.put("ok", true)
             invoke.resolve(ret)
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             val ret = JSObject()
             ret.put("ok", false)
             ret.put("message", e.message ?: "startKeepAlive failed")
@@ -421,7 +436,7 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
             val ret = JSObject()
             ret.put("ok", true)
             invoke.resolve(ret)
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             val ret = JSObject()
             ret.put("ok", false)
             ret.put("message", e.message ?: "updateKeepAlive failed")
@@ -436,10 +451,91 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
             val ret = JSObject()
             ret.put("ok", true)
             invoke.resolve(ret)
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             val ret = JSObject()
             ret.put("ok", false)
             ret.put("message", e.message ?: "stopKeepAlive failed")
+            invoke.resolve(ret)
+        }
+    }
+
+    /**
+     * Open a local file in another app (video player, gallery, …) via
+     * ACTION_VIEW. Android forbids file:// URIs across apps, so the file is
+     * shared through the app's FileProvider (`${applicationId}.fileprovider`).
+     */
+    @Command
+    fun openFile(invoke: Invoke) {
+        val args = invoke.parseArgs(OpenFileArgs::class.java)
+        val ret = JSObject()
+        try {
+            val file = File(args.path)
+            if (!file.isFile) {
+                ret.put("ok", false)
+                ret.put("message", "File not found: ${args.path}")
+                invoke.resolve(ret)
+                return
+            }
+            val uri = androidx.core.content.FileProvider.getUriForFile(
+                activity,
+                "${activity.packageName}.fileprovider",
+                file,
+            )
+            val mime = args.mime.ifBlank {
+                android.webkit.MimeTypeMap.getSingleton()
+                    .getMimeTypeFromExtension(file.extension.lowercase()) ?: "video/*"
+            }
+            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW)
+                .setDataAndType(uri, mime)
+                .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            activity.startActivity(android.content.Intent.createChooser(intent, "Open with"))
+            ret.put("ok", true)
+        } catch (e: Throwable) {
+            Log.w("YtDlpPlugin", "openFile failed for ${args.path}", e)
+            ret.put("ok", false)
+            ret.put("message", e.message ?: e.javaClass.simpleName)
+        }
+        invoke.resolve(ret)
+    }
+
+    /**
+     * Video fullscreen. wry's WebChromeClient cancels HTML5 fullscreen
+     * (onShowCustomView), so the web player expands itself and asks for an
+     * immersive window here: system bars hidden (swipe to peek) and, for
+     * landscape video, a sensor-landscape orientation lock.
+     */
+    @Command
+    fun setImmersive(invoke: Invoke) {
+        val args = invoke.parseArgs(ImmersiveArgs::class.java)
+        activity.runOnUiThread {
+            val ret = JSObject()
+            try {
+                val window = activity.window
+                val controller = androidx.core.view.WindowCompat.getInsetsController(
+                    window,
+                    window.decorView,
+                )
+                if (args.enabled) {
+                    controller.systemBarsBehavior =
+                        androidx.core.view.WindowInsetsControllerCompat
+                            .BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                    controller.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+                    activity.requestedOrientation = if (args.landscape) {
+                        android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                    } else {
+                        android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                    }
+                } else {
+                    controller.show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+                    activity.requestedOrientation =
+                        android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                }
+                ret.put("ok", true)
+            } catch (e: Throwable) {
+                Log.w("YtDlpPlugin", "setImmersive failed", e)
+                ret.put("ok", false)
+                ret.put("message", e.message ?: e.javaClass.simpleName)
+            }
             invoke.resolve(ret)
         }
     }
@@ -453,7 +549,7 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
             val ret = JSObject()
             ret.put("ok", true)
             invoke.resolve(ret)
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             val ret = JSObject()
             ret.put("ok", false)
             ret.put("message", e.message ?: "schedulePendingResume failed")
@@ -468,7 +564,7 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
             val ret = JSObject()
             ret.put("ok", true)
             invoke.resolve(ret)
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             val ret = JSObject()
             ret.put("ok", false)
             ret.put("message", e.message ?: "cancelPendingResume failed")
@@ -531,6 +627,16 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
 
     class ResumeArgs @JvmOverloads constructor(
         var requireUnmetered: Boolean = false,
+    )
+
+    class ImmersiveArgs @JvmOverloads constructor(
+        var enabled: Boolean = false,
+        var landscape: Boolean = true,
+    )
+
+    class OpenFileArgs @JvmOverloads constructor(
+        var path: String = "",
+        var mime: String = "",
     )
 
     class ShareFileArgs @JvmOverloads constructor(

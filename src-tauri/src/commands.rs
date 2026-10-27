@@ -38,12 +38,29 @@ pub async fn browse(
     slug: String,
     page: Option<u32>,
     orientation: Option<BrowseOrientation>,
+    filters: Option<crate::models::BrowseFilters>,
 ) -> CmdResult<crate::models::BrowsePage> {
     map_err(
         state
-            .browse(&site_id, kind, &slug, page.unwrap_or(1), orientation)
+            .browse(
+                &site_id,
+                kind,
+                &slug,
+                page.unwrap_or(1),
+                orientation,
+                filters.unwrap_or_default(),
+            )
             .await,
     )
+}
+
+#[tauri::command]
+pub async fn list_site_categories(
+    state: State<'_, Arc<AppState>>,
+    site_id: String,
+    group: Option<String>,
+) -> CmdResult<Vec<crate::models::SiteCategory>> {
+    map_err(state.list_site_categories(&site_id, group.as_deref()).await)
 }
 
 #[tauri::command]
@@ -417,6 +434,27 @@ pub fn save_site_cookies(
     map_err(state.save_site_cookies(&site_id, &cookies))
 }
 
+/// Open the in-app login browser for a site and return the cookies captured
+/// once the user finishes (the frontend stores them via `save_site_cookies`,
+/// which also covers Remote LAN hosts). Async: reading webview cookies from a
+/// synchronous command deadlocks on Windows.
+#[tauri::command]
+pub async fn cookie_login(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    site_id: String,
+) -> CmdResult<crate::cookie_login::CookieLoginResult> {
+    let (display_name, base_url) = map_err(state.site_login_info(&site_id))?;
+    let target = crate::cookie_login::login_target(&site_id, &base_url);
+    map_err(crate::cookie_login::capture(&app, &site_id, &display_name, &target).await)
+}
+
+/// Desktop: save (`save = true`) or cancel the open login window.
+#[tauri::command]
+pub fn cookie_login_finish(app: AppHandle, save: bool) -> CmdResult<()> {
+    map_err(crate::cookie_login::finish(&app, save))
+}
+
 #[tauri::command]
 pub fn delete_site_cookies(state: State<'_, Arc<AppState>>, site_id: String) -> CmdResult<()> {
     map_err(state.delete_site_cookies(&site_id))
@@ -431,7 +469,9 @@ pub fn catch_login_cookies(app: AppHandle, site_id: String) -> CmdResult<()> {
         .ok_or_else(|| {
             format!("No known login page for '{site_id}'. Use the DevTools / JSON import instead.")
         })?;
-    map_err(crate::mobile::cookie_harvest::open_login(&app, &site_id, &url))
+    map_err(crate::mobile::cookie_harvest::open_login(
+        &app, &site_id, &url,
+    ))
 }
 
 /// Take + clear the in-app login window state.
@@ -596,14 +636,23 @@ pub async fn open_scene_with_default(
     state: State<'_, Arc<AppState>>,
     id: String,
 ) -> CmdResult<()> {
-    use tauri_plugin_opener::OpenerExt;
     let scene = map_err(state.get_scene(&id))?;
     let path = scene
         .path
         .ok_or_else(|| "Scene has no file on disk".to_string())?;
-    app.opener()
-        .open_path(&path, None::<&str>)
-        .map_err(|e| e.to_string())
+    // The opener plugin's open_path does nothing useful on Android (needs a
+    // content:// URI); hand the file to other apps via our FileProvider.
+    #[cfg(target_os = "android")]
+    {
+        map_err(crate::mobile::ytdlp_bridge::open_file(&app, &path))
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        use tauri_plugin_opener::OpenerExt;
+        app.opener()
+            .open_path(&path, None::<&str>)
+            .map_err(|e| e.to_string())
+    }
 }
 
 #[tauri::command]
@@ -1352,5 +1401,14 @@ pub async fn load_demo_scene(state: State<'_, Arc<AppState>>) -> CmdResult<Strin
     Ok(format!(
         "Demo scene queued (job {}). It will download and appear in your library shortly.",
         job.id
+    ))
+}
+
+/// Phone video fullscreen: immersive window (system bars hidden) and an
+/// optional landscape lock. A no-op on desktop, which uses the HTML API.
+#[tauri::command]
+pub fn set_player_fullscreen(app: AppHandle, enabled: bool, landscape: bool) -> CmdResult<()> {
+    map_err(crate::mobile::ytdlp_bridge::set_immersive(
+        &app, enabled, landscape,
     ))
 }

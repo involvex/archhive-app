@@ -58,6 +58,7 @@ import { isAmoled, setAmoled } from "@/lib/amoled";
 import { Sun, Moon, Monitor, Clock, Book, Contrast } from "lucide-react";
 import { ChangelogDialog, useChangelogDialog } from "@/components/ChangelogDialog";
 import { ExtLink } from "@/components/ExtLink";
+import { CookieLoginButton } from "@/components/CookieLoginButton";
 
 export const Route = createFileRoute("/settings/")({
   component: SettingsPage,
@@ -1256,9 +1257,11 @@ function SettingsPage() {
     }
   }
 
-  // Every site is offered: capture helps wherever there is a login, not only the
-  // adapters flagged `requires_cookies` (twitter, eporner, xnxx, xhamster, youporn…).
-  const cookieSitesList = [...sites].sort((a, b) => a.display_name.localeCompare(b.display_name));
+  // Every site can use cookies (logged-in listings, age gates, premium);
+  // sites that need them to work at all are listed first.
+  const cookieSitesList = [...sites]
+    .filter((s) => s.id !== "custom")
+    .sort((a, b) => Number(b.requires_cookies) - Number(a.requires_cookies));
   // #48: Android engine-plugin signal for the Media tools card.
   const engineStatus =
     runtime === "mobile-tauri" && !versionsLoading ? enginePluginStatus(binaryVersions) : null;
@@ -1379,7 +1382,9 @@ function SettingsPage() {
                       }
                     }}
                   />
-                  {ENGINE_LABELS[mode]}
+                  {mode === "local" && runtime === "mobile-tauri"
+                    ? "On-device (this phone)"
+                    : ENGINE_LABELS[mode]}
                   {mode === "local" && runtime === "mobile-tauri" && " (recommended)"}
                   {mode === "remote_lan" && runtime === "browser" && " (recommended)"}
                 </label>
@@ -1990,8 +1995,10 @@ function SettingsPage() {
                   <>
                     {engineStatus === "missing" && (
                       <p className="text-xs text-red-400">
-                        No versions reported at all — the YtDlpPlugin overlay is likely missing from
-                        this APK (stale <code>gen/android</code> or skipped overlay). Run{" "}
+                        No versions reported at all — youtubedl-android did not initialize. Usually
+                        the YtDlp overlay is missing from this APK (stale <code>gen/android</code>)
+                        or the APK was packaged without extracted native libs (
+                        <code>jniLibs.useLegacyPackaging</code>, set by the overlay patch). Run{" "}
                         <code>bun run android:regen</code>, then rebuild with{" "}
                         <code>bun run build:apk</code>. See docs/mobile-android.md.
                       </p>
@@ -2388,8 +2395,9 @@ function SettingsPage() {
             </CardHeader>
             <CardContent className="space-y-3">
               <p className="text-xs text-[var(--color-muted-foreground)]">
-                Import via Cookie-Editor JSON, DevTools cookie table (no extension), or Netscape
-                format.
+                Easiest: pick a site and use <strong>Log in with browser</strong> — ArcHive opens
+                the site, you log in, and the session cookies are saved automatically. You can also
+                import Cookie-Editor JSON, a DevTools cookie table, or Netscape format.
               </p>
               <ol className="list-decimal space-y-1 pl-5 text-xs text-[var(--color-muted-foreground)]">
                 {COOKIE_IMPORT_STEPS.map((step) => (
@@ -2408,9 +2416,18 @@ function SettingsPage() {
                 {cookieSitesList.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.display_name}
+                    {s.requires_cookies ? " (required)" : ""}
                   </option>
                 ))}
               </select>
+              {selectedSite && (
+                <CookieLoginButton
+                  key={selectedSite}
+                  siteId={selectedSite}
+                  siteName={cookieSitesList.find((s) => s.id === selectedSite)?.display_name}
+                  onSaved={() => void refreshCookies()}
+                />
+              )}
               <div className="flex flex-wrap gap-2">
                 <Button variant="outline" onClick={copyBookmarklet} disabled={!selectedSite}>
                   Copy login bookmarklet

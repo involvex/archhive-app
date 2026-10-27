@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { toast } from "react-hot-toast";
-import { Pause, Play, RotateCcw, Trash2, HardDrive, BatteryCharging, X } from "lucide-react";
+import { BatteryCharging, HardDrive, Pause, Play, Plus, RotateCcw, Trash2, X } from "lucide-react";
 import { api } from "@/lib/api/client";
 import type { DownloadJob } from "@/lib/types";
 import { isDesktopTauri, isMobileDevice, isTauri } from "@/lib/tauri";
@@ -12,6 +12,8 @@ import { DownloadProgressRow } from "@/components/DownloadProgress";
 import { BulkImportPanel } from "@/components/BulkImportPanel";
 import { DownloadGuardDialog } from "@/components/DownloadGuardDialog";
 import { Button } from "@/components/ui/button";
+import { BottomSheet } from "@/components/ui/bottom-sheet";
+import { useMediaQuery } from "@/lib/hooks/useMediaQuery";
 import { useDownloadNotifications } from "@/lib/hooks/useDownloadNotifications";
 import { useSettingsStore } from "@/lib/stores/settings";
 import {
@@ -27,6 +29,8 @@ export const Route = createFileRoute("/downloads/")({
 
 function DownloadsPage() {
   const [jobs, setJobs] = useState<DownloadJob[]>([]);
+  const isPhone = useMediaQuery("(max-width: 767px)");
+  const [importOpen, setImportOpen] = useState(false);
   const [freeBytes, setFreeBytes] = useState<number | null>(null);
   const [guard, setGuard] = useState<GuardBlock>(null);
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
@@ -223,8 +227,8 @@ function DownloadsPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-2xl font-bold">
+      <div className="flex items-center gap-2">
+        <h2 className="min-w-0 flex-1 text-lg font-bold md:text-2xl">
           Downloads
           {pendingCount > 0 && (
             <span className="ml-2 align-middle text-sm font-medium text-[var(--color-muted-foreground)]">
@@ -232,7 +236,15 @@ function DownloadsPage() {
             </span>
           )}
         </h2>
-        <div className="flex flex-wrap gap-2">
+        {isPhone && (
+          <Button size="sm" className="h-9 shrink-0" onClick={() => setImportOpen(true)}>
+            <Plus className="h-4 w-4" />
+            Add URLs
+          </Button>
+        )}
+      </div>
+      <div className="-mx-4 overflow-x-auto px-4 scrollbar-hide md:mx-0 md:px-0">
+        <div className="flex w-max gap-2 md:w-auto md:flex-wrap">
           {pausableIds.length > 0 && (
             <Button variant="outline" size="sm" onClick={() => void pauseAll()}>
               <Pause className="mr-1.5 h-4 w-4" />
@@ -254,7 +266,7 @@ function DownloadsPage() {
           {completedIds.length > 0 && (
             <Button variant="outline" size="sm" onClick={() => void clearCompleted()}>
               <Trash2 className="mr-1.5 h-4 w-4" />
-              Clear completed ({completedIds.length})
+              Clear finished ({completedIds.length})
             </Button>
           )}
         </div>
@@ -285,11 +297,31 @@ function DownloadsPage() {
           </span>
         </div>
       )}
-      <BulkImportPanel
-        onQueued={refreshJobs}
-        prefill={pendingShare}
-        onPrefillConsumed={handlePrefillConsumed}
-      />
+      {isPhone ? (
+        <BottomSheet
+          open={importOpen || Boolean(pendingShare)}
+          onClose={() => setImportOpen(false)}
+          title="Add URLs"
+        >
+          <BulkImportPanel
+            onQueued={() => {
+              setImportOpen(false);
+              void refreshJobs();
+            }}
+            prefill={pendingShare}
+            onPrefillConsumed={() => {
+              setImportOpen(true);
+              handlePrefillConsumed();
+            }}
+          />
+        </BottomSheet>
+      ) : (
+        <BulkImportPanel
+          onQueued={refreshJobs}
+          prefill={pendingShare}
+          onPrefillConsumed={handlePrefillConsumed}
+        />
+      )}
       <div className="space-y-2">
         {jobs.map((job) => (
           <DownloadProgressRow
@@ -303,7 +335,17 @@ function DownloadsPage() {
           />
         ))}
         {jobs.length === 0 && (
-          <p className="text-sm text-[var(--color-muted-foreground)]">No downloads yet.</p>
+          <p className="text-sm text-[var(--color-muted-foreground)]">
+            No downloads yet.{" "}
+            {isPhone
+              ? "Tap Download on any video, or Add URLs to paste links."
+              : "Queue videos from Browse or paste links above."}
+          </p>
+        )}
+        {isPhone && jobs.length > 0 && (
+          <p className="pt-1 text-center text-[11px] text-[var(--color-muted-foreground)]">
+            Swipe a download right to pause or resume, left to cancel.
+          </p>
         )}
       </div>
       {guard && (

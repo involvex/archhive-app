@@ -305,6 +305,36 @@ pub fn ensure_media_tools(app: &AppHandle) -> AppResult<MediaToolsStatus> {
     }
 }
 
+/// Open a local file in another Android app (system chooser) through the
+/// FileProvider; `file://` URIs are rejected across apps on Android 7+.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+pub fn open_file(app: &AppHandle, path: &str) -> AppResult<()> {
+    #[cfg(target_os = "android")]
+    {
+        use serde_json::json;
+        with_plugin_state(app, |state| {
+            let response: PluginResponse = state
+                .handle()?
+                .run_mobile_plugin("openFile", json!({ "path": path, "mime": "" }))
+                .map_err(|e| AppError::Other(format!("openFile failed: {e}")))?;
+            if response.ok.unwrap_or(false) {
+                Ok(())
+            } else {
+                Err(AppError::Other(
+                    response
+                        .message
+                        .unwrap_or_else(|| "no app can open this file".into()),
+                ))
+            }
+        })
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = (app, path);
+        Err(AppError::Other("open_file is Android-only".into()))
+    }
+}
+
 /// Run ffmpeg or ffprobe through the Kotlin plugin (Android-native binaries).
 /// Returns combined stdout/stderr text on success.
 pub fn execute_media(app: &AppHandle, tool: &str, args: &[String]) -> AppResult<String> {
@@ -407,5 +437,39 @@ pub fn cancel_pending_resume(app: &AppHandle) {
     #[cfg(not(target_os = "android"))]
     {
         let _ = app;
+    }
+}
+
+/// Immersive video fullscreen on Android: hide the system bars and (for
+/// landscape video) lock to sensor-landscape. No-op elsewhere — desktop and
+/// browsers use the HTML Fullscreen API.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+pub fn set_immersive(app: &AppHandle, enabled: bool, landscape: bool) -> AppResult<()> {
+    #[cfg(target_os = "android")]
+    {
+        use serde_json::json;
+        with_plugin_state(app, |state| {
+            let response: PluginResponse = state
+                .handle()?
+                .run_mobile_plugin(
+                    "setImmersive",
+                    json!({ "enabled": enabled, "landscape": landscape }),
+                )
+                .map_err(|e| AppError::Other(format!("setImmersive failed: {e}")))?;
+            if response.ok.unwrap_or(false) {
+                Ok(())
+            } else {
+                Err(AppError::Other(
+                    response
+                        .message
+                        .unwrap_or_else(|| "setImmersive failed".into()),
+                ))
+            }
+        })
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = (app, enabled, landscape);
+        Ok(())
     }
 }

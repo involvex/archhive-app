@@ -1,4 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { toast } from "react-hot-toast";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api/client";
 import { sceneThumbUrl, isVideoScene } from "@/lib/mediaUrl";
@@ -19,10 +20,26 @@ import { SkeletonGrid } from "@/components/SkeletonGrid";
 import { ErrorState } from "@/components/ErrorState";
 import { EmptyState } from "@/components/EmptyState";
 import { usePullToRefresh } from "@/lib/hooks/usePullToRefresh";
-import { useIsLandscape } from "@/lib/hooks/useMediaQuery";
+import { useIsLandscape, useMediaQuery } from "@/lib/hooks/useMediaQuery";
+import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { vibrateTick } from "@/lib/haptics";
 import { registerShortcut, unregisterShortcut } from "@/lib/shortcuts/registry";
-import { Film, Database, LayoutGrid, List, RefreshCw, X, Zap } from "lucide-react";
+import {
+  CheckSquare,
+  Database,
+  Film,
+  LayoutGrid,
+  List,
+  RefreshCw,
+  SlidersHorizontal,
+  X,
+  Zap,
+} from "lucide-react";
+
+/** Tauri rejects with plain strings; Error objects carry `.message`. */
+function errorText(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
+}
 
 export const Route = createFileRoute("/library/scenes/")({
   validateSearch: (
@@ -169,9 +186,12 @@ function ScenesPage() {
   // Landscape phones get an extra column — portrait stays at 3 so thumbs
   // stay tappable. (useIsLandscape gates on width so tablets are unaffected.)
   const isLandscape = useIsLandscape();
+  // Portrait phones: 2 columns so thumbnails and titles stay readable.
   const gridCols = isLandscape
     ? "grid grid-cols-4 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3"
-    : "grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3";
+    : "grid grid-cols-2 gap-2.5 sm:grid-cols-3 md:grid-cols-4 md:gap-3 lg:grid-cols-5 xl:grid-cols-6";
+  const isPhone = useMediaQuery("(max-width: 767px)");
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -416,8 +436,10 @@ function ScenesPage() {
         rename_file: true,
       });
       handleSaved(updated);
+      toast.success("File renamed");
     } catch (e) {
       console.error(e);
+      toast.error(`Rename failed: ${errorText(e)}`);
     }
   }
 
@@ -425,8 +447,12 @@ function ScenesPage() {
     try {
       const updated = await api.probeSceneMetadata(scene.id);
       handleSaved(updated);
+      toast.success(
+        updated.thumb ? "Thumbnail regenerated" : "Probed, but no thumbnail was produced",
+      );
     } catch (e) {
       console.error(e);
+      toast.error(`Thumbnail failed: ${errorText(e)}`);
     }
   }
 
@@ -460,8 +486,130 @@ function ScenesPage() {
     }
   }
 
+  const sortSelect = (
+    <select
+      className="h-10 rounded-md md:h-9 border border-[var(--color-border)] bg-[var(--color-background)] px-2 text-sm"
+      value={sort}
+      onChange={(e) => setSort(e.target.value as SceneSort)}
+      aria-label="Sort scenes"
+    >
+      <option value="newest">Latest</option>
+      <option value="downloaded">Recently Downloaded</option>
+      <option value="name">Name</option>
+    </select>
+  );
+
+  const filterPanel = (
+    <div className="flex flex-wrap gap-1.5">
+      {[
+        { key: "all", label: "All" },
+        { key: "missing_thumb", label: "Missing thumb" },
+        { key: "missing_duration", label: "Missing duration" },
+        { key: "short", label: "\u2264 15s" },
+        { key: "hash_named", label: "Hash-named" },
+        { key: "hide_watched", label: "Hide watched" },
+        { key: "rating-3", label: "\u2605\u2605\u2605+" },
+        { key: "rating-4", label: "\u2605\u2605\u2605\u2605+" },
+        { key: "rating-5", label: "\u2605\u2605\u2605\u2605\u2605" },
+      ].map(({ key, label }) => {
+        const active =
+          key === "all"
+            ? !hasFilter
+            : key === "short"
+              ? filter.max_duration === 15
+              : key.startsWith("rating-")
+                ? filter.min_rating === Number(key.slice(7))
+                : !!filter[key as keyof SceneFilter];
+        return (
+          <button
+            key={key}
+            type="button"
+            onClick={() => {
+              if (key === "all") setFilter({});
+              else if (key === "short")
+                setFilter((f) => ({
+                  ...f,
+                  max_duration: f.max_duration === 15 ? undefined : 15,
+                }));
+              else if (key === "rating-3") {
+                if (filter.min_rating === 3) setFilter((f) => ({ ...f, min_rating: undefined }));
+                else setFilter((f) => ({ ...f, min_rating: 3 }));
+              } else if (key === "rating-4") {
+                if (filter.min_rating === 4) setFilter((f) => ({ ...f, min_rating: undefined }));
+                else setFilter((f) => ({ ...f, min_rating: 4 }));
+              } else if (key === "rating-5") {
+                if (filter.min_rating === 5) setFilter((f) => ({ ...f, min_rating: undefined }));
+                else setFilter((f) => ({ ...f, min_rating: 5 }));
+              } else {
+                setFilter((f) => ({ ...f, [key]: !f[key as keyof SceneFilter] }));
+              }
+            }}
+            className={`rounded-full px-3 py-1 text-xs font-medium transition ${
+              active
+                ? "bg-[var(--color-primary)] text-[var(--color-primary-foreground)]"
+                : "bg-[var(--color-secondary)] text-[var(--color-secondary-foreground)] hover:bg-[var(--color-muted)]"
+            }`}
+          >
+            {label}
+          </button>
+        );
+      })}
+      {scenes.length > 0 && (
+        <span className="text-xs text-[var(--color-muted-foreground)] ml-1 whitespace-nowrap">
+          {watchedCount} watched / {scenes.length} total
+        </span>
+      )}
+      <div className="flex items-center gap-1 ml-2">
+        <Input
+          type="number"
+          placeholder="Min s"
+          value={filter.min_duration ?? ""}
+          onChange={(e) => {
+            const v = e.target.value ? Number(e.target.value) : undefined;
+            setFilter((f) => ({ ...f, min_duration: v }));
+          }}
+          className="h-9 w-20 text-sm md:h-7 md:w-16 md:text-xs"
+          aria-label="Minimum duration in seconds"
+        />
+        <span className="text-xs text-[var(--color-muted-foreground)]">–</span>
+        <Input
+          type="number"
+          placeholder="Max s"
+          value={filter.max_duration ?? ""}
+          onChange={(e) => {
+            const v = e.target.value ? Number(e.target.value) : undefined;
+            setFilter((f) => ({ ...f, max_duration: v }));
+          }}
+          className="h-9 w-20 text-sm md:h-7 md:w-16 md:text-xs"
+          aria-label="Maximum duration in seconds"
+        />
+      </div>
+      <div className="flex items-center gap-1">
+        <Input
+          type="number"
+          placeholder="Min MB"
+          value={filter.min_file_size ? Math.round(filter.min_file_size / 1048576) : ""}
+          onChange={(e) => {
+            const mb = e.target.value ? Number(e.target.value) : 0;
+            setFilter((f) => ({
+              ...f,
+              min_file_size: mb > 0 ? mb * 1048576 : undefined,
+            }));
+          }}
+          className="h-9 w-24 text-sm md:h-7 md:text-xs"
+          aria-label="Minimum file size in MB"
+        />
+      </div>
+      {isDurationRangeInvalid(filter.min_duration, filter.max_duration) && (
+        <p className="w-full text-xs text-amber-400" role="alert">
+          Min duration can&apos;t exceed max duration — adjust the range to see results.
+        </p>
+      )}
+    </div>
+  );
+
   return (
-    <div ref={containerRef} className="space-y-4">
+    <div ref={containerRef} className="space-y-3 md:space-y-4">
       {pullDistance > 0 && (
         <div
           className="flex items-center justify-center transition-height overflow-hidden"
@@ -480,7 +628,7 @@ function ScenesPage() {
       )}
 
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-2xl font-bold">Library — Scenes</h2>
+        <h2 className="text-lg font-bold md:text-2xl">Library — Scenes</h2>
         <div className="flex gap-2">
           <Button size="sm" variant="ghost" onClick={refresh} title="Refresh">
             <RefreshCw className="h-4 w-4" />
@@ -513,7 +661,10 @@ function ScenesPage() {
               setSelectedIds(new Set());
             }}
           >
-            {selectionMode ? "Done selecting" : "Select multiple"}
+            <CheckSquare className="h-4 w-4 md:hidden" />
+            <span className={selectionMode ? "" : "hidden md:inline"}>
+              {selectionMode ? "Done" : "Select multiple"}
+            </span>
           </Button>
           {selectionMode && (
             <Button size="sm" variant="outline" onClick={selectAll}>
@@ -529,131 +680,48 @@ function ScenesPage() {
         onApplied={refresh}
       />
 
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex items-center gap-2">
         <Input
           placeholder="Search scenes..."
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          className="max-w-md"
+          className="h-10 flex-1 md:h-9 md:max-w-md"
         />
-        <select
-          className="h-9 rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-2 text-sm"
-          value={sort}
-          onChange={(e) => setSort(e.target.value as SceneSort)}
-          aria-label="Sort scenes"
+        {isPhone ? (
+          <Button
+            variant={hasFilter ? "default" : "outline"}
+            className="h-10 shrink-0"
+            onClick={() => setFiltersOpen(true)}
+          >
+            <SlidersHorizontal className="h-4 w-4" />
+            Filters
+          </Button>
+        ) : (
+          sortSelect
+        )}
+      </div>
+      {isPhone ? (
+        <BottomSheet
+          open={filtersOpen}
+          onClose={() => setFiltersOpen(false)}
+          title="Sort & filter"
+          footer={
+            <Button className="h-11 w-full" onClick={() => setFiltersOpen(false)}>
+              Show {scenes.length} {scenes.length === 1 ? "scene" : "scenes"}
+            </Button>
+          }
         >
-          <option value="newest">Latest</option>
-          <option value="downloaded">Recently Downloaded</option>
-          <option value="name">Name</option>
-        </select>
-      </div>
-      <div className="flex flex-wrap gap-1.5">
-        {[
-          { key: "all", label: "All" },
-          { key: "missing_thumb", label: "Missing thumb" },
-          { key: "missing_duration", label: "Missing duration" },
-          { key: "short", label: "\u2264 15s" },
-          { key: "hash_named", label: "Hash-named" },
-          { key: "hide_watched", label: "Hide watched" },
-          { key: "rating-3", label: "\u2605\u2605\u2605+" },
-          { key: "rating-4", label: "\u2605\u2605\u2605\u2605+" },
-          { key: "rating-5", label: "\u2605\u2605\u2605\u2605\u2605" },
-        ].map(({ key, label }) => {
-          const active =
-            key === "all"
-              ? !hasFilter
-              : key === "short"
-                ? filter.max_duration === 15
-                : key.startsWith("rating-")
-                  ? filter.min_rating === Number(key.slice(7))
-                  : !!filter[key as keyof SceneFilter];
-          return (
-            <button
-              key={key}
-              type="button"
-              onClick={() => {
-                if (key === "all") setFilter({});
-                else if (key === "short")
-                  setFilter((f) => ({
-                    ...f,
-                    max_duration: f.max_duration === 15 ? undefined : 15,
-                  }));
-                else if (key === "rating-3") {
-                  if (filter.min_rating === 3) setFilter((f) => ({ ...f, min_rating: undefined }));
-                  else setFilter((f) => ({ ...f, min_rating: 3 }));
-                } else if (key === "rating-4") {
-                  if (filter.min_rating === 4) setFilter((f) => ({ ...f, min_rating: undefined }));
-                  else setFilter((f) => ({ ...f, min_rating: 4 }));
-                } else if (key === "rating-5") {
-                  if (filter.min_rating === 5) setFilter((f) => ({ ...f, min_rating: undefined }));
-                  else setFilter((f) => ({ ...f, min_rating: 5 }));
-                } else {
-                  setFilter((f) => ({ ...f, [key]: !f[key as keyof SceneFilter] }));
-                }
-              }}
-              className={`rounded-full px-3 py-1 text-xs font-medium transition ${
-                active
-                  ? "bg-[var(--color-primary)] text-[var(--color-primary-foreground)]"
-                  : "bg-[var(--color-secondary)] text-[var(--color-secondary-foreground)] hover:bg-[var(--color-muted)]"
-              }`}
-            >
-              {label}
-            </button>
-          );
-        })}
-        {scenes.length > 0 && (
-          <span className="text-xs text-[var(--color-muted-foreground)] ml-1 whitespace-nowrap">
-            {watchedCount} watched / {scenes.length} total
-          </span>
-        )}
-        <div className="flex items-center gap-1 ml-2">
-          <Input
-            type="number"
-            placeholder="Min s"
-            value={filter.min_duration ?? ""}
-            onChange={(e) => {
-              const v = e.target.value ? Number(e.target.value) : undefined;
-              setFilter((f) => ({ ...f, min_duration: v }));
-            }}
-            className="h-7 w-16 text-xs"
-            aria-label="Minimum duration in seconds"
-          />
-          <span className="text-xs text-[var(--color-muted-foreground)]">–</span>
-          <Input
-            type="number"
-            placeholder="Max s"
-            value={filter.max_duration ?? ""}
-            onChange={(e) => {
-              const v = e.target.value ? Number(e.target.value) : undefined;
-              setFilter((f) => ({ ...f, max_duration: v }));
-            }}
-            className="h-7 w-16 text-xs"
-            aria-label="Maximum duration in seconds"
-          />
-        </div>
-        <div className="flex items-center gap-1">
-          <Input
-            type="number"
-            placeholder="Min size (MB)"
-            value={filter.min_file_size ? Math.round(filter.min_file_size / 1048576) : ""}
-            onChange={(e) => {
-              const mb = e.target.value ? Number(e.target.value) : 0;
-              setFilter((f) => ({
-                ...f,
-                min_file_size: mb > 0 ? mb * 1048576 : undefined,
-              }));
-            }}
-            className="h-7 w-24 text-xs"
-            aria-label="Minimum file size in MB"
-          />
-        </div>
-        {isDurationRangeInvalid(filter.min_duration, filter.max_duration) && (
-          <p className="w-full text-xs text-amber-400" role="alert">
-            Min duration can&apos;t exceed max duration — adjust the range to see results.
-          </p>
-        )}
-      </div>
-
+          <div className="space-y-4">
+            <label className="flex flex-col gap-1 text-xs text-[var(--color-muted-foreground)]">
+              Sort
+              {sortSelect}
+            </label>
+            {filterPanel}
+          </div>
+        </BottomSheet>
+      ) : (
+        filterPanel
+      )}
       {hasFilter && (
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs text-[var(--color-muted-foreground)]">Active filters:</span>
@@ -1057,8 +1125,14 @@ function ScenesPage() {
           if (idx >= 0) setPlayerIndex(idx);
           setPlayerScene(s);
         }}
-        onOpenExplorer={(s) => void api.openSceneInExplorer(s.id).catch(console.error)}
-        onOpenDefault={(s) => void api.openSceneWithDefault(s.id).catch(console.error)}
+        onOpenExplorer={(s) =>
+          void api.openSceneInExplorer(s.id).catch((e) => toast.error(errorText(e)))
+        }
+        onOpenDefault={(s) =>
+          void api
+            .openSceneWithDefault(s.id)
+            .catch((e) => toast.error(`Could not open: ${errorText(e)}`))
+        }
         onRenameFile={(s) => void renameFileToTitle(s)}
         onRegenThumb={(s) => void regenerateThumb(s)}
         onDelete={(s) => setDeleteTarget(s)}

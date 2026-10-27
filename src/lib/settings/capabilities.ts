@@ -16,7 +16,9 @@ export type SettingsTab = (typeof SETTINGS_TABS)[number];
 
 export function visibleSettingsTabs(caps: RuntimeCapabilities): SettingsTab[] {
   return SETTINGS_TABS.filter((tab) => {
-    if (tab === "desktop" && !caps.localIpc) return false;
+    // Tray / hotkey / window options only exist in the desktop app — not on
+    // phones, even though they also have a local backend.
+    if (tab === "desktop" && !caps.desktopShell) return false;
     if (tab === "lan" && !caps.lanServer) return true;
     return true;
   });

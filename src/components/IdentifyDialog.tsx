@@ -65,7 +65,8 @@ export function IdentifyDialog({ open, onClose, onDone }: IdentifyDialogProps) {
           result.scenes.map((scene) => ({ scene, state: "pending" as RowState, match: null })),
         );
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load scenes");
+        if (!cancelled)
+          setError(e instanceof Error ? e.message : String(e) || "Failed to load scenes");
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -126,7 +127,7 @@ export function IdentifyDialog({ open, onClose, onDone }: IdentifyDialogProps) {
               ? {
                   ...r,
                   state: "error",
-                  error: e instanceof Error ? e.message : "Query failed",
+                  error: e instanceof Error ? e.message : String(e) || "Query failed",
                 }
               : r,
           ),
@@ -161,7 +162,11 @@ export function IdentifyDialog({ open, onClose, onDone }: IdentifyDialogProps) {
       setRows((prev) =>
         prev.map((r) =>
           r.scene.id === row.scene.id
-            ? { ...r, state: "error", error: e instanceof Error ? e.message : "Apply failed" }
+            ? {
+                ...r,
+                state: "error",
+                error: e instanceof Error ? e.message : String(e) || "Apply failed",
+              }
             : r,
         ),
       );

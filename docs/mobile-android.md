@@ -177,20 +177,21 @@ Video playback uses `GET /api/scenes/{id}/media` and `GET /api/files/stream` wit
 
 ## Troubleshooting
 
-| Issue                                  | Fix                                                                                      |
-| -------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `FrameInsert open fail` in logcat      | Usually MIUI noise — see [troubleshooting-android.md](troubleshooting-android.md)        |
-| `om.archhive.app` in logs              | Truncated `com.archhive.app` — verify with `android:regen` if UI is broken               |
-| -------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `yt-dlp-aarch64-linux-android` missing | Sidecars are desktop-only; run `bun run android:regen`                                   |
-| `Unresolved reference: TauriActivity`  | Stale `gen/android` after identifier change; run `bun run android:regen`                 |
-| App runs but `invoke` is undefined     | Set Engine → **Remote LAN**; ensure desktop LAN is on. Rebuild after capability changes. |
-| Read-only filesystem on Android        | Mobile uses app data dir for DB; downloads go via Remote LAN desktop host                |
-| `ERR_CLEARTEXT_NOT_PERMITTED`          | Run `scripts/patch-android-lan.ps1` and rebuild                                          |
-| Connection refused                     | Firewall: allow TCP **8787** on PC (API). `:1420` is dev UI only.                        |
-| Used `:1420` in Remote LAN             | Remote LAN API is port **8787**, not the Vite dev port 1420                              |
-| 401 Unauthorized                       | Verify API token matches desktop LAN token                                               |
-| Empty browse results                   | Ensure desktop app is running and cookies are configured                                 |
+| Issue                                                       | Fix                                                                                                                                                                                 |
+| ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `FrameInsert open fail` in logcat                           | Usually MIUI noise — see [troubleshooting-android.md](troubleshooting-android.md)                                                                                                   |
+| `om.archhive.app` in logs                                   | Truncated `com.archhive.app` — verify with `android:regen` if UI is broken                                                                                                          |
+| --------------------------------------                      | ----------------------------------------------------------------------------------------                                                                                            |
+| `yt-dlp-aarch64-linux-android` missing                      | Sidecars are desktop-only; run `bun run android:regen`                                                                                                                              |
+| `Unresolved reference: TauriActivity`                       | Stale `gen/android` after identifier change; run `bun run android:regen`                                                                                                            |
+| App runs but `invoke` is undefined                          | Set Engine → **Remote LAN**; ensure desktop LAN is on. Rebuild after capability changes.                                                                                            |
+| Read-only filesystem on Android                             | Mobile uses app data dir for DB; downloads go via Remote LAN desktop host                                                                                                           |
+| `ERR_CLEARTEXT_NOT_PERMITTED`                               | Run `scripts/patch-android-lan.ps1` and rebuild                                                                                                                                     |
+| Connection refused                                          | Firewall: allow TCP **8787** on PC (API). `:1420` is dev UI only.                                                                                                                   |
+| Used `:1420` in Remote LAN                                  | Remote LAN API is port **8787**, not the Vite dev port 1420                                                                                                                         |
+| 401 Unauthorized                                            | Verify API token matches desktop LAN token                                                                                                                                          |
+| Empty browse results                                        | Ensure desktop app is running and cookies are configured                                                                                                                            |
+| `YoutubeDL/FFmpeg not initialized`, no versions in Settings | APK was packaged with compressed native libs (`extractNativeLibs=false`). `patch-android-ytdlp` sets `jniLibs.useLegacyPackaging = true`; run `bun run android:patches` and rebuild |
 
 ## Scripts
 

@@ -8,7 +8,11 @@ interface ShortcutBadgeProps {
 export function ShortcutBadge({ keys, className }: ShortcutBadgeProps) {
   const parts = keys.split("+").map((k) => k.trim());
   return (
-    <span className={cn("inline-flex items-center gap-0.5", className)}>
+    // Keyboard hints are meaningless on touch-only devices (phones in
+    // landscape get the desktop sidebar, which showed "Ctrl 1" badges).
+    <span
+      className={cn("inline-flex items-center gap-0.5 [@media(pointer:coarse)]:hidden", className)}
+    >
       {parts.map((part) => {
         const label =
           part === "ctrl"

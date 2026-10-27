@@ -1,5 +1,7 @@
 use crate::error::AppResult;
-use crate::models::{BrowseKind, BrowsePage, BrowseQuery, DownloadPlan, DownloadTool, MediaItem};
+use crate::models::{
+    BrowseKind, BrowseOptions, BrowsePage, BrowseQuery, DownloadPlan, DownloadTool, MediaItem,
+};
 use crate::sites::browse_fallback::ytdlp_browse_fallback;
 use crate::sites::urls::path_slug;
 use crate::sites::{SiteAdapter, SiteContext};
@@ -29,6 +31,13 @@ impl SiteAdapter for ThotHubAdapter {
         true
     }
 
+    fn browse_options(&self) -> BrowseOptions {
+        kvs_browse_options(
+            vec![BrowseKind::Search, BrowseKind::Tag, BrowseKind::Model],
+            false,
+        )
+    }
+
     fn supported_kinds(&self) -> Vec<BrowseKind> {
         vec![
             BrowseKind::Tag,
@@ -44,6 +53,13 @@ impl SiteAdapter for ThotHubAdapter {
             Ok(html) => parse_listing(&html, self.id()),
             Err(_) => Vec::new(),
         };
+        // ThotHub thumbnails are hotlink-protected (403 unless the Referer is
+        // ThotHub itself), so the phone loads them through the loopback proxy.
+        for item in &mut items {
+            if let Some(thumb) = item.thumbnail.as_deref() {
+                item.thumbnail = Some(maybe_loopback_proxy(ctx, thumb, BASE));
+            }
+        }
         if items.is_empty() {
             items = match ytdlp_browse_fallback(ctx, self.id(), &url, query.page, 24).await {
                 Ok(fallback) => fallback,
@@ -81,23 +97,25 @@ impl SiteAdapter for ThotHubAdapter {
         })
     }
     async fn resolve_stream_url(&self, ctx: &SiteContext, url: &str) -> AppResult<String> {
-        // Prefer HTTP KVS extraction (works on Android without yt-dlp ThotHub support).
-        match crate::sites::extractors::thothub::extract_stream_url(ctx, url).await {
-            Ok(crate::sites::extractors::thothub::ThotHubStream::Url(stream_url)) => {
-                return Ok(maybe_loopback_proxy(ctx, &stream_url, BASE));
-            }
-            Ok(crate::sites::extractors::thothub::ThotHubStream::LoginRequired) => {
-                // KVS serves a player-less shell for gated videos. yt-dlp has no
-                // ThotHub extractor at all, so falling through would only produce a
-                // confusing "Unsupported URL" — ask for the session instead.
-                return Err(crate::error::AppError::Site(
-                    "ThotHub needs a site session for this video. Capture cookies first: \
-                     Settings → Cookies → ThotHub → Catch cookies in-app, log in, then retry."
-                        .to_string(),
-                ));
-            }
-            // Page loaded but had no player, or the probe failed — try yt-dlp below.
-            _ => {}
+        // KVS session-aware extraction: get_file only works in the session
+        // that loaded the page (otherwise it redirects to the fu.mp4
+        // placeholder). The mirror it redirects to refuses the WebView's own
+        // Referer, so play it through the loopback proxy with ThotHub's.
+        let err = match crate::sites::extractors::thothub::resolve_kvs_stream(
+            ctx,
+            url,
+            self.id(),
+            "ThotHub",
+        )
+        .await
+        {
+            Ok(stream_url) => return Ok(maybe_loopback_proxy(ctx, &stream_url, BASE)),
+            Err(e) => e,
+        };
+        // A login-gated, private or bot-checked page won't play through
+        // yt-dlp either (it has no ThotHub extractor): report why.
+        if crate::sites::extractors::thothub::is_final_kvs_error(&err) {
+            return Err(err);
         }
 
         // Fallback: yt-dlp resolves the stream. Desktop uses the sidecar binary;
@@ -115,7 +133,11 @@ impl SiteAdapter for ThotHubAdapter {
             args.push("--cookies".to_string());
             args.push(cookies.to_string_lossy().to_string());
         }
-        let raw = runner.run_capture_for_stream_url("yt-dlp", &args).await?;
+        let raw = match runner.run_capture_for_stream_url("yt-dlp", &args).await {
+            Ok(raw) => raw,
+            // yt-dlp's "Unsupported URL" says less than the resolver's error.
+            Err(_) => return Err(err),
+        };
         let stream_url = raw
             .lines()
             .map(str::trim)
@@ -167,14 +189,17 @@ fn build_browse_url(query: &BrowseQuery) -> AppResult<String> {
     let path = match query.kind {
         BrowseKind::Tag | BrowseKind::Model => format!("/tags/{}/", path_slug(&query.slug)),
         BrowseKind::Search => {
-            // KVS search: /search/{query}/ (not ?search=)
+            // KVS search: /search/{query}/ pages with ?from_videos=N (1-based);
+            // a plain `from` offset is ignored and returns page 1 again.
             let q = path_slug(&query.slug);
-            let page_suffix = if query.page > 1 {
-                format!("?from={}", (query.page.saturating_sub(1)) * 24)
-            } else {
-                String::new()
-            };
-            return Ok(format!("{BASE}/search/{q}/{page_suffix}"));
+            let page = (query.page > 1).then(|| query.page.to_string());
+            return Ok(crate::sites::urls::with_query(
+                &format!("{BASE}/search/{q}/"),
+                &[
+                    ("sort_by", &kvs_sort(query)),
+                    ("from_videos", page.as_deref().unwrap_or("")),
+                ],
+            ));
         }
         BrowseKind::Video => {
             if query.slug.starts_with("http") {
@@ -196,12 +221,51 @@ fn build_browse_url(query: &BrowseQuery) -> AppResult<String> {
         }
     };
 
-    let page_suffix = if query.page > 1 {
-        format!("?page={}", query.page)
-    } else {
-        String::new()
-    };
-    Ok(format!("{BASE}{path}{page_suffix}"))
+    if matches!(query.kind, BrowseKind::Video | BrowseKind::Livestream) {
+        return Ok(format!("{BASE}{path}"));
+    }
+    // KVS list pages (tags, channels): ?from=N is the 1-based page number.
+    let page = (query.page > 1).then(|| query.page.to_string());
+    Ok(crate::sites::urls::with_query(
+        &format!("{BASE}{path}"),
+        &[
+            ("sort_by", &kvs_sort(query)),
+            ("from", page.as_deref().unwrap_or("")),
+        ],
+    ))
+}
+
+/// KVS `sort_by` values shared by ThotHub and ThisVid.
+pub fn kvs_browse_options(filter_kinds: Vec<BrowseKind>, has_categories: bool) -> BrowseOptions {
+    use crate::models::FilterOption;
+    BrowseOptions {
+        sorts: vec![
+            FilterOption::new("post_date", "Newest"),
+            FilterOption::new("video_viewed", "Most viewed"),
+            FilterOption::new("rating", "Top rated"),
+            FilterOption::new("duration", "Longest"),
+            FilterOption::new("most_favourited", "Most favourited"),
+        ],
+        filter_kinds,
+        has_categories,
+        ..Default::default()
+    }
+}
+
+/// Validated `sort_by` value for a KVS listing ("" = site default).
+pub fn kvs_sort(query: &BrowseQuery) -> String {
+    query
+        .filters
+        .sort
+        .as_deref()
+        .filter(|s| {
+            kvs_browse_options(vec![], false)
+                .sorts
+                .iter()
+                .any(|o| o.id == *s)
+        })
+        .unwrap_or("")
+        .to_string()
 }
 
 fn is_video_href(href: &str) -> bool {
@@ -281,6 +345,15 @@ fn parse_listing(html: &str, site_id: &str) -> Vec<MediaItem> {
                 if is_junk_title(&title) {
                     continue;
                 }
+                // Private videos (`<div class="item private">`) only play for
+                // logged-in members; flag them so a tap doesn't look like a
+                // broken player. "-private" in the results filter hides them.
+                let private = el.value().classes().any(|c| c == "private");
+                let title = if private {
+                    format!("🔒 {title}")
+                } else {
+                    title
+                };
 
                 let thumbnail = el
                     .select(&img_sel)
@@ -311,7 +384,11 @@ fn parse_listing(html: &str, site_id: &str) -> Vec<MediaItem> {
                     duration: None,
                     site_id: site_id.to_string(),
                     performers: vec![],
-                    tags: vec![],
+                    tags: if private {
+                        vec!["private".to_string()]
+                    } else {
+                        vec![]
+                    },
                     description: None,
                     channel: None,
                     is_live: None,
@@ -347,11 +424,34 @@ fn is_junk_title(title: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn kvs_paging_and_sort() {
+        let mut q = BrowseQuery {
+            kind: BrowseKind::Search,
+            slug: "amateur".into(),
+            page: 2,
+            orientation: None,
+            filters: Default::default(),
+        };
+        q.filters.sort = Some("video_viewed".into());
+        assert_eq!(
+            build_browse_url(&q).unwrap(),
+            "https://thethothub.com/search/amateur/?sort_by=video_viewed&from_videos=2"
+        );
+        q.kind = BrowseKind::Tag;
+        q.filters.sort = Some("bogus".into());
+        assert_eq!(
+            build_browse_url(&q).unwrap(),
+            "https://thethothub.com/tags/amateur/?from=2"
+        );
+    }
     use std::fs;
 
     #[test]
     fn build_model_url() {
         let q = BrowseQuery {
+            filters: Default::default(),
             kind: BrowseKind::Model,
             slug: "sweetie fox".to_string(),
             page: 1,
@@ -364,6 +464,7 @@ mod tests {
     #[test]
     fn build_search_url_uses_query_param() {
         let q = BrowseQuery {
+            filters: Default::default(),
             kind: BrowseKind::Search,
             slug: "sweetie fox".to_string(),
             page: 1,
@@ -379,6 +480,7 @@ mod tests {
     #[test]
     fn build_video_url_numeric() {
         let q = BrowseQuery {
+            filters: Default::default(),
             kind: BrowseKind::Video,
             slug: "286350".to_string(),
             page: 1,

@@ -1,19 +1,45 @@
 use crate::error::{AppError, AppResult};
-use crate::models::{BrowseKind, BrowsePage, BrowseQuery, DownloadPlan, MediaItem};
+use crate::models::{
+    BrowseKind, BrowseOptions, BrowsePage, BrowseQuery, DownloadPlan, MediaItem, SiteCategory,
+};
 use crate::vault::CookieVault;
 use async_trait::async_trait;
 use std::sync::Arc;
 
 pub mod adapters;
 pub mod browse_fallback;
+pub mod details;
 pub mod extractors;
+pub mod listing;
 pub mod registry;
+pub mod throttle;
 pub mod urls;
 pub mod yt_dlp;
+
+/// Browser User-Agent for site scraping.
+pub(crate) const BROWSER_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+
+/// Client for retrying failed connections: IPv4 only (a bound 0.0.0.0 local
+/// address) and HTTP/1.1 only. Some networks resolve a site's IPv6 address
+/// but cannot reach it, or break HTTP/2, and fail with "error sending
+/// request" while browsers (and yt-dlp) quietly fall back.
+pub(crate) fn fallback_client_builder() -> reqwest::ClientBuilder {
+    reqwest::Client::builder()
+        .user_agent(BROWSER_UA)
+        .http1_only()
+        .local_address(Some(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED)))
+        .connect_timeout(std::time::Duration::from_secs(15))
+}
+
+/// Transport-level failure worth one retry on the fallback client.
+pub(crate) fn is_transport_error(e: &reqwest::Error) -> bool {
+    e.is_connect() || e.is_timeout() || e.is_request()
+}
 
 #[derive(Clone)]
 pub struct SiteContext {
     pub client: reqwest::Client,
+    fallback: reqwest::Client,
     vault: Arc<CookieVault>,
     app: tauri::AppHandle,
     lan_port: u16,
@@ -30,11 +56,13 @@ impl SiteContext {
         lan_port: u16,
     ) -> AppResult<Self> {
         let client = reqwest::Client::builder()
-            .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            .user_agent(BROWSER_UA)
             .cookie_store(true)
             .build()?;
+        let fallback = fallback_client_builder().cookie_store(true).build()?;
         Ok(Self {
             client,
+            fallback,
             vault,
             app,
             lan_port,
@@ -68,21 +96,45 @@ impl SiteContext {
         site_id: &str,
         extra: Option<&[(&str, &str)]>,
     ) -> AppResult<String> {
-        let mut req = self.client.get(url);
-        if let Ok(Some(header)) = self.vault.cookie_header(site_id) {
-            if !header.is_empty() {
+        let cookie = self
+            .vault
+            .cookie_header(site_id)
+            .ok()
+            .flatten()
+            .filter(|h| !h.is_empty());
+        let build = |client: &reqwest::Client| {
+            let mut req = client.get(url);
+            if let Some(header) = cookie.as_deref() {
                 req = req.header("Cookie", header);
             }
-        }
-        if let Some(pairs) = extra {
-            for (k, v) in pairs {
+            for (k, v) in extra.unwrap_or_default() {
                 req = req.header(*k, *v);
             }
+            req
+        };
+        throttle::acquire(url).await?;
+        let resp = match build(&self.client).send().await {
+            Ok(resp) => resp,
+            Err(e) if is_transport_error(&e) => {
+                tracing::warn!("[{site_id}] {e}; retrying over IPv4 / HTTP/1.1");
+                build(&self.fallback).send().await?
+            }
+            Err(e) => return Err(e.into()),
+        };
+        if resp.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            let retry_after = resp
+                .headers()
+                .get(reqwest::header::RETRY_AFTER)
+                .and_then(|v| v.to_str().ok());
+            throttle::note_rate_limited(url, retry_after);
+            return Err(AppError::Site(format!(
+                "{site_id} is rate limiting requests (HTTP 429); wait a minute and retry"
+            )));
         }
-        let resp = req.send().await?;
         if !resp.status().is_success() {
             return Err(AppError::Site(format!("HTTP {} for {url}", resp.status())));
         }
+        throttle::note_ok(url);
         Ok(resp.text().await?)
     }
 
@@ -117,6 +169,26 @@ pub trait SiteAdapter: Send + Sync {
     fn supported_kinds(&self) -> Vec<BrowseKind>;
     fn requires_cookies(&self) -> bool {
         false
+    }
+
+    /// Sort / filter options this site understands (see `BrowseQuery::filters`).
+    fn browse_options(&self) -> BrowseOptions {
+        BrowseOptions::default()
+    }
+
+    /// The site's category / tag index. Only called when
+    /// `browse_options().has_categories` is true.
+    async fn list_categories(&self, _ctx: &SiteContext) -> AppResult<Vec<SiteCategory>> {
+        Ok(Vec::new())
+    }
+
+    /// One section of a grouped index (`browse_options().category_groups`).
+    async fn list_category_group(
+        &self,
+        _ctx: &SiteContext,
+        _group: &str,
+    ) -> AppResult<Vec<SiteCategory>> {
+        Ok(Vec::new())
     }
 
     async fn browse(&self, ctx: &SiteContext, query: BrowseQuery) -> AppResult<BrowsePage>;

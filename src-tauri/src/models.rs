@@ -71,6 +71,169 @@ pub struct BrowseQuery {
     pub page: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub orientation: Option<BrowseOrientation>,
+    /// Site-side sort / filter selection (ids from the adapter's `BrowseOptions`).
+    #[serde(default)]
+    pub filters: BrowseFilters,
+}
+
+/// Sort and filter choices for a browse request. Each value is an option `id`
+/// advertised by the site in [`BrowseOptions`]; `None` means the site default.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BrowseFilters {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sort: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub period: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quality: Option<String>,
+    /// Categories results must have (comma-separated slugs; sites with
+    /// `BrowseOptions::include_exclude`, e.g. Eporner `?include=`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include: Option<String>,
+    /// Categories to leave out (comma-separated slugs, e.g. Eporner `?exclude=`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exclude: Option<String>,
+    /// One tag narrowing a category listing (sites with
+    /// `BrowseOptions::category_tag_filter`, e.g. ThisVid `?tag=`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
+}
+
+impl BrowseFilters {
+    pub fn is_empty(&self) -> bool {
+        self.sort.is_none()
+            && self.period.is_none()
+            && self.duration.is_none()
+            && self.quality.is_none()
+            && self.include.is_none()
+            && self.exclude.is_none()
+            && self.tag.is_none()
+    }
+
+    /// Stable cache-key suffix (empty when no filter is set).
+    pub fn cache_key(&self) -> String {
+        if self.is_empty() {
+            return String::new();
+        }
+        let mut key = format!(
+            "|s={}|p={}|d={}|q={}",
+            self.sort.as_deref().unwrap_or(""),
+            self.period.as_deref().unwrap_or(""),
+            self.duration.as_deref().unwrap_or(""),
+            self.quality.as_deref().unwrap_or("")
+        );
+        if self.include.is_some() || self.exclude.is_some() {
+            key.push_str(&format!(
+                "|i={}|x={}",
+                self.include.as_deref().unwrap_or(""),
+                self.exclude.as_deref().unwrap_or("")
+            ));
+        }
+        if let Some(tag) = &self.tag {
+            key.push_str(&format!("|t={tag}"));
+        }
+        key
+    }
+
+    /// Normalize empty strings (from query params / UI) to `None`.
+    pub fn normalized(self) -> Self {
+        let f = |v: Option<String>| v.filter(|s| !s.trim().is_empty());
+        Self {
+            sort: f(self.sort),
+            period: f(self.period),
+            duration: f(self.duration),
+            quality: f(self.quality),
+            include: f(self.include),
+            exclude: f(self.exclude),
+            tag: f(self.tag),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FilterOption {
+    pub id: String,
+    pub label: String,
+}
+
+impl FilterOption {
+    pub fn new(id: &str, label: &str) -> Self {
+        Self {
+            id: id.to_string(),
+            label: label.to_string(),
+        }
+    }
+}
+
+/// What a site supports for sorting / filtering / category listing.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BrowseOptions {
+    #[serde(default)]
+    pub sorts: Vec<FilterOption>,
+    #[serde(default)]
+    pub periods: Vec<FilterOption>,
+    #[serde(default)]
+    pub durations: Vec<FilterOption>,
+    #[serde(default)]
+    pub qualities: Vec<FilterOption>,
+    /// Browse kinds the filters apply to (others ignore them).
+    #[serde(default)]
+    pub filter_kinds: Vec<BrowseKind>,
+    /// True when `list_site_categories` returns entries for this site.
+    #[serde(default)]
+    pub has_categories: bool,
+    /// How many tags/categories one URL can intersect exactly (a tag/category
+    /// slug of `a,b,…`). Beyond this — or 0 — combined tags are run as a word
+    /// search instead (relevance-ranked, not a strict match).
+    #[serde(default)]
+    pub combine_tags: u8,
+    /// Index sections fetched one at a time (e.g. XVIDEOS `/tags/a`), for
+    /// tag sets too large to load at once. Empty = one flat list.
+    #[serde(default)]
+    pub category_groups: Vec<FilterOption>,
+    /// Results can be narrowed to / exclude categories from the site's index
+    /// (`BrowseFilters::include` / `exclude`).
+    #[serde(default)]
+    pub include_exclude: bool,
+    /// Category listings can be narrowed to one tag (`BrowseFilters::tag`).
+    #[serde(default)]
+    pub category_tag_filter: bool,
+    /// Most categories `BrowseFilters::include` may hold (0 = no limit).
+    #[serde(default)]
+    pub max_include: u8,
+    /// Most categories `BrowseFilters::exclude` may hold (0 = no limit).
+    #[serde(default)]
+    pub max_exclude: u8,
+    /// Listing kinds that take only `exclude`, not `include`.
+    #[serde(default)]
+    pub exclude_only_kinds: Vec<BrowseKind>,
+}
+
+/// Separator for combined tags in a Tag/Category slug (`milf,anal`). Tag slugs
+/// themselves never contain commas.
+pub const TAG_SEPARATOR: char = ',';
+
+/// `"milf, anal,"` → `["milf", "anal"]`.
+pub fn split_tags(slug: &str) -> Vec<String> {
+    slug.split(TAG_SEPARATOR)
+        .map(|t| t.trim().to_string())
+        .filter(|t| !t.is_empty())
+        .collect()
+}
+
+/// One entry of a site's category / tag index.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SiteCategory {
+    pub name: String,
+    /// Slug to browse with `kind`.
+    pub slug: String,
+    pub kind: BrowseKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thumbnail: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub count: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -80,6 +243,8 @@ pub struct SiteInfo {
     pub base_url: String,
     pub supported_kinds: Vec<BrowseKind>,
     pub requires_cookies: bool,
+    #[serde(default)]
+    pub browse_options: BrowseOptions,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -901,6 +1066,9 @@ pub struct SavedSearch {
     pub slug: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub orientation: Option<BrowseOrientation>,
+    /// Sort / filters of the saved listing (site defaults when empty).
+    #[serde(default, skip_serializing_if = "BrowseFilters::is_empty")]
+    pub filters: BrowseFilters,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_checked_at: Option<String>,
     pub new_count: u32,
@@ -917,6 +1085,8 @@ pub struct SaveSearchRequest {
     pub slug: String,
     #[serde(default)]
     pub orientation: Option<BrowseOrientation>,
+    #[serde(default)]
+    pub filters: BrowseFilters,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

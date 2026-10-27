@@ -1,5 +1,7 @@
 import { forwardRef, useCallback, useEffect, useRef, useState, type Ref } from "react";
-import { PictureInPicture2, VolumeX } from "lucide-react";
+import { Maximize, Minimize, PictureInPicture2, VolumeX } from "lucide-react";
+import { APP_FULLSCREEN_CLASS, usePlayerFullscreen } from "@/lib/hooks/usePlayerFullscreen";
+import { cn } from "@/lib/utils";
 
 export const STREAM_URL_EXPIRED_ERROR =
   "Playback failed — the stream URL may have expired. Tap Retry for a fresh one.";
@@ -23,6 +25,11 @@ export interface HlsVideoPlayerProps {
   poster?: string;
   /** Show an explicit Picture-in-Picture control (HTML PiP API). */
   showPip?: boolean;
+  /**
+   * Show the player's own fullscreen button (works in the Android app, where
+   * the native one is dead). Off when a parent manages fullscreen itself.
+   */
+  fullscreenButton?: boolean;
   onError?: (error: MediaError | null) => void;
   onTimeUpdate?: () => void;
   onPause?: () => void;
@@ -53,6 +60,7 @@ export const HlsVideoPlayer = forwardRef<HTMLVideoElement, HlsVideoPlayerProps>(
       crossOrigin,
       poster,
       showPip = true,
+      fullscreenButton = true,
       onError,
       onTimeUpdate,
       onPause,
@@ -68,6 +76,8 @@ export const HlsVideoPlayer = forwardRef<HTMLVideoElement, HlsVideoPlayerProps>(
     const lastSyncRef = useRef(0);
     const [needsUnmute, setNeedsUnmute] = useState(false);
     const [pipAvailable, setPipAvailable] = useState(false);
+    const containerRef = useRef<HTMLDivElement | null>(null);
+    const fullscreen = usePlayerFullscreen(containerRef);
 
     const setVideoRef = useCallback(
       (node: HTMLVideoElement | null) => {
@@ -311,7 +321,13 @@ export const HlsVideoPlayer = forwardRef<HTMLVideoElement, HlsVideoPlayerProps>(
     };
 
     return (
-      <div className="relative size-full min-h-0">
+      <div
+        ref={containerRef}
+        className={cn(
+          "relative size-full min-h-0",
+          fullscreenButton && fullscreen.appFullscreen && APP_FULLSCREEN_CLASS,
+        )}
+      >
         <video
           ref={setVideoRef}
           key={src}
@@ -326,6 +342,9 @@ export const HlsVideoPlayer = forwardRef<HTMLVideoElement, HlsVideoPlayerProps>(
           crossOrigin={crossOrigin}
           className={className}
           disablePictureInPicture={false}
+          // Android WebView's own fullscreen button can't work (see
+          // usePlayerFullscreen); ours replaces it.
+          controlsList={fullscreen.hideNativeButton ? "nofullscreen" : undefined}
           // Keep native controls tappable on Android (avoid overlay stealing hits).
           style={{ touchAction: "manipulation", ...style }}
           onError={handleVideoError}
@@ -375,6 +394,29 @@ export const HlsVideoPlayer = forwardRef<HTMLVideoElement, HlsVideoPlayerProps>(
           >
             <VolumeX className="h-4 w-4" />
             Tap to unmute
+          </button>
+        )}
+
+        {fullscreenButton && fullscreen.hideNativeButton && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              fullscreen.toggle();
+            }}
+            title={fullscreen.isFullscreen ? "Exit fullscreen" : "Fullscreen"}
+            aria-label={fullscreen.isFullscreen ? "Exit fullscreen" : "Fullscreen"}
+            className={cn(
+              "pointer-events-auto absolute top-2 z-10 rounded-md bg-black/70 p-2 text-white hover:bg-black/90",
+              showPip && pipAvailable ? "right-12" : "right-2",
+              fullscreen.appFullscreen && "top-[max(0.5rem,env(safe-area-inset-top))]",
+            )}
+          >
+            {fullscreen.isFullscreen ? (
+              <Minimize className="h-4 w-4" />
+            ) : (
+              <Maximize className="h-4 w-4" />
+            )}
           </button>
         )}
 

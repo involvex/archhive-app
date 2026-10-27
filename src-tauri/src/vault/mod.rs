@@ -311,9 +311,14 @@ fn load_or_create_key(path: &PathBuf) -> AppResult<[u8; 32]> {
     Ok(key.into())
 }
 
+/// Netscape exports mark HttpOnly cookies as `#HttpOnly_<domain>\t...`; they
+/// are real cookies (usually the login session), not comments.
+const HTTP_ONLY_PREFIX: &str = "#HttpOnly_";
+
 fn netscape_to_header(netscape: &str) -> String {
     netscape
         .lines()
+        .map(|l| l.strip_prefix(HTTP_ONLY_PREFIX).unwrap_or(l))
         .filter(|l| !l.starts_with('#') && !l.trim().is_empty())
         .filter_map(|line| {
             let parts: Vec<&str> = line.split('\t').collect();
@@ -340,7 +345,11 @@ fn normalize_netscape(text: &str) -> String {
     for raw_line in text.lines() {
         let line = raw_line.strip_suffix('\r').unwrap_or(raw_line);
         let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with('#') {
+        let (http_only, line) = match line.strip_prefix(HTTP_ONLY_PREFIX) {
+            Some(rest) => (true, rest),
+            None => (false, line),
+        };
+        if trimmed.is_empty() || (!http_only && trimmed.starts_with('#')) {
             out.push_str(line);
             out.push('\n');
             continue;
@@ -349,6 +358,9 @@ fn normalize_netscape(text: &str) -> String {
         if parts.len() == 7 {
             let domain = parts[0].trim();
             parts[0] = domain;
+            if http_only {
+                out.push_str(HTTP_ONLY_PREFIX);
+            }
             parts[1] = if domain.starts_with('.') {
                 "TRUE"
             } else {
@@ -357,6 +369,9 @@ fn normalize_netscape(text: &str) -> String {
             out.push_str(&parts.join("\t"));
             out.push('\n');
         } else {
+            if http_only {
+                out.push_str(HTTP_ONLY_PREFIX);
+            }
             out.push_str(line);
             out.push('\n');
         }
@@ -366,7 +381,16 @@ fn normalize_netscape(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{normalize_netscape, validate_secret_key, validate_site_id};
+    use super::{netscape_to_header, normalize_netscape, validate_secret_key, validate_site_id};
+
+    #[test]
+    fn http_only_lines_are_cookies_not_comments() {
+        let text = "# Netscape HTTP Cookie File\n#HttpOnly_.reddit.com\tFALSE\t/\tTRUE\t0\treddit_session\tabc\n.reddit.com\tTRUE\t/\tTRUE\t0\tcsv\t2\n";
+        assert_eq!(netscape_to_header(text), "reddit_session=abc; csv=2");
+        let fixed = normalize_netscape(text);
+        assert!(fixed.contains("#HttpOnly_.reddit.com\tTRUE\t/\tTRUE\t0\treddit_session\tabc\n"));
+        assert!(fixed.starts_with("# Netscape HTTP Cookie File\n"));
+    }
 
     #[test]
     fn rejects_path_traversal_site_ids() {

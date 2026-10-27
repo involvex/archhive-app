@@ -38,6 +38,13 @@ import { useShareStore } from "@/lib/stores/share";
 import { looksLikeCookieExport } from "@/lib/cookies/import";
 import { CookieShareImportDialog } from "@/components/CookieShareImportDialog";
 import type { AppTheme } from "@/lib/types";
+import {
+  rememberLocation,
+  restoreScrollTo,
+  savedScroll,
+  saveScroll,
+  tabAction,
+} from "@/lib/navigation/tabMemory";
 
 const desktopNavItems = [
   { to: "/", label: "Home", icon: Home, shortcut: "Ctrl+1" },
@@ -68,6 +75,7 @@ const pluginNavItems = getPluginNavItems().map((item) => ({
 export function AppShell({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const openTabRef = useRef<(to: string) => void>((to) => navigate({ to }));
   const desktopNav = [...desktopNavItems, ...pluginNavItems];
   // Memoised so swipe-navigation callbacks don't re-bind every frame — the
   // array contents never change (plugin nav is module-scoped).
@@ -134,8 +142,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    registerDefaultShortcuts((path: string) => navigate({ to: path }));
-  }, [navigate]);
+    registerDefaultShortcuts((path: string) => openTabRef.current(path));
+  }, []);
 
   // Android share target: pull pending shared text and route to Downloads.
   // Pure pull model (no Kotlin event) — covers cold start, warm share, and
@@ -218,13 +226,58 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // Active-tab double-tap → scroll to top.
   const tapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Tab memory: each tab returns to its last location (and scroll).
+  const tabRoots = useMemo(
+    () => Array.from(new Set([...desktopNav, ...mobileNav].map((n) => n.to as string))),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+  const pendingRestore = useRef<string | null>(null);
+  const hrefRef = useRef(location.href);
+  useEffect(() => {
+    hrefRef.current = location.href;
+    rememberLocation(tabRoots, location.pathname, location.href);
+    if (pendingRestore.current === location.href) {
+      pendingRestore.current = null;
+      return restoreScrollTo(savedScroll(location.href));
+    }
+  }, [location.href, location.pathname, tabRoots]);
+  useEffect(() => {
+    let frame = 0;
+    const onScroll = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => saveScroll(hrefRef.current, window.scrollY));
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", onScroll);
+    };
+  }, []);
+  /** Tab button / swipe / shortcut: go to the tab's remembered location. */
+  const openTab = useCallback(
+    (to: string) => {
+      const action = tabAction(to, location.pathname, tabRoots);
+      if (action.kind === "scrollTop") {
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        return;
+      }
+      pendingRestore.current = action.restoreScroll ? action.href : null;
+      navigate({ href: action.href });
+    },
+    [location.pathname, navigate, tabRoots],
+  );
+  useEffect(() => {
+    openTabRef.current = openTab;
+  }, [openTab]);
+
   const navigateTab = useCallback(
     (to: string) => {
       if (to === location.pathname || location.pathname.startsWith(to + "/")) return;
       vibrateTick(15);
-      navigate({ to });
+      openTab(to);
     },
-    [location.pathname, navigate],
+    [location.pathname, openTab],
   );
 
   const onNavPointerDown = useCallback((e: React.PointerEvent) => {
@@ -350,6 +403,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <Link
                 key={to}
                 to={to}
+                onClick={(e) => {
+                  if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+                  e.preventDefault();
+                  openTab(to);
+                }}
                 className={cn(
                   "flex items-center justify-between rounded-md px-3 py-2 text-sm transition-colors",
                   "hover:bg-[var(--color-accent)]",
@@ -450,15 +508,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   to={to}
                   data-nav-tab
                   aria-label={badge != null ? `${label}, ${badge}` : label}
-                  onPointerDown={() => {
-                    // Tapping an already-active tab scrolls the view to top —
-                    // the standard mobile expectation, and cheap to gate.
-                    if (isActive) {
-                      if (tapTimer.current) window.clearTimeout(tapTimer.current);
-                      tapTimer.current = window.setTimeout(() => {
-                        window.scrollTo({ top: 0, behavior: "smooth" });
-                      }, 220);
-                    }
+                  onClick={(e) => {
+                    // Other tab: its last location. Active tab: its start
+                    // page, then (already there) scroll to top.
+                    e.preventDefault();
+                    if (tapTimer.current) window.clearTimeout(tapTimer.current);
+                    openTab(to);
                   }}
                   className={cn(
                     "flex min-w-0 flex-1 flex-col items-center gap-1 px-2 py-2 text-[11px] font-medium transition-colors",

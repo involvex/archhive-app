@@ -62,6 +62,7 @@ impl GenericYtDlpAdapter {
             base: "https://thisvid.com",
             kinds: vec![
                 crate::models::BrowseKind::Tag,
+                crate::models::BrowseKind::Category,
                 crate::models::BrowseKind::Search,
                 crate::models::BrowseKind::Video,
             ],
@@ -110,6 +111,109 @@ fn search_url(base: &str, site_id: &str, slug: &str) -> String {
     }
 }
 
+/// ThisVid is a KVS tube site: listings are plain HTML (yt-dlp has no search
+/// extractor for it), so scrape them like the other tube adapters.
+async fn browse_thisvid(ctx: &SiteContext, query: &BrowseQuery) -> AppResult<BrowsePage> {
+    const BASE: &str = "https://thisvid.com";
+    let slug = crate::sites::urls::path_slug(&query.slug);
+    let page = query.page.max(1);
+    let url = if query.slug.starts_with("https://thisvid.com/") {
+        query.slug.clone()
+    } else {
+        match query.kind {
+            BrowseKind::Tag if page > 1 => format!("{BASE}/tags/{slug}/{page}/"),
+            BrowseKind::Tag => format!("{BASE}/tags/{slug}/"),
+            BrowseKind::Category if page > 1 => format!("{BASE}/categories/{slug}/{page}/"),
+            BrowseKind::Category => format!("{BASE}/categories/{slug}/"),
+            BrowseKind::Model | BrowseKind::Channel => format!("{BASE}/members/{slug}/videos/"),
+            _ if page > 1 => format!("{BASE}/search/{page}/?q={}", query_slug(&query.slug)),
+            _ => format!("{BASE}/search/?q={}", query_slug(&query.slug)),
+        }
+    };
+    // Category pages can be narrowed to one tag: /categories/<c>/?tag=<t>
+    // (verified strict: every result is in the category and has the tag).
+    let tag = if query.kind == BrowseKind::Category {
+        query
+            .filters
+            .tag
+            .as_deref()
+            .map(str::trim)
+            .filter(|t| !t.is_empty() && t.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'))
+            .unwrap_or("")
+            .to_ascii_lowercase()
+    } else {
+        String::new()
+    };
+    let url = crate::sites::urls::with_query(
+        &url,
+        &[
+            ("sort_by", &crate::sites::adapters::thothub::kvs_sort(query)),
+            ("tag", &tag),
+        ],
+    );
+    let items = parse_thisvid(&ctx.fetch_html(&url, "thisvid").await?);
+    if items.is_empty() {
+        return Err(AppError::Site("No videos found on ThisVid.".into()));
+    }
+    let has_more = items.len() >= 20;
+    Ok(BrowsePage {
+        items,
+        page: query.page,
+        has_more,
+        total: None,
+        ..Default::default()
+    })
+}
+
+/// `<a href="https://thisvid.com/tags/abdl/" title="ABDL" class="selective">`.
+fn parse_thisvid_tag_index(html: &str) -> Vec<crate::models::SiteCategory> {
+    use std::sync::LazyLock;
+    static RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+        regex::Regex::new(
+            r#"<a href="https://thisvid\.com/tags/([a-z0-9-]+)/" title="([^"]*)" class="selective">"#,
+        )
+        .expect("thisvid tag index regex")
+    });
+    let mut seen = std::collections::HashSet::new();
+    RE.captures_iter(html)
+        .filter_map(|c| {
+            let slug = c.get(1)?.as_str().to_string();
+            if !seen.insert(slug.clone()) {
+                return None;
+            }
+            let name = html_escape::decode_html_entities(c.get(2)?.as_str())
+                .trim()
+                .to_string();
+            Some(crate::models::SiteCategory {
+                name: if name.is_empty() { slug.clone() } else { name },
+                slug,
+                kind: BrowseKind::Tag,
+                thumbnail: None,
+                count: None,
+            })
+        })
+        .collect()
+}
+
+fn parse_thisvid(html: &str) -> Vec<MediaItem> {
+    const BASE: &str = "https://thisvid.com";
+    let is_video = |href: &str| {
+        let path = href.strip_prefix(BASE).unwrap_or(href);
+        path.starts_with("/videos/") && path.trim_end_matches('/').len() > "/videos/".len()
+    };
+    let no_junk = |_: &str| false;
+    crate::sites::listing::parse_listing(
+        html,
+        &crate::sites::listing::ListingSpec {
+            site_id: "thisvid",
+            base: BASE,
+            anchor_selector: "a[href*='/videos/']",
+            is_video_href: &is_video,
+            is_junk_title: &no_junk,
+        },
+    )
+}
+
 #[async_trait]
 impl SiteAdapter for GenericYtDlpAdapter {
     fn id(&self) -> &str {
@@ -130,6 +234,73 @@ impl SiteAdapter for GenericYtDlpAdapter {
 
     fn requires_cookies(&self) -> bool {
         self.cookies
+    }
+
+    fn browse_options(&self) -> crate::models::BrowseOptions {
+        if self.site_id == "thisvid" {
+            crate::models::BrowseOptions {
+                // Tag index sections: /tags/?section=a … z.
+                category_groups: ('a'..='z')
+                    .map(|c| {
+                        crate::models::FilterOption::new(
+                            &c.to_string(),
+                            &c.to_ascii_uppercase().to_string(),
+                        )
+                    })
+                    .collect(),
+                // /categories/<c>/?tag=<t> is a strict category ∩ tag listing.
+                category_tag_filter: true,
+                ..crate::sites::adapters::thothub::kvs_browse_options(
+                    vec![BrowseKind::Search, BrowseKind::Tag, BrowseKind::Category],
+                    true,
+                )
+            }
+        } else {
+            crate::models::BrowseOptions::default()
+        }
+    }
+
+    async fn list_categories(
+        &self,
+        ctx: &SiteContext,
+    ) -> AppResult<Vec<crate::models::SiteCategory>> {
+        use crate::sites::listing::{parse_category_index, segment_after, CategorySpec};
+        if self.site_id != "thisvid" {
+            return Ok(Vec::new());
+        }
+        let html = ctx
+            .fetch_html("https://thisvid.com/categories/", self.site_id)
+            .await?;
+        let slug = |href: &str| segment_after(href, "/categories/");
+        Ok(parse_category_index(
+            &html,
+            &CategorySpec {
+                base: self.base,
+                anchor_selector: "a[href*='/categories/']",
+                slug_from_href: &slug,
+                kind: BrowseKind::Category,
+                max: crate::sites::adapters::pornhub::ALL_CATEGORIES,
+            },
+        ))
+    }
+
+    /// ThisVid tag index section (/tags/?section=<letter>).
+    async fn list_category_group(
+        &self,
+        ctx: &SiteContext,
+        group: &str,
+    ) -> AppResult<Vec<crate::models::SiteCategory>> {
+        let valid = group.len() == 1 && group.chars().all(|c| c.is_ascii_lowercase());
+        if self.site_id != "thisvid" || !valid {
+            return Ok(Vec::new());
+        }
+        let html = ctx
+            .fetch_html(
+                &format!("https://thisvid.com/tags/?section={group}"),
+                self.site_id,
+            )
+            .await?;
+        Ok(parse_thisvid_tag_index(&html))
     }
 
     async fn browse(
@@ -161,19 +332,30 @@ impl SiteAdapter for GenericYtDlpAdapter {
             }
         };
 
+        if self.site_id == "thisvid" && query.kind != BrowseKind::Video {
+            return browse_thisvid(ctx, &query).await;
+        }
+
         if matches!(
             query.kind,
             BrowseKind::Channel | BrowseKind::Model | BrowseKind::Search
         ) {
             let runner = SidecarRunner::new(ctx.app().clone());
             let cookies = ctx.cookie_file_for_site(self.site_id);
-            let entries = match runner
+            let entries = runner
                 .list_flat_playlist(&url, query.page, 24, cookies.as_deref())
                 .await
-            {
-                Ok(entries) => entries,
-                Err(_) => Vec::new(),
-            };
+                .map_err(|e| {
+                    let hint = if self.cookies || matches!(self.site_id, "tiktok" | "twitter") {
+                        format!(
+                            " {} usually needs you to be logged in: use Settings → Cookies → Log in.",
+                            self.name
+                        )
+                    } else {
+                        String::new()
+                    };
+                    AppError::Site(format!("{} browse failed: {e}.{hint}", self.name))
+                })?;
             let items = entries
                 .into_iter()
                 .map(|(id, title, item_url, thumbnail)| MediaItem {
@@ -261,6 +443,15 @@ impl SiteAdapter for GenericYtDlpAdapter {
         };
         if let Some(stream_url) = direct {
             return Ok(stream_url);
+        }
+        // ThisVid (KVS): yt-dlp's get_file link belongs to yt-dlp's own
+        // session and gives the WebView a "processing.mp4" placeholder, so
+        // resolve the signed CDN URL in our own page session instead.
+        if self.site_id == "thisvid" {
+            return crate::sites::extractors::thothub::resolve_kvs_stream(
+                ctx, url, "thisvid", "ThisVid",
+            )
+            .await;
         }
 
         let runner = SidecarRunner::new(ctx.app().clone());
@@ -409,5 +600,21 @@ impl SiteAdapter for GenericYtDlpAdapter {
             referer: None,
             initial_status: None,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn parses_thisvid_tag_index() {
+        let html = r#"<li><a href="https://thisvid.com/tags/abdl/" title="ABDL" class="selective"><strong>ABDL</strong></a></li>
+            <li><a href="https://thisvid.com/tags/abdl-boy/" title="Abdl boy" class="selective"><strong>Abdl boy</strong></a></li>
+            <a href="https://thisvid.com/tags/abdl/" title="ABDL" class="selective">"#;
+        let tags = super::parse_thisvid_tag_index(html);
+        assert_eq!(tags.len(), 2);
+        assert_eq!(
+            (tags[1].slug.as_str(), tags[1].name.as_str()),
+            ("abdl-boy", "Abdl boy")
+        );
     }
 }

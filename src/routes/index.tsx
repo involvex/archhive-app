@@ -36,7 +36,11 @@ function HomePage() {
   const [watchMap, setWatchMap] = useState<WatchMap>(new Map());
   const caps = getCapabilities();
   const isMobile = isMobileDevice();
-  const needsSetup = (isMobile || caps.showBrowserBanner) && !settings.remote_host;
+  // A desktop host is only required in browser mode or when the user chose
+  // Remote LAN; phones default to their own on-device engine.
+  const needsSetup =
+    !settings.remote_host?.trim() &&
+    (caps.showBrowserBanner || settings.engine_mode === "remote_lan");
 
   useEffect(() => {
     if (needsSetup) return;

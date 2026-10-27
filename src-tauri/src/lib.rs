@@ -1,4 +1,5 @@
 mod commands;
+mod cookie_login;
 mod db;
 mod discovery;
 mod downloads;
@@ -96,6 +97,12 @@ fn bootstrap_mobile_settings(db: &Database, data_dir: &std::path::Path) -> Resul
         settings.engine_mode = EngineMode::Local;
         changed = true;
     }
+    // "Standalone" (YouTube + direct links only) is retired: the on-device
+    // engine runs full yt-dlp, so Local covers everything it did.
+    if settings.engine_mode == EngineMode::Standalone {
+        settings.engine_mode = EngineMode::Local;
+        changed = true;
+    }
     if settings.library_path.is_empty() {
         let downloads = data_dir.join("downloads");
         std::fs::create_dir_all(&downloads).map_err(|e| e.to_string())?;
@@ -178,6 +185,8 @@ pub fn run() {
 
     #[cfg(mobile)]
     let builder = builder.plugin(mobile::share::init());
+
+    let builder = builder.plugin(cookie_login::init());
 
     #[cfg(mobile)]
     let builder = builder.plugin(mobile::cookie_harvest::init());
@@ -295,6 +304,9 @@ pub fn run() {
             commands::merge_duplicates,
             commands::list_cookie_sites,
             commands::save_site_cookies,
+            commands::cookie_login,
+            commands::list_site_categories,
+            commands::cookie_login_finish,
             commands::delete_site_cookies,
             commands::catch_login_cookies,
             commands::poll_cookie_harvest,
@@ -316,6 +328,7 @@ pub fn run() {
             commands::open_scene_with_default,
             commands::batch_update_scenes,
             commands::list_pornhub_categories,
+            commands::set_player_fullscreen,
             commands::probe_scene_metadata,
             commands::probe_library_durations,
             commands::ffmpeg_status,

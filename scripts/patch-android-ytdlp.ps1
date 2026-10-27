@@ -47,6 +47,19 @@ if (Test-Path $resumeWorkerSrc) {
     Copy-Item -Path $resumeWorkerSrc -Destination (Join-Path $pluginDestDir "PendingResumeWorker.kt") -Force
     Write-Host "Installed PendingResumeWorker.kt"
 }
+$cookieBrowserSrc = Join-Path $Overlays "CookieBrowserPlugin.kt"
+if (Test-Path $cookieBrowserSrc) {
+    Copy-Item -Path $cookieBrowserSrc -Destination (Join-Path $pluginDestDir "CookieBrowserPlugin.kt") -Force
+    Write-Host "Installed CookieBrowserPlugin.kt"
+}
+# FileProvider roots: shared storage + app-private dirs ("Open with default app").
+$filePathsSrc = Join-Path $Overlays "file_paths.xml"
+$filePathsDest = Join-Path $GenAndroid "app\src\main\res\xml\file_paths.xml"
+if (Test-Path $filePathsSrc) {
+    New-Item -ItemType Directory -Force -Path (Split-Path $filePathsDest) | Out-Null
+    Copy-Item -Path $filePathsSrc -Destination $filePathsDest -Force
+}
+
 
 # Ensure youtubedl-android + WorkManager dependencies
 $gradle = Get-Content $gradlePath -Raw
@@ -164,6 +177,41 @@ if (Test-Path $proguardPath) {
 } else {
     Set-Content -Path $proguardPath -Value $overlayText -NoNewline
     Write-Host "Created $proguardPath with YtDlp keep rules"
+}
+
+# Projects patched before these rules existed: add the library keeps that
+# stop R8 from breaking YoutubeDL.init / FFmpeg.init in release builds.
+$proguardNow = Get-Content $proguardPath -Raw
+if ($proguardNow -notmatch 'org\.apache\.commons\.compress') {
+    $libKeeps = @"
+-keep class org.apache.commons.compress.** { *; }
+-keep class org.apache.commons.io.** { *; }
+-keep class com.fasterxml.jackson.** { *; }
+-keepattributes Signature,*Annotation*,InnerClasses,EnclosingMethod
+-dontwarn org.apache.commons.compress.**
+-dontwarn org.apache.commons.io.**
+-dontwarn com.fasterxml.jackson.**
+"@
+    $proguardNow = $proguardNow.TrimEnd() + "`r`n" + $libKeeps
+    Set-Content -Path $proguardPath -Value $proguardNow -NoNewline
+    Write-Host "Added youtubedl-android library ProGuard keeps."
+}
+
+# Projects patched before the cookie login browser existed: add its keeps.
+$proguardNow = Get-Content $proguardPath -Raw
+if ($proguardNow -notmatch 'CookieBrowserPlugin') {
+    $cookieKeeps = "-keep class com.archhive.app.CookieBrowserPlugin { *; }`r`n-keep class com.archhive.app.CookieBrowserPlugin`$OpenArgs { *; }`r`n"
+    Set-Content -Path $proguardPath -Value ($proguardNow.TrimEnd() + "`r`n" + $cookieKeeps) -NoNewline
+    Write-Host "Added CookieBrowserPlugin ProGuard keeps."
+}
+
+# Projects patched before the plugin Args keep existed: R8 stripped the
+# nested *Args classes, breaking every yt-dlp invoke in release builds.
+$proguardNow = Get-Content $proguardPath -Raw
+if ($proguardNow -notmatch [regex]::Escape('com.archhive.app.**Args')) {
+    $argsKeep = "-keep class com.archhive.app.**Args { *; }`r`n"
+    Set-Content -Path $proguardPath -Value ($proguardNow.TrimEnd() + "`r`n" + $argsKeep) -NoNewline
+    Write-Host "Added plugin Args ProGuard keeps."
 }
 
 Write-Host "Android YtDlp overlay patch complete (youtubedl-android $YoutubeDlAndroidVersion)."

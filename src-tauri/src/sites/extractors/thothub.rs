@@ -3,41 +3,181 @@ use crate::sites::SiteContext;
 use regex::Regex;
 use std::sync::OnceLock;
 
-/// Outcome of probing a ThotHub / KVS video page.
-pub enum ThotHubStream {
-    /// A playable (possibly KVS-deobfuscated) stream URL.
-    Url(String),
-    /// The page is the KVS "login required" shell — the user needs a site session.
-    LoginRequired,
-    /// Page loaded but carried no player (layout change / not a video page).
-    NotFound,
+/// Direct MP4 extraction for Kernel Video Sharing (KVS) sites — ThotHub,
+/// ThisVid. KVS players embed `video_url` / `video_alt_url*` (and
+/// `license_code`) in a page script. Newer builds expose plain
+/// `/get_file/...` URLs; older ones prefix obfuscated URLs with `function/0/`,
+/// decoded with the same license-token swap as yt-dlp's generic KVS extractor.
+/// Resolve a KVS (ThotHub, ThisVid) video page to a playable CDN URL.
+///
+/// KVS `get_file` links only work inside the session that loaded the page
+/// (PHPSESSID / kt_* cookies): fetched by anyone else — yt-dlp's own
+/// session, or the WebView — they redirect to a placeholder clip
+/// (ThisVid `processing.mp4`, ThotHub `fu.mp4`). So the page is loaded in a
+/// fresh cookie session (plus the user's imported cookies for the site) and
+/// `get_file` is followed in that same session; the signed CDN URL it
+/// redirects to plays without cookies.
+pub async fn resolve_kvs_stream(
+    ctx: &SiteContext,
+    page_url: &str,
+    site_id: &str,
+    site_name: &str,
+) -> AppResult<String> {
+    use crate::error::AppError;
+    use reqwest::cookie::Jar;
+    use std::sync::Arc;
+
+    let page = url::Url::parse(page_url)
+        .map_err(|e| AppError::InvalidInput(format!("bad video URL: {e}")))?;
+    let jar = Arc::new(Jar::default());
+    if let Ok(Some(header)) = ctx._vault().cookie_header(site_id) {
+        for pair in header.split(';').map(str::trim).filter(|p| p.contains('=')) {
+            jar.add_cookie_str(pair, &page);
+        }
+    }
+    // Normal clients first; on a connection failure retry with the
+    // IPv4 / HTTP/1.1 fallback and keep using it for get_file.
+    let make = |fallback: bool, follow: bool| {
+        let builder = if fallback {
+            crate::sites::fallback_client_builder()
+        } else {
+            reqwest::Client::builder().user_agent(crate::sites::BROWSER_UA)
+        };
+        let builder = builder
+            .cookie_provider(jar.clone())
+            .timeout(std::time::Duration::from_secs(30));
+        if follow {
+            builder.build()
+        } else {
+            builder.redirect(reqwest::redirect::Policy::none()).build()
+        }
+    };
+
+    crate::sites::throttle::acquire(page_url).await?;
+    let (resp, fallback) = match make(false, true)?.get(page_url).send().await {
+        Ok(resp) => (resp, false),
+        Err(e) if crate::sites::is_transport_error(&e) => {
+            tracing::warn!("[{site_id}] {e}; retrying over IPv4 / HTTP/1.1");
+            (make(true, true)?.get(page_url).send().await?, true)
+        }
+        Err(e) => return Err(e.into()),
+    };
+    let no_redirect = make(fallback, false)?;
+    let status = resp.status();
+    let html = resp.text().await?;
+    if looks_like_bot_check(&html) {
+        return Err(AppError::Site(format!(
+            "{site_name} is showing a bot check (Cloudflare) to this device. Open Settings → \
+             Cookies → {site_name} → Log in once so the check passes, then try again."
+        )));
+    }
+    if !status.is_success() {
+        return Err(AppError::Site(format!(
+            "{site_name} returned HTTP {status} for the video page."
+        )));
+    }
+    if is_login_gated(&html) && pick_best_stream(&html, page_url).is_none() {
+        return Err(AppError::Site(format!(
+            "{site_name} needs a site session for this video. Log in via Settings → Cookies → \
+             {site_name}, then try again."
+        )));
+    }
+    if is_private_video_page(&html) {
+        return Err(AppError::Site(format!(
+            "This is a private {site_name} video — only logged-in members can watch it. \
+             Log in via Settings → Cookies → {site_name}, or pick a video without the 🔒."
+        )));
+    }
+    let get_file = pick_best_stream(&html, page_url).ok_or_else(|| {
+        AppError::Site(format!(
+            "No player on this {site_name} page — the video may be private or need you to be \
+             logged in (Settings → Cookies → {site_name})."
+        ))
+    })?;
+
+    crate::sites::throttle::acquire(&get_file).await?;
+    let resp = no_redirect
+        .get(&get_file)
+        .header(reqwest::header::REFERER, page_url)
+        .send()
+        .await?;
+    if resp.status().is_redirection() {
+        let location = resp
+            .headers()
+            .get(reqwest::header::LOCATION)
+            .and_then(|v| v.to_str().ok())
+            .ok_or_else(|| AppError::Site(format!("{site_name} sent an empty redirect")))?;
+        let target = page
+            .join(location)
+            .map_err(|e| AppError::Site(format!("bad redirect from {site_name}: {e}")))?
+            .to_string();
+        if is_kvs_placeholder(&target) {
+            return Err(AppError::Site(format!(
+                "{site_name} served its placeholder clip instead of the video — it may be \
+                 private, still processing, or need login cookies."
+            )));
+        }
+        return Ok(target);
+    }
+    if resp.status().is_success() {
+        return Ok(get_file);
+    }
+    Err(AppError::Site(format!(
+        "{site_name} refused the video file (HTTP {}).",
+        resp.status()
+    )))
 }
 
-/// Best-effort direct MP4 extraction for ThotHub / Kernel Video Sharing pages.
-///
-/// KVS players embed `video_url` / `video_alt_url*` (and `license_code`) in a
-/// page script. Newer builds already expose plain `/get_file/...` HTTPS URLs;
-/// older ones prefix obfuscated URLs with `function/0/` which we decode using
-/// the same license-token swap as yt-dlp's generic KVS extractor.
-///
-/// KVS gates videos behind a login: without a site session the page is a tiny
-/// shell with no player config, which is reported as [`ThotHubStream::LoginRequired`]
-/// so callers can ask for cookies instead of failing on `Unsupported URL`.
-pub async fn extract_stream_url(ctx: &SiteContext, url: &str) -> AppResult<ThotHubStream> {
-    let html = ctx.fetch_html(url, "thothub").await?;
-    if let Some(stream) = pick_best_stream(&html, url) {
-        return Ok(ThotHubStream::Url(stream));
-    }
-    if is_login_gated(&html) {
-        return Ok(ThotHubStream::LoginRequired);
-    }
-    Ok(ThotHubStream::NotFound)
+/// Resolver errors that yt-dlp can't get past either (it has no extractor
+/// for these KVS sites): login-gated, private, bot-checked or placeholder.
+pub fn is_final_kvs_error(err: &crate::error::AppError) -> bool {
+    let msg = err.to_string();
+    // Whole verdict phrases: "No player … may be private" is not a verdict.
+    [
+        "needs a site session for this video",
+        "This is a private",
+        "is showing a bot check",
+        "served its placeholder clip",
+    ]
+    .iter()
+    .any(|m| msg.contains(m))
 }
 
 /// KVS replaces the player config with a login redirect for gated videos:
 /// `pageContext = { videoId: '...', loginUrl: 'https://<host>/login-required/' }`.
 fn is_login_gated(html: &str) -> bool {
     html.contains("login-required") || html.contains("loginUrl")
+}
+
+/// KVS "private video" pages: no player unless the viewer is a member.
+fn is_private_video_page(html: &str) -> bool {
+    html.contains("This video is a private video")
+        || html.contains("Only active members can watch private videos")
+}
+
+/// Cloudflare / DDoS-Guard interstitials instead of the real page.
+fn looks_like_bot_check(html: &str) -> bool {
+    let head = &html[..html.len().min(4000)];
+    head.contains("Just a moment...")
+        || head.contains("cf-chl")
+        || head.contains("challenge-platform")
+        || head.contains("ddos-guard")
+}
+
+/// KVS placeholder clips served when `get_file` is hit outside the session.
+fn is_kvs_placeholder(url: &str) -> bool {
+    let path = url::Url::parse(url)
+        .map(|u| u.path().to_ascii_lowercase())
+        .unwrap_or_default();
+    [
+        "/processing.mp4",
+        "/fu.mp4",
+        "/na.mp4",
+        "/removed.mp4",
+        "/deleted.mp4",
+    ]
+    .iter()
+    .any(|p| path.ends_with(p))
 }
 
 fn pick_best_stream(html: &str, page_url: &str) -> Option<String> {
@@ -100,6 +240,14 @@ fn collect_video_urls(html: &str) -> Vec<(i32, String)> {
             .get(&key)
             .map(|t| parse_height(t))
             .unwrap_or_else(|| parse_height(&url));
+        // The unlabelled main `video_url` is the site's standard quality:
+        // rank it above labelled low-res alternates (ThisVid "240p") but
+        // below labelled HD ones ("720p").
+        let height = if height == 0 && key == "video_url" {
+            480
+        } else {
+            height
+        };
         out.push((height, url));
     }
     out
@@ -236,6 +384,41 @@ var playercfg = {
     }
 
     #[test]
+    fn main_url_beats_low_res_alternate() {
+        let html = r#"video_url: 'https://thisvid.com/get_file/5/a/1/1/1.mp4/',
+            video_alt_url: 'https://thisvid.com/get_file/5/b/1/1/1_240p.mp4/',
+            video_alt_url_text: '240p',"#;
+        assert_eq!(
+            super::pick_best_stream(html, "https://thisvid.com/videos/x/").as_deref(),
+            Some("https://thisvid.com/get_file/5/a/1/1/1.mp4/")
+        );
+        let hd = r#"video_url: 'https://x.com/get_file/1/a/1.mp4/',
+            video_alt_url: 'https://x.com/get_file/1/b/1_720p.mp4/',
+            video_alt_url_text: '720p',"#;
+        assert!(super::pick_best_stream(hd, "https://x.com/v/")
+            .unwrap()
+            .contains("_720p"));
+    }
+
+    #[test]
+    fn detects_placeholders_and_bot_checks() {
+        assert!(super::is_kvs_placeholder(
+            "http://m.thisvid.com/processing.mp4"
+        ));
+        assert!(super::is_kvs_placeholder("https://thothub.to/fu.mp4"));
+        assert!(!super::is_kvs_placeholder(
+            "https://jupiter4.thisvid.com/key=a,end=1/14830236.mp4"
+        ));
+        assert!(super::looks_like_bot_check(
+            "<html><title>Just a moment...</title>"
+        ));
+        assert!(!super::looks_like_bot_check("<html><title>Video</title>"));
+        assert!(super::is_private_video_page(
+            "This video is a private video uploaded by x. Only active members can watch private videos."
+        ));
+    }
+
+    #[test]
     fn plain_url_passthrough() {
         let u = "https://cdn.example.com/get_file/1/hash/file.mp4";
         assert_eq!(kvs_get_real_url(u, "$123"), u);
@@ -262,6 +445,16 @@ var playercfg = {
 		};
 	</script>"#;
         assert!(is_login_gated(html));
+        let verdict = |m: &str| is_final_kvs_error(&crate::error::AppError::Site(m.to_string()));
+        assert!(verdict(
+            "ThotHub needs a site session for this video. Log in via …"
+        ));
+        assert!(verdict(
+            "This is a private ThotHub video — only logged-in members …"
+        ));
+        assert!(!verdict(
+            "No player on this ThotHub page — the video may be private or …"
+        ));
         assert!(!is_login_gated(FIXTURE));
     }
 }

@@ -37,6 +37,62 @@ export interface SiteInfo {
   base_url: string;
   supported_kinds: BrowseKind[];
   requires_cookies: boolean;
+  /** Sort / filter / category support (absent for static catalog entries). */
+  browse_options?: BrowseOptions;
+}
+
+/** Mirrors `models::FilterOption`. */
+export interface FilterOption {
+  id: string;
+  label: string;
+}
+
+/** Mirrors `models::BrowseOptions`. */
+export interface BrowseOptions {
+  sorts: FilterOption[];
+  periods: FilterOption[];
+  durations: FilterOption[];
+  qualities: FilterOption[];
+  /** Browse kinds the filters apply to. */
+  filter_kinds: BrowseKind[];
+  has_categories: boolean;
+  /** Tags one URL can intersect exactly (a slug of `a,b`); 0 = word search only. */
+  combine_tags?: number;
+  /** Index sections loaded one at a time (e.g. XVIDEOS letters 0-9, A–Z). */
+  category_groups?: FilterOption[];
+  /** Results can require / exclude categories (BrowseFilters.include/exclude). */
+  include_exclude?: boolean;
+  /** Category listings can be narrowed to one tag (BrowseFilters.tag). */
+  category_tag_filter?: boolean;
+  /** Most required categories (`include`); 0 / omitted = no limit. */
+  max_include?: number;
+  /** Most excluded categories (`exclude`); 0 / omitted = no limit. */
+  max_exclude?: number;
+  /** Kinds whose listings take only `exclude`, not `include`. */
+  exclude_only_kinds?: BrowseKind[];
+}
+
+/** Mirrors `models::BrowseFilters`: option ids, omitted = site default. */
+export interface BrowseFilters {
+  sort?: string;
+  period?: string;
+  duration?: string;
+  quality?: string;
+  /** Comma-separated category slugs results must have. */
+  include?: string;
+  /** Comma-separated category slugs to leave out. */
+  exclude?: string;
+  /** One tag narrowing a category listing (ThisVid `?tag=`). */
+  tag?: string;
+}
+
+/** Mirrors `models::SiteCategory`. */
+export interface SiteCategory {
+  name: string;
+  slug: string;
+  kind: BrowseKind;
+  thumbnail?: string;
+  count?: number;
 }
 
 export type DownloadStatus =
@@ -242,6 +298,14 @@ export interface CookieSiteInfo {
   updated_at: string;
 }
 
+/** Mirrors `cookie_login::CookieLoginResult` (src-tauri/src/cookie_login.rs). */
+export interface CookieLoginResult {
+  site_id: string;
+  /** Netscape cookie file captured by the in-app login browser. */
+  netscape: string;
+  count: number;
+}
+
 /** Android in-app cookie harvest result (see `catch_login_cookies`). */
 export interface CookieHarvest {
   site_id: string;
@@ -279,6 +343,8 @@ export interface HealthResponse {
   version: string;
   auth_required?: boolean;
   lan?: boolean;
+  /** True for the phone's 127.0.0.1-only on-device server (not a LAN host). */
+  loopback?: boolean;
   library_path?: string;
   lan_url?: string;
 }
@@ -435,6 +501,8 @@ export interface SavedSearch {
   kind: BrowseKind;
   slug: string;
   orientation?: BrowseOrientation;
+  /** Sort / filters of the saved listing (omitted = site defaults). */
+  filters?: BrowseFilters;
   last_checked_at?: string;
   new_count: number;
   auto_queue: boolean;

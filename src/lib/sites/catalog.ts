@@ -116,6 +116,22 @@ export const SITE_CATALOG: SiteInfo[] = [
   },
 ];
 
+/** Sites with a category / tag index (fallback when the backend list is unavailable). */
+const CATEGORY_SITE_IDS = new Set([
+  "pornhub",
+  "xvideos",
+  "xnxx",
+  "xhamster",
+  "youporn",
+  "eporner",
+  "thisvid",
+  "chaturbate",
+]);
+
+export function siteHasCategories(site: SiteInfo): boolean {
+  return site.browse_options?.has_categories ?? CATEGORY_SITE_IDS.has(site.id);
+}
+
 export function mergeSiteLists(
   apiSites: SiteInfo[],
   pluginSites: SiteInfo[] = [],
