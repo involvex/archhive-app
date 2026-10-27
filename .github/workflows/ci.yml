@@ -77,6 +77,12 @@ jobs:
       - name: Build frontend (needed for tauri context)
         run: bunx vite build
 
+      # `tauri::generate_context!` also embeds the yt-dlp / ffmpeg sidecars as
+      # resources; without the files the Rust build script fails with
+      # "resource path `binaries/yt-dlp-x86_64-unknown-linux-gnu` doesn't exist".
+      - name: Download sidecar binaries (needed for tauri context)
+        run: ./scripts/setup-binaries.sh x86_64-unknown-linux-gnu
+
       - name: Install Tauri system dependencies
         run: |
           sudo apt-get update
