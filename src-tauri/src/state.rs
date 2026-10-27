@@ -1020,18 +1020,33 @@ impl AppState {
             let _ = self.stop_lan_server();
         }
 
-        let _settings = self.get_settings()?;
+        let mut settings = self.get_settings()?;
+        // Reuse a previously generated token when there is one so the phone UI
+        // stays in sync across restarts; generate a fresh one on first run.
+        let token = match settings.lan_token.take() {
+            Some(t) if !t.trim().is_empty() => t,
+            _ => crate::server::generate_token(),
+        };
         let static_dir = self.static_ui_path();
         let server =
-            crate::server::LanServer::start_loopback(self.clone(), port, static_dir).await?;
+            crate::server::LanServer::start_loopback(self.clone(), port, token.clone(), static_dir)
+                .await?;
         *self.lan_server.lock() = Some(server);
-        let mut settings = self.get_settings()?;
         settings.lan_enabled = true;
         settings.lan_port = port;
-        settings.lan_token = None;
+        settings.lan_token = Some(token.clone());
         self.save_settings(&settings)?;
         tracing::info!("[loopback] server started on port {port}");
-        Ok(String::new())
+        Ok(token)
+    }
+
+    /// Token of the RUNNING loopback server, if any (mobile on-device server).
+    /// Site adapters need this to append `?token=` to the proxy URLs they hand
+    /// to the WebView.
+    pub fn loopback_token(&self) -> Option<String> {
+        let guard = self.lan_server.lock();
+        let server = guard.as_ref()?;
+        server.is_loopback().then(|| server.token().to_string())
     }
 
     pub async fn regenerate_lan_server(self: &Arc<Self>, port: u16) -> AppResult<String> {

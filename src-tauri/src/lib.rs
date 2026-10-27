@@ -117,6 +117,18 @@ fn bootstrap_mobile_settings(db: &Database, data_dir: &std::path::Path) -> Resul
         settings.remote_token = None;
         changed = true;
     }
+    // The on-device loopback server authenticates with this token, so it must
+    // exist before the frontend hydrates settings: browse thumbnails on the
+    // phone go straight to http://127.0.0.1/...?token=..., and the WebView has
+    // no chance to re-read settings mid-session. ensure_loopback_server reuses
+    // the stored token.
+    match settings.lan_token.as_deref().map(str::trim) {
+        Some("") | None => {
+            settings.lan_token = Some(crate::server::generate_token());
+            changed = true;
+        }
+        _ => {}
+    }
     if changed {
         db.save_settings(&settings).map_err(|e| e.to_string())?;
     }
