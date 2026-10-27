@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { getAppRuntime } from "@/lib/runtime";
 
 /**
@@ -8,7 +9,6 @@ import { getAppRuntime } from "@/lib/runtime";
 async function setNativeImmersive(enabled: boolean, landscape: boolean): Promise<void> {
   if (getAppRuntime() !== "mobile-tauri") return;
   try {
-    const { invoke } = await import("@tauri-apps/api/core");
     await invoke("set_player_fullscreen", { enabled, landscape });
   } catch (e) {
     console.warn("[fullscreen] immersive mode unavailable", e);
