@@ -360,11 +360,19 @@ bun run lint
 
 # Format check
 bun run format:check
+
+# Frontend tests — vitest run (NOT `bun test`)
+bun run test
 ```
 
 - Rust tests use `tempfile` for filesystem isolation.
 - Site adapter tests should use saved HTML fixtures in `src-tauri/tests/fixtures/`.
-- There is no frontend test runner configured yet. When adding tests, prefer Vitest for consistency with Vite.
+- Frontend tests run on **Vitest + jsdom** (`vitest.config.ts`). Use `bun run test`
+  (or `bun run test:watch`): `bun test` invokes Bun's built-in runner instead, which
+  has no jsdom and no `vi.*` helpers, so it fails on this suite.
+- `cargo test` / `cargo check` need a built `dist/`: `tauri::generate_context!` embeds
+  the frontend at compile time and fails with ``resource path `..\dist` doesn't exist``.
+  On a fresh clone run `bunx vite build` (or `bun run build`) before touching Rust.
 
 ---
 
