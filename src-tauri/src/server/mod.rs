@@ -3,7 +3,7 @@ use crate::state::AppState;
 use axum::{
     body::Body,
     extract::{Path, Query, State},
-    http::{header, HeaderValue, Request, StatusCode},
+    http::{header, HeaderValue, Method, Request, StatusCode},
     middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::{delete, get, post, put},
@@ -353,6 +353,18 @@ async fn auth_middleware(
     if req.uri().path() == "/api/health" || !req.uri().path().starts_with("/api/") {
         return next.run(req).await;
     }
+    // The on-device (loopback) server runs without a bearer token, and on a
+    // phone every other app can reach 127.0.0.1. It must therefore only expose
+    // the read-only media routes the WebView needs; settings, cookies,
+    // downloads and scene mutations stay on the authenticated LAN server (the
+    // mobile UI calls those over IPC).
+    if state.loopback && !loopback_route_allowed(req.method(), req.uri().path()) {
+        return (
+            StatusCode::NOT_FOUND,
+            "not available on the on-device server",
+        )
+            .into_response();
+    }
     if state.token.is_empty() || !state.lan_auth_enabled {
         return next.run(req).await;
     }
@@ -371,6 +383,20 @@ async fn auth_middleware(
         }
     }
     next.run(req).await
+}
+
+/// Routes the unauthenticated on-device server may serve: the media the WebView
+/// loads directly (scene media/thumb, file streaming, the HLS/CDN proxy) plus
+/// the health probe. Everything else is a mutation or exposes app data, and is
+/// reachable over IPC instead.
+fn loopback_route_allowed(method: &Method, path: &str) -> bool {
+    if !matches!(*method, Method::GET | Method::HEAD) {
+        return false;
+    }
+    if path == "/api/health" || path == "/api/files/stream" || path == "/api/media/proxy" {
+        return true;
+    }
+    path.starts_with("/api/scenes/") && (path.ends_with("/media") || path.ends_with("/thumb"))
 }
 
 async fn health(State(state): State<ApiState>) -> Json<serde_json::Value> {
@@ -1941,5 +1967,44 @@ mod referer_tests {
         assert_eq!(site("https://example.com/"), None);
         assert_eq!(site("https://pornhub.com.evil.example/"), None);
         assert_eq!(site("not a url"), None);
+    }
+}
+
+#[cfg(test)]
+mod loopback_scope_tests {
+    use super::loopback_route_allowed as allowed;
+    use axum::http::Method;
+
+    #[test]
+    fn loopback_serves_media_and_health_only() {
+        // What the WebView actually loads.
+        assert!(allowed(&Method::GET, "/api/health"));
+        assert!(allowed(&Method::GET, "/api/scenes/abc/media"));
+        assert!(allowed(&Method::HEAD, "/api/scenes/abc/thumb"));
+        assert!(allowed(&Method::GET, "/api/files/stream"));
+        assert!(allowed(&Method::GET, "/api/media/proxy"));
+
+        // App data and mutations must stay on the authenticated LAN server.
+        for path in [
+            "/api/settings",
+            "/api/cookies",
+            "/api/cookies/pornhub",
+            "/api/downloads",
+            "/api/downloads/bulk",
+            "/api/scenes",
+            "/api/scenes/abc",
+            "/api/scenes/batch",
+            "/api/scenes/watch",
+            "/api/files",
+            "/api/media/resolve",
+            "/api/media/stream-url",
+            "/api/media/livestream",
+            "/api/library/scan",
+        ] {
+            assert!(!allowed(&Method::GET, path), "GET {path} must be blocked");
+        }
+        assert!(!allowed(&Method::POST, "/api/media/livestream"));
+        assert!(!allowed(&Method::DELETE, "/api/scenes/abc/media"));
+        assert!(!allowed(&Method::PUT, "/api/settings"));
     }
 }
