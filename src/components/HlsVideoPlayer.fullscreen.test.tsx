@@ -3,7 +3,10 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 // Pretend to be the Android app, where HTML5 fullscreen is unavailable.
 vi.mock("@/lib/runtime", () => ({ getAppRuntime: () => "mobile-tauri" }));
-const invoke = vi.fn(async () => undefined);
+// `vi.mock` factories are hoisted above this declaration, so the mock must be
+// created with `vi.hoisted` (the hook imports `invoke` statically, meaning the
+// factory runs at import time — not lazily on first dynamic import).
+const { invoke } = vi.hoisted(() => ({ invoke: vi.fn(async () => undefined) }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 
 import { HlsVideoPlayer } from "./HlsVideoPlayer";
