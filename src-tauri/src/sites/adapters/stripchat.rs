@@ -2,6 +2,7 @@ use crate::error::{AppError, AppResult};
 use crate::models::{BrowseKind, BrowsePage, BrowseQuery, DownloadPlan, DownloadTool, MediaItem};
 use crate::sites::{SiteAdapter, SiteContext};
 use async_trait::async_trait;
+use regex::Regex;
 use tracing::info;
 use uuid::Uuid;
 
@@ -61,6 +62,11 @@ impl SiteAdapter for StripchatAdapter {
     }
 
     async fn resolve_stream_url(&self, ctx: &SiteContext, url: &str) -> AppResult<String> {
+        // Try native parsing of __PRELOADED_STATE__ first (avoids yt-dlp bot-detection
+        // issues on some clients/networks).
+        if let Ok(native) = self.resolve_stream_url_native(ctx, url).await {
+            return Ok(native);
+        }
         match crate::sites::urls::resolve_cam_stream_url(ctx, self.id(), url).await {
             Ok(url) => Ok(url),
             Err(_e) => {
@@ -93,7 +99,175 @@ impl SiteAdapter for StripchatAdapter {
     }
 }
 
+#[derive(Debug)]
+struct PreloadedState {
+    model_id: String,
+    hosts: Vec<String>,
+}
+
+fn parse_preloaded_state_html(html: &str, username: &str) -> AppResult<PreloadedState> {
+    // Try to find __PRELOADED_STATE__
+    let re = Regex::new(r"(?s)<script\b[^>]*>\s*window\.__PRELOADED_STATE__\s*=(.+?)</script>")
+        .map_err(|e| AppError::Other(format!("regex error: {e}")))?;
+    let cap = re
+        .captures(html)
+        .and_then(|c| c.get(1))
+        .ok_or_else(|| AppError::Other("Unable to extract data".to_string()))?;
+    let mut json_str = cap.as_str().trim().to_string();
+    if json_str.ends_with(';') {
+        json_str.pop();
+    }
+    // Try to parse directly first
+    let data: serde_json::Value = serde_json::from_str(&json_str)
+        .or_else(|_| {
+            let unescaped = crate::sites::urls::html_unescape(&json_str);
+            serde_json::from_str(&unescaped)
+        })
+        .map_err(|_| AppError::Other("Unable to extract data".to_string()))?;
+
+    // Check for private show
+    if let Some(show) = data.get("viewCam").and_then(|v| v.get("show")) {
+        if show.is_object() && !show.is_null() {
+            return Err(AppError::Other("Model is in a private show".to_string()));
+        }
+    }
+    // Check if live
+    let is_live = data
+        .get("viewCam")
+        .and_then(|v| v.get("model"))
+        .and_then(|v| v.get("isLive"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    if !is_live {
+        return Err(AppError::Other(format!("{} is offline", username)));
+    }
+
+    let model_id = data
+        .get("viewCam")
+        .and_then(|v| v.get("model"))
+        .and_then(|v| v.get("id"))
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| AppError::Other("Unable to extract model id".to_string()))?
+        .to_string();
+
+    // Look for hls hosts
+    let mut hosts: Vec<String> = Vec::new();
+    if let Some(h) = data
+        .pointer("/config/data/features/featuresV2/hlsFallback/fallbackDomains")
+        .and_then(|v| v.as_array())
+    {
+        for item in h {
+            if let Some(s) = item.as_str() {
+                hosts.push(s.to_string());
+            }
+        }
+    }
+    if let Some(h) = data
+        .pointer("/configV3/static/features/hlsFallback/fallbackDomains")
+        .and_then(|v| v.as_array())
+    {
+        for item in h {
+            if let Some(s) = item.as_str() {
+                if !hosts.contains(&s.to_string()) {
+                    hosts.push(s.to_string());
+                }
+            }
+        }
+    }
+    if let Some(h) = data
+        .pointer("/config/data/hlsStreamHost")
+        .and_then(|v| v.as_str())
+    {
+        hosts.push(h.to_string());
+    }
+    if let Some(h) = data
+        .pointer("/configV3/static/hlsStreamHost")
+        .and_then(|v| v.as_str())
+    {
+        hosts.push(h.to_string());
+    }
+
+    if hosts.is_empty() {
+        return Err(AppError::Other("Unable to extract stream host".to_string()));
+    }
+
+    Ok(PreloadedState { model_id, hosts })
+}
+
+/// Native (no yt-dlp) resolution of a Stripchat room HLS URL by parsing the
+/// room page's `window.__PRELOADED_STATE__` blob.
+///
+/// Used both by the adapter's `resolve_stream_url` and by
+/// `AppState::resolve_livestream_urls` (the live-player path), which would
+/// otherwise go straight to yt-dlp - whose Stripchat extractor frequently
+/// fails with "Unable to extract data".
+pub(crate) async fn resolve_stream_url_native(ctx: &SiteContext, url: &str) -> AppResult<String> {
+    let username = url
+        .trim_end_matches('/')
+        .split('/')
+        .next_back()
+        .unwrap_or("");
+    if username.is_empty() || username.contains('?') || !is_valid_username(username) {
+        return Err(AppError::Other("invalid stripchat username".to_string()));
+    }
+
+    let resp = ctx
+        .client
+        .get(url)
+        .header(
+            "Accept",
+            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        )
+        .header("Accept-Language", "en-US,en;q=0.9")
+        .send()
+        .await
+        .map_err(|e| AppError::Other(format!("stripchat fetch failed: {e}")))?;
+    if !resp.status().is_success() {
+        return Err(AppError::Other(format!(
+            "stripchat fetch failed: {}",
+            resp.status()
+        )));
+    }
+    let html = resp
+        .text()
+        .await
+        .map_err(|e| AppError::Other(format!("stripchat read failed: {e}")))?;
+
+    let state = parse_preloaded_state_html(&html, username).map_err(|e| {
+        info!("[stripchat] native resolve failed for {username}: {e}");
+        e
+    })?;
+
+    // Try hosts in order
+    for host in &state.hosts {
+        let m3u8 = format!(
+            "https://edge-hls.{host}/hls/{}/master/{}_auto.m3u8",
+            state.model_id, state.model_id
+        );
+        // Quick check if it's accessible
+        if let Ok(r) = ctx.client.head(&m3u8).send().await {
+            if r.status().is_success() || r.status().is_redirection() {
+                info!("[stripchat] native resolve ok for {username} via {host}");
+                return Ok(m3u8);
+            }
+        }
+    }
+    // If head checks fail, still return first one - hls.js might handle it
+    info!(
+        "[stripchat] native resolve ok for {username} (no HEAD check passed, using {})",
+        state.hosts[0]
+    );
+    Ok(format!(
+        "https://edge-hls.{}/hls/{}/master/{}_auto.m3u8",
+        state.hosts[0], state.model_id, state.model_id
+    ))
+}
+
 impl StripchatAdapter {
+    async fn resolve_stream_url_native(&self, ctx: &SiteContext, url: &str) -> AppResult<String> {
+        resolve_stream_url_native(ctx, url).await
+    }
+
     async fn browse_listing(&self, ctx: &SiteContext, query: BrowseQuery) -> AppResult<BrowsePage> {
         let url = build_listing_url(&query);
         let api_url = build_api_url(&query);
@@ -404,6 +578,44 @@ mod tests {
         assert_eq!(rooms[0].username, "demo_model");
         assert_eq!(rooms[0].viewers, Some(42));
         assert!(rooms[0].stream_url.as_deref().unwrap().contains("m3u8"));
+    }
+
+    #[test]
+    fn parse_preloaded_state_html_extracts_model_and_hosts() {
+        // Try to load fixture if present
+        let fixture_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("tests")
+            .join("fixtures")
+            .join("stripchat_preloaded.html");
+        if fixture_path.exists() {
+            let html = std::fs::read_to_string(&fixture_path).expect("fixture");
+            let state = parse_preloaded_state_html(&html, "madelinexx").expect("state");
+            assert!(!state.model_id.is_empty());
+            assert!(!state.hosts.is_empty());
+            return;
+        }
+        // Fallback to synthetic minimal fixture
+        let html = r#"<!doctype html><html><body><script>window.__PRELOADED_STATE__={"viewCam":{"model":{"id":"123456","isLive":true},"show":null},"config":{"data":{"features":{"featuresV2":{"hlsFallback":{"fallbackDomains":["doppiocdn.net","doppiocdn.com"]}}},"hlsStreamHost":"doppiocdn.net"}}};</script></body></html>"#;
+        let state = parse_preloaded_state_html(html, "demo").expect("state");
+        assert_eq!(state.model_id, "123456");
+        assert!(state.hosts.contains(&"doppiocdn.net".to_string()));
+    }
+
+    #[test]
+    fn parse_preloaded_state_html_rejects_offline() {
+        let html = r#"<!doctype html><html><body><script>window.__PRELOADED_STATE__={"viewCam":{"model":{"id":"123456","isLive":false},"show":null},"config":{"data":{"features":{"featuresV2":{"hlsFallback":{"fallbackDomains":["doppiocdn.net"]}}}}}};</script></body></html>"#;
+        let err = parse_preloaded_state_html(html, "demo").unwrap_err();
+        let msg = format!("{}", err);
+        assert!(msg.contains("offline"));
+    }
+
+    #[test]
+    fn parse_preloaded_state_html_rejects_private_show() {
+        let html = r#"<!doctype html><html><body><script>window.__PRELOADED_STATE__={"viewCam":{"model":{"id":"123456","isLive":true},"show":{"type":"private"}},"config":{"data":{"features":{"featuresV2":{"hlsFallback":{"fallbackDomains":["doppiocdn.net"]}}}}}};</script></body></html>"#;
+        let err = parse_preloaded_state_html(html, "demo").unwrap_err();
+        let msg = format!("{}", err);
+        assert!(msg.contains("private"));
     }
 }
 

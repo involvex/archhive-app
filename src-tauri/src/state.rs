@@ -1493,9 +1493,30 @@ impl AppState {
             .detect(url)
             .unwrap_or_else(|| "custom".to_string());
 
-        if site_id == "chaturbate" || site_id == "stripchat" {
+        if site_id == "chaturbate" {
             return crate::sites::urls::resolve_cam_stream_urls(&self.site_ctx, &site_id, url)
                 .await;
+        }
+        if site_id == "stripchat" {
+            // Native __PRELOADED_STATE__ parse first: yt-dlp's Stripchat
+            // extractor frequently fails with "Unable to extract data". The
+            // native path yields a single muxed master manifest (no separate
+            // audio URL). Fall back to yt-dlp when the page shape changed.
+            if let Ok(master) =
+                crate::sites::adapters::stripchat::resolve_stream_url_native(&self.site_ctx, url)
+                    .await
+            {
+                return Ok((master, None));
+            }
+            return crate::sites::urls::resolve_cam_stream_urls(&self.site_ctx, &site_id, url)
+                .await;
+        }
+        if site_id == "camsfinder" {
+            return crate::sites::adapters::camsfinder::resolve_livestream_urls(
+                &self.site_ctx,
+                url,
+            )
+            .await;
         }
 
         Ok((self.resolve_stream_url(url).await?, None))

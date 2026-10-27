@@ -14,6 +14,9 @@ export const Route = createFileRoute("/live/$site/$slug")({
   validateSearch: (search: Record<string, unknown>) => ({
     fromSearch: typeof search.fromSearch === "string" ? search.fromSearch : "0",
     searchQuery: typeof search.searchQuery === "string" ? search.searchQuery : "",
+    // Real room URL from the listing item (needed for sites whose room URLs
+    // aren't `https://{site}.com/{slug}/`, e.g. CamsFinder /model/{site}/{name}).
+    roomUrl: typeof search.roomUrl === "string" ? search.roomUrl : "",
   }),
   component: LivePlayerPage,
 });
@@ -21,6 +24,7 @@ export const Route = createFileRoute("/live/$site/$slug")({
 const SITE_LABELS: Record<string, string> = {
   chaturbate: "Chaturbate",
   stripchat: "Stripchat",
+  camsfinder: "CamsFinder",
 };
 
 /**
@@ -29,7 +33,7 @@ const SITE_LABELS: Record<string, string> = {
  * `frame-ancestors` headers, so they render blank inside an <iframe>.
  * Use this URL for an "open in browser" link, not an embedded frame.
  */
-function getChatUrl(site: string, slug: string): string {
+function getChatUrl(site: string, slug: string, roomUrl?: string): string {
   // Chaturbate chat is at the regular room URL, not the embed URL.
   // The embed URL (with embed_video_only=1) is for video-only playback.
   switch (site) {
@@ -38,8 +42,13 @@ function getChatUrl(site: string, slug: string): string {
       return `https://chaturbate.com/${slug}/`;
     case "stripchat":
       return `https://stripchat.com/${slug}/`;
+    case "camsfinder":
+      // Prefer the exact model page when we know it; fall back to the
+      // model search so the user can find the room.
+      if (roomUrl) return roomUrl;
+      return `https://www.camsfinder.com/models?search=${encodeURIComponent(slug)}`;
     default:
-      return "";
+      return roomUrl ?? "";
   }
 }
 
@@ -61,8 +70,9 @@ function LivePlayerPage() {
     setLoading(true);
     setError("");
     try {
-      // Build room URL generically for supported live sites
-      const roomUrl = `https://${site}.com/${slug}/`;
+      // Prefer the real room URL from the listing; fall back to the generic
+      // site+slug construction for deep links.
+      const roomUrl = search.roomUrl || `https://${site}.com/${slug}/`;
       const result = await api.resolveLivestream(roomUrl);
       setStreamUrl(result.stream_url);
       setAudioUrl(result.audio_url);
@@ -74,7 +84,7 @@ function LivePlayerPage() {
     } finally {
       setLoading(false);
     }
-  }, [site, slug]);
+  }, [site, slug, search.roomUrl]);
 
   const loadPlaylist = useCallback(async () => {
     try {
@@ -106,10 +116,14 @@ function LivePlayerPage() {
       navigate({
         to: "/live/$site/$slug",
         params: { site, slug: newSlug },
-        search: { fromSearch: search.fromSearch, searchQuery: search.searchQuery },
+        search: {
+          fromSearch: search.fromSearch,
+          searchQuery: search.searchQuery,
+          roomUrl: prevItem.url,
+        },
       });
     }
-  }, [prevItem, site, search.fromSearch, search.searchQuery, navigate]);
+  }, [prevItem, site, search, navigate]);
 
   const handleNext = useCallback(() => {
     if (nextItem) {
@@ -117,10 +131,14 @@ function LivePlayerPage() {
       navigate({
         to: "/live/$site/$slug",
         params: { site, slug: newSlug },
-        search: { fromSearch: search.fromSearch, searchQuery: search.searchQuery },
+        search: {
+          fromSearch: search.fromSearch,
+          searchQuery: search.searchQuery,
+          roomUrl: nextItem.url,
+        },
       });
     }
-  }, [nextItem, site, search.fromSearch, search.searchQuery, navigate]);
+  }, [nextItem, site, search, navigate]);
 
   // Keyboard navigation
   useEffect(() => {
@@ -164,7 +182,7 @@ function LivePlayerPage() {
           </p>
           {streamError && <p className="font-mono break-all">Direct HLS failed: {streamError}</p>}
           <ExtLink
-            href={getChatUrl(site, slug)}
+            href={getChatUrl(site, slug, search.roomUrl)}
             className="inline-flex items-center gap-1 text-xs underline underline-offset-2"
           >
             <ExternalLink className="h-3 w-3" />
@@ -176,6 +194,19 @@ function LivePlayerPage() {
       {!streamUrl && isRoomOfflineError(streamError) && (
         <div className="rounded-md border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-sm text-amber-300">
           This room looks offline or is in a private show right now — nothing to play.
+        </div>
+      )}
+
+      {!streamUrl && !embedUrl && !isRoomOfflineError(streamError) && streamError && (
+        <div className="space-y-1 text-xs text-[var(--color-muted-foreground)]">
+          <p className="font-mono break-all">Direct HLS failed: {streamError}</p>
+          <ExtLink
+            href={getChatUrl(site, slug, search.roomUrl)}
+            className="inline-flex items-center gap-1 text-xs underline underline-offset-2"
+          >
+            <ExternalLink className="h-3 w-3" />
+            Open room in browser
+          </ExtLink>
         </div>
       )}
 
@@ -255,7 +286,9 @@ function LivePlayerPage() {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => void openExternal(getChatUrl(site, slug)).catch(console.error)}
+                    onClick={() =>
+                      void openExternal(getChatUrl(site, slug, search.roomUrl)).catch(console.error)
+                    }
                   >
                     <ExternalLink className="mr-1 h-4 w-4" />
                     Open live chat

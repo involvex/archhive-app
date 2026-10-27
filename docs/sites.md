@@ -24,6 +24,18 @@
 | ---------- | ------------ | ------------------------------ | ------- |
 | chaturbate | Chaturbate   | livestream, tag, search, model | Yes     |
 | stripchat  | Stripchat    | livestream, tag, search, model | Yes     |
+| camsfinder | CamsFinder   | livestream, tag, search        | No      |
+
+### CamsFinder (aggregator)
+
+CamsFinder aggregates rooms from many cam sites. ArcHive scrapes its
+server-rendered listing (`/girl`, `/girl/{tag}`, `/models?search={q}`) natively —
+no cookies needed. In-app playback works for rooms hosted on Chaturbate and
+Stripchat (delegated to their resolvers); other underlying sites (BongaCams,
+LiveJasmin, Jerkmate, ...) are affiliate-walled and open on camsfinder.com
+instead. CamsFinder blocks iframe embedding (`X-Frame-Options: SAMEORIGIN` on
+the site and its `/embed/` endpoint), so embed-iframe playback is unavailable
+for this source.
 
 ## Tier C — gallery-dl
 

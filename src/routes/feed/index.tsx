@@ -476,7 +476,7 @@ function FeedPage() {
                     navigate({
                       to: "/live/$site/$slug",
                       params: { site: item.site_id, slug },
-                      search: { fromSearch: "0", searchQuery: "" },
+                      search: { fromSearch: "0", searchQuery: "", roomUrl: item.url },
                     });
                   }}
                 />

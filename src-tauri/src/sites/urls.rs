@@ -82,6 +82,12 @@ pub fn strip_duration_from_title(text: &str) -> String {
 /// policies. The `autoplay=1` parameter helps, but users may need to interact
 /// with the player to enable audio on some browsers.
 pub fn derive_embed_url(url: &str) -> String {
+    // CamsFinder blocks framing of every page (X-Frame-Options: SAMEORIGIN on
+    // the site and its /embed/ endpoint), so there is no embeddable player —
+    // return an empty URL and let the UI show the error/open-in-browser path.
+    if url.contains("camsfinder.com") {
+        return String::new();
+    }
     if let Some(username) = extract_username_from_url(url, "chaturbate.com") {
         return format!("https://chaturbate.com/embed/{username}/?embed_video_only=1&autoplay=1");
     }

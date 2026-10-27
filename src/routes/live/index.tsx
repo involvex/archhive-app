@@ -21,6 +21,7 @@ export const Route = createFileRoute("/live/")({
 const LIVE_SITES = [
   { id: "chaturbate", label: "Chaturbate" },
   { id: "stripchat", label: "Stripchat" },
+  { id: "camsfinder", label: "CamsFinder" },
 ] as const;
 
 function LiveIndexPage() {
@@ -179,6 +180,10 @@ function LiveIndexPage() {
             search={{
               fromSearch: query.trim() ? "1" : "0",
               searchQuery: query.trim(),
+              // Pass the item's real room URL: CamsFinder rooms live at
+              // /model/{site}/{name}, which the site+slug construction
+              // in the player can't rebuild.
+              roomUrl: item.url,
             }}
           >
             <SceneCard item={item} onInfo={(i) => setInfoItem(i)} compactActions={isPhone} />

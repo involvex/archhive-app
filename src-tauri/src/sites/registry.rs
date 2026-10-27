@@ -1,9 +1,9 @@
 use crate::models::SiteInfo;
 use crate::sites::adapters::{
-    chaturbate::ChaturbateAdapter, custom::CustomUrlAdapter, eporner::EpornerAdapter,
-    generic_ytdlp::GenericYtDlpAdapter, reddit::RedditAdapter, redgifs::RedgifsAdapter,
-    stripchat::StripchatAdapter, thothub::ThotHubAdapter, PornhubAdapter, XHamsterAdapter,
-    XVideosAdapter, XnxxAdapter, YouPornAdapter,
+    camsfinder::CamsFinderAdapter, chaturbate::ChaturbateAdapter, custom::CustomUrlAdapter,
+    eporner::EpornerAdapter, generic_ytdlp::GenericYtDlpAdapter, reddit::RedditAdapter,
+    redgifs::RedgifsAdapter, stripchat::StripchatAdapter, thothub::ThotHubAdapter, PornhubAdapter,
+    XHamsterAdapter, XVideosAdapter, XnxxAdapter, YouPornAdapter,
 };
 use crate::sites::SiteAdapter;
 use std::sync::Arc;
@@ -17,6 +17,7 @@ impl SiteRegistry {
         let adapters: Vec<Arc<dyn SiteAdapter>> = vec![
             Arc::new(ChaturbateAdapter),
             Arc::new(StripchatAdapter),
+            Arc::new(CamsFinderAdapter),
             Arc::new(ThotHubAdapter),
             Arc::new(EpornerAdapter),
             Arc::new(PornhubAdapter),
