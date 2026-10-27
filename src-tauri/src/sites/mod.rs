@@ -73,6 +73,16 @@ impl SiteContext {
         self.lan_port
     }
 
+    /// Token of the running on-device (loopback) server, when there is one.
+    /// Proxy URLs handed to the WebView must carry it as `?token=` because the
+    /// loopback surface authenticates with query-param tokens.
+    pub fn lan_token(&self) -> Option<String> {
+        use tauri::Manager;
+        self.app
+            .try_state::<std::sync::Arc<crate::state::AppState>>()
+            .and_then(|st| st.loopback_token())
+    }
+
     pub fn app(&self) -> &tauri::AppHandle {
         &self.app
     }

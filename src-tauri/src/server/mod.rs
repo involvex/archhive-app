@@ -3,7 +3,7 @@ use crate::state::AppState;
 use axum::{
     body::Body,
     extract::{Path, Query, State},
-    http::{header, HeaderValue, Request, StatusCode},
+    http::{header, HeaderValue, Method, Request, StatusCode},
     middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::{delete, get, post, put},
@@ -100,6 +100,12 @@ pub struct LanServer {
     /// Snapshot of auth config used at start (for restart decisions).
     pub lan_auth_enabled: bool,
     pub token_empty: bool,
+    /// True for the unauthenticated-surface-locked on-device (127.0.0.1) server.
+    pub loopback: bool,
+    /// The token this server instance requires for `/api` routes. Loopback
+    /// servers always have a non-empty one: on a phone every other app can
+    /// reach 127.0.0.1.
+    pub token: String,
 }
 
 impl LanServer {
@@ -116,9 +122,14 @@ impl LanServer {
     pub async fn start_loopback(
         app: Arc<AppState>,
         port: u16,
+        token: String,
         static_dir: Option<PathBuf>,
     ) -> AppResult<Self> {
-        LanServer::start_inner(app, port, String::new(), false, static_dir, true).await
+        // Loopback servers always authenticate. The on-device surface is still
+        // limited further by loopback_route_allowed (read-only media only), but
+        // even those media routes require the token: other on-device apps can
+        // open arbitrary sockets to 127.0.0.1.
+        LanServer::start_inner(app, port, token, true, static_dir, true).await
     }
 
     async fn start_inner(
@@ -315,7 +326,19 @@ impl LanServer {
             _mdns: mdns,
             lan_auth_enabled,
             token_empty: token.is_empty(),
+            loopback,
+            token,
         })
+    }
+
+    /// Bearer token `/api` routes require (may be empty for tokenless desktop
+    /// servers when LAN auth is disabled).
+    pub fn token(&self) -> &str {
+        &self.token
+    }
+
+    pub fn is_loopback(&self) -> bool {
+        self.loopback
     }
 
     pub fn stop(&mut self) {
@@ -353,6 +376,18 @@ async fn auth_middleware(
     if req.uri().path() == "/api/health" || !req.uri().path().starts_with("/api/") {
         return next.run(req).await;
     }
+    // The on-device (loopback) server runs without a bearer token, and on a
+    // phone every other app can reach 127.0.0.1. It must therefore only expose
+    // the read-only media routes the WebView needs; settings, cookies,
+    // downloads and scene mutations stay on the authenticated LAN server (the
+    // mobile UI calls those over IPC).
+    if state.loopback && !loopback_route_allowed(req.method(), req.uri().path()) {
+        return (
+            StatusCode::NOT_FOUND,
+            "not available on the on-device server",
+        )
+            .into_response();
+    }
     if state.token.is_empty() || !state.lan_auth_enabled {
         return next.run(req).await;
     }
@@ -371,6 +406,20 @@ async fn auth_middleware(
         }
     }
     next.run(req).await
+}
+
+/// Routes the unauthenticated on-device server may serve: the media the WebView
+/// loads directly (scene media/thumb, file streaming, the HLS/CDN proxy) plus
+/// the health probe. Everything else is a mutation or exposes app data, and is
+/// reachable over IPC instead.
+fn loopback_route_allowed(method: &Method, path: &str) -> bool {
+    if !matches!(*method, Method::GET | Method::HEAD) {
+        return false;
+    }
+    if path == "/api/health" || path == "/api/files/stream" || path == "/api/media/proxy" {
+        return true;
+    }
+    path.starts_with("/api/scenes/") && (path.ends_with("/media") || path.ends_with("/thumb"))
 }
 
 async fn health(State(state): State<ApiState>) -> Json<serde_json::Value> {
@@ -1040,7 +1089,7 @@ async fn proxy_remote_media(
             .map(|s| s.lan_port)
             .unwrap_or(8787);
         // Cookie is re-attached from the vault on each segment request via referer.
-        let rewritten = rewrite_m3u8_for_proxy(&text, url, &referer, port);
+        let rewritten = rewrite_m3u8_for_proxy(&text, url, &referer, port, &state.token);
         let mut response = rewritten.into_response();
         *response.status_mut() = status;
         response.headers_mut().insert(
@@ -1109,19 +1158,27 @@ fn site_id_from_referer(referer: &str) -> Option<&'static str> {
     .map(|(_, site)| site)
 }
 
-fn rewrite_m3u8_for_proxy(body: &str, playlist_url: &str, referer: &str, port: u16) -> String {
+fn rewrite_m3u8_for_proxy(
+    body: &str,
+    playlist_url: &str,
+    referer: &str,
+    port: u16,
+    token: &str,
+) -> String {
     let base = url::Url::parse(playlist_url).ok();
     body.lines()
         .map(|line| {
             let trimmed = line.trim();
             if trimmed.is_empty() || trimmed.starts_with('#') {
-                if let Some(rewritten) = rewrite_m3u8_tag_uris(line, base.as_ref(), referer, port) {
+                if let Some(rewritten) =
+                    rewrite_m3u8_tag_uris(line, base.as_ref(), referer, port, token)
+                {
                     return rewritten;
                 }
                 return line.to_string();
             }
             let absolute = resolve_playlist_uri(trimmed, base.as_ref());
-            proxy_media_url(&absolute, referer, port)
+            proxy_media_url(&absolute, referer, token, port)
         })
         .collect::<Vec<_>>()
         .join("\n")
@@ -1132,6 +1189,7 @@ fn rewrite_m3u8_tag_uris(
     base: Option<&url::Url>,
     referer: &str,
     port: u16,
+    token: &str,
 ) -> Option<String> {
     if !line.contains("URI=\"") {
         return None;
@@ -1150,7 +1208,7 @@ fn rewrite_m3u8_tag_uris(
             continue;
         }
         let absolute = resolve_playlist_uri(uri, base);
-        let proxied = proxy_media_url(&absolute, referer, port);
+        let proxied = proxy_media_url(&absolute, referer, token, port);
         out.replace_range(start..end, &proxied);
         search_from = start + proxied.len() + 1;
     }
@@ -1169,11 +1227,20 @@ fn resolve_playlist_uri(uri: &str, base: Option<&url::Url>) -> String {
     uri.to_string()
 }
 
-fn proxy_media_url(url: &str, referer: &str, port: u16) -> String {
+/// Build a proxy URL for a remote CDN stream. `token` is appended as the
+/// `token` query param when non-empty so the unauthenticated-surface loopback
+/// server accepts the request (WebView media loads cannot set headers).
+fn proxy_media_url(url: &str, referer: &str, token: &str, port: u16) -> String {
+    let auth = if token.is_empty() {
+        String::new()
+    } else {
+        format!("&token={}", encode_query_component(token))
+    };
     format!(
-        "http://127.0.0.1:{port}/api/media/proxy?url={}&referer={}",
+        "http://127.0.0.1:{port}/api/media/proxy?url={}&referer={}{}",
         encode_query_component(url),
-        encode_query_component(referer)
+        encode_query_component(referer),
+        auth
     )
 }
 
@@ -1941,5 +2008,63 @@ mod referer_tests {
         assert_eq!(site("https://example.com/"), None);
         assert_eq!(site("https://pornhub.com.evil.example/"), None);
         assert_eq!(site("not a url"), None);
+    }
+}
+
+#[cfg(test)]
+mod loopback_scope_tests {
+    use super::loopback_route_allowed as allowed;
+    use axum::http::Method;
+
+    #[test]
+    fn loopback_serves_media_and_health_only() {
+        // What the WebView actually loads.
+        assert!(allowed(&Method::GET, "/api/health"));
+        assert!(allowed(&Method::GET, "/api/scenes/abc/media"));
+        assert!(allowed(&Method::HEAD, "/api/scenes/abc/thumb"));
+        assert!(allowed(&Method::GET, "/api/files/stream"));
+        assert!(allowed(&Method::GET, "/api/media/proxy"));
+
+        // App data and mutations must stay on the authenticated LAN server.
+        for path in [
+            "/api/settings",
+            "/api/cookies",
+            "/api/cookies/pornhub",
+            "/api/downloads",
+            "/api/downloads/bulk",
+            "/api/scenes",
+            "/api/scenes/abc",
+            "/api/scenes/batch",
+            "/api/scenes/watch",
+            "/api/files",
+            "/api/media/resolve",
+            "/api/media/stream-url",
+            "/api/media/livestream",
+            "/api/library/scan",
+        ] {
+            assert!(!allowed(&Method::GET, path), "GET {path} must be blocked");
+        }
+        assert!(!allowed(&Method::POST, "/api/media/livestream"));
+        assert!(!allowed(&Method::DELETE, "/api/scenes/abc/media"));
+        assert!(!allowed(&Method::PUT, "/api/settings"));
+    }
+}
+
+#[cfg(test)]
+mod proxy_url_tests {
+    use super::proxy_media_url;
+
+    #[test]
+    fn proxy_media_url_carries_the_loopback_token() {
+        // Desktop tokenless server: no token fragment.
+        assert_eq!(
+            proxy_media_url("https://cdn/x.m3u8", "https://www.pornhub.com/", "", 8787),
+            "http://127.0.0.1:8787/api/media/proxy?url=https%3A%2F%2Fcdn%2Fx.m3u8&referer=https%3A%2F%2Fwww.pornhub.com%2F"
+        );
+        // Loopback server: WebView media loads need the token as a query param.
+        assert_eq!(
+            proxy_media_url("https://cdn/x.m3u8", "https://www.pornhub.com/", "s3cr3t", 8787),
+            "http://127.0.0.1:8787/api/media/proxy?url=https%3A%2F%2Fcdn%2Fx.m3u8&referer=https%3A%2F%2Fwww.pornhub.com%2F&token=s3cr3t"
+        );
     }
 }

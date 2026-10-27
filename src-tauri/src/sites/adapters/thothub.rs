@@ -160,10 +160,17 @@ fn maybe_loopback_proxy(ctx: &SiteContext, stream_url: &str, referer: &str) -> S
             return stream_url.to_string();
         }
         let port = ctx.lan_port();
+        let token = ctx.lan_token().unwrap_or_default();
+        let auth = if token.is_empty() {
+            String::new()
+        } else {
+            format!("&token={}", urlencoding_encode(&token))
+        };
         return format!(
-            "http://127.0.0.1:{port}/api/media/proxy?url={}&referer={}",
+            "http://127.0.0.1:{port}/api/media/proxy?url={}&referer={}{}",
             urlencoding_encode(stream_url),
-            urlencoding_encode(referer)
+            urlencoding_encode(referer),
+            auth
         );
     }
     #[cfg(not(mobile))]

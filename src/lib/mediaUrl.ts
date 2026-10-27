@@ -50,7 +50,7 @@ export function sceneThumbUrl(scene: Scene): string | undefined {
   }
 
   if (getAppRuntime() === "mobile-tauri" && hasLocalBackend()) {
-    return `http://127.0.0.1:${settings.lan_port}/api/scenes/${scene.id}/thumb`;
+    return `http://127.0.0.1:${settings.lan_port}/api/scenes/${scene.id}/thumb${tokenQuery(lanAuthToken())}`;
   }
 
   return scene.thumb;
@@ -76,7 +76,7 @@ export function sceneMediaUrl(scene: Scene): string | undefined {
   }
 
   if (getAppRuntime() === "mobile-tauri" && hasLocalBackend()) {
-    return `http://127.0.0.1:${settings.lan_port}/api/scenes/${scene.id}/media`;
+    return `http://127.0.0.1:${settings.lan_port}/api/scenes/${scene.id}/media${tokenQuery(lanAuthToken())}`;
   }
 
   return undefined;
@@ -110,7 +110,8 @@ export function fileStreamUrl(relativePath: string): string | undefined {
 
   if (getAppRuntime() === "mobile-tauri" && hasLocalBackend()) {
     const root = settings.library_path;
-    if (root) return `http://127.0.0.1:${settings.lan_port}/api/files/stream?path=${pathParam}`;
+    if (root)
+      return `http://127.0.0.1:${settings.lan_port}/api/files/stream?path=${pathParam}${tokenAmp(lanAuthToken())}`;
   }
 
   return undefined;
