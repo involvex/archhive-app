@@ -14,7 +14,7 @@
 
 use crate::error::{AppError, AppResult};
 use serde::{Deserialize, Serialize};
-use tauri::plugin::{Builder, TauriPlugin};
+use tauri::plugin::{Builder, PluginHandle, TauriPlugin};
 use tauri::{AppHandle, Manager, Runtime};
 
 const PLUGIN_UNAVAILABLE: &str = "Cookie harvest plugin unavailable (CookieHarvestPlugin not registered). Re-run bun run android:patches and rebuild the APK.";

@@ -10,8 +10,8 @@
 
 use crate::error::{AppError, AppResult};
 use serde::{Deserialize, Serialize};
-use tauri::plugin::{Builder, TauriPlugin};
-use tauri::{AppHandle, Runtime};
+use tauri::plugin::{Builder, PluginHandle, TauriPlugin};
+use tauri::{AppHandle, Manager, Runtime};
 
 #[derive(Debug, Serialize)]
 pub struct YtDlpOutput {
