@@ -66,7 +66,9 @@ if (Test-Path $mainActivityPath) {
         }
         # Add initialization in onCreate before super.onCreate
         $initCode = "    // Initialize Activity Embedding split rules for in-app viewer`r`n    RuleController.getInstance(this).apply {`r`n      setRules(RuleController.parseRules(this@MainActivity, R.xml.main_split_config))`r`n    }`r`n"
-        $mainAct = $mainAct -replace '(override fun onCreate\(savedInstanceState: Bundle\?\) \{)', "`$1`r`n" + $initCode
+        $pattern = '(override fun onCreate\(savedInstanceState: Bundle\?\) \{)'
+        $replacement = '$1' + "`r`n" + $initCode
+        $mainAct = $mainAct -replace $pattern, $replacement
         Set-Content -Path $mainActivityPath -Value $mainAct -NoNewline
         Write-Host "Patched MainActivity to initialize split rules."
     } else {
