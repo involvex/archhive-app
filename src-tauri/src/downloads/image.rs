@@ -212,7 +212,7 @@ fn media_filename_stem(title: Option<&str>, url: &str) -> String {
             .ok()
             .and_then(|u| {
                 u.path_segments()
-                    .and_then(|s| s.last().map(|s| s.to_string()))
+                    .and_then(|mut s| s.next_back().map(|s| s.to_string()))
             })
             .map(|s| sanitize_filename(&s))
             .filter(|s| !s.is_empty())

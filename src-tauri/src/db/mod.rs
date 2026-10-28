@@ -1131,11 +1131,11 @@ impl Database {
             _ => BrowseKind::Search,
         };
         let orientation_str: Option<String> = row.get(5)?;
-        let orientation = orientation_str.and_then(|o| match o.as_str() {
-            "gay" => Some(BrowseOrientation::Gay),
-            "lesbian" => Some(BrowseOrientation::Lesbian),
-            "transgender" => Some(BrowseOrientation::Transgender),
-            _ => Some(BrowseOrientation::Straight),
+        let orientation = orientation_str.map(|o| match o.as_str() {
+            "gay" => BrowseOrientation::Gay,
+            "lesbian" => BrowseOrientation::Lesbian,
+            "transgender" => BrowseOrientation::Transgender,
+            _ => BrowseOrientation::Straight,
         });
         Ok(crate::models::SavedSearch {
             id: row.get(0)?,

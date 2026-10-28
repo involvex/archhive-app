@@ -1259,7 +1259,7 @@ pub fn export_collection(
 
     let filename = format!(
         "{}.m3u",
-        collection.name.replace('/', "_").replace('\\', "_")
+        collection.name.replace(['/', '\\'], "_")
     );
 
     Ok(ExportCollectionResult {

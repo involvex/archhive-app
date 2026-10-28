@@ -8,10 +8,10 @@
 //! Pure pull model: no JS event emission from Kotlin. `AppShell` polls on boot,
 //! on window focus, and on an interval while on mobile.
 
-use crate::error::{AppError, AppResult};
+use crate::error::AppResult;
 use serde::Deserialize;
-use tauri::plugin::{Builder, PluginHandle, TauriPlugin};
-use tauri::{AppHandle, Manager, Runtime};
+use tauri::plugin::{Builder, TauriPlugin};
+use tauri::{AppHandle, Runtime};
 
 const PLUGIN_UNAVAILABLE: &str =
     "Share plugin unavailable (ShareIntentPlugin not registered). Re-run bun run android:patches and rebuild the APK.";

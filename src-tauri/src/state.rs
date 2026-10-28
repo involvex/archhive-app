@@ -15,7 +15,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tauri::Emitter;
 use tauri_plugin_shell::ShellExt;
-use tracing;
 
 /// Phones only run the 127.0.0.1 loopback server (on-device engine); never
 /// expose the API on the network from a mobile device.
@@ -407,11 +406,10 @@ impl AppState {
                     Ok(entries) => {
                         expanded += 1;
                         for (_, _, video_url, _) in entries {
-                            if is_likely_video_url(&video_url) || import_all {
-                                if self.queue_download(&video_url, None, None).await.is_ok() {
+                            if (is_likely_video_url(&video_url) || import_all)
+                                && self.queue_download(&video_url, None, None).await.is_ok() {
                                     queued += 1;
                                 }
-                            }
                         }
                     }
                     Err(e) => {
@@ -1774,7 +1772,7 @@ impl AppState {
 
         let filename = format!(
             "{}.m3u",
-            collection.name.replace('/', "_").replace('\\', "_")
+            collection.name.replace(['/', '\\'], "_")
         );
 
         Ok(crate::models::ExportCollectionResult {
@@ -2338,7 +2336,7 @@ impl AppState {
                 path: entry.path().to_string_lossy().to_string(),
             });
         }
-        dirs.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        dirs.sort_by_key(|a| a.name.to_lowercase());
         let downloads = self.data_dir.join("downloads");
         let roots = vec![
             crate::models::DirEntry {

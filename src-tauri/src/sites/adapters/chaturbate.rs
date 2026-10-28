@@ -126,7 +126,7 @@ impl ChaturbateAdapter {
         }
 
         // Secondary: HTML scraping (legacy server-rendered listings).
-        if let Ok(html) = ctx.fetch_html(&url, &self.id()).await {
+        if let Ok(html) = ctx.fetch_html(&url, self.id()).await {
             if let Some(rooms) = parse_listing_html(&html) {
                 info!("[chaturbate] HTML returned {} rooms", rooms.len());
                 return Ok(api_rooms_to_page(rooms, query.page));
@@ -508,7 +508,7 @@ fn parse_api_json(body: &str) -> Option<Vec<HttpRoom>> {
         .get("rooms")
         .or_else(|| v.get("results"))
         .or_else(|| v.get("data"))
-        .or_else(|| v.as_array().and_then(|_| Some(&v)));
+        .or_else(|| v.as_array().map(|_| &v));
     let arr = rooms_val?.as_array()?;
     if arr.is_empty() {
         return None;

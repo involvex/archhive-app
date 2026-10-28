@@ -132,7 +132,7 @@ pub async fn serve_file_with_range(
         let chunk = file.take(len);
         let stream = ReaderStream::with_capacity(chunk, 256 * 1024);
         let body = Body::from_stream(stream);
-        return Ok(Response::builder()
+        return Response::builder()
             .status(StatusCode::PARTIAL_CONTENT)
             .header(header::CONTENT_TYPE, content_type)
             .header(header::ACCEPT_RANGES, "bytes")
@@ -141,12 +141,12 @@ pub async fn serve_file_with_range(
             .header(header::CONTENT_RANGE, format!("bytes {start}-{end}/{size}"))
             .header(header::CONTENT_LENGTH, len.to_string())
             .body(body)
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?);
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR);
     }
 
     let stream = ReaderStream::with_capacity(file, 256 * 1024);
     let body = Body::from_stream(stream);
-    Ok(Response::builder()
+    Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, content_type)
         .header(header::ACCEPT_RANGES, "bytes")
@@ -154,7 +154,7 @@ pub async fn serve_file_with_range(
         .header(header::CACHE_CONTROL, "no-cache")
         .header(header::CONTENT_LENGTH, size.to_string())
         .body(body)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
 }
 
 pub fn content_disposition_inline(path: &Path) -> HeaderValue {

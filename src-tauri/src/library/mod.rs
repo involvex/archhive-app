@@ -281,13 +281,10 @@ impl LibraryScanner {
                     let _ = db.update_scene_resolution(&scene_id, width, height);
                 }
                 match ffmpeg.probe_duration(&video_path).await {
-                    Some(dur) if dur > 0.0 => {
-                        if db.update_scene_duration(&scene_id, dur as u32).is_ok() {
+                    Some(dur) if dur > 0.0
+                        && db.update_scene_duration(&scene_id, dur as u32).is_ok() => {
                             probed.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                        } else {
-                            errors.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                         }
-                    }
                     _ => {
                         errors.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     }

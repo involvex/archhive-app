@@ -43,7 +43,7 @@ pub async fn extract_info(ctx: &SiteContext, url: &str) -> AppResult<MediaItem> 
     let post_url = data
         .get("url")
         .and_then(|v| v.as_str())
-        .unwrap_or_else(|| url)
+        .unwrap_or(url)
         .to_string();
 
     let selftext = data
@@ -77,7 +77,7 @@ pub async fn extract_info(ctx: &SiteContext, url: &str) -> AppResult<MediaItem> 
         id: data
             .get("id")
             .and_then(|v| v.as_str())
-            .unwrap_or_else(|| url)
+            .unwrap_or(url)
             .to_string(),
         title,
         url: final_url.clone(),

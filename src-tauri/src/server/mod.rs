@@ -698,11 +698,11 @@ async fn scene_thumb(
     } else {
         "image/jpeg"
     };
-    Ok(Response::builder()
+    Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, content_type)
         .body(Body::from(bytes))
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
 }
 
 async fn scene_media(
@@ -1104,7 +1104,7 @@ async fn proxy_remote_media(
 
     let stream = upstream
         .bytes_stream()
-        .map(|r| r.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string())));
+        .map(|r| r.map_err(|e| std::io::Error::other(e.to_string())));
     let mut response = Body::from_stream(stream).into_response();
     *response.status_mut() = status;
     if let Ok(v) = HeaderValue::from_str(&content_type) {
