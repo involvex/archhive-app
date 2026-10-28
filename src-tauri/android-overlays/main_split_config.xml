@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:window="http://schemas.android.com/apk/res-auto">
+    <!--
+      Activity Embedding rule for the ArcHive in-app viewer:
+      MainActivity (browse/library) | ViewerActivity (external site webview).
+      Activates on screens at least 840dp wide; alwaysAllow permits the split
+      in portrait. On phones the ViewerActivity simply lands on the back stack.
+    -->
+    <SplitPairRule
+        window:splitRatio="0.33"
+        window:splitLayoutDirection="locale"
+        window:splitMinWidthDp="840"
+        window:splitMaxAspectRatioInPortrait="alwaysAllow"
+        window:finishPrimaryWithSecondary="never"
+        window:finishSecondaryWithPrimary="never"
+        window:clearTop="false">
+        <SplitPairFilter
+            window:primaryActivityName=".MainActivity"
+            window:secondaryActivityName=".ViewerActivity" />
+    </SplitPairRule>
+</resources>

@@ -14,6 +14,7 @@ mod server;
 mod sites;
 mod state;
 mod vault;
+mod viewer;
 
 #[cfg(not(mobile))]
 mod desktop;
@@ -330,6 +331,7 @@ pub fn run() {
             commands::resolve_media_details,
             commands::resolve_stream_url,
             commands::resolve_livestream,
+            commands::open_in_app_viewer,
             commands::discover_lan_hosts,
             commands::start_lan_server,
             commands::stop_lan_server,

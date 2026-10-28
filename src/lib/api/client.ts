@@ -834,6 +834,19 @@ export const api = {
     };
   },
 
+  /**
+   * Open a URL in a native secondary webview window ("in-app viewer").
+   * Top-level webview loads ignore X-Frame-Options, so sites that block
+   * embedding (CamsFinder, most cam sites) render with their own player,
+   * cookies and age gates. Local-only (needs the Rust command, no LAN
+   * equivalent) but works in any engine mode on a Tauri host. Callers
+   * should fall back to the external browser when this rejects (e.g.
+   * Android < 12L without multi-window support).
+   */
+  async openInAppViewer(url: string): Promise<void> {
+    await localInvoke("open_in_app_viewer", { url });
+  },
+
   async ensurePerformer(name: string): Promise<Performer> {
     return localOrRemote("ensure_performer", { name }, "/api/performers/ensure", {
       method: "POST",

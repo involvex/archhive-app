@@ -194,6 +194,15 @@ fn parse_preloaded_state_html(html: &str, username: &str) -> AppResult<Preloaded
     Ok(PreloadedState { model_id, hosts })
 }
 
+/// True when the native resolver's error means the room cannot be watched
+/// right now (private show or offline). Callers should surface the error as-is
+/// instead of falling through to yt-dlp - whose extractor failure message
+/// ("Unable to extract data") masks the real reason with confusing noise.
+pub(crate) fn is_room_unavailable(err: &AppError) -> bool {
+    let msg = err.to_string();
+    msg.contains("private show") || msg.contains(" is offline")
+}
+
 /// Native (no yt-dlp) resolution of a Stripchat room HLS URL by parsing the
 /// room page's `window.__PRELOADED_STATE__` blob.
 ///

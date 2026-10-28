@@ -6,7 +6,7 @@ import { ExtLink } from "@/components/ExtLink";
 import { openExternal } from "@/lib/external";
 import { HlsVideoPlayer, STREAM_URL_EXPIRED_ERROR } from "@/components/HlsVideoPlayer";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Radio, ArrowLeft, ExternalLink, ChevronLeft, ChevronRight } from "lucide-react";
+import { Radio, ArrowLeft, ExternalLink, AppWindow, ChevronLeft, ChevronRight } from "lucide-react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import type { MediaItem } from "@/lib/types";
 
@@ -50,6 +50,19 @@ function getChatUrl(site: string, slug: string, roomUrl?: string): string {
     default:
       return roomUrl ?? "";
   }
+}
+
+/**
+ * Open the room in the native in-app viewer window (full site UI in a
+ * secondary webview — bypasses X-Frame-Options, keeps cookies/age gates).
+ * Falls back to the external browser when the viewer can't be created
+ * (e.g. Android < 12L without multi-window support, non-Tauri LAN UI).
+ */
+function openInViewer(url: string): void {
+  api.openInAppViewer(url).catch((viewerError) => {
+    console.error("in-app viewer failed, opening browser instead:", viewerError);
+    void openExternal(url).catch(console.error);
+  });
 }
 
 function LivePlayerPage() {
@@ -188,6 +201,14 @@ function LivePlayerPage() {
             <ExternalLink className="h-3 w-3" />
             Open room in browser (full controls + audio)
           </ExtLink>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => openInViewer(getChatUrl(site, slug, search.roomUrl))}
+          >
+            <AppWindow className="mr-1 h-4 w-4" />
+            Open in in-app viewer
+          </Button>
         </div>
       )}
 
@@ -207,6 +228,14 @@ function LivePlayerPage() {
             <ExternalLink className="h-3 w-3" />
             Open room in browser
           </ExtLink>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => openInViewer(getChatUrl(site, slug, search.roomUrl))}
+          >
+            <AppWindow className="mr-1 h-4 w-4" />
+            Open in in-app viewer
+          </Button>
         </div>
       )}
 

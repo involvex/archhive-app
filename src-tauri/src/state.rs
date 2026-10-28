@@ -1501,12 +1501,19 @@ impl AppState {
             // Native __PRELOADED_STATE__ parse first: yt-dlp's Stripchat
             // extractor frequently fails with "Unable to extract data". The
             // native path yields a single muxed master manifest (no separate
-            // audio URL). Fall back to yt-dlp when the page shape changed.
-            if let Ok(master) =
-                crate::sites::adapters::stripchat::resolve_stream_url_native(&self.site_ctx, url)
-                    .await
+            // audio URL). Fall back to yt-dlp only when the page shape
+            // changed - a private-show/offline verdict is final and must be
+            // surfaced as-is so the UI shows the friendly message.
+            match crate::sites::adapters::stripchat::resolve_stream_url_native(&self.site_ctx, url)
+                .await
             {
-                return Ok((master, None));
+                Ok(master) => return Ok((master, None)),
+                Err(e) if crate::sites::adapters::stripchat::is_room_unavailable(&e) => {
+                    return Err(e);
+                }
+                Err(e) => {
+                    tracing::info!("[stripchat] native resolve failed, trying yt-dlp: {e}");
+                }
             }
             return crate::sites::urls::resolve_cam_stream_urls(&self.site_ctx, &site_id, url)
                 .await;

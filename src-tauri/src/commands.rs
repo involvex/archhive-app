@@ -405,6 +405,17 @@ pub async fn resolve_livestream(
     }))
 }
 
+/// Open a URL in a native secondary webview window ("in-app viewer").
+///
+/// Top-level webview loads ignore `X-Frame-Options`, so sites that block
+/// embedding (CamsFinder and most cam sites) render fully — cookies, age
+/// gates, native player. The frontend falls back to the external browser when
+/// this errors (e.g. Android < 12L without multi-window support).
+#[tauri::command]
+pub async fn open_in_app_viewer(app: tauri::AppHandle, url: String) -> Result<(), String> {
+    crate::viewer::open_viewer(&app, &url)
+}
+
 #[tauri::command]
 pub fn find_duplicates(state: State<'_, Arc<AppState>>) -> CmdResult<Vec<DuplicateGroup>> {
     map_err(state.find_duplicates())

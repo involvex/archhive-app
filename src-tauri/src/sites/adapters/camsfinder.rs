@@ -171,11 +171,16 @@ pub(crate) async fn resolve_livestream_urls(
             crate::sites::urls::resolve_cam_stream_urls(ctx, "chaturbate", &room_url).await
         }
         "stripchat" => {
-            // Native muxed master first; yt-dlp split-A/V as fallback.
-            if let Ok(master) =
-                crate::sites::adapters::stripchat::resolve_stream_url_native(ctx, &room_url).await
+            // Native muxed master first. Private-show/offline verdicts are
+            // final (surfaced to the UI); only page-shape failures fall
+            // through to yt-dlp's split-A/V path.
+            match crate::sites::adapters::stripchat::resolve_stream_url_native(ctx, &room_url).await
             {
-                return Ok((master, None));
+                Ok(master) => return Ok((master, None)),
+                Err(e) if crate::sites::adapters::stripchat::is_room_unavailable(&e) => {
+                    return Err(e);
+                }
+                Err(_) => {}
             }
             crate::sites::urls::resolve_cam_stream_urls(ctx, "stripchat", &room_url).await
         }
