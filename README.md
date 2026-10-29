@@ -90,6 +90,7 @@ Full index: [docs/README.md](docs/README.md).
 - Android logcat / FrameInsert: [docs/troubleshooting-android.md](docs/troubleshooting-android.md)
 - Cookies: [docs/cookie-import.md](docs/cookie-import.md)
 - LAN / mobile: [docs/mobile-android.md](docs/mobile-android.md)
+- Media vault / hiding files: [docs/vault.md](docs/vault.md)
 
 ## Architecture
 

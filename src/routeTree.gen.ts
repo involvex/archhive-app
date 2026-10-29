@@ -18,6 +18,7 @@ import { Route as DuplicatesIndexRouteImport } from './routes/duplicates/index'
 import { Route as FeedIndexRouteImport } from './routes/feed/index'
 import { Route as FilesIndexRouteImport } from './routes/files/index'
 import { Route as LibraryIndexRouteImport } from './routes/library/index'
+import { Route as LibraryVaultRouteImport } from './routes/library/vault'
 import { Route as LiveIndexRouteImport } from './routes/live/index'
 import { Route as RecommendationsIndexRouteImport } from './routes/recommendations/index'
 import { Route as SettingsIndexRouteImport } from './routes/settings/index'
@@ -75,6 +76,11 @@ const FilesIndexRoute = FilesIndexRouteImport.update({
 const LibraryIndexRoute = LibraryIndexRouteImport.update({
   id: '/library/',
   path: '/library/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LibraryVaultRoute = LibraryVaultRouteImport.update({
+  id: '/library/vault',
+  path: '/library/vault',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LiveIndexRoute = LiveIndexRouteImport.update({
@@ -148,6 +154,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/browse/body-match': typeof BrowseBodyMatchRoute
   '/browse/by-url': typeof BrowseByUrlRoute
+  '/library/vault': typeof LibraryVaultRoute
   '/browse/': typeof BrowseIndexRoute
   '/downloads/': typeof DownloadsIndexRoute
   '/duplicates/': typeof DuplicatesIndexRoute
@@ -172,6 +179,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/browse/body-match': typeof BrowseBodyMatchRoute
   '/browse/by-url': typeof BrowseByUrlRoute
+  '/library/vault': typeof LibraryVaultRoute
   '/browse': typeof BrowseIndexRoute
   '/downloads': typeof DownloadsIndexRoute
   '/duplicates': typeof DuplicatesIndexRoute
@@ -197,6 +205,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/browse/body-match': typeof BrowseBodyMatchRoute
   '/browse/by-url': typeof BrowseByUrlRoute
+  '/library/vault': typeof LibraryVaultRoute
   '/browse/': typeof BrowseIndexRoute
   '/downloads/': typeof DownloadsIndexRoute
   '/duplicates/': typeof DuplicatesIndexRoute
@@ -223,6 +232,7 @@ export interface FileRouteTypes {
     | '/'
     | '/browse/body-match'
     | '/browse/by-url'
+    | '/library/vault'
     | '/browse/'
     | '/downloads/'
     | '/duplicates/'
@@ -247,6 +257,7 @@ export interface FileRouteTypes {
     | '/'
     | '/browse/body-match'
     | '/browse/by-url'
+    | '/library/vault'
     | '/browse'
     | '/downloads'
     | '/duplicates'
@@ -271,6 +282,7 @@ export interface FileRouteTypes {
     | '/'
     | '/browse/body-match'
     | '/browse/by-url'
+    | '/library/vault'
     | '/browse/'
     | '/downloads/'
     | '/duplicates/'
@@ -296,6 +308,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   BrowseBodyMatchRoute: typeof BrowseBodyMatchRoute
   BrowseByUrlRoute: typeof BrowseByUrlRoute
+  LibraryVaultRoute: typeof LibraryVaultRoute
   BrowseIndexRoute: typeof BrowseIndexRoute
   DownloadsIndexRoute: typeof DownloadsIndexRoute
   DuplicatesIndexRoute: typeof DuplicatesIndexRoute
@@ -380,6 +393,13 @@ declare module '@tanstack/react-router' {
       path: '/library'
       fullPath: '/library/'
       preLoaderRoute: typeof LibraryIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/library/vault': {
+      id: '/library/vault'
+      path: '/library/vault'
+      fullPath: '/library/vault'
+      preLoaderRoute: typeof LibraryVaultRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/live/': {
@@ -480,6 +500,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   BrowseBodyMatchRoute: BrowseBodyMatchRoute,
   BrowseByUrlRoute: BrowseByUrlRoute,
+  LibraryVaultRoute: LibraryVaultRoute,
   BrowseIndexRoute: BrowseIndexRoute,
   DownloadsIndexRoute: DownloadsIndexRoute,
   DuplicatesIndexRoute: DuplicatesIndexRoute,

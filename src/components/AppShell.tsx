@@ -15,8 +15,11 @@ import {
   Contrast,
   Copy,
   Plus,
+  Lock,
 } from "lucide-react";
 import { isAmoled, setAmoled } from "@/lib/amoled";
+import { useSettingsStore } from "@/lib/stores/settings";
+import { useVaultStore } from "@/lib/stores/vault";
 import { MobileSearchSheet } from "@/components/MobileSearchSheet";
 import { MobileQuickActionsSheet } from "@/components/MobileQuickActionsSheet";
 import { OfflineBanner } from "@/components/OfflineBanner";
@@ -57,6 +60,9 @@ const desktopNavItems = [
   { to: "/settings", label: "Settings", icon: Settings, shortcut: "Ctrl+6" },
 ] as const;
 
+/** Only shown when the vault is enabled in Settings → Privacy. */
+const vaultNavItem = { to: "/library/vault", label: "Vault", icon: Lock } as const;
+
 const mobileNavItems = [
   { to: "/", label: "Home", icon: Home },
   { to: "/browse", label: "Browse", icon: Compass },
@@ -76,10 +82,60 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
   const location = useLocation();
   const openTabRef = useRef<(to: string) => void>((to) => navigate({ to }));
-  const desktopNav = [...desktopNavItems, ...pluginNavItems];
+  const vaultEnabled = useSettingsStore((s) => s.settings.vault_enabled === true);
+  const desktopNav = [
+    ...desktopNavItems,
+    ...(vaultEnabled ? [vaultNavItem] : []),
+    ...pluginNavItems,
+  ];
   // Memoised so swipe-navigation callbacks don't re-bind every frame — the
   // array contents never change (plugin nav is module-scoped).
   const mobileNav = useMemo(() => [...mobileNavItems, ...pluginNavItems], []);
+  const vaultLockOnBackground = useSettingsStore(
+    (s) => s.settings.vault_lock_on_background !== false,
+  );
+  const vaultExpiresAt = useVaultStore((s) => s.status?.expires_at);
+
+  // Vault: learn the vault path + lock state once per session, so media URLs
+  // for vaulted rows resolve correctly (and stay blank while locked).
+  useEffect(() => {
+    if (!vaultEnabled) return;
+    void useVaultStore.getState().refreshStatus();
+  }, [vaultEnabled]);
+
+  // Vault: drop the session lock as soon as the app is backgrounded or hidden.
+  // Ignored while a biometric prompt is open (the native sheet can briefly
+  // report the webview as hidden and would otherwise lock right after unlock).
+  useEffect(() => {
+    if (!vaultEnabled || !vaultLockOnBackground) return;
+    function lockIfHidden() {
+      if (document.visibilityState !== "hidden") return;
+      const vault = useVaultStore.getState();
+      if (vault.authenticating || !vault.status?.unlocked) return;
+      void vault.lock();
+    }
+    document.addEventListener("visibilitychange", lockIfHidden);
+    return () => document.removeEventListener("visibilitychange", lockIfHidden);
+  }, [vaultEnabled, vaultLockOnBackground]);
+
+  // Vault: the backend only re-checks its deadline when something reads it, so a
+  // page left open would keep rendering vault content past `expires_at`. Mirror
+  // the deadline here and lock when it passes.
+  useEffect(() => {
+    if (!vaultEnabled || !vaultExpiresAt) return;
+    const remaining = vaultExpiresAt * 1000 - Date.now();
+    if (remaining <= 0) {
+      void useVaultStore.getState().lock();
+      return;
+    }
+    // `setTimeout` clamps above ~24.8 days; re-arm on the next status refresh.
+    const timer = window.setTimeout(
+      () => void useVaultStore.getState().lock(),
+      Math.min(remaining, 2 ** 31 - 1),
+    );
+    return () => window.clearTimeout(timer);
+  }, [vaultEnabled, vaultExpiresAt]);
+
   const [appVersion, setAppVersion] = useState("");
   const [sceneCount, setSceneCount] = useState<number | null>(null);
   // Q14: duplicate-group badge (null = unknown/failed, hidden).

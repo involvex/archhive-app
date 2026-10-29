@@ -27,6 +27,8 @@ interface SceneContextMenuProps {
   watched?: boolean;
   /** #2/#6: open collection picker to add/remove this scene. */
   onAddToCollection?: (scene: Scene) => void;
+  /** Media vault: hide the scene by moving its file into private storage. */
+  onMoveToVault?: (scene: Scene) => void;
 }
 
 export function SceneContextMenu({
@@ -43,6 +45,7 @@ export function SceneContextMenu({
   onMarkWatched,
   watched,
   onAddToCollection,
+  onMoveToVault,
 }: SceneContextMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
   const caps = getCapabilities();
@@ -137,6 +140,14 @@ export function SceneContextMenu({
         onClose();
       },
       show: Boolean(onAddToCollection),
+    },
+    {
+      label: "Move to vault",
+      action: () => {
+        onMoveToVault?.(menu.scene);
+        onClose();
+      },
+      show: Boolean(menu.scene.path) && Boolean(onMoveToVault),
     },
     {
       label: "Regenerate thumbnail",

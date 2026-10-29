@@ -7,9 +7,19 @@ interface SceneBulkEditBarProps {
   selectedIds: string[];
   onClear: () => void;
   onApplied: () => void;
+  /** Media vault is enabled in settings, so "Move to vault" is offered. */
+  canVault?: boolean;
+  /** Moves every selected scene into the vault; resolves false on failure. */
+  onMoveToVault?: () => Promise<boolean>;
 }
 
-export function SceneBulkEditBar({ selectedIds, onClear, onApplied }: SceneBulkEditBarProps) {
+export function SceneBulkEditBar({
+  selectedIds,
+  onClear,
+  onApplied,
+  canVault = false,
+  onMoveToVault,
+}: SceneBulkEditBarProps) {
   const [performers, setPerformers] = useState("");
   const [tags, setTags] = useState("");
   const [saving, setSaving] = useState(false);
@@ -64,6 +74,25 @@ export function SceneBulkEditBar({ selectedIds, onClear, onApplied }: SceneBulkE
     }
   }
 
+  async function handleVault() {
+    if (!onMoveToVault) return;
+    setSaving(true);
+    setError(null);
+    try {
+      // The caller owns the biometric prompt, the per-scene failures and the
+      // toast; it returns false when nothing was moved so we keep the bar open.
+      const moved = await onMoveToVault();
+      if (moved) {
+        onApplied();
+        onClear();
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Move to vault failed");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <div className="sticky top-0 z-10 rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] p-3 shadow-md">
       <div className="mb-2 flex items-center justify-between gap-2">
@@ -92,6 +121,11 @@ export function SceneBulkEditBar({ selectedIds, onClear, onApplied }: SceneBulkE
         <Button variant="outline" onClick={() => void handleMarkWatched(false)} disabled={saving}>
           Clear watched
         </Button>
+        {canVault && onMoveToVault && (
+          <Button variant="outline" onClick={() => void handleVault()} disabled={saving}>
+            Move to vault
+          </Button>
+        )}
         <Button onClick={() => void handleApply()} disabled={saving}>
           {saving ? "Applying…" : "Apply to selected"}
         </Button>

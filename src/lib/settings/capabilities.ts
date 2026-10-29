@@ -8,6 +8,7 @@ export const SETTINGS_TABS = [
   "metadata",
   "duplicates",
   "lan",
+  "privacy",
   "desktop",
   "browse",
   "diagnostics",
@@ -26,5 +27,8 @@ export function visibleSettingsTabs(caps: RuntimeCapabilities): SettingsTab[] {
 
 export function isTabReadOnly(tab: SettingsTab, caps: RuntimeCapabilities): boolean {
   if (tab === "lan") return !caps.lanServer;
+  // The media vault is a lock held by the local backend; a remote host or a
+  // plain browser has nothing to unlock.
+  if (tab === "privacy") return !caps.localIpc && !caps.libraryScanLocal;
   return false;
 }

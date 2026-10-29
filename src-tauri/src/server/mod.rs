@@ -632,6 +632,38 @@ async fn delete_scene(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// Vault content is only served when the session is unlocked *and* either the
+/// request came from the on-device loopback server or the user opted into LAN
+/// exposure. A bearer token is not a biometric check, so the LAN default is
+/// "invisible".
+fn vault_media_allowed(state: &ApiState) -> Result<(), StatusCode> {
+    let settings = state
+        .app
+        .get_settings()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    if !state.loopback && !settings.vault_lan_exposed {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    if settings.vault_enabled && state.app.media_vault.is_unlocked() {
+        Ok(())
+    } else {
+        Err(StatusCode::FORBIDDEN)
+    }
+}
+
+/// Refuse access to a scene whose file lives in the vault unless the vault
+/// gate is open. Reported as 404 so a locked vault does not confirm that a
+/// given scene exists.
+fn guard_vault_path(state: &ApiState, path: Option<&str>) -> Result<(), StatusCode> {
+    match path {
+        Some(p) if state.app.media_vault.is_vault_path(p) => match vault_media_allowed(state) {
+            Ok(()) => Ok(()),
+            Err(_) => Err(StatusCode::NOT_FOUND),
+        },
+        _ => Ok(()),
+    }
+}
+
 async fn get_scene(
     State(state): State<ApiState>,
     Path(id): Path<String>,
@@ -640,6 +672,8 @@ async fn get_scene(
         .app
         .get_scene(&id)
         .map_err(|_| StatusCode::NOT_FOUND)?;
+    guard_vault_path(&state, scene.path.as_deref())?;
+    guard_vault_path(&state, scene.thumb.as_deref())?;
     Ok(Json(serde_json::json!(scene)))
 }
 
@@ -671,8 +705,9 @@ async fn scene_thumb(
         .app
         .get_scene(&id)
         .map_err(|_| StatusCode::NOT_FOUND)?;
-    // Never fall back to the video path — that reads entire movies as fake JPEGs.
+    // Never fall back to the video path - that reads entire movies as fake JPEGs.
     let thumb_path = scene.thumb.ok_or(StatusCode::NOT_FOUND)?;
+    guard_vault_path(&state, Some(&thumb_path))?;
     let lower = thumb_path.to_lowercase();
     if !(lower.ends_with(".jpg")
         || lower.ends_with(".jpeg")
@@ -724,7 +759,15 @@ async fn scene_media(
         .cached_library_root()
         .map_err(|_| StatusCode::FORBIDDEN)?;
     let canonical_file = path.canonicalize().map_err(|_| StatusCode::NOT_FOUND)?;
-    if !canonical_file.starts_with(&library_root) {
+    // Vaulted media lives outside the library root, so it needs its own
+    // containment check plus the vault gate.
+    if state
+        .app
+        .media_vault
+        .is_vault_path(&canonical_file.to_string_lossy())
+    {
+        guard_vault_path(&state, Some(&media_path))?;
+    } else if !canonical_file.starts_with(&library_root) {
         return Err(StatusCode::FORBIDDEN);
     }
     let mut response = serve_file_with_range(&canonical_file, &headers).await?;

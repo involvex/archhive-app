@@ -6,7 +6,18 @@ import { toWatchMap, type WatchMap } from "@/lib/watch";
 import { ContinueWatchingRail } from "@/components/ContinueWatchingRail";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Film, FolderOpen, RefreshCw, Tags, Users, GitMerge, Folder, Clock } from "lucide-react";
+import {
+  Film,
+  FolderOpen,
+  RefreshCw,
+  Tags,
+  Users,
+  GitMerge,
+  Folder,
+  Clock,
+  Lock,
+} from "lucide-react";
+import { useSettingsStore } from "@/lib/stores/settings";
 
 export const Route = createFileRoute("/library/")({
   component: LibraryHubPage,
@@ -29,6 +40,7 @@ function LibraryHubPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [scenes, setScenes] = useState<Scene[]>([]);
   const [watchMap, setWatchMap] = useState<WatchMap>(new Map());
+  const vaultEnabled = useSettingsStore((s) => s.settings.vault_enabled === true);
 
   const refresh = useCallback(async () => {
     setRefreshing(true);
@@ -228,6 +240,22 @@ function LibraryHubPage() {
             </CardContent>
           </Card>
         </Link>
+
+        {vaultEnabled && (
+          <Link to="/library/vault" className="block">
+            <Card className="cursor-pointer hover:border-[var(--color-primary)] hover:bg-[var(--color-accent)]/5 transition-colors h-full">
+              <CardContent className="flex items-center gap-3 p-4 pt-4">
+                <Lock className="h-5 w-5 text-[var(--color-primary)] shrink-0" />
+                <div>
+                  <p className="font-semibold">Vault</p>
+                  <p className="text-xs text-[var(--color-muted-foreground)]">
+                    Scenes hidden from the library and other apps
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
+        )}
       </div>
     </div>
   );

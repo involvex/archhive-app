@@ -59,6 +59,10 @@ impl LibraryScanner {
             .max_depth(5)
             .follow_links(false)
             .into_iter()
+            // Never import media the user has hidden. The vault root carries a
+            // `.nomedia` marker, so vaulted files can't be re-added to the
+            // library by a rescan even when the library path sits above it.
+            .filter_entry(|e| !is_hidden_dir(e.path()))
             .filter_map(|e| e.ok())
         {
             let file_path = entry.path();
@@ -445,4 +449,19 @@ impl LibraryScanner {
             errors: errors.load(std::sync::atomic::Ordering::Relaxed),
         })
     }
+}
+
+/// A directory the library refuses to index: hidden (dot-prefixed) folders and
+/// anything carrying a `.nomedia` marker. The media vault writes that marker,
+/// so vaulted files never come back through a rescan.
+pub fn is_hidden_dir(path: &Path) -> bool {
+    if !path.is_dir() {
+        return false;
+    }
+    let hidden_name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .map(|n| n.starts_with('.'))
+        .unwrap_or(false);
+    hidden_name || path.join(".nomedia").exists()
 }

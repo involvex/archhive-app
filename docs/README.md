@@ -14,6 +14,7 @@ Guides for ArcHive development, deployment, and extension.
 | [plugins.md](plugins.md)                                 | TypeScript plugins (`plugins/` directory)               |
 | [release.md](release.md)                                 | Version bump, tags, GitHub Releases                     |
 | [lan-web.md](lan-web.md)                                 | Browser UI, video streaming, `/files`                   |
+| [vault.md](vault.md)                                     | Media vault: biometric lock, hide-from-gallery          |
 | [gh-pages.md](gh-pages.md)                               | Deploy frontend to GitHub Pages, connect to LAN backend |
 
 Security vulnerabilities: see [SECURITY.md](../SECURITY.md) in the repo root.

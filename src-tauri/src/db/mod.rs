@@ -4,12 +4,12 @@ use crate::db::migrations::{
     MIGRATION_001, MIGRATION_002, MIGRATION_003, MIGRATION_004, MIGRATION_005, MIGRATION_006,
     MIGRATION_007, MIGRATION_008, MIGRATION_009, MIGRATION_010, MIGRATION_011, MIGRATION_012,
     MIGRATION_013, MIGRATION_014, MIGRATION_015, MIGRATION_016, MIGRATION_017, MIGRATION_018,
-    MIGRATION_019, MIGRATION_020,
+    MIGRATION_019, MIGRATION_020, MIGRATION_021,
 };
 use crate::error::{AppError, AppResult};
 use crate::models::{
     AppSettings, Collection, CollectionType, DownloadJob, DownloadStatus, DuplicateGroup,
-    Performer, Scene, SceneFilter, Tag,
+    Performer, Scene, SceneFilter, Tag, VaultScene,
 };
 use chrono::Utc;
 use rusqlite::{params, Connection, OptionalExtension};
@@ -168,6 +168,11 @@ impl Database {
         }
         if !column_exists(&conn, "saved_searches", "filters") {
             conn.execute_batch(MIGRATION_020)?;
+        }
+        // Media vault columns (lock + hide). Additive only; vaulting never
+        // deletes scene rows.
+        if !column_exists(&conn, "scenes", "is_vaulted") {
+            conn.execute_batch(MIGRATION_021)?;
         }
         // Backfill the default StashDB endpoint for DBs created before it
         // existed (fresh DBs get it via AppSettings::default).
@@ -827,7 +832,8 @@ impl Database {
             .map_err(|e| AppError::Other(e.to_string()))?;
         let mut stmt = conn.prepare(
             "SELECT id, path, thumb FROM scenes
-             WHERE path IS NOT NULL AND path != ''",
+             WHERE path IS NOT NULL AND path != ''
+             AND COALESCE(is_vaulted, 0) = 0",
         )?;
         let rows = stmt.query_map([], |row| {
             Ok((
@@ -860,7 +866,8 @@ impl Database {
         let mut stmt = conn.prepare(
             "SELECT id, path FROM scenes
              WHERE path IS NOT NULL AND path != ''
-             AND (duration IS NULL OR duration = 0)",
+             AND (duration IS NULL OR duration = 0)
+             AND COALESCE(is_vaulted, 0) = 0",
         )?;
         let rows = stmt.query_map([], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
@@ -1337,7 +1344,8 @@ impl Database {
             .map_err(|e| AppError::Other(e.to_string()))?;
         let mut stmt = conn.prepare(
             "SELECT id, thumb FROM scenes
-             WHERE thumb IS NOT NULL AND thumb != ''",
+             WHERE thumb IS NOT NULL AND thumb != ''
+             AND COALESCE(is_vaulted, 0) = 0",
         )?;
         let rows = stmt.query_map([], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
@@ -1367,6 +1375,10 @@ impl Database {
         // Build dynamic WHERE clause (only SQL-level filters; file-level checks are post-filtered).
         let mut conditions = Vec::new();
         let mut joins = Vec::new();
+
+        // Vaulted scenes never appear in normal listings; the vault UI uses
+        // its own query (`list_vaulted_scenes`) while unlocked.
+        conditions.push("COALESCE(scenes.is_vaulted, 0) = 0".to_string());
 
         if filter.missing_duration {
             conditions.push("(scenes.duration IS NULL OR scenes.duration = 0)".to_string());
@@ -1713,6 +1725,145 @@ impl Database {
         Ok(())
     }
 
+    // ---- Media vault -----------------------------------------------------
+
+    /// Point a scene at its new in-vault location and flag it as hidden.
+    pub fn mark_scene_vaulted(
+        &self,
+        scene_id: &str,
+        vault_path: &str,
+        original_path: Option<&str>,
+    ) -> AppResult<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let now = Utc::now().to_rfc3339();
+        let changed = conn.execute(
+            "UPDATE scenes SET path = ?2, is_vaulted = 1,
+                vault_original_path = COALESCE(?3, vault_original_path),
+                vaulted_at = ?4
+             WHERE id = ?1",
+            params![scene_id, vault_path, original_path, now],
+        )?;
+        if changed == 0 {
+            return Err(AppError::NotFound(format!("scene {scene_id}")));
+        }
+        Ok(())
+    }
+
+    /// Put a scene back in the library and clear its vault flags.
+    pub fn mark_scene_unvaulted(&self, scene_id: &str, restored_path: &str) -> AppResult<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let changed = conn.execute(
+            "UPDATE scenes SET path = ?2, is_vaulted = 0,
+                vault_original_path = NULL, vaulted_at = NULL
+             WHERE id = ?1",
+            params![scene_id, restored_path],
+        )?;
+        if changed == 0 {
+            return Err(AppError::NotFound(format!("scene {scene_id}")));
+        }
+        Ok(())
+    }
+
+    /// `(is_vaulted, path, thumb, original_path, vaulted_at)`
+    pub fn scene_vault_meta(
+        &self,
+        scene_id: &str,
+    ) -> AppResult<(
+        bool,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    )> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        conn.query_row(
+            "SELECT COALESCE(is_vaulted, 0), path, thumb, vault_original_path, vaulted_at
+             FROM scenes WHERE id = ?1",
+            params![scene_id],
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)? != 0,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            },
+        )
+        .optional()?
+        .ok_or_else(|| AppError::NotFound(format!("scene {scene_id}")))
+    }
+
+    pub fn list_vaulted_scenes(
+        &self,
+        limit: Option<i64>,
+        offset: Option<i64>,
+    ) -> AppResult<Vec<VaultScene>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let limit_val = limit.unwrap_or(200).clamp(1, 500);
+        let offset_val = offset.unwrap_or(0).max(0);
+        let mut stmt = conn.prepare(
+            "SELECT id, title, duration, thumb, file_size, vault_original_path, vaulted_at
+             FROM scenes WHERE COALESCE(is_vaulted, 0) = 1
+             ORDER BY vaulted_at DESC, created_at DESC
+             LIMIT ?1 OFFSET ?2",
+        )?;
+        let rows = stmt.query_map(params![limit_val, offset_val], |row| {
+            Ok(VaultScene {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                duration: row.get(2)?,
+                thumb: row.get(3)?,
+                file_size: row.get::<_, Option<i64>>(4)?.map(|v| v as u64),
+                original_path: row.get(5)?,
+                vaulted_at: row.get(6)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(AppError::from)
+    }
+
+    pub fn count_vaulted_scenes(&self) -> AppResult<u32> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM scenes WHERE COALESCE(is_vaulted, 0) = 1",
+            [],
+            |row| row.get(0),
+        )?;
+        Ok(count.max(0) as u32)
+    }
+
+    /// True when the scene is flagged as vaulted (the file itself may or may
+    /// not still exist - callers must check).
+    pub fn is_scene_vaulted(&self, scene_id: &str) -> AppResult<bool> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let flag: Option<i64> = conn
+            .query_row(
+                "SELECT COALESCE(is_vaulted, 0) FROM scenes WHERE id = ?1",
+                params![scene_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        Ok(flag.unwrap_or(0) != 0)
+    }
+
     pub fn list_scenes(
         &self,
         query: Option<&str>,
@@ -1745,7 +1896,7 @@ impl Database {
                 "SELECT * FROM (
                       SELECT s.id, s.title, s.path, s.thumb, s.source_url, s.duration, s.channel, s.file_size, s.width, s.height, s.rating, s.created_at
                       FROM scenes s JOIN scenes_fts fts ON s.rowid = fts.rowid
-                      WHERE scenes_fts MATCH ?1
+                      WHERE scenes_fts MATCH ?1 AND COALESCE(s.is_vaulted, 0) = 0
                       ORDER BY s.created_at DESC LIMIT 100
                   )
                   UNION
@@ -1754,7 +1905,7 @@ impl Database {
                       FROM scenes s
                       JOIN scene_performers sp ON s.id = sp.scene_id
                       JOIN performers p ON sp.performer_id = p.id
-                      WHERE p.name LIKE ?2
+                      WHERE p.name LIKE ?2 AND COALESCE(s.is_vaulted, 0) = 0
                       ORDER BY s.created_at DESC LIMIT 100
                   )
                   UNION
@@ -1763,7 +1914,7 @@ impl Database {
                       FROM scenes s
                       JOIN scene_tags st ON s.id = st.scene_id
                       JOIN tags t ON st.tag_id = t.id
-                      WHERE t.name LIKE ?2
+                      WHERE t.name LIKE ?2 AND COALESCE(s.is_vaulted, 0) = 0
                       ORDER BY s.created_at DESC LIMIT 100
                   )
                   ORDER BY created_at {order_direction}
@@ -1788,7 +1939,7 @@ impl Database {
             rows.collect::<Result<Vec<_>, _>>()?
         } else {
             let sql = format!(
-                "SELECT id, title, path, thumb, source_url, duration, channel, file_size, width, height, rating FROM scenes ORDER BY {order_by_plain} LIMIT ? OFFSET ?"
+                "SELECT id, title, path, thumb, source_url, duration, channel, file_size, width, height, rating FROM scenes WHERE COALESCE(is_vaulted, 0) = 0 ORDER BY {order_by_plain} LIMIT ? OFFSET ?"
             );
             let mut stmt = conn.prepare(&sql)?;
             let rows = stmt.query_map(params![limit_val, offset_val], |row| {
@@ -2218,7 +2369,7 @@ impl Database {
         let sql = "SELECT s.id, s.title, s.path, s.thumb, s.source_url, s.duration, s.channel, s.file_size, s.width, s.height, s.rating, s.created_at
              FROM scenes s
              JOIN collection_scenes cs ON s.id = cs.scene_id
-             WHERE cs.collection_id = ?1
+             WHERE cs.collection_id = ?1 AND COALESCE(s.is_vaulted, 0) = 0
              ORDER BY cs.position";
         let mut stmt = conn.prepare(sql)?;
         let rows: Vec<SceneRow> = stmt
@@ -2307,7 +2458,7 @@ impl Database {
             let mut phash_entries: Vec<(String, String)> = Vec::new();
             {
                 let mut stmt = conn.prepare(
-                    "SELECT id, phash FROM scenes WHERE phash IS NOT NULL AND phash != ''",
+                    "SELECT id, phash FROM scenes WHERE phash IS NOT NULL AND phash != '' AND COALESCE(is_vaulted, 0) = 0",
                 )?;
                 let rows = stmt.query_map([], |row| {
                     Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
@@ -2322,6 +2473,7 @@ impl Database {
                 let mut stmt = conn.prepare(
                     "SELECT oshash, GROUP_CONCAT(id) FROM scenes
                      WHERE oshash IS NOT NULL AND oshash != ''
+                     AND COALESCE(is_vaulted, 0) = 0
                      GROUP BY oshash HAVING COUNT(*) > 1",
                 )?;
                 let rows = stmt.query_map([], |row| {
@@ -2483,7 +2635,8 @@ impl Database {
             "SELECT id, path FROM scenes
              WHERE (stash_id IS NULL OR stash_id = '')
              AND path IS NOT NULL AND path != ''
-             AND (md5 IS NULL OR oshash IS NULL OR length(oshash) != 16)",
+             AND (md5 IS NULL OR oshash IS NULL OR length(oshash) != 16)
+             AND COALESCE(is_vaulted, 0) = 0",
         )?;
         let rows = stmt.query_map([], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
@@ -2501,7 +2654,8 @@ impl Database {
             "SELECT COUNT(*) FROM scenes
              WHERE (stash_id IS NULL OR stash_id = '')
              AND path IS NOT NULL AND path != ''
-             AND (md5 IS NULL OR oshash IS NULL OR length(oshash) != 16)",
+             AND (md5 IS NULL OR oshash IS NULL OR length(oshash) != 16)
+             AND COALESCE(is_vaulted, 0) = 0",
             [],
             |row| row.get(0),
         )?;
@@ -2666,6 +2820,7 @@ impl Database {
                 "SELECT id FROM scenes
                  WHERE (stash_id IS NULL OR stash_id = '')
                  AND (md5 IS NOT NULL OR oshash IS NOT NULL)
+                 AND COALESCE(is_vaulted, 0) = 0
                  ORDER BY created_at DESC LIMIT ?1",
             )?;
             let rows = stmt.query_map(params![limit], |row| row.get::<_, String>(0))?;
@@ -2691,7 +2846,8 @@ impl Database {
         let count: i64 = conn.query_row(
             "SELECT COUNT(*) FROM scenes
              WHERE (stash_id IS NULL OR stash_id = '')
-             AND (md5 IS NOT NULL OR oshash IS NOT NULL)",
+             AND (md5 IS NOT NULL OR oshash IS NOT NULL)
+             AND COALESCE(is_vaulted, 0) = 0",
             [],
             |row| row.get(0),
         )?;
@@ -2931,7 +3087,7 @@ impl Database {
             }
             if let Some(row) = conn
                 .query_row(
-                    "SELECT id, title, path, thumb, source_url, channel, file_size, width, height FROM scenes WHERE id = ?1",
+                    "SELECT id, title, path, thumb, source_url, channel, file_size, width, height FROM scenes WHERE id = ?1 AND COALESCE(is_vaulted, 0) = 0",
                     params![id],
                     |row| {
                         Ok((
@@ -3041,6 +3197,7 @@ fn safe_file_stem(title: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::SceneSort;
     use tempfile::tempdir;
 
     fn test_scene(db: &Database, title: &str, source_url: Option<&str>) -> String {
@@ -3058,6 +3215,60 @@ mod tests {
             None,
         )
         .unwrap()
+    }
+
+    #[test]
+    fn vaulted_scenes_are_hidden_from_listings() {
+        let dir = tempdir().unwrap();
+        let db = Database::new(dir.path().to_path_buf()).unwrap();
+        let visible = test_scene(&db, "Visible clip", None);
+        let hidden = test_scene(&db, "Secret clip", None);
+        assert_eq!(
+            db.list_scenes(None, SceneSort::Newest, None, None)
+                .unwrap()
+                .len(),
+            2
+        );
+
+        let vault_path = dir.path().join("vault_media").join("secret.mp4");
+        db.mark_scene_vaulted(
+            &hidden,
+            vault_path.to_str().unwrap(),
+            Some("/library/secret.mp4"),
+        )
+        .unwrap();
+
+        // Plain listing, FTS search and id lookup all skip vaulted rows.
+        let scenes = db.list_scenes(None, SceneSort::Newest, None, None).unwrap();
+        assert_eq!(scenes.len(), 1);
+        assert_eq!(scenes[0].id, visible);
+        assert!(db
+            .list_scenes(Some("Secret"), SceneSort::Newest, None, None)
+            .unwrap()
+            .is_empty());
+
+        // The vault listing sees it, with the original location for restore.
+        assert_eq!(db.count_vaulted_scenes().unwrap(), 1);
+        let vaulted = db.list_vaulted_scenes(None, None).unwrap();
+        assert_eq!(vaulted.len(), 1);
+        assert_eq!(vaulted[0].id, hidden);
+        assert_eq!(
+            vaulted[0].original_path.as_deref(),
+            Some("/library/secret.mp4")
+        );
+        assert!(db.is_scene_vaulted(&hidden).unwrap());
+
+        // Restoring brings it back into normal listings.
+        db.mark_scene_unvaulted(&hidden, "/library/secret.mp4")
+            .unwrap();
+        assert_eq!(
+            db.list_scenes(None, SceneSort::Newest, None, None)
+                .unwrap()
+                .len(),
+            2
+        );
+        assert!(!db.is_scene_vaulted(&hidden).unwrap());
+        assert_eq!(db.count_vaulted_scenes().unwrap(), 0);
     }
 
     #[test]

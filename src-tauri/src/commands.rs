@@ -7,7 +7,7 @@ use crate::models::{
     OrphanSidecar, Performer, PornhubCategoryEntry, SaveSearchRequest, SavedSearch, ScanResult,
     Scene, SceneFilter, SceneSort, SiteInfo, Tag, UpdateCollectionRequest,
     UpdateSavedSearchRequest, UpdateSceneRequest, WatchProgress, WatchlistPollResult,
-    WatchlistStatus,
+    WatchlistStatus, VaultScene, VaultStatus,
 };
 use crate::state::AppState;
 use crate::vault::CookieSiteInfo;
@@ -18,6 +18,22 @@ type CmdResult<T> = Result<T, String>;
 
 fn map_err<T>(result: AppResult<T>) -> CmdResult<T> {
     result.map_err(|e| e.to_string())
+}
+
+/// Refuse a scene whose files are in the vault while the vault is locked.
+///
+/// IPC is not behind the LAN gate, so this is the local equivalent: a stale UI
+/// holding an id from before the lock must not get its path, title or
+/// thumbnail, and must not be able to hand the file to an external player.
+fn ensure_scene_visible(state: &AppState, scene: &Scene) -> CmdResult<()> {
+    let path = scene.path.as_deref().unwrap_or_default();
+    let thumb = scene.thumb.as_deref().unwrap_or_default();
+    if (state.media_vault.is_vault_path(path) || state.media_vault.is_vault_path(thumb))
+        && !state.media_vault.is_unlocked()
+    {
+        return Err("Scene not found".to_string());
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -605,7 +621,11 @@ pub async fn regenerate_lan_server(
 
 #[tauri::command]
 pub fn get_scene(state: State<'_, Arc<AppState>>, id: String) -> CmdResult<Scene> {
-    map_err(state.get_scene(&id))
+    // A locked vault must not hand out vaulted rows (paths, titles, thumbs) to
+    // any caller — including a stale UI holding an id from before the lock.
+    let scene = map_err(state.get_scene(&id))?;
+    ensure_scene_visible(&state, &scene)?;
+    Ok(scene)
 }
 
 #[tauri::command]
@@ -633,6 +653,7 @@ pub async fn open_scene_in_explorer(
 ) -> CmdResult<()> {
     use tauri_plugin_opener::OpenerExt;
     let scene = map_err(state.get_scene(&id))?;
+    ensure_scene_visible(&state, &scene)?;
     let path = scene
         .path
         .ok_or_else(|| "Scene has no file on disk".to_string())?;
@@ -648,6 +669,7 @@ pub async fn open_scene_with_default(
     id: String,
 ) -> CmdResult<()> {
     let scene = map_err(state.get_scene(&id))?;
+    ensure_scene_visible(&state, &scene)?;
     let path = scene
         .path
         .ok_or_else(|| "Scene has no file on disk".to_string())?;
@@ -1422,4 +1444,64 @@ pub fn set_player_fullscreen(app: AppHandle, enabled: bool, landscape: bool) -> 
     map_err(crate::mobile::ytdlp_bridge::set_immersive(
         &app, enabled, landscape,
     ))
+}
+
+// ==== Media vault ========================================================
+
+#[tauri::command]
+pub async fn vault_status(state: State<'_, Arc<AppState>>) -> CmdResult<VaultStatus> {
+    map_err(state.vault_status())
+}
+
+/// Unlocks the vault session. The frontend must have completed a biometric
+/// prompt first; this command only opens the *session* window.
+#[tauri::command]
+pub async fn vault_unlock(state: State<'_, Arc<AppState>>) -> CmdResult<VaultStatus> {
+    map_err(state.unlock_vault())
+}
+
+#[tauri::command]
+pub async fn vault_lock(state: State<'_, Arc<AppState>>) -> CmdResult<VaultStatus> {
+    map_err(state.lock_vault())
+}
+
+#[tauri::command]
+pub async fn vault_scene(state: State<'_, Arc<AppState>>, id: String) -> CmdResult<Scene> {
+    // The move is a copy across filesystems for big files; keep it off the
+    // async runtime so the rest of the UI/IPC stays responsive.
+    let app_state = state.inner().clone();
+    let result = tauri::async_runtime::spawn_blocking(move || app_state.vault_scene(&id))
+        .await
+        .map_err(|e| format!("Vault move failed: {e}"))?;
+    map_err(result)
+}
+
+#[tauri::command]
+pub async fn vault_scenes(
+    state: State<'_, Arc<AppState>>,
+    ids: Vec<String>,
+) -> CmdResult<Vec<Scene>> {
+    let app_state = state.inner().clone();
+    let result = tauri::async_runtime::spawn_blocking(move || app_state.vault_scenes(&ids))
+        .await
+        .map_err(|e| format!("Vault move failed: {e}"))?;
+    map_err(result)
+}
+
+#[tauri::command]
+pub async fn unvault_scene(state: State<'_, Arc<AppState>>, id: String) -> CmdResult<Scene> {
+    let app_state = state.inner().clone();
+    let result = tauri::async_runtime::spawn_blocking(move || app_state.unvault_scene(&id))
+        .await
+        .map_err(|e| format!("Vault restore failed: {e}"))?;
+    map_err(result)
+}
+
+#[tauri::command]
+pub async fn vault_list(
+    state: State<'_, Arc<AppState>>,
+    limit: Option<i64>,
+    offset: Option<i64>,
+) -> CmdResult<Vec<VaultScene>> {
+    map_err(state.list_vaulted_scenes(limit, offset))
 }

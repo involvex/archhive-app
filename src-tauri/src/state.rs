@@ -4,7 +4,7 @@ use crate::error::AppResult;
 use crate::models::{
     AppSettings, BrowseKind, BrowseOrientation, BrowseQuery, Collection, CreateCollectionRequest,
     DownloadJob, DuplicateGroup, HealthResponse, MediaItem, Performer, ScanResult, Scene, SiteInfo,
-    Tag, UpdateCollectionRequest,
+    Tag, UpdateCollectionRequest, VaultScene, VaultStatus,
 };
 use crate::server::LanServer;
 use crate::sites::registry::SiteRegistry;
@@ -35,6 +35,7 @@ pub struct AppState {
     pub downloads: Arc<DownloadManager>,
     pub network_monitor: Arc<NetworkMonitor>,
     pub vault: Arc<CookieVault>,
+    pub media_vault: Arc<crate::secure_vault::MediaVault>,
     pub lan_server: Arc<Mutex<Option<LanServer>>>,
     pub static_ui_dir: Arc<Mutex<Option<PathBuf>>>,
     library_root_cache: Arc<Mutex<Option<PathBuf>>>,
@@ -49,6 +50,7 @@ impl AppState {
         static_ui_dir: Option<PathBuf>,
     ) -> AppResult<Self> {
         let vault = Arc::new(CookieVault::new(data_dir.clone(), db.connection())?);
+        let media_vault = Arc::new(crate::secure_vault::MediaVault::new(&data_dir)?);
         let sites = Arc::new(SiteRegistry::new());
         let lan_port = db.get_settings().map(|s| s.lan_port).unwrap_or(8787);
         let site_ctx = Arc::new(SiteContext::with_lan_port(
@@ -80,6 +82,7 @@ impl AppState {
             downloads,
             network_monitor,
             vault,
+            media_vault,
             lan_server: Arc::new(Mutex::new(None)),
             static_ui_dir: Arc::new(Mutex::new(static_ui_dir)),
             library_root_cache: Arc::new(Mutex::new(None)),
@@ -107,6 +110,146 @@ impl AppState {
 
     fn invalidate_library_cache(&self) {
         *self.library_root_cache.lock() = None;
+    }
+
+    // ---- Media vault -----------------------------------------------------
+
+    pub fn vault_status(&self) -> AppResult<VaultStatus> {
+        let settings = self.get_settings()?;
+        self.media_vault.status(&self.db, &settings)
+    }
+
+    pub fn require_vault_unlocked(&self) -> AppResult<()> {
+        self.media_vault.assert_unlocked()
+    }
+
+    pub fn unlock_vault(&self) -> AppResult<VaultStatus> {
+        let settings = self.get_settings()?;
+        if !settings.vault_enabled {
+            return Err(crate::error::AppError::Forbidden(
+                "The vault is disabled in Settings.".into(),
+            ));
+        }
+        self.media_vault.unlock_for(settings.vault_auto_lock_mins);
+        self.media_vault.status(&self.db, &settings)
+    }
+
+    pub fn lock_vault(&self) -> AppResult<VaultStatus> {
+        self.media_vault.lock();
+        let settings = self.get_settings()?;
+        self.media_vault.status(&self.db, &settings)
+    }
+
+    pub fn vault_scene(&self, scene_id: &str) -> AppResult<Scene> {
+        let settings = self.get_settings()?;
+        if !settings.vault_enabled {
+            return Err(crate::error::AppError::Forbidden(
+                "Enable the vault in Settings first.".into(),
+            ));
+        }
+        self.media_vault.assert_unlocked()?;
+        let scene = self.db.get_scene(scene_id)?;
+        let original_path = scene.path.clone().unwrap_or_default();
+        let vaulted = self.media_vault.vault_scene(&self.db, &scene)?;
+        // The file left the shared volume: nudge Android's MediaStore so the
+        // gallery drops its stale row (no-op off-device).
+        self.rescan_media_paths(&[original_path]);
+        Ok(vaulted)
+    }
+
+    pub fn vault_scenes(&self, ids: &[String]) -> AppResult<Vec<Scene>> {
+        let settings = self.get_settings()?;
+        if !settings.vault_enabled {
+            return Err(crate::error::AppError::Forbidden(
+                "Enable the vault in Settings first.".into(),
+            ));
+        }
+        self.media_vault.assert_unlocked()?;
+        let mut moved = Vec::new();
+        let mut moved_from: Vec<String> = Vec::new();
+        let mut first_error: Option<crate::error::AppError> = None;
+        for id in ids {
+            match self.db.get_scene(id).map(|scene| {
+                let original = scene.path.clone().unwrap_or_default();
+                (scene, original)
+            }) {
+                Ok((scene, original)) => match self.media_vault.vault_scene(&self.db, &scene) {
+                    Ok(vaulted) => {
+                        moved_from.push(original);
+                        moved.push(vaulted);
+                    }
+                    Err(e) => {
+                        if first_error.is_none() {
+                            first_error = Some(e);
+                        }
+                    }
+                },
+                Err(e) => {
+                    if first_error.is_none() {
+                        first_error = Some(e);
+                    }
+                }
+            }
+        }
+        if moved.is_empty() {
+            if let Some(e) = first_error {
+                return Err(e);
+            }
+        }
+        self.rescan_media_paths(&moved_from);
+        Ok(moved)
+    }
+
+    pub fn unvault_scene(&self, scene_id: &str) -> AppResult<Scene> {
+        self.media_vault.assert_unlocked()?;
+        let scene = self.db.get_scene(scene_id)?;
+        let library_root = self.cached_library_root()?;
+        let restored = self.media_vault.restore_scene(
+            &self.db,
+            &scene,
+            &library_root.to_string_lossy(),
+        )?;
+        // The file is back on the shared volume - index it again.
+        let restored_path = restored.path.clone().unwrap_or_default();
+        self.rescan_media_paths(&[restored_path]);
+        Ok(restored)
+    }
+
+    pub fn list_vaulted_scenes(
+        &self,
+        limit: Option<i64>,
+        offset: Option<i64>,
+    ) -> AppResult<Vec<VaultScene>> {
+        self.media_vault.assert_unlocked()?;
+        self.db.list_vaulted_scenes(limit, offset)
+    }
+
+    /// Resolve a scene's file for playback/thumbnailing, refusing vaulted
+    /// content while the vault is locked.
+    pub fn scene_media_path(&self, scene_id: &str) -> AppResult<PathBuf> {
+        let scene = self.db.get_scene(scene_id)?;
+        let path = scene
+            .path
+            .ok_or_else(|| crate::error::AppError::NotFound(format!("scene {scene_id}")))?;
+        if self.media_vault.is_vault_path(&path) {
+            self.media_vault.assert_unlocked()?;
+        }
+        Ok(PathBuf::from(path))
+    }
+
+    /// Ask the platform media indexer to re-examine these paths.
+    ///
+    /// Android keeps `MediaStore` rows for files that were moved away, which is
+    /// why a vaulted file can still show up in a gallery app. Rescanning the
+    /// old path drops the stale row; rescanning a restored path indexes it
+    /// again. No-op on desktop (and best effort everywhere).
+    fn rescan_media_paths(&self, paths: &[String]) {
+        let paths: Vec<String> = paths
+            .iter()
+            .filter(|p| !p.trim().is_empty())
+            .cloned()
+            .collect();
+        crate::mobile::media_scan::rescan_paths(&self.app, &paths);
     }
 
     pub fn health() -> HealthResponse {

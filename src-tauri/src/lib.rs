@@ -10,6 +10,7 @@ mod media;
 mod metadata;
 mod mobile;
 mod models;
+mod secure_vault;
 mod server;
 mod sites;
 mod state;
@@ -199,6 +200,15 @@ pub fn run() {
     #[cfg(mobile)]
     let builder = builder.plugin(mobile::share::init());
 
+    // Media vault: OS biometric prompt (the plugin is mobile-only; desktop
+    // builds confirm vault unlocks with a plain dialog) + Android MediaStore
+    // rescan so moved files drop out of gallery indexes.
+    #[cfg(mobile)]
+    let builder = builder.plugin(tauri_plugin_biometric::init());
+
+    #[cfg(mobile)]
+    let builder = builder.plugin(mobile::media_scan::init());
+
     let builder = builder.plugin(cookie_login::init());
 
     #[cfg(mobile)]
@@ -343,6 +353,13 @@ pub fn run() {
             commands::batch_update_scenes,
             commands::list_pornhub_categories,
             commands::set_player_fullscreen,
+            commands::vault_status,
+            commands::vault_unlock,
+            commands::vault_lock,
+            commands::vault_scene,
+            commands::vault_scenes,
+            commands::unvault_scene,
+            commands::vault_list,
             commands::probe_scene_metadata,
             commands::probe_library_durations,
             commands::ffmpeg_status,

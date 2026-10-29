@@ -1,5 +1,6 @@
 pub mod binary_installer;
 pub mod cookie_harvest;
+pub mod media_scan;
 pub mod share;
 pub mod standalone;
 pub mod termux_bridge;

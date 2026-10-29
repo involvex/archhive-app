@@ -280,6 +280,38 @@ export interface AppSettings {
   rec_preferred_performers?: string[];
   /** Tags excluded from recommendations. */
   rec_excluded_tags?: string[];
+  /** Media vault: enables the Vault tab + biometric lock. Off by default. */
+  vault_enabled?: boolean;
+  /** Minutes of inactivity before the vault re-locks (0 = never). */
+  vault_auto_lock_mins?: number;
+  /** Lock the vault when the app goes to the background. */
+  vault_lock_on_background?: boolean;
+  /** Expose vaulted media over the LAN REST API (default false). */
+  vault_lan_exposed?: boolean;
+}
+
+/** A scene held in the vault. Carries no playable path - stream via the app. */
+export interface VaultScene {
+  id: string;
+  title: string;
+  duration?: number;
+  thumb?: string;
+  file_size?: number;
+  original_path?: string;
+  vaulted_at?: string;
+}
+
+export interface VaultStatus {
+  enabled: boolean;
+  unlocked: boolean;
+  item_count: number;
+  auto_lock_mins: number;
+  /** Unix seconds when the session lock expires (null while locked). */
+  expires_at?: number;
+  lan_exposed: boolean;
+  biometric_available: boolean;
+  /** Absolute private vault directory (backend-owned). */
+  vault_root?: string;
 }
 
 export interface MergeDuplicatesResult {

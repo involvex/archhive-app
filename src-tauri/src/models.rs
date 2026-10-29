@@ -568,6 +568,21 @@ pub struct AppSettings {
     /// Tags excluded from recommendations.
     #[serde(default)]
     pub rec_excluded_tags: Vec<String>,
+    /// Media vault: when on, the Vault tab is available and items can be
+    /// locked behind biometrics. Off by default; enabling creates the vault
+    /// directory but moves nothing until the user vaults a scene.
+    #[serde(default)]
+    pub vault_enabled: bool,
+    /// Minutes of inactivity before the vault re-locks (0 = never auto-lock).
+    #[serde(default = "default_vault_auto_lock_mins")]
+    pub vault_auto_lock_mins: u32,
+    /// Lock the vault when the app goes to the background / loses focus.
+    #[serde(default = "default_vault_lock_on_background")]
+    pub vault_lock_on_background: bool,
+    /// Expose vaulted scenes over the LAN REST API. Off by default: a bearer
+    /// token is not a biometric check.
+    #[serde(default)]
+    pub vault_lan_exposed: bool,
 }
 
 fn default_phash_threshold() -> u8 {
@@ -630,6 +645,14 @@ fn default_rec_include_feed() -> bool {
 
 fn default_rec_max_items() -> u32 {
     24
+}
+
+fn default_vault_auto_lock_mins() -> u32 {
+    5
+}
+
+fn default_vault_lock_on_background() -> bool {
+    true
 }
 
 fn default_auto_check_binaries() -> bool {
@@ -764,6 +787,10 @@ impl Default for AppSettings {
             rec_preferred_tags: Vec::new(),
             rec_preferred_performers: Vec::new(),
             rec_excluded_tags: Vec::new(),
+            vault_enabled: false,
+            vault_auto_lock_mins: default_vault_auto_lock_mins(),
+            vault_lock_on_background: default_vault_lock_on_background(),
+            vault_lan_exposed: false,
         }
     }
 }
@@ -895,6 +922,36 @@ pub struct ExportCollectionRequest {
 pub struct ExportCollectionResult {
     pub content: String,
     pub filename: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VaultScene {
+    pub id: String,
+    pub title: String,
+    pub duration: Option<u32>,
+    pub thumb: Option<String>,
+    pub file_size: Option<u64>,
+    /// Where the file lived before it was vaulted, so a restore can be exact.
+    pub original_path: Option<String>,
+    pub vaulted_at: Option<String>,
+}
+
+/// State of the media vault for the current session.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VaultStatus {
+    pub enabled: bool,
+    pub unlocked: bool,
+    pub item_count: u32,
+    pub auto_lock_mins: u32,
+    /// Unix seconds at which the session lock expires (None while locked or
+    /// when auto-lock is disabled).
+    pub expires_at: Option<i64>,
+    pub lan_exposed: bool,
+    /// Whether the platform can gate unlocks on biometrics/device credential.
+    pub biometric_available: bool,
+    /// Absolute path of the private vault directory. The frontend uses it to
+    /// avoid routing vault media through the LAN listener.
+    pub vault_root: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

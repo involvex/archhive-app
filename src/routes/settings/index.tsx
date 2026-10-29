@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api/client";
 import { resolveAppVersion } from "@/lib/appVersion";
@@ -44,6 +44,7 @@ import type {
   ThumbCacheStats,
   AppSettings,
   AppTheme,
+  VaultStatus,
 } from "@/lib/types";
 import { DuplicateGroupCard } from "@/components/DuplicateGroupCard";
 import { DirectoryPickerDialog } from "@/components/DirectoryPickerDialog";
@@ -216,6 +217,8 @@ function SettingsPage() {
   const [thumbStatsLoading, setThumbStatsLoading] = useState(false);
   // Issue #2: gate library walks on the Library tab (default Engine = no walk).
   const [settingsTab, setSettingsTab] = useState("engine");
+  // Media vault: status shown on the Privacy tab, refreshed when it opens.
+  const [vaultStatus, setVaultStatus] = useState<VaultStatus | null>(null);
   const [discoveredHosts, setDiscoveredHosts] = useState<LanHost[]>([]);
   const [discovering, setDiscovering] = useState(false);
   const [discoverStatus, setDiscoverStatus] = useState("");
@@ -583,6 +586,16 @@ function SettingsPage() {
     void refreshVersions();
   }, [refreshVersions]);
 
+  // Media vault status (Privacy tab). Cheap local call; the vault is a
+  // session lock in the backend, so this also reports the item count.
+  const refreshVaultStatus = useCallback(async () => {
+    try {
+      setVaultStatus(await api.vaultStatus());
+    } catch {
+      setVaultStatus(null);
+    }
+  }, []);
+
   // #33: In-app diagnostics log viewer + export.
   const loadDiagnostics = useCallback(async () => {
     setDiagnosticsLoading(true);
@@ -702,6 +715,13 @@ function SettingsPage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadStorageStats();
   }, [settingsTab, loadStorageStats]);
+
+  // Vault status is only needed on the Privacy tab.
+  useEffect(() => {
+    if (settingsTab !== "privacy") return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void refreshVaultStatus();
+  }, [settingsTab, refreshVaultStatus]);
 
   async function saveCookies() {
     if (!selectedSite || !cookieText.trim()) return;
@@ -2712,6 +2732,123 @@ function SettingsPage() {
                         link (includes token in URL when required).
                       </p>
                     </div>
+                  )}
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </Tabs.Content>
+
+        <Tabs.Content value="privacy" className="mt-4 space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Media Vault</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-xs text-[var(--color-muted-foreground)]">
+                Vaulting <strong>moves</strong> a scene into ArcHive&apos;s private app storage and
+                hides it from the library until you unlock. Files are not encrypted — they are moved
+                somewhere only ArcHive can reach (on Android, private internal storage with a{" "}
+                <code>.nomedia</code> marker, so gallery and file apps stop seeing them).
+              </p>
+
+              <div className="flex items-center gap-3">
+                <Switch.Root
+                  checked={settings.vault_enabled === true}
+                  onCheckedChange={(checked) => {
+                    void persistBackendSettings({ vault_enabled: checked }).catch((e: unknown) =>
+                      setTestStatus(e instanceof Error ? e.message : "Failed to update vault"),
+                    );
+                    void refreshVaultStatus();
+                  }}
+                  className="h-5 w-9 rounded-full bg-[var(--color-secondary)] data-[state=checked]:bg-[var(--color-primary)]"
+                >
+                  <Switch.Thumb className="block h-4 w-4 translate-x-0.5 rounded-full bg-white transition data-[state=checked]:translate-x-[18px]" />
+                </Switch.Root>
+                <span className="text-sm">Enable the vault</span>
+              </div>
+
+              {!settings.vault_enabled && (vaultStatus?.item_count ?? 0) > 0 && (
+                <p className="ml-7 rounded-md border border-yellow-500/40 bg-yellow-500/10 p-2 text-xs text-yellow-300">
+                  {vaultStatus?.item_count} scene(s) are still in the vault. Their files stay hidden
+                  until you re-enable it and restore them from Library → Vault.
+                </p>
+              )}
+
+              {settings.vault_enabled && (
+                <>
+                  <div className="ml-7 space-y-2">
+                    <label className="flex items-center gap-3 text-sm">
+                      <span className="w-48 shrink-0 text-[var(--color-muted-foreground)]">
+                        Auto-lock after (minutes)
+                      </span>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={240}
+                        value={settings.vault_auto_lock_mins ?? 5}
+                        onChange={(e) => {
+                          const next = Math.max(0, Math.min(240, Number(e.target.value) || 0));
+                          void persistBackendSettings({ vault_auto_lock_mins: next });
+                        }}
+                        className="w-24"
+                      />
+                    </label>
+                    <p className="text-xs text-[var(--color-muted-foreground)]">
+                      0 keeps the vault unlocked until you lock it or quit.
+                    </p>
+                  </div>
+
+                  <div className="ml-7 flex items-center gap-3">
+                    <Switch.Root
+                      checked={settings.vault_lock_on_background !== false}
+                      onCheckedChange={(checked) =>
+                        void persistBackendSettings({ vault_lock_on_background: checked })
+                      }
+                      className="h-5 w-9 rounded-full bg-[var(--color-secondary)] data-[state=checked]:bg-[var(--color-primary)]"
+                    >
+                      <Switch.Thumb className="block h-4 w-4 translate-x-0.5 rounded-full bg-white transition data-[state=checked]:translate-x-[18px]" />
+                    </Switch.Root>
+                    <span className="text-sm">Lock when ArcHive goes to the background</span>
+                  </div>
+
+                  <div className="ml-7 flex items-center gap-3">
+                    <Switch.Root
+                      checked={settings.vault_lan_exposed === true}
+                      onCheckedChange={(checked) =>
+                        void persistBackendSettings({ vault_lan_exposed: checked })
+                      }
+                      className="h-5 w-9 rounded-full bg-[var(--color-secondary)] data-[state=checked]:bg-[var(--color-primary)]"
+                    >
+                      <Switch.Thumb className="block h-4 w-4 translate-x-0.5 rounded-full bg-white transition data-[state=checked]:translate-x-[18px]" />
+                    </Switch.Root>
+                    <span className="text-sm">Expose vaulted items over the LAN server</span>
+                  </div>
+                  {settings.vault_lan_exposed && (
+                    <p className="ml-7 text-xs text-yellow-400">
+                      Vaulted titles and media become reachable with the LAN token only. Anyone with
+                      the token can read them — keep this off on shared networks.
+                    </p>
+                  )}
+
+                  <div className="ml-7 flex flex-wrap items-center gap-3 text-sm">
+                    <span className="text-[var(--color-muted-foreground)]">
+                      {vaultStatus
+                        ? `${vaultStatus.item_count} item(s) in the vault`
+                        : "Vault status unavailable"}
+                    </span>
+                    <Link to="/library/vault" className="underline">
+                      Open vault
+                    </Link>
+                    {vaultStatus?.unlocked && (
+                      <span className="text-xs text-green-400">Unlocked this session</span>
+                    )}
+                  </div>
+                  {!caps.localIpc && !caps.libraryScanLocal && (
+                    <p className="ml-7 text-xs text-yellow-400">
+                      The vault runs in the app that owns the library. Switch Engine to Local to use
+                      it.
+                    </p>
                   )}
                 </>
               )}

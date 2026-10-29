@@ -38,6 +38,14 @@ pub async fn list_files(
     let root = library_root(&state)?;
     let rel = query.path.unwrap_or_default();
     let dir = resolve_under_library(&root, &rel).map_err(|_| StatusCode::FORBIDDEN)?;
+    // The vault is never browsable over the LAN, whatever the lock state.
+    if state
+        .app
+        .media_vault
+        .is_vault_path(&dir.to_string_lossy())
+    {
+        return Err(StatusCode::NOT_FOUND);
+    }
     if !dir.is_dir() {
         return Err(StatusCode::NOT_FOUND);
     }
@@ -91,6 +99,15 @@ pub async fn stream_file(
         .ok_or(StatusCode::BAD_REQUEST)?;
     let root = library_root(&state)?;
     let file_path = resolve_under_library(&root, &rel).map_err(|_| StatusCode::FORBIDDEN)?;
+    // Vault files are only reachable through `/api/scenes/{id}/media`, which
+    // enforces the vault lock. Never hand them out from the files browser.
+    if state
+        .app
+        .media_vault
+        .is_vault_path(&file_path.to_string_lossy())
+    {
+        return Err(StatusCode::NOT_FOUND);
+    }
     if !file_path.is_file() {
         return Err(StatusCode::NOT_FOUND);
     }

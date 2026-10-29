@@ -12,6 +12,8 @@ pub enum AppError {
     Image(#[from] image::ImageError),
     #[error("not found: {0}")]
     NotFound(String),
+    #[error("forbidden: {0}")]
+    Forbidden(String),
     #[error("invalid input: {0}")]
     InvalidInput(String),
     #[error("download error: {0}")]

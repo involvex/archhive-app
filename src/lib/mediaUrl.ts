@@ -1,7 +1,7 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { getAppRuntime, hasLocalBackend, shouldUseRemoteApi } from "./runtime";
 import { useSettingsStore } from "./stores/settings";
-import type { Scene } from "./types";
+import type { Scene, VaultScene } from "./types";
 
 const VIDEO_EXT = /\.(mp4|m4v|webm|mkv|avi|mov|wmv|flv)$/i;
 const PLAYABLE_IN_WEBVIEW = /\.(mp4|m4v|webm)$/i;
@@ -33,6 +33,34 @@ function remoteMediaUrl(path: string, tokenQs: string): string | undefined {
   return `${base}${path}${tokenQs}`;
 }
 
+/**
+ * Absolute path of the media vault, learned from `vault_status`.
+ *
+ * Vault files live outside the library root, so the LAN listener refuses them
+ * unless the user opted into LAN exposure. The local UI must therefore bypass
+ * the LAN listener for vault media; this is how it recognises it.
+ */
+let vaultRoot: string | undefined;
+/**
+ * Whether the current session has the vault open. Scenes keep vault paths in
+ * the row, so a stale UI (Continue watching, an open player, a cached list)
+ * could otherwise ask for a thumbnail of locked content.
+ */
+let vaultUnlocked = false;
+
+export function setVaultMediaRoot(root?: string): void {
+  vaultRoot = root ? root.replace(/\\/g, "/").replace(/\/+$/, "") : undefined;
+}
+
+export function setVaultMediaUnlocked(unlocked: boolean): void {
+  vaultUnlocked = unlocked;
+}
+
+export function isVaultMediaPath(path?: string): boolean {
+  if (!path || !vaultRoot) return false;
+  return path.replace(/\\/g, "/").startsWith(vaultRoot);
+}
+
 export function sceneThumbUrl(scene: Scene): string | undefined {
   if (!scene.thumb) return undefined;
 
@@ -40,6 +68,16 @@ export function sceneThumbUrl(scene: Scene): string | undefined {
 
   if (shouldUseRemoteApi()) {
     return remoteMediaUrl(`/api/scenes/${scene.id}/thumb`, tokenQuery(remoteAuthToken()));
+  }
+
+  if (isVaultMediaPath(scene.thumb)) {
+    // Locked vault: never hand out a URL for vaulted content, even from a
+    // stale list that still holds the row.
+    if (!vaultUnlocked) return undefined;
+    if (getAppRuntime() === "mobile-tauri" && hasLocalBackend()) {
+      return `http://127.0.0.1:${settings.lan_port}/api/scenes/${scene.id}/thumb${tokenQuery(lanAuthToken())}`;
+    }
+    return convertFileSrc(scene.thumb);
   }
 
   if (getAppRuntime() === "desktop-tauri") {
@@ -68,6 +106,17 @@ export function sceneMediaUrl(scene: Scene): string | undefined {
     return remoteMediaUrl(`/api/scenes/${scene.id}/media`, tokenQuery(remoteAuthToken()));
   }
 
+  // Vault files sit outside the library: the LAN listener only serves them
+  // when the user opted in, so the local UI reads them directly (desktop) or
+  // through the on-device loopback server (phone).
+  if (isVaultMediaPath(scene.path)) {
+    if (!vaultUnlocked) return undefined;
+    if (getAppRuntime() === "mobile-tauri" && hasLocalBackend()) {
+      return `http://127.0.0.1:${settings.lan_port}/api/scenes/${scene.id}/media${tokenQuery(lanAuthToken())}`;
+    }
+    return convertFileSrc(scene.path);
+  }
+
   if (getAppRuntime() === "desktop-tauri") {
     if (settings.lan_enabled) {
       return `http://127.0.0.1:${settings.lan_port}/api/scenes/${scene.id}/media${tokenQuery(lanAuthToken())}`;
@@ -80,6 +129,23 @@ export function sceneMediaUrl(scene: Scene): string | undefined {
   }
 
   return undefined;
+}
+
+/** Thumbnail for a vaulted scene.
+ *
+ * The vault grid only renders while the session is unlocked, and every read
+ * path re-checks the lock. Phones go through the on-device loopback server (so
+ * `vault_lan_exposed` cannot matter); the desktop reads the sidecar directly
+ * because its LAN server is a real network listener.
+ */
+export function vaultThumbUrl(item: VaultScene): string | undefined {
+  if (!item.thumb) return undefined;
+  if (!vaultUnlocked) return undefined;
+  const { settings } = useSettingsStore.getState();
+  if (getAppRuntime() === "mobile-tauri" && hasLocalBackend()) {
+    return `http://127.0.0.1:${settings.lan_port}/api/scenes/${item.id}/thumb${tokenQuery(lanAuthToken())}`;
+  }
+  return convertFileSrc(item.thumb);
 }
 
 export function isVideoScene(scene: Scene): boolean {

@@ -20,6 +20,9 @@ import { SkeletonGrid } from "@/components/SkeletonGrid";
 import { ErrorState } from "@/components/ErrorState";
 import { EmptyState } from "@/components/EmptyState";
 import { usePullToRefresh } from "@/lib/hooks/usePullToRefresh";
+import { useRecentlyViewedStore } from "@/lib/stores/recentlyViewed";
+import { useVaultStore } from "@/lib/stores/vault";
+import { useSettingsStore } from "@/lib/stores/settings";
 import { useIsLandscape, useMediaQuery } from "@/lib/hooks/useMediaQuery";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { vibrateTick } from "@/lib/haptics";
@@ -183,6 +186,8 @@ function ScenesPage() {
   const [deleteTarget, setDeleteTarget] = useState<Scene | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  // Media vault: only offer "Move to vault" when the feature is enabled.
+  const vaultEnabled = useSettingsStore((s) => s.settings.vault_enabled === true);
   // Landscape phones get an extra column — portrait stays at 3 so thumbs
   // stay tappable. (useIsLandscape gates on width so tablets are unaffected.)
   const isLandscape = useIsLandscape();
@@ -380,6 +385,68 @@ function ScenesPage() {
       next.delete(id);
       return next;
     });
+  }
+
+  /** Media vault: unlock (biometric) if needed, then move the file away. */
+  async function moveToVault(scene: Scene) {
+    const vault = useVaultStore.getState();
+    try {
+      if (!vault.status?.unlocked) {
+        const ok = await vault.unlock();
+        if (!ok) {
+          if (vault.error) toast.error(vault.error);
+          return;
+        }
+      }
+      await api.vaultScene(scene.id);
+      handleDeleted(scene.id);
+      // A vaulted scene must not linger in "Continue watching".
+      useRecentlyViewedStore.getState().remove(scene.id);
+      toast.success(`"${scene.title}" moved to the vault.`);
+      void useVaultStore.getState().refreshStatus();
+    } catch (e) {
+      toast.error(errorText(e));
+    }
+  }
+
+  /**
+   * Media vault, bulk path: unlock once, then move every selected scene.
+   *
+   * The backend already moves what it can and reports per-scene failures, so
+   * a partial move is normal; we surface the count and keep the bar open only
+   * when nothing at all moved.
+   */
+  async function moveSelectionToVault(): Promise<boolean> {
+    const vault = useVaultStore.getState();
+    try {
+      if (!vault.status?.unlocked) {
+        const ok = await vault.unlock();
+        if (!ok) {
+          if (vault.error) toast.error(vault.error);
+          return false;
+        }
+      }
+      const moved = await api.vaultScenes([...selectedIdsRef.current]);
+      const recentlyViewed = useRecentlyViewedStore.getState();
+      for (const scene of moved) {
+        handleDeleted(scene.id);
+        recentlyViewed.remove(scene.id);
+      }
+      if (moved.length === 0) {
+        toast.error("Nothing could be moved to the vault.");
+        return false;
+      }
+      toast.success(
+        moved.length === 1
+          ? `"${moved[0].title}" moved to the vault.`
+          : `${moved.length} scenes moved to the vault.`,
+      );
+      void useVaultStore.getState().refreshStatus();
+      return true;
+    } catch (e) {
+      toast.error(errorText(e));
+      return false;
+    }
   }
 
   function openMenuAt(scene: Scene, x: number, y: number) {
@@ -678,6 +745,8 @@ function ScenesPage() {
         selectedIds={[...selectedIds]}
         onClear={() => setSelectedIds(new Set())}
         onApplied={refresh}
+        canVault={vaultEnabled}
+        onMoveToVault={moveSelectionToVault}
       />
 
       <div className="flex items-center gap-2">
@@ -1136,6 +1205,7 @@ function ScenesPage() {
         onRenameFile={(s) => void renameFileToTitle(s)}
         onRegenThumb={(s) => void regenerateThumb(s)}
         onDelete={(s) => setDeleteTarget(s)}
+        onMoveToVault={vaultEnabled ? (s) => void moveToVault(s) : undefined}
       />
 
       {deleteTarget && (

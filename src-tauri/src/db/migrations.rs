@@ -283,3 +283,14 @@ UPDATE scenes SET oshash = NULL WHERE oshash IS NOT NULL AND length(oshash) != 1
 pub const MIGRATION_020: &str = r#"
 ALTER TABLE saved_searches ADD COLUMN filters TEXT;
 "#;
+
+/// Media vault: scenes whose files were moved into the app-private vault
+/// directory. `vault_original_path` keeps the pre-vault location so a restore
+/// can put the file back where the user found it. Rows are never deleted by
+/// vaulting - only hidden from listings while the vault is locked.
+pub const MIGRATION_021: &str = r#"
+ALTER TABLE scenes ADD COLUMN is_vaulted INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE scenes ADD COLUMN vault_original_path TEXT;
+ALTER TABLE scenes ADD COLUMN vaulted_at TEXT;
+CREATE INDEX IF NOT EXISTS idx_scenes_vaulted ON scenes(is_vaulted);
+"#;

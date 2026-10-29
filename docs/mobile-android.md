@@ -211,6 +211,7 @@ Video playback uses `GET /api/scenes/{id}/media` and `GET /api/files/stream` wit
 | `.\scripts\patch-android-lan.ps1`      | Allow HTTP + mDNS multicast on Android                 |
 | `.\scripts\patch-android-cookie.ps1`   | CookieLoginActivity + Termux RUN_COMMAND bridge        |
 | `.\scripts\patch-android-share.ps1`    | Share-sheet target (SEND text/plain to Bulk import)    |
+| `.\scripts\patch-android-vault.ps1`    | MediaScanPlugin + USE_BIOMETRIC for the media vault    |
 
 ## Share target (Android share sheet)
 
@@ -252,3 +253,28 @@ fork's `RUN_COMMAND` service. Needs `allow-external-apps = true` in Termux; ArcH
 fully without it.
 
 Supported sites, HttpOnly limits and the full flow: [cookie-import.md](./cookie-import.md).
+
+## Media vault on Android
+
+The vault (`docs/vault.md`) moves chosen scenes into app-private internal storage
+(`<app data>/vault_media/`, with a `.nomedia` marker). Other apps cannot read that
+directory, and `MediaStore` never indexes it.
+
+Two device-specific pieces are installed by `scripts/patch-android-vault.ps1`
+(part of `apply-android-patches.ps1`, so `android:regen` / `build:apk` pick it up):
+
+- **`MediaScanPlugin.kt`** — Rust calls it after every vault/restore
+  (`mobile::media_scan::rescan_paths`) to run `MediaScannerConnection.scanFile` on
+  the affected path. Without the rescan, a file moved out of `Download/ArcHive/`
+  keeps its `MediaStore` row and can linger in gallery apps as a broken thumbnail.
+- **`<uses-permission android:name="android.permission.USE_BIOMETRIC" />`** — needed
+  by `@tauri-apps/plugin-biometric` for the unlock prompt.
+
+Unlocking uses the device biometric/credential sheet. If no biometric is enrolled,
+the vault still opens (with a plain confirmation) so a user cannot be locked out of
+their own library — the UI flags that case as "no biometrics available".
+
+Vaulted scenes are never visible over Remote LAN unless **Settings → Privacy →
+Expose vaulted items over the LAN server** is on _and_ the desktop vault is
+unlocked; the on-device loopback server on the phone is exempt. See
+[lan-web.md](./lan-web.md#vaulted-media).

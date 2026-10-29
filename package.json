@@ -48,6 +48,7 @@
     "@radix-ui/react-tabs": "^1.1.21",
     "@tanstack/react-router": "^1.170.32",
     "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/plugin-biometric": "2.3.3",
     "@tauri-apps/plugin-dialog": "^2.7.3",
     "@tauri-apps/plugin-opener": "2.5.4",
     "class-variance-authority": "^0.7.1",

@@ -63,6 +63,8 @@ import type {
   SubmitFingerprintsResult,
   UnenrichedScenesResult,
   RehashResult,
+  VaultScene,
+  VaultStatus,
 } from "../types";
 import { getAppRuntime, shouldUseRemoteApi } from "../runtime";
 import { vibrateTick } from "../haptics";
@@ -183,6 +185,18 @@ async function localInvoke<T>(command: string, args?: Record<string, unknown>): 
     throw new Error("This action requires the app runtime.");
   }
   return invoke(command, args) as Promise<T>;
+}
+
+/** The vault lock lives in the local backend; remote hosts keep their own. */
+function requireLocalVault(): void {
+  if (getAppRuntime() === "browser") {
+    throw new Error("The vault requires the app runtime.");
+  }
+  if (shouldUseRemoteApi()) {
+    throw new Error(
+      "The vault is only available on the local library. Switch Engine to Local (or use the desktop app).",
+    );
+  }
 }
 
 function shouldUseDeviceCookieVault(): boolean {
@@ -436,6 +450,47 @@ export const api = {
       return remoteFetch<void>(`/api/scenes/${id}${qs}`, { method: "DELETE" });
     }
     return localInvoke("delete_scene", { id, deleteFiles });
+  },
+
+  // ---- Media vault ------------------------------------------------------
+  // Vault state is a session lock held by the *local* backend, so these are
+  // deliberately local-only: a remote host has its own lock and its own
+  // biometric prompt.
+
+  async vaultStatus(): Promise<VaultStatus> {
+    requireLocalVault();
+    return localInvoke<VaultStatus>("vault_status");
+  },
+
+  /** Opens the vault session. Call `requestVaultBiometricUnlock()` first. */
+  async vaultUnlock(): Promise<VaultStatus> {
+    requireLocalVault();
+    return localInvoke<VaultStatus>("vault_unlock");
+  },
+
+  async vaultLock(): Promise<VaultStatus> {
+    requireLocalVault();
+    return localInvoke<VaultStatus>("vault_lock");
+  },
+
+  async vaultScene(id: string): Promise<Scene> {
+    requireLocalVault();
+    return localInvoke<Scene>("vault_scene", { id });
+  },
+
+  async vaultScenes(ids: string[]): Promise<Scene[]> {
+    requireLocalVault();
+    return localInvoke<Scene[]>("vault_scenes", { ids });
+  },
+
+  async unvaultScene(id: string): Promise<Scene> {
+    requireLocalVault();
+    return localInvoke<Scene>("unvault_scene", { id });
+  },
+
+  async listVaultScenes(limit?: number, offset?: number): Promise<VaultScene[]> {
+    requireLocalVault();
+    return localInvoke<VaultScene[]>("vault_list", { limit, offset });
   },
 
   async generateMissingThumbs(): Promise<ThumbGenResult> {

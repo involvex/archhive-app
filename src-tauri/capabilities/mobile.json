@@ -20,6 +20,7 @@
     "dialog:allow-open",
     "opener:default",
     "shell:default",
-    "notification:default"
+    "notification:default",
+    "biometric:default"
   ]
 }

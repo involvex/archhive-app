@@ -32,6 +32,24 @@ Use **Settings → Engine → Remote LAN** with `http://<pc-ip>:8787` and the LA
 
 Supported in-browser formats depend on the device codec (MP4/WebM usually work; MKV may not).
 
+## Vaulted media
+
+Scenes in the **media vault** live outside the library root in app-private storage, so
+the LAN server treats them as invisible by default:
+
+| Condition                                                        | `GET /api/scenes/{id}`, `/thumb`, `/media`                  |
+| ---------------------------------------------------------------- | ----------------------------------------------------------- |
+| Vault locked                                                     | `404` (a locked vault must not confirm that a scene exists) |
+| Vault unlocked, **Expose vaulted items over the LAN server** off | `404`                                                       |
+| Vault unlocked, exposure on                                      | Served with the usual bearer token                          |
+
+`GET /api/files` and `/api/files/stream` never list or serve the vault directory, whatever
+the exposure setting — the folder browser is scoped to the library path.
+
+Exposure is off by default on purpose: a bearer token is not a biometric check, and the
+LAN token can end up in a browser history, a QR code screenshot, or a shared link. See
+`docs/vault.md`.
+
 ## Firewall
 
 Allow inbound **TCP 8787** on the desktop PC (Windows Defender Firewall).
