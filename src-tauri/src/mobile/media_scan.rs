@@ -30,6 +30,12 @@ struct ScanPayload {
     paths: Vec<String>,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DeletePayload {
+    paths: Vec<String>,
+}
+
 pub fn init<R: Runtime>() -> TauriPlugin<R> {
     Builder::new("media-scan")
         .setup(|app, api| {
@@ -76,6 +82,33 @@ pub fn rescan_paths<R: Runtime>(app: &AppHandle<R>, paths: &[String]) {
         };
         if let Err(e) = handle.run_mobile_plugin::<serde_json::Value>("scanFile", payload) {
             tracing::warn!("[media-scan] rescan failed: {e}");
+        }
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = (app, paths);
+    }
+}
+
+/// Try to delete files via Android MediaStore as a fallback when direct deletion fails.
+#[allow(dead_code)]
+pub fn delete_paths<R: Runtime>(app: &AppHandle<R>, paths: &[String]) {
+    if paths.is_empty() {
+        return;
+    }
+    #[cfg(target_os = "android")]
+    {
+        let Some(state) = app.try_state::<MediaScanState<R>>() else {
+            return;
+        };
+        let Some(handle) = state.handle.as_ref() else {
+            return;
+        };
+        let payload = DeletePayload {
+            paths: paths.to_vec(),
+        };
+        if let Err(e) = handle.run_mobile_plugin::<serde_json::Value>("deleteFile", payload) {
+            tracing::warn!("[media-scan] delete failed: {e}");
         }
     }
     #[cfg(not(target_os = "android"))]
