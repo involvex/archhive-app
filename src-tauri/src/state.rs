@@ -50,6 +50,11 @@ impl AppState {
         static_ui_dir: Option<PathBuf>,
     ) -> AppResult<Self> {
         let vault = Arc::new(CookieVault::new(data_dir.clone(), db.connection())?);
+        #[cfg(target_os = "android")]
+        let media_vault = Arc::new(
+            crate::secure_vault::MediaVault::new(&data_dir)?.with_app_handle(app.clone()),
+        );
+        #[cfg(not(target_os = "android"))]
         let media_vault = Arc::new(crate::secure_vault::MediaVault::new(&data_dir)?);
         let sites = Arc::new(SiteRegistry::new());
         let lan_port = db.get_settings().map(|s| s.lan_port).unwrap_or(8787);
@@ -150,10 +155,18 @@ impl AppState {
         self.media_vault.assert_unlocked()?;
         let scene = self.db.get_scene(scene_id)?;
         let original_path = scene.path.clone().unwrap_or_default();
+        let original_thumb = scene.thumb.clone().unwrap_or_default();
         let vaulted = self.media_vault.vault_scene(&self.db, &scene)?;
         // The file left the shared volume: nudge Android's MediaStore so the
         // gallery drops its stale row (no-op off-device).
-        self.rescan_media_paths(&[original_path]);
+        let mut paths_to_clean = Vec::new();
+        if !original_path.trim().is_empty() {
+            paths_to_clean.push(original_path);
+        }
+        if !original_thumb.trim().is_empty() && !self.media_vault.is_vault_path(&original_thumb) {
+            paths_to_clean.push(original_thumb);
+        }
+        self.rescan_media_paths(&paths_to_clean);
         Ok(vaulted)
     }
 
@@ -171,11 +184,17 @@ impl AppState {
         for id in ids {
             match self.db.get_scene(id).map(|scene| {
                 let original = scene.path.clone().unwrap_or_default();
-                (scene, original)
+                let original_thumb = scene.thumb.clone().unwrap_or_default();
+                (scene, original, original_thumb)
             }) {
-                Ok((scene, original)) => match self.media_vault.vault_scene(&self.db, &scene) {
+                Ok((scene, original, original_thumb)) => match self.media_vault.vault_scene(&self.db, &scene) {
                     Ok(vaulted) => {
-                        moved_from.push(original);
+                        if !original.trim().is_empty() {
+                            moved_from.push(original);
+                        }
+                        if !original_thumb.trim().is_empty() && !self.media_vault.is_vault_path(&original_thumb) {
+                            moved_from.push(original_thumb);
+                        }
                         moved.push(vaulted);
                     }
                     Err(e) => {
@@ -249,7 +268,29 @@ impl AppState {
             .filter(|p| !p.trim().is_empty())
             .cloned()
             .collect();
+        if paths.is_empty() {
+            return;
+        }
+        // Call immediately
         crate::mobile::media_scan::rescan_paths(&self.app, &paths);
+        #[cfg(target_os = "android")]
+        {
+            crate::mobile::media_scan::delete_paths(&self.app, &paths);
+        }
+        // On some Android devices, we need to rescan again after a short delay
+        #[cfg(target_os = "android")]
+        {
+            let app = self.app.clone();
+            let paths_clone = paths.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(500));
+                crate::mobile::media_scan::rescan_paths(&app, &paths_clone);
+                crate::mobile::media_scan::delete_paths(&app, &paths_clone);
+                std::thread::sleep(std::time::Duration::from_millis(1000));
+                crate::mobile::media_scan::rescan_paths(&app, &paths_clone);
+                crate::mobile::media_scan::delete_paths(&app, &paths_clone);
+            });
+        }
     }
 
     pub fn health() -> HealthResponse {

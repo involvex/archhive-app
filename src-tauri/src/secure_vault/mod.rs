@@ -20,6 +20,9 @@ use crate::models::{AppSettings, Scene, VaultStatus};
 use parking_lot::RwLock;
 use std::path::{Component, Path, PathBuf};
 use std::time::{Duration, Instant};
+#[cfg(target_os = "android")]
+use tauri::AppHandle;
+use tracing;
 
 /// Directory name under the app data dir.
 const VAULT_DIR: &str = "vault_media";
@@ -31,6 +34,8 @@ const NOMEDIA: &str = ".nomedia";
 pub struct MediaVault {
     root: PathBuf,
     state: RwLock<VaultState>,
+    #[cfg(target_os = "android")]
+    app_handle: Option<tauri::AppHandle>,
 }
 
 #[derive(Default)]
@@ -50,7 +55,15 @@ impl MediaVault {
         Ok(Self {
             root,
             state: RwLock::new(VaultState::default()),
+            #[cfg(target_os = "android")]
+            app_handle: None,
         })
+    }
+
+    #[cfg(target_os = "android")]
+    pub fn with_app_handle(mut self, app: tauri::AppHandle) -> Self {
+        self.app_handle = Some(app);
+        self
     }
 
     pub fn root(&self) -> &Path {
@@ -173,7 +186,15 @@ impl MediaVault {
         let dest = self
             .root
             .join(format!("{}_{}{}", &scene.id, sanitize(stem), ext));
-        move_file(source_path, &dest)?;
+        #[cfg(target_os = "android")]
+        let move_result = if let Some(ref app) = self.app_handle {
+            move_file_with_app(source_path, &dest, Some(app.clone()))
+        } else {
+            move_file(source_path, &dest)
+        };
+        #[cfg(not(target_os = "android"))]
+        let move_result = move_file(source_path, &dest);
+        move_result?;
 
         // Thumbnail sidecar: `{stem}.jpg` next to the video.
         if let Some(thumb) = scene.thumb.as_deref().filter(|t| !t.trim().is_empty()) {
@@ -182,7 +203,15 @@ impl MediaVault {
                 let dest_thumb = self
                     .root
                     .join(format!("{}_{}.jpg", &scene.id, sanitize(stem)));
-                if move_file(thumb_path, &dest_thumb).is_ok() {
+                #[cfg(target_os = "android")]
+                let thumb_res = if let Some(ref app) = self.app_handle {
+                    move_file_with_app(thumb_path, &dest_thumb, Some(app.clone()))
+                } else {
+                    move_file(thumb_path, &dest_thumb)
+                };
+                #[cfg(not(target_os = "android"))]
+                let thumb_res = move_file(thumb_path, &dest_thumb);
+                if thumb_res.is_ok() {
                     let _ = db.set_scene_thumb(&scene.id, &dest_thumb.to_string_lossy());
                 }
             }
@@ -240,7 +269,15 @@ impl MediaVault {
                 format!("{}{}", sanitize(&scene.title), ext)
             });
         let dest = unique_path(&restore_dir.join(original_name));
-        move_file(current_path, &dest)?;
+        #[cfg(target_os = "android")]
+        let move_result = if let Some(ref app) = self.app_handle {
+            move_file_with_app(current_path, &dest, Some(app.clone()))
+        } else {
+            move_file(current_path, &dest)
+        };
+        #[cfg(not(target_os = "android"))]
+        let move_result = move_file(current_path, &dest);
+        move_result?;
 
         // Thumbnail: prefer moving the vaulted sidecar next to the restored
         // video; fall back to whatever path the row already had.
@@ -248,7 +285,15 @@ impl MediaVault {
             let thumb_src = Path::new(thumb);
             if thumb_src.is_file() {
                 let dest_thumb = dest.with_extension("jpg");
-                if move_file(thumb_src, &dest_thumb).is_ok() {
+                #[cfg(target_os = "android")]
+                let thumb_res = if let Some(ref app) = self.app_handle {
+                    move_file_with_app(thumb_src, &dest_thumb, Some(app.clone()))
+                } else {
+                    move_file(thumb_src, &dest_thumb)
+                };
+                #[cfg(not(target_os = "android"))]
+                let thumb_res = move_file(thumb_src, &dest_thumb);
+                if thumb_res.is_ok() {
                     let _ = db.set_scene_thumb(&scene.id, &dest_thumb.to_string_lossy());
                 }
             }
@@ -342,14 +387,23 @@ fn unique_path(path: &Path) -> PathBuf {
 /// Move a file across directories, falling back to copy + verify + delete when
 /// the source and destination are on different filesystems (common on Android
 /// where the library may live on shared storage and the vault is internal).
+#[cfg_attr(not(target_os = "android"), allow(unused_mut))]
 fn move_file(src: &Path, dest: &Path) -> AppResult<()> {
+    move_file_with_app(src, dest, None)
+}
+
+#[cfg(target_os = "android")]
+fn move_file_with_app(src: &Path, dest: &Path, app: Option<AppHandle>) -> AppResult<()> {
     if let Some(parent) = dest.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let src_len = std::fs::metadata(src)?.len();
+    let src_metadata = std::fs::metadata(src)?;
+    let src_len = src_metadata.len();
+    // Try atomic rename first (same filesystem)
     if std::fs::rename(src, dest).is_ok() {
         return Ok(());
     }
+    // Cross-filesystem: copy then verify then delete
     std::fs::copy(src, dest)?;
     let dest_len = std::fs::metadata(dest)?.len();
     if dest_len != src_len {
@@ -362,7 +416,107 @@ fn move_file(src: &Path, dest: &Path) -> AppResult<()> {
             dest_len
         )));
     }
-    std::fs::remove_file(src)?;
+    // Try to delete source; on Android with scoped storage this may fail even
+    // if the app created the file. The copy is verified in the vault so the
+    // move is still successful from the vault's perspective.
+    let mut deleted = false;
+    for attempt in 0..20 {
+        if attempt > 0 {
+            std::thread::sleep(std::time::Duration::from_millis(
+                50 * ((attempt % 10) + 1) as u64,
+            ));
+        }
+        if std::fs::remove_file(src).is_ok() {
+            deleted = true;
+            break;
+        }
+        // Try truncating first
+        if let Ok(f) = std::fs::OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .open(src)
+        {
+            drop(f);
+            if std::fs::remove_file(src).is_ok() {
+                deleted = true;
+                break;
+            }
+        }
+        // Try to change permissions if possible
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if let Ok(meta) = std::fs::metadata(src) {
+                let mut perms = meta.permissions();
+                perms.set_mode(0o666);
+                let _ = std::fs::set_permissions(src, perms);
+                if std::fs::remove_file(src).is_ok() {
+                    deleted = true;
+                    break;
+                }
+            }
+        }
+    }
+    if !deleted {
+        // Try via MediaStore plugin if we have app handle
+        if let Some(ref app_handle) = app {
+            let path_str = src.to_string_lossy().to_string();
+            crate::mobile::media_scan::delete_paths(app_handle, &[path_str.clone()]);
+            std::thread::sleep(std::time::Duration::from_millis(300));
+            if std::fs::remove_file(src).is_ok() {
+                deleted = true;
+            } else {
+                crate::mobile::media_scan::delete_paths(app_handle, &[path_str.clone()]);
+                crate::mobile::media_scan::rescan_paths(app_handle, &[path_str]);
+                std::thread::sleep(std::time::Duration::from_millis(500));
+                let _ = std::fs::remove_file(src);
+            }
+        }
+        if !deleted {
+            tracing::warn!(
+                "vault: copied {} to {} but could not delete source after multiple attempts; original may remain visible in file explorers due to Android scoped storage restrictions",
+                src.display(),
+                dest.display()
+            );
+        }
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "android"))]
+fn move_file_with_app(src: &Path, dest: &Path, _app: Option<()>) -> AppResult<()> {
+    if let Some(parent) = dest.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let src_metadata = std::fs::metadata(src)?;
+    let src_len = src_metadata.len();
+    // Try atomic rename first (same filesystem)
+    if std::fs::rename(src, dest).is_ok() {
+        return Ok(());
+    }
+    // Cross-filesystem: copy then verify then delete
+    std::fs::copy(src, dest)?;
+    let dest_len = std::fs::metadata(dest)?.len();
+    if dest_len != src_len {
+        let _ = std::fs::remove_file(dest);
+        return Err(AppError::Other(format!(
+            "vault copy incomplete: {} -> {} ({} != {} bytes)",
+            src.display(),
+            dest.display(),
+            src_len,
+            dest_len
+        )));
+    }
+    if let Err(e) = std::fs::remove_file(src) {
+        tracing::warn!(
+            "vault: copied {} to {} but failed to delete source ({}); file may remain visible",
+            src.display(),
+            dest.display(),
+            e
+        );
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        let _ = std::fs::remove_file(src);
+    }
     Ok(())
 }
 
