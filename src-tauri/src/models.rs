@@ -954,6 +954,21 @@ pub struct VaultStatus {
     pub vault_root: Option<String>,
 }
 
+/// Result of vaulting one or more scenes (includes Android leftover-delete hints).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VaultActionResult {
+    pub scenes: Vec<Scene>,
+    /// True when Android showed (or needs) a system delete-consent dialog.
+    #[serde(default)]
+    pub pending_delete_consent: bool,
+    /// Original paths that may still exist on shared storage after vaulting.
+    #[serde(default)]
+    pub leftover_paths: Vec<String>,
+    /// Short user-facing hint when leftovers / consent remain.
+    #[serde(default)]
+    pub warning: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SceneFilter {
     #[serde(default)]

@@ -63,6 +63,8 @@ import type {
   SubmitFingerprintsResult,
   UnenrichedScenesResult,
   RehashResult,
+  CamgirlfinderProfile,
+  VaultActionResult,
   VaultScene,
   VaultStatus,
 } from "../types";
@@ -473,14 +475,14 @@ export const api = {
     return localInvoke<VaultStatus>("vault_lock");
   },
 
-  async vaultScene(id: string): Promise<Scene> {
+  async vaultScene(id: string): Promise<VaultActionResult> {
     requireLocalVault();
-    return localInvoke<Scene>("vault_scene", { id });
+    return localInvoke<VaultActionResult>("vault_scene", { id });
   },
 
-  async vaultScenes(ids: string[]): Promise<Scene[]> {
+  async vaultScenes(ids: string[]): Promise<VaultActionResult> {
     requireLocalVault();
-    return localInvoke<Scene[]>("vault_scenes", { ids });
+    return localInvoke<VaultActionResult>("vault_scenes", { ids });
   },
 
   async unvaultScene(id: string): Promise<Scene> {
@@ -491,6 +493,40 @@ export const api = {
   async listVaultScenes(limit?: number, offset?: number): Promise<VaultScene[]> {
     requireLocalVault();
     return localInvoke<VaultScene[]>("vault_list", { limit, offset });
+  },
+
+  /** CamGirlFinder face search — `imageBase64` is raw image bytes (not a data URL). */
+  async camgirlfinderFaceSearch(imageBase64: string): Promise<MediaItem[]> {
+    if (shouldUseRemoteApi()) {
+      return remoteFetch<MediaItem[]>("/api/camgirlfinder/face-search", {
+        method: "POST",
+        body: JSON.stringify({ image_base64: imageBase64 }),
+      });
+    }
+    return localInvoke<MediaItem[]>("camgirlfinder_face_search", {
+      imageBase64,
+    });
+  },
+
+  async camgirlfinderGetModel(platform: string, model: string): Promise<CamgirlfinderProfile> {
+    if (shouldUseRemoteApi()) {
+      return remoteFetch<CamgirlfinderProfile>(
+        `/api/camgirlfinder/models/${encodeURIComponent(platform)}/${encodeURIComponent(model)}`,
+      );
+    }
+    return localInvoke<CamgirlfinderProfile>("camgirlfinder_get_model", {
+      platform,
+      model,
+    });
+  },
+
+  async camgirlfinderSimilar(platform: string, model: string): Promise<MediaItem[]> {
+    if (shouldUseRemoteApi()) {
+      return remoteFetch<MediaItem[]>(
+        `/api/camgirlfinder/models/${encodeURIComponent(platform)}/${encodeURIComponent(model)}/similar`,
+      );
+    }
+    return localInvoke<MediaItem[]>("camgirlfinder_similar", { platform, model });
   },
 
   async generateMissingThumbs(): Promise<ThumbGenResult> {

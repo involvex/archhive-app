@@ -7,7 +7,7 @@ use crate::models::{
     OrphanSidecar, Performer, PornhubCategoryEntry, SaveSearchRequest, SavedSearch, ScanResult,
     Scene, SceneFilter, SceneSort, SiteInfo, Tag, UpdateCollectionRequest,
     UpdateSavedSearchRequest, UpdateSceneRequest, WatchProgress, WatchlistPollResult,
-    WatchlistStatus, VaultScene, VaultStatus,
+    WatchlistStatus, VaultActionResult, VaultScene, VaultStatus,
 };
 use crate::state::AppState;
 use crate::vault::CookieSiteInfo;
@@ -1466,7 +1466,10 @@ pub async fn vault_lock(state: State<'_, Arc<AppState>>) -> CmdResult<VaultStatu
 }
 
 #[tauri::command]
-pub async fn vault_scene(state: State<'_, Arc<AppState>>, id: String) -> CmdResult<Scene> {
+pub async fn vault_scene(
+    state: State<'_, Arc<AppState>>,
+    id: String,
+) -> CmdResult<VaultActionResult> {
     // The move is a copy across filesystems for big files; keep it off the
     // async runtime so the rest of the UI/IPC stays responsive.
     let app_state = state.inner().clone();
@@ -1480,7 +1483,7 @@ pub async fn vault_scene(state: State<'_, Arc<AppState>>, id: String) -> CmdResu
 pub async fn vault_scenes(
     state: State<'_, Arc<AppState>>,
     ids: Vec<String>,
-) -> CmdResult<Vec<Scene>> {
+) -> CmdResult<VaultActionResult> {
     let app_state = state.inner().clone();
     let result = tauri::async_runtime::spawn_blocking(move || app_state.vault_scenes(&ids))
         .await
@@ -1504,4 +1507,54 @@ pub async fn vault_list(
     offset: Option<i64>,
 ) -> CmdResult<Vec<VaultScene>> {
     map_err(state.list_vaulted_scenes(limit, offset))
+}
+
+/// CamGirlFinder face search: `image_base64` is raw image bytes (not data-URL).
+#[tauri::command]
+pub async fn camgirlfinder_face_search(
+    state: State<'_, Arc<AppState>>,
+    image_base64: String,
+) -> CmdResult<Vec<MediaItem>> {
+    use base64::Engine;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(image_base64.trim())
+        .map_err(|e| format!("Invalid image base64: {e}"))?;
+    map_err(
+        crate::sites::adapters::camgirlfinder::face_search(state.site_ctx.as_ref(), &bytes).await,
+    )
+}
+
+#[tauri::command]
+pub async fn camgirlfinder_get_model(
+    state: State<'_, Arc<AppState>>,
+    platform: String,
+    model: String,
+) -> CmdResult<crate::sites::adapters::camgirlfinder::CamgirlfinderProfile> {
+    map_err(
+        crate::sites::adapters::camgirlfinder::get_model_profile(
+            state.site_ctx.as_ref(),
+            &platform,
+            &model,
+        )
+        .await,
+    )
+}
+
+#[tauri::command]
+pub async fn camgirlfinder_similar(
+    state: State<'_, Arc<AppState>>,
+    platform: String,
+    model: String,
+) -> CmdResult<Vec<MediaItem>> {
+    let page = state
+        .browse(
+            "camgirlfinder",
+            BrowseKind::Tag,
+            &format!("similar:{platform}/{model}"),
+            1,
+            None,
+            Default::default(),
+        )
+        .await;
+    map_err(page.map(|p| p.items))
 }

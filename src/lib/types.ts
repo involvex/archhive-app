@@ -314,6 +314,38 @@ export interface VaultStatus {
   vault_root?: string;
 }
 
+/** Result of vaulting one or more scenes (Android leftover-delete hints). */
+export interface VaultActionResult {
+  scenes: Scene[];
+  pending_delete_consent?: boolean;
+  leftover_paths?: string[];
+  warning?: string;
+}
+
+/** CamGirlFinder model profile (Explore detail). */
+export interface CamgirlfinderPerson {
+  person: number;
+  faces: number;
+  seen?: string;
+  first_seen?: string;
+  last_seen?: string;
+  face_image?: string;
+  full_image?: string;
+}
+
+export interface CamgirlfinderProfile {
+  name: string;
+  platform: string;
+  gender: string;
+  first_seen?: string;
+  last_seen?: string;
+  profile_url?: string;
+  external_profile: string;
+  playable_url?: string;
+  persons: CamgirlfinderPerson[];
+  schedule?: number[][];
+}
+
 export interface MergeDuplicatesResult {
   removed: number;
 }

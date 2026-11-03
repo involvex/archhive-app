@@ -1,0 +1,42 @@
+[
+  {
+    "name": "Kati3kat",
+    "platform": "mfc",
+    "gender": "f",
+    "distance": 0,
+    "faces": 19441,
+    "firstSeen": "2015-07-01T03:05:00Z",
+    "lastSeen": "2023-12-01T08:22:39Z",
+    "persons": [
+      {
+        "faces": 19393,
+        "person": 2,
+        "seen": "2016-08-01T02:04:00Z",
+        "firstSeen": "2015-07-01T03:05:00Z",
+        "lastSeen": "2023-12-01T08:22:39Z",
+        "urls": {
+          "faceImage": "https://camgirlfinder.pics/faces/example.webp",
+          "fullImage": "https://camgirlfinder.pics/raw/example.webp"
+        }
+      }
+    ],
+    "urls": {
+      "externalProfile": "https://api.camgirlfinder.net/out/mfc/Kati3kat",
+      "profile": "https://camgirlfinder.net/models/mfc/Kati3kat"
+    }
+  },
+  {
+    "name": "sexyana04",
+    "platform": "cb",
+    "gender": "f",
+    "distance": 1.2,
+    "faces": 10,
+    "firstSeen": "2022-09-04T01:35:44Z",
+    "lastSeen": "2022-09-21T18:12:59Z",
+    "persons": [],
+    "urls": {
+      "externalProfile": "https://api.camgirlfinder.net/out/cb/sexyana04",
+      "profile": "https://camgirlfinder.net/models/cb/sexyana04"
+    }
+  }
+]

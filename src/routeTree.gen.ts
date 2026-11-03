@@ -15,6 +15,7 @@ import { Route as BrowseBodyMatchRouteImport } from './routes/browse/body-match'
 import { Route as BrowseByUrlRouteImport } from './routes/browse/by-url'
 import { Route as DownloadsIndexRouteImport } from './routes/downloads/index'
 import { Route as DuplicatesIndexRouteImport } from './routes/duplicates/index'
+import { Route as ExploreIndexRouteImport } from './routes/explore/index'
 import { Route as FeedIndexRouteImport } from './routes/feed/index'
 import { Route as FilesIndexRouteImport } from './routes/files/index'
 import { Route as LibraryIndexRouteImport } from './routes/library/index'
@@ -32,6 +33,7 @@ import { Route as LibraryTagsIndexRouteImport } from './routes/library/tags/inde
 import { Route as LibraryTagsTagIdRouteImport } from './routes/library/tags/$tagId'
 import { Route as LiveSiteSlugRouteImport } from './routes/live/$site/$slug'
 import { Route as BrowseSiteKindSlugRouteImport } from './routes/browse/$site/$kind/$slug'
+import { Route as ExploreProfilePlatformModelRouteImport } from './routes/explore/profile.$platform.$model'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -61,6 +63,11 @@ const DownloadsIndexRoute = DownloadsIndexRouteImport.update({
 const DuplicatesIndexRoute = DuplicatesIndexRouteImport.update({
   id: '/duplicates/',
   path: '/duplicates/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ExploreIndexRoute = ExploreIndexRouteImport.update({
+  id: '/explore/',
+  path: '/explore/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const FeedIndexRoute = FeedIndexRouteImport.update({
@@ -149,6 +156,12 @@ const BrowseSiteKindSlugRoute = BrowseSiteKindSlugRouteImport.update({
   path: '/browse/$site/$kind/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ExploreProfilePlatformModelRoute =
+  ExploreProfilePlatformModelRouteImport.update({
+    id: '/explore/profile/$platform/$model',
+    path: '/explore/profile/$platform/$model',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -158,6 +171,7 @@ export interface FileRoutesByFullPath {
   '/browse/': typeof BrowseIndexRoute
   '/downloads/': typeof DownloadsIndexRoute
   '/duplicates/': typeof DuplicatesIndexRoute
+  '/explore/': typeof ExploreIndexRoute
   '/feed/': typeof FeedIndexRoute
   '/files/': typeof FilesIndexRoute
   '/library/': typeof LibraryIndexRoute
@@ -174,6 +188,7 @@ export interface FileRoutesByFullPath {
   '/library/scenes/': typeof LibraryScenesIndexRoute
   '/library/tags/': typeof LibraryTagsIndexRoute
   '/browse/$site/$kind/$slug': typeof BrowseSiteKindSlugRoute
+  '/explore/profile/$platform/$model': typeof ExploreProfilePlatformModelRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -183,6 +198,7 @@ export interface FileRoutesByTo {
   '/browse': typeof BrowseIndexRoute
   '/downloads': typeof DownloadsIndexRoute
   '/duplicates': typeof DuplicatesIndexRoute
+  '/explore': typeof ExploreIndexRoute
   '/feed': typeof FeedIndexRoute
   '/files': typeof FilesIndexRoute
   '/library': typeof LibraryIndexRoute
@@ -199,6 +215,7 @@ export interface FileRoutesByTo {
   '/library/scenes': typeof LibraryScenesIndexRoute
   '/library/tags': typeof LibraryTagsIndexRoute
   '/browse/$site/$kind/$slug': typeof BrowseSiteKindSlugRoute
+  '/explore/profile/$platform/$model': typeof ExploreProfilePlatformModelRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -209,6 +226,7 @@ export interface FileRoutesById {
   '/browse/': typeof BrowseIndexRoute
   '/downloads/': typeof DownloadsIndexRoute
   '/duplicates/': typeof DuplicatesIndexRoute
+  '/explore/': typeof ExploreIndexRoute
   '/feed/': typeof FeedIndexRoute
   '/files/': typeof FilesIndexRoute
   '/library/': typeof LibraryIndexRoute
@@ -225,6 +243,7 @@ export interface FileRoutesById {
   '/library/scenes/': typeof LibraryScenesIndexRoute
   '/library/tags/': typeof LibraryTagsIndexRoute
   '/browse/$site/$kind/$slug': typeof BrowseSiteKindSlugRoute
+  '/explore/profile/$platform/$model': typeof ExploreProfilePlatformModelRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -236,6 +255,7 @@ export interface FileRouteTypes {
     | '/browse/'
     | '/downloads/'
     | '/duplicates/'
+    | '/explore/'
     | '/feed/'
     | '/files/'
     | '/library/'
@@ -252,6 +272,7 @@ export interface FileRouteTypes {
     | '/library/scenes/'
     | '/library/tags/'
     | '/browse/$site/$kind/$slug'
+    | '/explore/profile/$platform/$model'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -261,6 +282,7 @@ export interface FileRouteTypes {
     | '/browse'
     | '/downloads'
     | '/duplicates'
+    | '/explore'
     | '/feed'
     | '/files'
     | '/library'
@@ -277,6 +299,7 @@ export interface FileRouteTypes {
     | '/library/scenes'
     | '/library/tags'
     | '/browse/$site/$kind/$slug'
+    | '/explore/profile/$platform/$model'
   id:
     | '__root__'
     | '/'
@@ -286,6 +309,7 @@ export interface FileRouteTypes {
     | '/browse/'
     | '/downloads/'
     | '/duplicates/'
+    | '/explore/'
     | '/feed/'
     | '/files/'
     | '/library/'
@@ -302,6 +326,7 @@ export interface FileRouteTypes {
     | '/library/scenes/'
     | '/library/tags/'
     | '/browse/$site/$kind/$slug'
+    | '/explore/profile/$platform/$model'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -312,6 +337,7 @@ export interface RootRouteChildren {
   BrowseIndexRoute: typeof BrowseIndexRoute
   DownloadsIndexRoute: typeof DownloadsIndexRoute
   DuplicatesIndexRoute: typeof DuplicatesIndexRoute
+  ExploreIndexRoute: typeof ExploreIndexRoute
   FeedIndexRoute: typeof FeedIndexRoute
   FilesIndexRoute: typeof FilesIndexRoute
   LibraryIndexRoute: typeof LibraryIndexRoute
@@ -328,6 +354,7 @@ export interface RootRouteChildren {
   LibraryScenesIndexRoute: typeof LibraryScenesIndexRoute
   LibraryTagsIndexRoute: typeof LibraryTagsIndexRoute
   BrowseSiteKindSlugRoute: typeof BrowseSiteKindSlugRoute
+  ExploreProfilePlatformModelRoute: typeof ExploreProfilePlatformModelRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -372,6 +399,13 @@ declare module '@tanstack/react-router' {
       path: '/duplicates'
       fullPath: '/duplicates/'
       preLoaderRoute: typeof DuplicatesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/explore/': {
+      id: '/explore/'
+      path: '/explore'
+      fullPath: '/explore/'
+      preLoaderRoute: typeof ExploreIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/feed/': {
@@ -493,6 +527,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BrowseSiteKindSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/explore/profile/$platform/$model': {
+      id: '/explore/profile/$platform/$model'
+      path: '/explore/profile/$platform/$model'
+      fullPath: '/explore/profile/$platform/$model'
+      preLoaderRoute: typeof ExploreProfilePlatformModelRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -504,6 +545,7 @@ const rootRouteChildren: RootRouteChildren = {
   BrowseIndexRoute: BrowseIndexRoute,
   DownloadsIndexRoute: DownloadsIndexRoute,
   DuplicatesIndexRoute: DuplicatesIndexRoute,
+  ExploreIndexRoute: ExploreIndexRoute,
   FeedIndexRoute: FeedIndexRoute,
   FilesIndexRoute: FilesIndexRoute,
   LibraryIndexRoute: LibraryIndexRoute,
@@ -520,6 +562,7 @@ const rootRouteChildren: RootRouteChildren = {
   LibraryScenesIndexRoute: LibraryScenesIndexRoute,
   LibraryTagsIndexRoute: LibraryTagsIndexRoute,
   BrowseSiteKindSlugRoute: BrowseSiteKindSlugRoute,
+  ExploreProfilePlatformModelRoute: ExploreProfilePlatformModelRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

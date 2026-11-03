@@ -398,11 +398,14 @@ function ScenesPage() {
           return;
         }
       }
-      await api.vaultScene(scene.id);
+      const result = await api.vaultScene(scene.id);
       handleDeleted(scene.id);
       // A vaulted scene must not linger in "Continue watching".
       useRecentlyViewedStore.getState().remove(scene.id);
       toast.success(`"${scene.title}" moved to the vault.`);
+      if (result.warning) {
+        toast(result.warning, { icon: "⚠️", duration: 6000 });
+      }
       void useVaultStore.getState().refreshStatus();
     } catch (e) {
       toast.error(errorText(e));
@@ -426,7 +429,8 @@ function ScenesPage() {
           return false;
         }
       }
-      const moved = await api.vaultScenes([...selectedIdsRef.current]);
+      const result = await api.vaultScenes([...selectedIdsRef.current]);
+      const moved = result.scenes ?? [];
       const recentlyViewed = useRecentlyViewedStore.getState();
       for (const scene of moved) {
         handleDeleted(scene.id);
@@ -441,6 +445,9 @@ function ScenesPage() {
           ? `"${moved[0].title}" moved to the vault.`
           : `${moved.length} scenes moved to the vault.`,
       );
+      if (result.warning) {
+        toast(result.warning, { icon: "⚠️", duration: 6000 });
+      }
       void useVaultStore.getState().refreshStatus();
       return true;
     } catch (e) {

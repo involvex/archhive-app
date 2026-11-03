@@ -1,9 +1,10 @@
 use crate::models::SiteInfo;
 use crate::sites::adapters::{
-    camsfinder::CamsFinderAdapter, chaturbate::ChaturbateAdapter, custom::CustomUrlAdapter,
-    eporner::EpornerAdapter, generic_ytdlp::GenericYtDlpAdapter, reddit::RedditAdapter,
-    redgifs::RedgifsAdapter, stripchat::StripchatAdapter, thothub::ThotHubAdapter, PornhubAdapter,
-    XHamsterAdapter, XVideosAdapter, XnxxAdapter, YouPornAdapter,
+    camgirlfinder::CamgirlfinderAdapter, camsfinder::CamsFinderAdapter,
+    chaturbate::ChaturbateAdapter, custom::CustomUrlAdapter, eporner::EpornerAdapter,
+    generic_ytdlp::GenericYtDlpAdapter, reddit::RedditAdapter, redgifs::RedgifsAdapter,
+    stripchat::StripchatAdapter, thothub::ThotHubAdapter, PornhubAdapter, XHamsterAdapter,
+    XVideosAdapter, XnxxAdapter, YouPornAdapter,
 };
 use crate::sites::SiteAdapter;
 use std::sync::Arc;
@@ -18,6 +19,7 @@ impl SiteRegistry {
             Arc::new(ChaturbateAdapter),
             Arc::new(StripchatAdapter),
             Arc::new(CamsFinderAdapter),
+            Arc::new(CamgirlfinderAdapter),
             Arc::new(ThotHubAdapter),
             Arc::new(EpornerAdapter),
             Arc::new(PornhubAdapter),
@@ -99,6 +101,9 @@ impl SiteRegistry {
         }
         if lower.contains("stripchat.com") {
             return Some("stripchat".to_string());
+        }
+        if lower.contains("camgirlfinder.net") || lower.contains("camgirlfinder.to") {
+            return Some("camgirlfinder".to_string());
         }
         for adapter in &self.adapters {
             if lower.contains(&adapter.id().to_lowercase()) {

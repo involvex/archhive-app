@@ -1,3 +1,4 @@
+pub mod camgirlfinder;
 pub mod camsfinder;
 pub mod chaturbate;
 pub mod chaturbate_webview;

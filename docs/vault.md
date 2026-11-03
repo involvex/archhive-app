@@ -48,9 +48,18 @@ to sit on shared storage.
 
 Vaulting also _moves_ a file that previously lived in a shared folder (say
 `/storage/emulated/0/Download/ArcHive`). The move removes it from the shared
-volume, so the gallery's next scan drops it. If a gallery still shows a stale
-thumbnail, trigger a media rescan (`MediaScannerConnection.scanFile`) for the old
-path — ArcHive does this from the Android media-scan patch.
+volume, so the gallery's next scan drops it. On Android ArcHive:
+
+1. Retries filesystem delete after the verified copy
+2. Matches MediaStore rows by `DISPLAY_NAME` / `RELATIVE_PATH` / size (not only
+   the unreliable `DATA` column on scoped storage)
+3. Calls `MediaStore.createDeleteRequest` on API 30+ when user consent is
+   required, waiting for the system dialog result
+4. Rescans + deletes again after short delays
+5. Also vaults a conventional `{stem}.jpg` sidecar when `scene.thumb` is empty
+
+If the original still cannot be removed, the vault IPC returns
+`pending_delete_consent` / `leftover_paths` and the UI shows a warning toast.
 
 ## Settings
 

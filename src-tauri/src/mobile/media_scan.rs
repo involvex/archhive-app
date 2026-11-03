@@ -7,9 +7,12 @@
 //! `MediaScannerConnection.scanFile`, which drops a stale row for a missing
 //! path and indexes a new one.
 //!
+//! `delete_paths` asks the plugin to remove leftovers via ContentResolver and,
+//! on API 30+, `MediaStore.createDeleteRequest` (user consent dialog).
+//!
 //! No-op on every other platform.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 #[cfg(target_os = "android")]
 use tauri::plugin::PluginHandle;
 use tauri::plugin::{Builder, TauriPlugin};
@@ -34,6 +37,16 @@ struct ScanPayload {
 #[serde(rename_all = "camelCase")]
 struct DeletePayload {
     paths: Vec<String>,
+}
+
+/// Result of a MediaStore / filesystem delete attempt on Android.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteResult {
+    pub deleted: bool,
+    pub pending_user_consent: bool,
+    #[serde(default)]
+    pub leftover_paths: Vec<String>,
 }
 
 pub fn init<R: Runtime>() -> TauriPlugin<R> {
@@ -91,28 +104,55 @@ pub fn rescan_paths<R: Runtime>(app: &AppHandle<R>, paths: &[String]) {
 }
 
 /// Try to delete files via Android MediaStore as a fallback when direct deletion fails.
-#[allow(dead_code)]
-pub fn delete_paths<R: Runtime>(app: &AppHandle<R>, paths: &[String]) {
+///
+/// Returns typed status so callers can surface “approve system delete” when
+/// `pending_user_consent` is true.
+pub fn delete_paths<R: Runtime>(app: &AppHandle<R>, paths: &[String]) -> DeleteResult {
     if paths.is_empty() {
-        return;
+        return DeleteResult {
+            deleted: true,
+            pending_user_consent: false,
+            leftover_paths: Vec::new(),
+        };
     }
     #[cfg(target_os = "android")]
     {
         let Some(state) = app.try_state::<MediaScanState<R>>() else {
-            return;
+            return DeleteResult {
+                deleted: false,
+                pending_user_consent: false,
+                leftover_paths: paths.to_vec(),
+            };
         };
         let Some(handle) = state.handle.as_ref() else {
-            return;
+            return DeleteResult {
+                deleted: false,
+                pending_user_consent: false,
+                leftover_paths: paths.to_vec(),
+            };
         };
         let payload = DeletePayload {
             paths: paths.to_vec(),
         };
-        if let Err(e) = handle.run_mobile_plugin::<serde_json::Value>("deleteFile", payload) {
-            tracing::warn!("[media-scan] delete failed: {e}");
+        match handle.run_mobile_plugin::<DeleteResult>("deleteFile", payload) {
+            Ok(result) => result,
+            Err(e) => {
+                tracing::warn!("[media-scan] delete failed: {e}");
+                DeleteResult {
+                    deleted: false,
+                    pending_user_consent: false,
+                    leftover_paths: paths.to_vec(),
+                }
+            }
         }
     }
     #[cfg(not(target_os = "android"))]
     {
         let _ = (app, paths);
+        DeleteResult {
+            deleted: true,
+            pending_user_consent: false,
+            leftover_paths: Vec::new(),
+        }
     }
 }

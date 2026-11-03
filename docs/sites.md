@@ -20,11 +20,12 @@
 
 ## Tier B — Live Cam Sites (scraping + webview bridge)
 
-| Site ID    | Display Name | Browse kinds                   | Cookies |
-| ---------- | ------------ | ------------------------------ | ------- |
-| chaturbate | Chaturbate   | livestream, tag, search, model | Yes     |
-| stripchat  | Stripchat    | livestream, tag, search, model | Yes     |
-| camsfinder | CamsFinder   | livestream, tag, search        | No      |
+| Site ID       | Display Name  | Browse kinds                   | Cookies |
+| ------------- | ------------- | ------------------------------ | ------- |
+| chaturbate    | Chaturbate    | livestream, tag, search, model | Yes     |
+| stripchat     | Stripchat     | livestream, tag, search, model | Yes     |
+| camsfinder    | CamsFinder    | livestream, tag, search        | No      |
+| camgirlfinder | CamGirlFinder | livestream, tag, search        | No      |
 
 ### CamsFinder (aggregator)
 
@@ -36,6 +37,15 @@ LiveJasmin, Jerkmate, ...) are affiliate-walled and open on camsfinder.com
 instead. CamsFinder blocks iframe embedding (`X-Frame-Options: SAMEORIGIN` on
 the site and its `/embed/` endpoint), so embed-iframe playback is unavailable
 for this source.
+
+### CamGirlFinder (Explore — not a live grid)
+
+[CamGirlFinder](https://api.camgirlfinder.net/) is a free face/model database
+API used by the **Explore** tab (`/explore`): name search, face search, random
+accounts, and similar faces. It does **not** list currently live rooms
+(`lastSeen` is hourly and often stale). Prefer `externalProfile` affiliate
+links when opening rooms outside ArcHive, and send the ArcHive User-Agent.
+In-app playback is delegated for `cb` (Chaturbate) and `sc` (Stripchat) only.
 
 ## Tier C — gallery-dl
 

@@ -145,7 +145,7 @@ impl AppState {
         self.media_vault.status(&self.db, &settings)
     }
 
-    pub fn vault_scene(&self, scene_id: &str) -> AppResult<Scene> {
+    pub fn vault_scene(&self, scene_id: &str) -> AppResult<crate::models::VaultActionResult> {
         let settings = self.get_settings()?;
         if !settings.vault_enabled {
             return Err(crate::error::AppError::Forbidden(
@@ -154,23 +154,46 @@ impl AppState {
         }
         self.media_vault.assert_unlocked()?;
         let scene = self.db.get_scene(scene_id)?;
-        let original_path = scene.path.clone().unwrap_or_default();
-        let original_thumb = scene.thumb.clone().unwrap_or_default();
         let vaulted = self.media_vault.vault_scene(&self.db, &scene)?;
         // The file left the shared volume: nudge Android's MediaStore so the
         // gallery drops its stale row (no-op off-device).
         let mut paths_to_clean = Vec::new();
-        if !original_path.trim().is_empty() {
-            paths_to_clean.push(original_path);
+        if !vaulted.original_path.trim().is_empty() {
+            paths_to_clean.push(vaulted.original_path.clone());
         }
-        if !original_thumb.trim().is_empty() && !self.media_vault.is_vault_path(&original_thumb) {
-            paths_to_clean.push(original_thumb);
+        if let Some(ref thumb) = vaulted.original_thumb {
+            if !thumb.trim().is_empty() && !self.media_vault.is_vault_path(thumb) {
+                paths_to_clean.push(thumb.clone());
+            }
         }
-        self.rescan_media_paths(&paths_to_clean);
-        Ok(vaulted)
+        let delete_status = self.rescan_media_paths(&paths_to_clean);
+        let mut leftover = vaulted.leftover_paths.clone();
+        leftover.extend(delete_status.leftover_paths);
+        leftover.sort();
+        leftover.dedup();
+        let pending = vaulted.pending_delete_consent || delete_status.pending_user_consent;
+        let warning = if pending {
+            Some(
+                "Approve the system delete prompt so the original leaves the gallery."
+                    .to_string(),
+            )
+        } else if !leftover.is_empty() {
+            Some(
+                "Original file may still appear in the gallery — approve delete if prompted, or remove it manually."
+                    .to_string(),
+            )
+        } else {
+            None
+        };
+        Ok(crate::models::VaultActionResult {
+            scenes: vec![vaulted.scene],
+            pending_delete_consent: pending,
+            leftover_paths: leftover,
+            warning,
+        })
     }
 
-    pub fn vault_scenes(&self, ids: &[String]) -> AppResult<Vec<Scene>> {
+    pub fn vault_scenes(&self, ids: &[String]) -> AppResult<crate::models::VaultActionResult> {
         let settings = self.get_settings()?;
         if !settings.vault_enabled {
             return Err(crate::error::AppError::Forbidden(
@@ -180,22 +203,25 @@ impl AppState {
         self.media_vault.assert_unlocked()?;
         let mut moved = Vec::new();
         let mut moved_from: Vec<String> = Vec::new();
+        let mut leftover_paths: Vec<String> = Vec::new();
+        let mut pending_delete_consent = false;
         let mut first_error: Option<crate::error::AppError> = None;
         for id in ids {
-            match self.db.get_scene(id).map(|scene| {
-                let original = scene.path.clone().unwrap_or_default();
-                let original_thumb = scene.thumb.clone().unwrap_or_default();
-                (scene, original, original_thumb)
-            }) {
-                Ok((scene, original, original_thumb)) => match self.media_vault.vault_scene(&self.db, &scene) {
+            match self.db.get_scene(id) {
+                Ok(scene) => match self.media_vault.vault_scene(&self.db, &scene) {
                     Ok(vaulted) => {
-                        if !original.trim().is_empty() {
-                            moved_from.push(original);
+                        if !vaulted.original_path.trim().is_empty() {
+                            moved_from.push(vaulted.original_path.clone());
                         }
-                        if !original_thumb.trim().is_empty() && !self.media_vault.is_vault_path(&original_thumb) {
-                            moved_from.push(original_thumb);
+                        if let Some(ref thumb) = vaulted.original_thumb {
+                            if !thumb.trim().is_empty() && !self.media_vault.is_vault_path(thumb) {
+                                moved_from.push(thumb.clone());
+                            }
                         }
-                        moved.push(vaulted);
+                        leftover_paths.extend(vaulted.leftover_paths);
+                        pending_delete_consent =
+                            pending_delete_consent || vaulted.pending_delete_consent;
+                        moved.push(vaulted.scene);
                     }
                     Err(e) => {
                         if first_error.is_none() {
@@ -215,8 +241,30 @@ impl AppState {
                 return Err(e);
             }
         }
-        self.rescan_media_paths(&moved_from);
-        Ok(moved)
+        let delete_status = self.rescan_media_paths(&moved_from);
+        leftover_paths.extend(delete_status.leftover_paths);
+        leftover_paths.sort();
+        leftover_paths.dedup();
+        let pending = pending_delete_consent || delete_status.pending_user_consent;
+        let warning = if pending {
+            Some(
+                "Approve the system delete prompt so originals leave the gallery."
+                    .to_string(),
+            )
+        } else if !leftover_paths.is_empty() {
+            Some(
+                "Some originals may still appear in the gallery — approve delete if prompted."
+                    .to_string(),
+            )
+        } else {
+            None
+        };
+        Ok(crate::models::VaultActionResult {
+            scenes: moved,
+            pending_delete_consent: pending,
+            leftover_paths,
+            warning,
+        })
     }
 
     pub fn unvault_scene(&self, scene_id: &str) -> AppResult<Scene> {
@@ -228,9 +276,19 @@ impl AppState {
             &scene,
             &library_root.to_string_lossy(),
         )?;
-        // The file is back on the shared volume - index it again.
-        let restored_path = restored.path.clone().unwrap_or_default();
-        self.rescan_media_paths(&[restored_path]);
+        // The file is back on the shared volume - index video and thumb again.
+        let mut to_scan = Vec::new();
+        if let Some(ref path) = restored.path {
+            if !path.trim().is_empty() {
+                to_scan.push(path.clone());
+            }
+        }
+        if let Some(ref thumb) = restored.thumb {
+            if !thumb.trim().is_empty() {
+                to_scan.push(thumb.clone());
+            }
+        }
+        let _ = self.rescan_media_paths(&to_scan);
         Ok(restored)
     }
 
@@ -262,21 +320,22 @@ impl AppState {
     /// why a vaulted file can still show up in a gallery app. Rescanning the
     /// old path drops the stale row; rescanning a restored path indexes it
     /// again. No-op on desktop (and best effort everywhere).
-    fn rescan_media_paths(&self, paths: &[String]) {
+    fn rescan_media_paths(&self, paths: &[String]) -> crate::mobile::media_scan::DeleteResult {
         let paths: Vec<String> = paths
             .iter()
             .filter(|p| !p.trim().is_empty())
             .cloned()
             .collect();
         if paths.is_empty() {
-            return;
+            return crate::mobile::media_scan::DeleteResult {
+                deleted: true,
+                pending_user_consent: false,
+                leftover_paths: Vec::new(),
+            };
         }
         // Call immediately
         crate::mobile::media_scan::rescan_paths(&self.app, &paths);
-        #[cfg(target_os = "android")]
-        {
-            crate::mobile::media_scan::delete_paths(&self.app, &paths);
-        }
+        let status = crate::mobile::media_scan::delete_paths(&self.app, &paths);
         // On some Android devices, we need to rescan again after a short delay
         #[cfg(target_os = "android")]
         {
@@ -285,12 +344,13 @@ impl AppState {
             std::thread::spawn(move || {
                 std::thread::sleep(std::time::Duration::from_millis(500));
                 crate::mobile::media_scan::rescan_paths(&app, &paths_clone);
-                crate::mobile::media_scan::delete_paths(&app, &paths_clone);
+                let _ = crate::mobile::media_scan::delete_paths(&app, &paths_clone);
                 std::thread::sleep(std::time::Duration::from_millis(1000));
                 crate::mobile::media_scan::rescan_paths(&app, &paths_clone);
-                crate::mobile::media_scan::delete_paths(&app, &paths_clone);
+                let _ = crate::mobile::media_scan::delete_paths(&app, &paths_clone);
             });
         }
+        status
     }
 
     pub fn health() -> HealthResponse {
@@ -1702,6 +1762,13 @@ impl AppState {
         }
         if site_id == "camsfinder" {
             return crate::sites::adapters::camsfinder::resolve_livestream_urls(
+                &self.site_ctx,
+                url,
+            )
+            .await;
+        }
+        if site_id == "camgirlfinder" {
+            return crate::sites::adapters::camgirlfinder::resolve_livestream_urls(
                 &self.site_ctx,
                 url,
             )

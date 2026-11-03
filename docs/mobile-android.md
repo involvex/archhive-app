@@ -263,10 +263,12 @@ directory, and `MediaStore` never indexes it.
 Two device-specific pieces are installed by `scripts/patch-android-vault.ps1`
 (part of `apply-android-patches.ps1`, so `android:regen` / `build:apk` pick it up):
 
-- **`MediaScanPlugin.kt`** — Rust calls it after every vault/restore
-  (`mobile::media_scan::rescan_paths`) to run `MediaScannerConnection.scanFile` on
-  the affected path. Without the rescan, a file moved out of `Download/ArcHive/`
-  keeps its `MediaStore` row and can linger in gallery apps as a broken thumbnail.
+- **`MediaScanPlugin.kt`** — Rust calls it after every vault/restore via
+  `mobile::media_scan::rescan_paths` and `delete_paths`. Rescan drops stale
+  MediaStore rows; delete matches by `DISPLAY_NAME`/`RELATIVE_PATH` (scoped
+  storage) and may prompt with `MediaStore.createDeleteRequest` on Android 11+
+  (activity-result handled). Without this, a file moved out of
+  `Download/ArcHive/` can linger in gallery apps as a broken thumbnail.
 - **`<uses-permission android:name="android.permission.USE_BIOMETRIC" />`** — needed
   by `@tauri-apps/plugin-biometric` for the unlock prompt.
 

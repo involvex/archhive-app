@@ -55,6 +55,7 @@ const desktopNavItems = [
   { to: "/feed", label: "Feed", icon: Newspaper },
   { to: "/library", label: "Library", icon: Library, shortcut: "Ctrl+3" },
   { to: "/live", label: "Live", icon: Radio, shortcut: "Ctrl+4" },
+  { to: "/explore", label: "Explore", icon: Compass, shortcut: "Ctrl+8" },
   { to: "/downloads", label: "Downloads", icon: Download, shortcut: "Ctrl+5" },
   { to: "/duplicates", label: "Duplicates", icon: Copy, shortcut: "Ctrl+7" },
   { to: "/settings", label: "Settings", icon: Settings, shortcut: "Ctrl+6" },
@@ -68,6 +69,7 @@ const mobileNavItems = [
   { to: "/browse", label: "Browse", icon: Compass },
   { to: "/library", label: "Library", icon: Library },
   { to: "/live", label: "Live", icon: Radio },
+  { to: "/explore", label: "Explore", icon: Compass },
   { to: "/downloads", label: "Downloads", icon: Download },
   { to: "/settings", label: "Settings", icon: Settings },
 ] as const;
