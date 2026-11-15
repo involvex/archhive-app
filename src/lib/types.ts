@@ -164,6 +164,8 @@ export interface BatchUpdateScenesRequest {
   scene_ids: string[];
   performers_add?: string[];
   tags_add?: string[];
+  performers_remove?: string[];
+  tags_remove?: string[];
 }
 
 export interface BatchUpdateScenesResult {
@@ -176,6 +178,13 @@ export interface PornhubCategoryEntry {
   orientation: BrowseOrientation;
   category_id?: number;
   video_count?: number;
+}
+
+export interface Studio {
+  id: string;
+  name: string;
+  url?: string;
+  scene_count: number;
 }
 
 export interface Performer {
@@ -234,6 +243,8 @@ export interface AppSettings {
   prefer_mp4?: boolean;
   lan_auth_enabled?: boolean;
   auto_tag_rules?: string[];
+  /** Merge yt-dlp dump-json tags/categories into scenes on download complete. */
+  auto_tag_from_ytdlp?: boolean;
   trending_sites?: string[];
   download_max_retries?: number;
   download_retry_delay_seconds?: number;
@@ -288,6 +299,8 @@ export interface AppSettings {
   vault_lock_on_background?: boolean;
   /** Expose vaulted media over the LAN REST API (default false). */
   vault_lan_exposed?: boolean;
+  /** Present when a vault PIN is configured (hash only; never the PIN). */
+  vault_pin_hash?: string;
 }
 
 /** A scene held in the vault. Carries no playable path - stream via the app. */
@@ -312,6 +325,8 @@ export interface VaultStatus {
   biometric_available: boolean;
   /** Absolute private vault directory (backend-owned). */
   vault_root?: string;
+  /** True when a vault PIN hash is configured. */
+  pin_required?: boolean;
 }
 
 /** Result of vaulting one or more scenes (Android leftover-delete hints). */
@@ -461,6 +476,8 @@ export interface Collection {
   filter_json?: string;
   filter?: SceneFilter;
   scene_count: number;
+  /** Up to four member scenes used for the cover mosaic. */
+  cover_thumbs?: { scene_id: string; thumb?: string }[];
   created_at: string;
   updated_at: string;
 }

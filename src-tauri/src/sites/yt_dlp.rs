@@ -869,7 +869,19 @@ pub fn enrich_metadata_from_ytdlp_json(
         .or_else(|| extract_single_string(json, "uploader").map(|s| vec![s]))
         .unwrap_or_default();
 
-    let tags = extract_string_array(json, &["tags"]).unwrap_or_default();
+    let mut tags = extract_string_array(json, &["tags"]).unwrap_or_default();
+    if let Some(categories) = extract_string_array(json, &["categories", "category"]) {
+        for c in categories {
+            if !tags.iter().any(|t| t.eq_ignore_ascii_case(&c)) {
+                tags.push(c);
+            }
+        }
+    }
+    // Cap so a noisy dump-json doesn't flood the library.
+    const MAX_TAGS: usize = 20;
+    if tags.len() > MAX_TAGS {
+        tags.truncate(MAX_TAGS);
+    }
 
     let channel = extract_single_string(json, "uploader")
         .or_else(|| extract_single_string(json, "channel"))

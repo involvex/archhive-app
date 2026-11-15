@@ -1774,6 +1774,19 @@ function SettingsPage() {
                 </select>
               </div>
               <div>
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={hostSettings?.auto_tag_from_ytdlp !== false}
+                    onChange={(e) => patchHostSettings({ auto_tag_from_ytdlp: e.target.checked })}
+                  />
+                  Auto-tag from yt-dlp metadata on download
+                </label>
+                <p className="mt-1 text-[10px] text-[var(--color-muted-foreground)]">
+                  Merge tags, categories, and uploader from yt-dlp dump-json (capped at 20 tags).
+                </p>
+              </div>
+              <div>
                 <label className="text-xs text-[var(--color-muted-foreground)]">
                   Auto-tag rules (one regex per line)
                 </label>
@@ -2811,6 +2824,58 @@ function SettingsPage() {
                     </Switch.Root>
                     <span className="text-sm">Lock when ArcHive goes to the background</span>
                   </div>
+
+                  <div className="ml-7 flex flex-wrap items-center gap-2 text-sm">
+                    <span className="text-[var(--color-muted-foreground)]">
+                      Vault PIN: {vaultStatus?.pin_required ? "set" : "not set"}
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        const pin = window.prompt("New vault PIN (min 4 characters)");
+                        if (!pin || pin.trim().length < 4) {
+                          setTestStatus("PIN must be at least 4 characters");
+                          return;
+                        }
+                        void api
+                          .setVaultPin(pin.trim())
+                          .then(() => {
+                            setTestStatus("Vault PIN saved");
+                            void refreshVaultStatus();
+                          })
+                          .catch((e: unknown) =>
+                            setTestStatus(e instanceof Error ? e.message : "Failed to set PIN"),
+                          );
+                      }}
+                    >
+                      {vaultStatus?.pin_required ? "Change PIN" : "Set PIN"}
+                    </Button>
+                    {vaultStatus?.pin_required && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          if (!confirm("Remove the vault PIN?")) return;
+                          void api
+                            .clearVaultPin()
+                            .then(() => {
+                              setTestStatus("Vault PIN cleared");
+                              void refreshVaultStatus();
+                            })
+                            .catch((e: unknown) =>
+                              setTestStatus(e instanceof Error ? e.message : "Failed to clear PIN"),
+                            );
+                        }}
+                      >
+                        Clear PIN
+                      </Button>
+                    )}
+                  </div>
+                  <p className="ml-7 text-xs text-[var(--color-muted-foreground)]">
+                    Desktop requires a PIN. Unlock mints a one-shot backend token after PIN /
+                    biometric attestation.
+                  </p>
 
                   <div className="ml-7 flex items-center gap-3">
                     <Switch.Root

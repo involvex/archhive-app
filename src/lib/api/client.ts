@@ -37,6 +37,7 @@ import type {
   Performer,
   Scene,
   SceneFilter,
+  Studio,
   Collection,
   CreateCollectionRequest,
   UpdateCollectionRequest,
@@ -465,9 +466,24 @@ export const api = {
   },
 
   /** Opens the vault session. Call `requestVaultBiometricUnlock()` first. */
-  async vaultUnlock(): Promise<VaultStatus> {
+  async prepareVaultUnlock(pin?: string): Promise<string> {
     requireLocalVault();
-    return localInvoke<VaultStatus>("vault_unlock");
+    return localInvoke<string>("prepare_vault_unlock", { pin: pin ?? null });
+  },
+
+  async vaultUnlock(token: string): Promise<VaultStatus> {
+    requireLocalVault();
+    return localInvoke<VaultStatus>("vault_unlock", { token });
+  },
+
+  async setVaultPin(pin: string): Promise<VaultStatus> {
+    requireLocalVault();
+    return localInvoke<VaultStatus>("set_vault_pin", { pin });
+  },
+
+  async clearVaultPin(): Promise<VaultStatus> {
+    requireLocalVault();
+    return localInvoke<VaultStatus>("clear_vault_pin");
   },
 
   async vaultLock(): Promise<VaultStatus> {
@@ -801,6 +817,20 @@ export const api = {
     });
   },
 
+  async reorderCollectionScenes(collectionId: string, sceneIds: string[]): Promise<void> {
+    if (shouldUseRemoteApi()) {
+      await remoteFetch(`/api/collections/${collectionId}/scenes/reorder`, {
+        method: "POST",
+        body: JSON.stringify({ scene_ids: sceneIds }),
+      });
+      return;
+    }
+    return localInvoke("reorder_collection_scenes", {
+      collection_id: collectionId,
+      scene_ids: sceneIds,
+    });
+  },
+
   async sceneCollectionIds(sceneId: string): Promise<string[]> {
     if (shouldUseRemoteApi()) {
       return remoteFetch<string[]>(`/api/scenes/${sceneId}/collections`);
@@ -983,6 +1013,25 @@ export const api = {
 
   async listTags(): Promise<Tag[]> {
     return localOrRemote("list_tags", undefined, "/api/tags");
+  },
+
+  async suggestSceneTags(sceneId: string): Promise<{ performers: string[]; tags: string[] }> {
+    if (shouldUseRemoteApi()) {
+      return remoteFetch(`/api/scenes/${encodeURIComponent(sceneId)}/suggest-tags`);
+    }
+    return localInvoke("suggest_scene_tags", { scene_id: sceneId });
+  },
+
+  async listStudios(query?: string): Promise<Studio[]> {
+    const qs = query ? `?q=${encodeURIComponent(query)}` : "";
+    return localOrRemote("list_studios", { query: query || null }, `/api/studios${qs}`);
+  },
+
+  async listScenesForStudio(studioId: string): Promise<Scene[]> {
+    if (shouldUseRemoteApi()) {
+      return remoteFetch<Scene[]>(`/api/studios/${encodeURIComponent(studioId)}/scenes`);
+    }
+    return localInvoke<Scene[]>("list_scenes_for_studio", { studio_id: studioId });
   },
 
   /** Always reads on-device SQLite (ignores Remote LAN routing). */

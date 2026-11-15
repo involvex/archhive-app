@@ -24,20 +24,23 @@ first unlock asks for the OS biometric/credential prompt.
 
 - **No encryption.** Vaulted bytes are plain files. A rooted device, a full
   filesystem backup, or adb with app-data access can read them. Encryption at
-  rest is a possible follow-up (Android Keystore-wrapped key); it is not in v1.
-- **No separate PIN.** The lock is a session lock plus an OS biometric/device
-  credential prompt. The Rust side does not verify a secret; it trusts that the
-  frontend ran the prompt. That is the v1 trust boundary: a modified frontend
-  that calls `vault_unlock` directly skips the biometric check. Harden with a
-  Keystore-backed gate before treating the vault as a security boundary against
-  a determined local attacker.
+  rest is a possible follow-up (Android Keystore-wrapped key); it is not in v1.1.
 - **No portable vault.** Vaulted files are tied to this app install (they live
   in app data). Uninstalling the app deletes them.
-- **Desktop lock is UI-level only.** On phones the biometric prompt is an OS
-  gate and vault media is served by the loopback HTTP server, which checks the
-  lock. On desktop the webview can read local files through Tauri's asset
-  protocol, so the desktop lock hides the vault from the UI (and from the LAN
-  listener) but does not stop a modified frontend from reading the files.
+
+## Unlock gate (v1.1)
+
+Unlock is a two-step backend flow:
+
+1. `prepare_vault_unlock` verifies the optional vault PIN (required on desktop)
+   and mints a **one-shot** unlock token (≈60s TTL).
+2. `vault_unlock(token)` consumes that token and opens the session for
+   `vault_auto_lock_mins`.
+
+On phones the UI still runs a biometric prompt first; on desktop the PIN is the
+primary attestation. Media/thumbnail reads for vaulted rows go through
+`scene_media_path`, which refuses access while locked (including when the DB
+flag `is_vaulted` is set). LAN unlock remains unavailable (`requireLocalVault`).
 
 ## Why files disappear from gallery apps
 

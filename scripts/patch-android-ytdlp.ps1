@@ -108,11 +108,22 @@ if ($gradle -notmatch 'youtubedl-android ships native libs') {
 
 # R8 minification keeps breaking release builds: v0.6.0 boot-crashed (commons-compress
 # reflection), v0.6.1/v0.6.2 broke every plugin invoke (Jackson Args creators stripped),
-# while debug builds with identical code worked. Release parity with debug > APK size,
-# so disable minification for the release buildType.
-if ($gradle -notmatch [regex]::Escape('isMinifyEnabled = false // r8-off marker')) {
-    if ($gradle -match '(?s)getByName\("release"\)\s*\{[^}]*?isMinifyEnabled\s*=\s*true') {
-        # Replace the release-block assignment (the debug block keeps its own).
+# and WorkManager 2.9.x + AGP optimization { enable = true } strips WorkDatabase_Impl
+# constructors (boot: WorkDatabase.canonicalName). Debug builds with identical code
+# worked. Release parity with debug > APK size, so disable minify / AGP optimization.
+if ($gradle -notmatch 'r8-off marker') {
+    if ($gradle -match '(?s)getByName\("release"\)\s*\{[^}]*?optimization\s*\{[^}]*?enable\s*=\s*true') {
+        # Newer Tauri/AGP templates use optimization { enable = true } instead of
+        # isMinifyEnabled. Flip it off and leave a marker the validator can find.
+        $gradle = [regex]::Replace(
+            $gradle,
+            '(?s)(getByName\("release"\)\s*\{[^}]*?optimization\s*\{[^}]*?)enable\s*=\s*true',
+            "`$1enable = false // r8-off marker"
+        )
+        $changed = $true
+        Write-Host "Disabled AGP release optimization (r8-off marker)."
+    } elseif ($gradle -match '(?s)getByName\("release"\)\s*\{[^}]*?isMinifyEnabled\s*=\s*true') {
+        # Legacy isMinifyEnabled = true path (pre-optimization-block templates).
         $gradle = [regex]::Replace(
             $gradle,
             '(?s)(getByName\("release"\)\s*\{[^}]*?)isMinifyEnabled\s*=\s*true',
@@ -121,7 +132,7 @@ if ($gradle -notmatch [regex]::Escape('isMinifyEnabled = false // r8-off marker'
         $changed = $true
         Write-Host "Disabled R8 minification for release buildType (debug parity)."
     } else {
-        Write-Warning "Release buildType has no isMinifyEnabled = true to disable in $gradlePath"
+        Write-Warning "Release buildType has no optimization/minify flag to disable in $gradlePath"
     }
 }
 
@@ -157,26 +168,42 @@ if ($changed) {
 if (-not (Test-Path $proguardOverlay)) {
     throw "Missing overlay: $proguardOverlay"
 }
-$keepMarker = "DownloadForegroundService"
+# Marker must appear in the overlay itself (Room keep = WorkManager boot fix).
+$keepMarker = "androidx.room.RoomDatabase"
 $overlayText = Get-Content $proguardOverlay -Raw
 if (Test-Path $proguardPath) {
     $existing = Get-Content $proguardPath -Raw
     if ($existing -notmatch [regex]::Escape($keepMarker)) {
-        # Replace legacy YtDlp-only keeps with full overlay (includes FG service + WorkManager).
-        if ($existing -match 'YtDlpPlugin') {
+        # Replace legacy YtDlp-only keeps with full overlay (plugins + WorkManager/Room).
+        if ($existing -match 'ArcHive Android') {
+            $without = [regex]::Replace($existing, '(?s)# ArcHive Android.*?(?=\z)', '').TrimEnd()
+            $merged = $without + "`r`n`r`n" + $overlayText.TrimEnd() + "`r`n"
+        } elseif ($existing -match 'YtDlpPlugin') {
             $without = [regex]::Replace($existing, '(?s)# ArcHive Android.*?dontwarn com\.yausername\.\*\*', '').TrimEnd()
             $merged = $without + "`r`n`r`n" + $overlayText.TrimEnd() + "`r`n"
         } else {
             $merged = $existing.TrimEnd() + "`r`n`r`n" + $overlayText.TrimEnd() + "`r`n"
         }
         Set-Content -Path $proguardPath -Value $merged -NoNewline
-        Write-Host "Updated ProGuard keep rules (YtDlp + FG + WorkManager) in $proguardPath"
+        Write-Host "Updated ProGuard keep rules (YtDlp + WorkManager/Room) in $proguardPath"
     } else {
-        Write-Host "ProGuard YtDlp/FG keep rules already present."
+        Write-Host "ProGuard YtDlp/WorkManager keep rules already present."
     }
 } else {
     Set-Content -Path $proguardPath -Value $overlayText -NoNewline
     Write-Host "Created $proguardPath with YtDlp keep rules"
+}
+
+# Projects patched before the WorkManager/Room constructor keeps existed.
+$proguardNow = Get-Content $proguardPath -Raw
+if ($proguardNow -notmatch [regex]::Escape('androidx.room.RoomDatabase')) {
+    $wmKeeps = @"
+-keep class * extends androidx.room.RoomDatabase { <init>(); }
+-keep class * extends androidx.work.InputMerger { <init>(); }
+-keep class androidx.work.** { *; }
+"@
+    Set-Content -Path $proguardPath -Value ($proguardNow.TrimEnd() + "`r`n" + $wmKeeps) -NoNewline
+    Write-Host "Added WorkManager/Room ProGuard constructor keeps."
 }
 
 # Projects patched before these rules existed: add the library keeps that

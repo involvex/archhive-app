@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "@tanstack/react-router";
 import { api } from "@/lib/api/client";
 import { sceneThumbUrl, sceneMediaUrl, isWebPlayableScene, isHttpMediaSrc } from "@/lib/mediaUrl";
 import { getAppRuntime } from "@/lib/runtime";
@@ -8,6 +9,15 @@ import { EnrichDialog } from "@/components/EnrichDialog";
 import type { Scene } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Check, Copy, Database, Star, X } from "lucide-react";
+
+function studioSlug(name: string): string {
+  const slug = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return slug || `studio-${name.length}`;
+}
 
 interface SceneDetailsDialogProps {
   scene: Scene | null;
@@ -197,10 +207,21 @@ function SceneDetailsBody({ scene, onClose }: { scene: Scene; onClose: () => voi
             <dd className="break-all font-mono text-xs">{data.oshash}</dd>
           </div>
         )}
-        {data.studio_name && (
+        {(data.studio_name || data.channel) && (
           <div>
             <dt className="text-[var(--color-muted-foreground)]">Studio</dt>
-            <dd>{data.studio_name}</dd>
+            <dd>
+              <Link
+                to="/library/studios/$studioId"
+                params={{
+                  studioId: studioSlug((data.studio_name || data.channel || "").trim()),
+                }}
+                className="text-[var(--color-primary)] hover:underline"
+                onClick={onClose}
+              >
+                {data.studio_name || data.channel}
+              </Link>
+            </dd>
           </div>
         )}
         {data.date && (
@@ -222,12 +243,6 @@ function SceneDetailsBody({ scene, onClose }: { scene: Scene; onClose: () => voi
           <div>
             <dt className="text-[var(--color-muted-foreground)]">Performers</dt>
             <dd>{data.performers.join(", ")}</dd>
-          </div>
-        )}
-        {data.channel && (
-          <div>
-            <dt className="text-[var(--color-muted-foreground)]">Channel</dt>
-            <dd>{data.channel}</dd>
           </div>
         )}
         {data.tags.length > 0 && (

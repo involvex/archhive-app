@@ -95,14 +95,28 @@ if (-not (Test-Path $gradle)) {
     if ($gradleText -match 'manifestPlaceholders\["usesCleartextTraffic"\]\s*=\s*"false"') {
         Add-Fail "build.gradle.kts still sets usesCleartextTraffic=false (release WebView cannot reach the 127.0.0.1 media server)"
     }
+    # Release R8 / AGP optimization must be off (or explicitly marked) — WorkManager
+    # 2.9.x otherwise crashes at boot (WorkDatabase.canonicalName).
+    if ($gradleText -notmatch 'r8-off marker') {
+        if ($gradleText -match '(?s)getByName\("release"\)\s*\{[^}]*?optimization\s*\{[^}]*?enable\s*=\s*true') {
+            Add-Fail "release optimization { enable = true } without r8-off marker (run patch-android-ytdlp.ps1)"
+        } elseif ($gradleText -match '(?s)getByName\("release"\)\s*\{[^}]*?isMinifyEnabled\s*=\s*true') {
+            Add-Fail "release isMinifyEnabled = true without r8-off marker (run patch-android-ytdlp.ps1)"
+        } else {
+            Add-Warn "build.gradle.kts missing r8-off marker on release buildType"
+        }
+    }
 }
 
 if (-not (Test-Path $proguard)) {
     Add-Warn "Missing proguard-rules.pro"
 } else {
     $pg = Get-Content $proguard -Raw
-    if ($pg -notmatch 'YtDlpPlugin') {
+    if ($pg -notmatch 'YtDlpPlugin|com\.archhive\.app\.\*\*') {
         Add-Fail "proguard-rules.pro missing YtDlpPlugin keep rules"
+    }
+    if ($pg -notmatch 'androidx\.room\.RoomDatabase') {
+        Add-Fail "proguard-rules.pro missing WorkManager/Room constructor keeps (boot crash)"
     }
 }
 

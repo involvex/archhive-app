@@ -29,6 +29,8 @@ import { Route as LibraryHistoryIndexRouteImport } from './routes/library/histor
 import { Route as LibraryPerformersIndexRouteImport } from './routes/library/performers/index'
 import { Route as LibraryPerformersPerformerIdRouteImport } from './routes/library/performers/$performerId'
 import { Route as LibraryScenesIndexRouteImport } from './routes/library/scenes/index'
+import { Route as LibraryStudiosIndexRouteImport } from './routes/library/studios/index'
+import { Route as LibraryStudiosStudioIdRouteImport } from './routes/library/studios/$studioId'
 import { Route as LibraryTagsIndexRouteImport } from './routes/library/tags/index'
 import { Route as LibraryTagsTagIdRouteImport } from './routes/library/tags/$tagId'
 import { Route as LiveSiteSlugRouteImport } from './routes/live/$site/$slug'
@@ -136,6 +138,16 @@ const LibraryScenesIndexRoute = LibraryScenesIndexRouteImport.update({
   path: '/library/scenes/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LibraryStudiosIndexRoute = LibraryStudiosIndexRouteImport.update({
+  id: '/library/studios/',
+  path: '/library/studios/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LibraryStudiosStudioIdRoute = LibraryStudiosStudioIdRouteImport.update({
+  id: '/library/studios/$studioId',
+  path: '/library/studios/$studioId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LibraryTagsIndexRoute = LibraryTagsIndexRouteImport.update({
   id: '/library/tags/',
   path: '/library/tags/',
@@ -179,6 +191,7 @@ export interface FileRoutesByFullPath {
   '/recommendations/': typeof RecommendationsIndexRoute
   '/settings/': typeof SettingsIndexRoute
   '/library/performers/$performerId': typeof LibraryPerformersPerformerIdRoute
+  '/library/studios/$studioId': typeof LibraryStudiosStudioIdRoute
   '/library/tags/$tagId': typeof LibraryTagsTagIdRoute
   '/live/$site/$slug': typeof LiveSiteSlugRoute
   '/browse/$site/': typeof BrowseSiteIndexRoute
@@ -186,6 +199,7 @@ export interface FileRoutesByFullPath {
   '/library/history/': typeof LibraryHistoryIndexRoute
   '/library/performers/': typeof LibraryPerformersIndexRoute
   '/library/scenes/': typeof LibraryScenesIndexRoute
+  '/library/studios/': typeof LibraryStudiosIndexRoute
   '/library/tags/': typeof LibraryTagsIndexRoute
   '/browse/$site/$kind/$slug': typeof BrowseSiteKindSlugRoute
   '/explore/profile/$platform/$model': typeof ExploreProfilePlatformModelRoute
@@ -206,6 +220,7 @@ export interface FileRoutesByTo {
   '/recommendations': typeof RecommendationsIndexRoute
   '/settings': typeof SettingsIndexRoute
   '/library/performers/$performerId': typeof LibraryPerformersPerformerIdRoute
+  '/library/studios/$studioId': typeof LibraryStudiosStudioIdRoute
   '/library/tags/$tagId': typeof LibraryTagsTagIdRoute
   '/live/$site/$slug': typeof LiveSiteSlugRoute
   '/browse/$site': typeof BrowseSiteIndexRoute
@@ -213,6 +228,7 @@ export interface FileRoutesByTo {
   '/library/history': typeof LibraryHistoryIndexRoute
   '/library/performers': typeof LibraryPerformersIndexRoute
   '/library/scenes': typeof LibraryScenesIndexRoute
+  '/library/studios': typeof LibraryStudiosIndexRoute
   '/library/tags': typeof LibraryTagsIndexRoute
   '/browse/$site/$kind/$slug': typeof BrowseSiteKindSlugRoute
   '/explore/profile/$platform/$model': typeof ExploreProfilePlatformModelRoute
@@ -234,6 +250,7 @@ export interface FileRoutesById {
   '/recommendations/': typeof RecommendationsIndexRoute
   '/settings/': typeof SettingsIndexRoute
   '/library/performers/$performerId': typeof LibraryPerformersPerformerIdRoute
+  '/library/studios/$studioId': typeof LibraryStudiosStudioIdRoute
   '/library/tags/$tagId': typeof LibraryTagsTagIdRoute
   '/live/$site/$slug': typeof LiveSiteSlugRoute
   '/browse/$site/': typeof BrowseSiteIndexRoute
@@ -241,6 +258,7 @@ export interface FileRoutesById {
   '/library/history/': typeof LibraryHistoryIndexRoute
   '/library/performers/': typeof LibraryPerformersIndexRoute
   '/library/scenes/': typeof LibraryScenesIndexRoute
+  '/library/studios/': typeof LibraryStudiosIndexRoute
   '/library/tags/': typeof LibraryTagsIndexRoute
   '/browse/$site/$kind/$slug': typeof BrowseSiteKindSlugRoute
   '/explore/profile/$platform/$model': typeof ExploreProfilePlatformModelRoute
@@ -263,6 +281,7 @@ export interface FileRouteTypes {
     | '/recommendations/'
     | '/settings/'
     | '/library/performers/$performerId'
+    | '/library/studios/$studioId'
     | '/library/tags/$tagId'
     | '/live/$site/$slug'
     | '/browse/$site/'
@@ -270,6 +289,7 @@ export interface FileRouteTypes {
     | '/library/history/'
     | '/library/performers/'
     | '/library/scenes/'
+    | '/library/studios/'
     | '/library/tags/'
     | '/browse/$site/$kind/$slug'
     | '/explore/profile/$platform/$model'
@@ -290,6 +310,7 @@ export interface FileRouteTypes {
     | '/recommendations'
     | '/settings'
     | '/library/performers/$performerId'
+    | '/library/studios/$studioId'
     | '/library/tags/$tagId'
     | '/live/$site/$slug'
     | '/browse/$site'
@@ -297,6 +318,7 @@ export interface FileRouteTypes {
     | '/library/history'
     | '/library/performers'
     | '/library/scenes'
+    | '/library/studios'
     | '/library/tags'
     | '/browse/$site/$kind/$slug'
     | '/explore/profile/$platform/$model'
@@ -317,6 +339,7 @@ export interface FileRouteTypes {
     | '/recommendations/'
     | '/settings/'
     | '/library/performers/$performerId'
+    | '/library/studios/$studioId'
     | '/library/tags/$tagId'
     | '/live/$site/$slug'
     | '/browse/$site/'
@@ -324,6 +347,7 @@ export interface FileRouteTypes {
     | '/library/history/'
     | '/library/performers/'
     | '/library/scenes/'
+    | '/library/studios/'
     | '/library/tags/'
     | '/browse/$site/$kind/$slug'
     | '/explore/profile/$platform/$model'
@@ -345,6 +369,7 @@ export interface RootRouteChildren {
   RecommendationsIndexRoute: typeof RecommendationsIndexRoute
   SettingsIndexRoute: typeof SettingsIndexRoute
   LibraryPerformersPerformerIdRoute: typeof LibraryPerformersPerformerIdRoute
+  LibraryStudiosStudioIdRoute: typeof LibraryStudiosStudioIdRoute
   LibraryTagsTagIdRoute: typeof LibraryTagsTagIdRoute
   LiveSiteSlugRoute: typeof LiveSiteSlugRoute
   BrowseSiteIndexRoute: typeof BrowseSiteIndexRoute
@@ -352,6 +377,7 @@ export interface RootRouteChildren {
   LibraryHistoryIndexRoute: typeof LibraryHistoryIndexRoute
   LibraryPerformersIndexRoute: typeof LibraryPerformersIndexRoute
   LibraryScenesIndexRoute: typeof LibraryScenesIndexRoute
+  LibraryStudiosIndexRoute: typeof LibraryStudiosIndexRoute
   LibraryTagsIndexRoute: typeof LibraryTagsIndexRoute
   BrowseSiteKindSlugRoute: typeof BrowseSiteKindSlugRoute
   ExploreProfilePlatformModelRoute: typeof ExploreProfilePlatformModelRoute
@@ -499,6 +525,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LibraryScenesIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/library/studios/': {
+      id: '/library/studios/'
+      path: '/library/studios'
+      fullPath: '/library/studios/'
+      preLoaderRoute: typeof LibraryStudiosIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/library/studios/$studioId': {
+      id: '/library/studios/$studioId'
+      path: '/library/studios/$studioId'
+      fullPath: '/library/studios/$studioId'
+      preLoaderRoute: typeof LibraryStudiosStudioIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/library/tags/': {
       id: '/library/tags/'
       path: '/library/tags'
@@ -553,6 +593,7 @@ const rootRouteChildren: RootRouteChildren = {
   RecommendationsIndexRoute: RecommendationsIndexRoute,
   SettingsIndexRoute: SettingsIndexRoute,
   LibraryPerformersPerformerIdRoute: LibraryPerformersPerformerIdRoute,
+  LibraryStudiosStudioIdRoute: LibraryStudiosStudioIdRoute,
   LibraryTagsTagIdRoute: LibraryTagsTagIdRoute,
   LiveSiteSlugRoute: LiveSiteSlugRoute,
   BrowseSiteIndexRoute: BrowseSiteIndexRoute,
@@ -560,6 +601,7 @@ const rootRouteChildren: RootRouteChildren = {
   LibraryHistoryIndexRoute: LibraryHistoryIndexRoute,
   LibraryPerformersIndexRoute: LibraryPerformersIndexRoute,
   LibraryScenesIndexRoute: LibraryScenesIndexRoute,
+  LibraryStudiosIndexRoute: LibraryStudiosIndexRoute,
   LibraryTagsIndexRoute: LibraryTagsIndexRoute,
   BrowseSiteKindSlugRoute: BrowseSiteKindSlugRoute,
   ExploreProfilePlatformModelRoute: ExploreProfilePlatformModelRoute,

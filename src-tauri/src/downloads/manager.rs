@@ -700,10 +700,9 @@ async fn run_job_with_plan(
             let mut enriched_duration = plan.duration;
             let mut enriched_thumb_url = plan.thumbnail_url.clone();
 
-            if plan.tool == DownloadTool::YtDlp
-                && enriched_performers.is_empty()
-                && enriched_tags.is_empty()
-            {
+            let settings_for_tag = db.get_settings().unwrap_or_default();
+            let auto_from_ytdlp = settings_for_tag.auto_tag_from_ytdlp;
+            if plan.tool == DownloadTool::YtDlp && auto_from_ytdlp {
                 let cookies = vault.cookie_file_for_site(&plan.adapter_id);
                 if let Ok(json) = runner
                     .resolve_media_json(&plan.url, cookies.as_deref())
@@ -711,11 +710,21 @@ async fn run_job_with_plan(
                 {
                     let (yt_performers, yt_tags, yt_channel, yt_dur, yt_thumb) =
                         enrich_metadata_from_ytdlp_json(&json);
-                    if enriched_performers.is_empty() && !yt_performers.is_empty() {
-                        enriched_performers = yt_performers;
+                    for p in yt_performers {
+                        if !enriched_performers
+                            .iter()
+                            .any(|x| x.eq_ignore_ascii_case(&p))
+                        {
+                            enriched_performers.push(p);
+                        }
                     }
-                    if enriched_tags.is_empty() && !yt_tags.is_empty() {
-                        enriched_tags = yt_tags;
+                    for t in yt_tags {
+                        if !enriched_tags.iter().any(|x| x.eq_ignore_ascii_case(&t)) {
+                            enriched_tags.push(t);
+                        }
+                    }
+                    if enriched_tags.len() > 20 {
+                        enriched_tags.truncate(20);
                     }
                     if enriched_channel.is_none() {
                         enriched_channel = yt_channel;

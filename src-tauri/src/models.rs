@@ -388,11 +388,13 @@ pub struct Tag {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[allow(dead_code)]
 pub struct Studio {
+    /// Stable slug derived from the display name (URL-safe).
     pub id: String,
     pub name: String,
     pub url: Option<String>,
+    #[serde(default)]
+    pub scene_count: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -491,6 +493,9 @@ pub struct AppSettings {
     pub lan_auth_enabled: bool,
     #[serde(default = "default_auto_tag_rules")]
     pub auto_tag_rules: Vec<String>,
+    /// Merge yt-dlp dump-json tags/categories/uploader into the scene on download complete.
+    #[serde(default = "default_auto_tag_from_ytdlp")]
+    pub auto_tag_from_ytdlp: bool,
     #[serde(default = "default_trending_sites")]
     pub trending_sites: Vec<String>,
     #[serde(default = "default_download_max_retries")]
@@ -583,6 +588,10 @@ pub struct AppSettings {
     /// token is not a biometric check.
     #[serde(default)]
     pub vault_lan_exposed: bool,
+    /// Optional salted SHA-256 hex of the vault PIN (`salt:hash`). When set,
+    /// `prepare_vault_unlock` requires the matching PIN before minting a token.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vault_pin_hash: Option<String>,
 }
 
 fn default_phash_threshold() -> u8 {
@@ -606,6 +615,10 @@ fn default_prefer_mp4() -> bool {
 }
 
 fn default_lan_auth_enabled() -> bool {
+    true
+}
+
+fn default_auto_tag_from_ytdlp() -> bool {
     true
 }
 
@@ -760,6 +773,7 @@ impl Default for AppSettings {
             prefer_mp4: default_prefer_mp4(),
             lan_auth_enabled: default_lan_auth_enabled(),
             auto_tag_rules: default_auto_tag_rules(),
+            auto_tag_from_ytdlp: default_auto_tag_from_ytdlp(),
             trending_sites: default_trending_sites(),
             download_max_retries: default_download_max_retries(),
             download_retry_delay_seconds: default_download_retry_delay_seconds(),
@@ -788,6 +802,7 @@ impl Default for AppSettings {
             rec_preferred_performers: Vec::new(),
             rec_excluded_tags: Vec::new(),
             vault_enabled: false,
+            vault_pin_hash: None,
             vault_auto_lock_mins: default_vault_auto_lock_mins(),
             vault_lock_on_background: default_vault_lock_on_background(),
             vault_lan_exposed: false,
@@ -826,6 +841,10 @@ pub struct BatchUpdateScenesRequest {
     pub scene_ids: Vec<String>,
     pub performers_add: Option<Vec<String>>,
     pub tags_add: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub performers_remove: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tags_remove: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -876,8 +895,18 @@ pub struct Collection {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub filter_json: Option<String>,
     pub scene_count: u32,
+    /// Up to four member scenes used for the collection cover mosaic.
+    #[serde(default)]
+    pub cover_thumbs: Vec<CollectionCoverThumb>,
     pub created_at: String,
     pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CollectionCoverThumb {
+    pub scene_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thumb: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -952,6 +981,9 @@ pub struct VaultStatus {
     /// Absolute path of the private vault directory. The frontend uses it to
     /// avoid routing vault media through the LAN listener.
     pub vault_root: Option<String>,
+    /// True when a vault PIN is configured (hash present).
+    #[serde(default)]
+    pub pin_required: bool,
 }
 
 /// Result of vaulting one or more scenes (includes Android leftover-delete hints).

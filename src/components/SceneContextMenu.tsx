@@ -27,6 +27,8 @@ interface SceneContextMenuProps {
   watched?: boolean;
   /** #2/#6: open collection picker to add/remove this scene. */
   onAddToCollection?: (scene: Scene) => void;
+  /** Remove from the currently open collection (manual collections only). */
+  onRemoveFromCollection?: (scene: Scene) => void;
   /** Media vault: hide the scene by moving its file into private storage. */
   onMoveToVault?: (scene: Scene) => void;
 }
@@ -45,6 +47,7 @@ export function SceneContextMenu({
   onMarkWatched,
   watched,
   onAddToCollection,
+  onRemoveFromCollection,
   onMoveToVault,
 }: SceneContextMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
@@ -140,6 +143,14 @@ export function SceneContextMenu({
         onClose();
       },
       show: Boolean(onAddToCollection),
+    },
+    {
+      label: "Remove from this collection",
+      action: () => {
+        onRemoveFromCollection?.(menu.scene);
+        onClose();
+      },
+      show: Boolean(onRemoveFromCollection),
     },
     {
       label: "Move to vault",

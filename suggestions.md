@@ -9,15 +9,10 @@
 
 ### 1. Smart Auto-Tagging from Metadata
 
-**Status:** 🔵 Partial  
+**Status:** 🔵 Partial (v0.7.0: yt-dlp merge + suggested tags UI)  
 **Area:** Library / Auto-Tagger  
-**Currently:** Filename regex rules (`AppSettings.auto_tag_rules`, default `(?<performer>[a-zA-Z0-9_]+)-\d+`) + performers/tags passthrough from `DownloadPlan` → `download_jobs.metadata` JSON → scene rows on import (`src-tauri/src/library/auto_tag.rs`, `import.rs`).  
-**Suggestion:** Expand auto-tagger to extract performers, studios, and tags from yt-dlp `--dump-json` output, site-scraped metadata, and filename conventions. Apply heuristics like:
-
-- Match performer aliases against known names (fuzzy match).
-- Infer studios from source URL domain (e.g., `pornhub.com/studio/...` → studio record).
-- Tag scenes automatically from yt-dlp `categories` and `tags` fields.
-- Show a "suggested tags" UI in the scene edit dialog for user confirmation.
+**Currently:** Filename regex rules + `auto_tag_from_ytdlp` (default ON) merges dump-json tags/categories/uploader on download complete (cap 20); Scene Edit shows confirm-to-apply suggested tags/performers.  
+**Suggestion (remaining):** Fuzzy alias matching; infer studios from source URL domains.
 
 ### 2. Watchlists / Favorites System
 
@@ -71,15 +66,10 @@
 
 ### 7. Studio / Channel Tracking
 
-**Status:** 🔵 Partial  
+**Status:** 🔵 Partial (MVP in v0.7.0)  
 **Area:** Library / Browse  
-**Currently:** `Studio` model exists in Rust with `#[allow(dead_code)]`; `Scene.studio_id/studio_name`, `channel` columns exist and are populated from `DownloadPlan.channel` on import. No studio pages or browser UI.  
-**Suggestion:** Fully wire up studios:
-
-- Studio detail page showing all scenes from that studio.
-- Auto-link scenes to studios from source URLs.
-- Studio browser in Browse section (group channels by studio).
-- Studio-level stats (scene count, average rating).
+**Currently:** Virtual studios from `COALESCE(studio_name, channel)` with `/library/studios` + detail route, Scene Details link, import mirrors channel → studio_name.  
+**Suggestion (remaining):** Auto-link from source URLs, Browse-side studio browser, richer studio stats/ratings.
 
 ### 8. Export / Import Library Metadata
 
@@ -278,14 +268,9 @@
 
 ### 27. Smart Collections (Saved Filters as Auto-Playlists)
 
-**Status:** 🔵 Partial  
+**Status:** ✅ Done (v0.7.0 polish: cover mosaic + reorder + bulk add)  
 **Area:** Library  
-**Currently:** Manual collections + watchlists shipped (#2, #6, MIGRATION_014): `collections` + `collection_scenes` tables, `CollectionType` enum, `/library/collections` route, UI for creating, add/remove scenes. `SceneFilter` exists but cannot yet be saved as a "smart collection" that re-evaluates on open.  
-**Suggestion (remaining):**
-
-- Smart collections: persist a `SceneFilter` per collection, re-evaluate on open (auto-playlist behavior).
-- Cover mosaic for collections, drag reorder scenes within collection (see #42).
-- Export collection as M3U / share over LAN.
+**Currently:** `CollectionType::Smart` + `filter_json`, FilterBuilder create UI, cover mosaics, drag reorder for manual collections/watchlists, bulk Add to collection, remove-from-collection context action, M3U export.
 
 ### 28. Saved Searches + New-Match Notifications
 
@@ -414,22 +399,15 @@
 
 ### 41. Smart Collections (Saved-Filter Auto-Playlists)
 
-**Status:** ⚪ Not started  
+**Status:** ✅ Done  
 **Area:** Library  
-**Currently:** Manual collections + watchlists exist (#2, #6); `SceneFilter` exists but cannot be persisted as a collection type.  
-**Suggestion:** Add a `Smart` variant to `CollectionType` (or separate table) that stores a serialized `SceneFilter`. On open, re-run the filter to populate scenes dynamically (auto-playlist behavior). UI: toggle "Smart" when creating a collection, show filter builder, cover mosaic auto-generated from member scenes, drag reorder not applicable (order by filter sort), M3U/LAN export support.
+**Currently:** See #27.
 
 ### 42. Collection Cover Mosaic + Reordering
 
-**Status:** ⚪ Not started  
+**Status:** ✅ Done (v0.7.0)  
 **Area:** Library  
-**Currently:** Collections exist but no cover mosaic, no drag-reorder, no bulk "add to collection" from multi-select.  
-**Suggestion:**
-
-- Cover mosaic: auto-generate a grid of member scene thumbnails as the collection cover (CSS grid or generated image).
-- Drag-and-drop reorder scenes within a manual collection.
-- Bulk "Add to collection" from SceneBulkEditBar / multi-select in library grid.
-- Scene context-menu: "Remove from this collection" when viewing a collection.
+**Currently:** Cover mosaic from `cover_thumbs`, drag reorder IPC, bulk add from SceneBulkEditBar, remove-from-collection in context menu.
 
 ### 43. Notification Preferences
 
@@ -665,4 +643,4 @@ Add "Quiet hours" window (e.g., 22:00–08:00) to suppress non-critical toasts; 
 
 ---
 
-_Last updated: 2026-09-24 (implemented #34 Binary Update Manager: GitHub check + one-click update/rollback + weekly auto-check; #40 First-Run Wizard: 5-step modal + demo scene loader; #46 QR pairing: Test server health/latency + server address display; #48 Android engine-stale check: "Check for engine update" badge + behind-upstream warning on the embedded yt-dlp engine)_
+_Last updated: 2026-11-15 (v0.7.0: batch tag remove, collection cover/reorder/bulk add, studios MVP, yt-dlp auto-tag + suggestions, vault unlock token/PIN gate, changelog catch-up)_

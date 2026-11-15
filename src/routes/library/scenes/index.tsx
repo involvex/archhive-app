@@ -3,7 +3,8 @@ import { toast } from "react-hot-toast";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api/client";
 import { sceneThumbUrl, isVideoScene } from "@/lib/mediaUrl";
-import type { Scene, SceneFilter, SceneSort } from "@/lib/types";
+import type { Collection, Scene, SceneFilter, SceneSort } from "@/lib/types";
+import { CollectionPickerDialog } from "@/components/CollectionPickerDialog";
 import { CUP_OPTIONS, HAIR_OPTIONS } from "@/lib/body-match/queries";
 import { toWatchMap, watchFor, type WatchMap } from "@/lib/watch";
 import { applySceneQueryAndSort, isDurationRangeInvalid } from "@/lib/sceneList";
@@ -183,6 +184,8 @@ function ScenesPage() {
   const [contextMenu, setContextMenu] = useState<SceneContextMenuState | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [selectionMode, setSelectionMode] = useState(false);
+  const [bulkCollectionOpen, setBulkCollectionOpen] = useState(false);
+  const [collections, setCollections] = useState<Collection[]>([]);
   const [deleteTarget, setDeleteTarget] = useState<Scene | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
@@ -754,6 +757,13 @@ function ScenesPage() {
         onApplied={refresh}
         canVault={vaultEnabled}
         onMoveToVault={moveSelectionToVault}
+        onAddToCollection={() => {
+          void api
+            .listCollections()
+            .then(setCollections)
+            .catch(() => setCollections([]))
+            .finally(() => setBulkCollectionOpen(true));
+        }}
       />
 
       <div className="flex items-center gap-2">
@@ -1248,6 +1258,19 @@ function ScenesPage() {
           </div>
         </div>
       )}
+
+      <CollectionPickerDialog
+        sceneIds={[...selectedIds]}
+        open={bulkCollectionOpen}
+        onClose={() => setBulkCollectionOpen(false)}
+        collections={collections}
+        onBulkAdded={(collectionId, count) => {
+          toast.success(`Added ${count} scene(s) to collection`);
+          setSelectedIds(new Set());
+          setBulkCollectionOpen(false);
+          void collectionId;
+        }}
+      />
     </div>
   );
 }

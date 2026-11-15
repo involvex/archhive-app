@@ -11,7 +11,11 @@ interface SceneBulkEditBarProps {
   canVault?: boolean;
   /** Moves every selected scene into the vault; resolves false on failure. */
   onMoveToVault?: () => Promise<boolean>;
+  /** Opens the collection picker for the current selection. */
+  onAddToCollection?: () => void;
 }
+
+type EditMode = "add" | "remove";
 
 export function SceneBulkEditBar({
   selectedIds,
@@ -19,7 +23,9 @@ export function SceneBulkEditBar({
   onApplied,
   canVault = false,
   onMoveToVault,
+  onAddToCollection,
 }: SceneBulkEditBarProps) {
+  const [mode, setMode] = useState<EditMode>("add");
   const [performers, setPerformers] = useState("");
   const [tags, setTags] = useState("");
   const [saving, setSaving] = useState(false);
@@ -43,16 +49,18 @@ export function SceneBulkEditBar({
   }
 
   async function handleApply() {
-    const performersAdd = performers
+    const names = performers
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean);
-    const tagsAdd = tags
+    const tagNames = tags
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean);
-    if (performersAdd.length === 0 && tagsAdd.length === 0) {
-      setError("Enter performers or tags to add.");
+    if (names.length === 0 && tagNames.length === 0) {
+      setError(
+        mode === "add" ? "Enter performers or tags to add." : "Enter performers or tags to remove.",
+      );
       return;
     }
     setSaving(true);
@@ -60,8 +68,15 @@ export function SceneBulkEditBar({
     try {
       await api.batchUpdateScenes({
         scene_ids: selectedIds,
-        performers_add: performersAdd.length ? performersAdd : undefined,
-        tags_add: tagsAdd.length ? tagsAdd : undefined,
+        ...(mode === "add"
+          ? {
+              performers_add: names.length ? names : undefined,
+              tags_add: tagNames.length ? tagNames : undefined,
+            }
+          : {
+              performers_remove: names.length ? names : undefined,
+              tags_remove: tagNames.length ? tagNames : undefined,
+            }),
       });
       setPerformers("");
       setTags("");
@@ -93,6 +108,8 @@ export function SceneBulkEditBar({
     }
   }
 
+  const verb = mode === "add" ? "Add" : "Remove";
+
   return (
     <div className="sticky top-0 z-10 rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] p-3 shadow-md">
       <div className="mb-2 flex items-center justify-between gap-2">
@@ -101,14 +118,30 @@ export function SceneBulkEditBar({
           Clear
         </Button>
       </div>
+      <div className="mb-2 flex gap-2">
+        <Button
+          variant={mode === "add" ? "default" : "outline"}
+          size="sm"
+          onClick={() => setMode("add")}
+        >
+          Add
+        </Button>
+        <Button
+          variant={mode === "remove" ? "default" : "outline"}
+          size="sm"
+          onClick={() => setMode("remove")}
+        >
+          Remove
+        </Button>
+      </div>
       <div className="grid gap-2 md:grid-cols-2">
         <Input
-          placeholder="Add performers (comma-separated)"
+          placeholder={`${verb} performers (comma-separated)`}
           value={performers}
           onChange={(e) => setPerformers(e.target.value)}
         />
         <Input
-          placeholder="Add tags (comma-separated)"
+          placeholder={`${verb} tags (comma-separated)`}
           value={tags}
           onChange={(e) => setTags(e.target.value)}
         />
@@ -121,6 +154,11 @@ export function SceneBulkEditBar({
         <Button variant="outline" onClick={() => void handleMarkWatched(false)} disabled={saving}>
           Clear watched
         </Button>
+        {onAddToCollection && (
+          <Button variant="outline" onClick={onAddToCollection} disabled={saving}>
+            Add to collection
+          </Button>
+        )}
         {canVault && onMoveToVault && (
           <Button variant="outline" onClick={() => void handleVault()} disabled={saving}>
             Move to vault

@@ -17,7 +17,9 @@
 use crate::db::Database;
 use crate::error::{AppError, AppResult};
 use crate::models::{AppSettings, Scene, VaultStatus};
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
+use rand::RngCore;
+use std::collections::HashMap;
 use std::path::{Component, Path, PathBuf};
 use std::time::{Duration, Instant};
 #[cfg(target_os = "android")]
@@ -51,6 +53,8 @@ const NOMEDIA: &str = ".nomedia";
 pub struct MediaVault {
     root: PathBuf,
     state: RwLock<VaultState>,
+    /// One-shot unlock tokens minted after PIN/biometric attestation.
+    pending_tokens: Mutex<HashMap<String, Instant>>,
     #[cfg(target_os = "android")]
     app_handle: Option<tauri::AppHandle>,
 }
@@ -59,6 +63,8 @@ pub struct MediaVault {
 struct VaultState {
     unlocked_until: Option<Instant>,
 }
+
+const UNLOCK_TOKEN_TTL_SECS: u64 = 60;
 
 impl MediaVault {
     pub fn new(data_dir: &Path) -> AppResult<Self> {
@@ -72,9 +78,46 @@ impl MediaVault {
         Ok(Self {
             root,
             state: RwLock::new(VaultState::default()),
+            pending_tokens: Mutex::new(HashMap::new()),
             #[cfg(target_os = "android")]
             app_handle: None,
         })
+    }
+
+    /// Mint a short-lived one-shot token required by `unlock_with_token`.
+    pub fn mint_unlock_token(&self) -> String {
+        let mut bytes = [0u8; 24];
+        rand::thread_rng().fill_bytes(&mut bytes);
+        let token = base64::Engine::encode(&base64::engine::general_purpose::URL_SAFE_NO_PAD, bytes);
+        let mut pending = self.pending_tokens.lock();
+        // Drop expired entries while we're here.
+        let now = Instant::now();
+        pending.retain(|_, exp| *exp > now);
+        pending.insert(token.clone(), now + Duration::from_secs(UNLOCK_TOKEN_TTL_SECS));
+        token
+    }
+
+    /// Consume a mint token and open the session. Rejects reused/expired tokens.
+    pub fn unlock_with_token(&self, token: &str, mins: u32) -> AppResult<()> {
+        let token = token.trim();
+        if token.is_empty() {
+            return Err(AppError::Forbidden(
+                "Vault unlock requires a valid unlock token.".into(),
+            ));
+        }
+        let mut pending = self.pending_tokens.lock();
+        let now = Instant::now();
+        pending.retain(|_, exp| *exp > now);
+        match pending.remove(token) {
+            Some(_) => {
+                drop(pending);
+                self.unlock_for(mins);
+                Ok(())
+            }
+            None => Err(AppError::Forbidden(
+                "Unlock token is missing, expired, or already used.".into(),
+            )),
+        }
     }
 
     #[cfg(target_os = "android")]
@@ -144,6 +187,10 @@ impl MediaVault {
             lan_exposed: settings.vault_lan_exposed,
             biometric_available: cfg!(target_os = "android") || cfg!(target_os = "ios"),
             vault_root: Some(self.root.to_string_lossy().to_string()),
+            pin_required: settings
+                .vault_pin_hash
+                .as_ref()
+                .is_some_and(|h| !h.trim().is_empty()),
         })
     }
 
@@ -643,6 +690,18 @@ mod tests {
         assert!(vault.assert_unlocked().is_ok());
         vault.lock();
         assert!(vault.assert_unlocked().is_err());
+    }
+
+    #[test]
+    fn unlock_token_is_one_shot() {
+        let dir = tempfile::tempdir().unwrap();
+        let vault = MediaVault::new(dir.path()).unwrap();
+        let token = vault.mint_unlock_token();
+        vault.unlock_with_token(&token, 5).unwrap();
+        assert!(vault.is_unlocked());
+        vault.lock();
+        assert!(vault.unlock_with_token(&token, 5).is_err());
+        assert!(vault.unlock_with_token("bogus", 5).is_err());
     }
 
     #[test]

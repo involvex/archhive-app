@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "@/lib/api/client";
 import type { Scene } from "@/lib/types";
 import { Button } from "@/components/ui/button";
@@ -34,6 +34,48 @@ function SceneEditForm({
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [suggestedTags, setSuggestedTags] = useState<string[]>([]);
+  const [suggestedPerformers, setSuggestedPerformers] = useState<string[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .suggestSceneTags(scene.id)
+      .then((s) => {
+        if (cancelled) return;
+        setSuggestedTags(s.tags ?? []);
+        setSuggestedPerformers(s.performers ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSuggestedTags([]);
+          setSuggestedPerformers([]);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [scene.id]);
+
+  function applySuggestedTag(tag: string) {
+    const current = tags
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (current.some((t) => t.toLowerCase() === tag.toLowerCase())) return;
+    setTags([...current, tag].join(", "));
+    setSuggestedTags((prev) => prev.filter((t) => t.toLowerCase() !== tag.toLowerCase()));
+  }
+
+  function applySuggestedPerformer(name: string) {
+    const current = performers
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (current.some((t) => t.toLowerCase() === name.toLowerCase())) return;
+    setPerformers([...current, name].join(", "));
+    setSuggestedPerformers((prev) => prev.filter((t) => t.toLowerCase() !== name.toLowerCase()));
+  }
 
   async function handleSave() {
     setSaving(true);
@@ -106,6 +148,35 @@ function SceneEditForm({
             Tags (comma-separated)
           </label>
           <Input value={tags} onChange={(e) => setTags(e.target.value)} />
+          {(suggestedTags.length > 0 || suggestedPerformers.length > 0) && (
+            <div className="mt-2 space-y-1">
+              <p className="text-[10px] text-[var(--color-muted-foreground)]">
+                Suggested (tap to add)
+              </p>
+              <div className="flex flex-wrap gap-1">
+                {suggestedPerformers.map((p) => (
+                  <button
+                    key={`p-${p}`}
+                    type="button"
+                    onClick={() => applySuggestedPerformer(p)}
+                    className="rounded-full border border-[var(--color-border)] px-2 py-0.5 text-xs hover:bg-[var(--color-muted)]"
+                  >
+                    + {p}
+                  </button>
+                ))}
+                {suggestedTags.map((t) => (
+                  <button
+                    key={`t-${t}`}
+                    type="button"
+                    onClick={() => applySuggestedTag(t)}
+                    className="rounded-full border border-[var(--color-border)] px-2 py-0.5 text-xs hover:bg-[var(--color-muted)]"
+                  >
+                    #{t}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
         <div>
           <label className="mb-1 block text-xs text-[var(--color-muted-foreground)]">Notes</label>

@@ -23,6 +23,7 @@ import {
   X,
   FolderSymlink,
   Download,
+  GripVertical,
 } from "lucide-react";
 
 export const Route = createFileRoute("/library/collections/")({
@@ -33,6 +34,17 @@ export const Route = createFileRoute("/library/collections/")({
   },
   component: CollectionsPage,
 });
+
+function coverSrc(cover: { scene_id: string; thumb?: string }): string | undefined {
+  return sceneThumbUrl({
+    id: cover.scene_id,
+    title: "",
+    thumb: cover.thumb,
+    performers: [],
+    tags: [],
+    created_at: "",
+  } as Scene);
+}
 
 function CollectionsPage() {
   const search = useSearch({ strict: false });
@@ -50,8 +62,11 @@ function CollectionsPage() {
   const [contextMenu, setContextMenu] = useState<SceneContextMenuState | null>(null);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [opError, setOpError] = useState("");
+  const [dragId, setDragId] = useState<string | null>(null);
 
   const processedFilterRef = useRef<string | null>(null);
+  const canReorder =
+    selected != null && selected.type !== "smart" && scenes.length > 1 && viewMode === "list";
 
   const loadCollections = useCallback(() => {
     setLoading(true);
@@ -74,7 +89,6 @@ function CollectionsPage() {
       processedFilterRef.current = filterParam;
       try {
         const filter = JSON.parse(decodeURIComponent(filterParam));
-        // Only open if we have actual filters
         if (Object.keys(filter).length > 0) {
           // eslint-disable-next-line react-hooks/set-state-in-effect
           setShowCreate(true);
@@ -135,6 +149,18 @@ function CollectionsPage() {
     setPickerOpen(scene);
   };
 
+  const handleRemoveFromCollection = async (scene: Scene) => {
+    if (!selected || selected.type === "smart") return;
+    setOpError("");
+    try {
+      await api.removeSceneFromCollection(scene.id, selected.id);
+      setScenes((prev) => prev.filter((s) => s.id !== scene.id));
+      loadCollections();
+    } catch (e) {
+      setOpError(e instanceof Error ? e.message : "Failed to remove from collection");
+    }
+  };
+
   const handlePickerChange = async (collectionId: string | null, scene: Scene) => {
     try {
       const existing = await api.sceneCollectionIds(scene.id);
@@ -148,10 +174,42 @@ function CollectionsPage() {
           const updated = await api.listCollectionScenes(selected.id);
           setScenes(updated);
         }
+        loadCollections();
       }
     } catch (e) {
       console.error(e);
     }
+  };
+
+  const persistOrder = async (next: Scene[]) => {
+    if (!selected || selected.type === "smart") return;
+    setScenes(next);
+    try {
+      await api.reorderCollectionScenes(
+        selected.id,
+        next.map((s) => s.id),
+      );
+    } catch (e) {
+      setOpError(e instanceof Error ? e.message : "Failed to reorder");
+      loadScenes(selected);
+    }
+  };
+
+  const onDragStart = (id: string) => setDragId(id);
+  const onDragOver = (e: React.DragEvent, overId: string) => {
+    e.preventDefault();
+    if (!dragId || dragId === overId) return;
+    const from = scenes.findIndex((s) => s.id === dragId);
+    const to = scenes.findIndex((s) => s.id === overId);
+    if (from < 0 || to < 0) return;
+    const next = [...scenes];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    setScenes(next);
+  };
+  const onDragEnd = () => {
+    if (dragId) void persistOrder(scenes);
+    setDragId(null);
   };
 
   return (
@@ -192,7 +250,7 @@ function CollectionsPage() {
         <div className="space-y-2">
           {collections.map((col) => {
             const isSmart = col.type === "smart";
-            const coverScenes = isSmart ? scenes.slice(0, 4) : [];
+            const covers = (col.cover_thumbs ?? []).slice(0, 4);
             return (
               <div
                 key={col.id}
@@ -207,21 +265,22 @@ function CollectionsPage() {
                   className="flex items-center gap-2 text-left flex-1"
                   onClick={() => loadScenes(col)}
                 >
-                  {isSmart && coverScenes.length > 0 && (
-                    <div className="relative w-12 h-12 rounded-md overflow-hidden mr-2 flex-shrink-0">
-                      <div className="grid grid-cols-2 gap-1 w-full h-full">
-                        {coverScenes.map((s) => (
+                  {covers.length > 0 ? (
+                    <div className="relative w-12 h-12 rounded-md overflow-hidden mr-1 flex-shrink-0 bg-[var(--color-muted)]">
+                      <div className="grid grid-cols-2 gap-px w-full h-full">
+                        {covers.map((c) => (
                           <img
-                            key={s.id}
-                            src={sceneThumbUrl(s) || "/placeholder.png"}
+                            key={c.scene_id}
+                            src={coverSrc(c) || "/placeholder.png"}
                             alt=""
                             className="w-full h-full object-cover"
                           />
                         ))}
                       </div>
                     </div>
+                  ) : (
+                    <Folder className="h-4 w-4" />
                   )}
-                  {!isSmart && <Folder className="h-4 w-4" />}
                   <div>
                     <span className="font-medium">{col.name}</span>
                     <span className="text-xs text-[var(--color-muted-foreground)] ml-2">
@@ -249,6 +308,11 @@ function CollectionsPage() {
           <div className="flex items-center justify-between">
             <h3 className="text-lg font-semibold">{selected.name} - Scenes</h3>
             <div className="flex gap-1">
+              {canReorder && (
+                <span className="mr-2 self-center text-xs text-[var(--color-muted-foreground)]">
+                  Drag to reorder
+                </span>
+              )}
               <button
                 type="button"
                 onClick={async () => {
@@ -265,7 +329,7 @@ function CollectionsPage() {
                     console.error("Export failed:", e);
                   }
                 }}
-                className={`p-1 ${viewMode === "grid" ? "text-primary" : "text-muted-foreground"}`}
+                className="p-1 text-muted-foreground"
                 aria-label="Export as M3U"
               >
                 <Download className="h-4 w-4" />
@@ -336,34 +400,56 @@ function CollectionsPage() {
               {scenes.map((scene) => {
                 const canPlay = isVideoScene(scene);
                 return (
-                  <button
+                  <div
                     key={scene.id}
-                    type="button"
-                    className="flex items-center gap-3 rounded-md border border-[var(--color-border)] p-2 text-left hover:bg-[var(--color-muted)]/30"
-                    onClick={() => {
-                      if (canPlay) {
-                        const idx = scenes.filter(isVideoScene).findIndex((v) => v.id === scene.id);
-                        setPlayerIndex(idx >= 0 ? idx : 0);
-                        setPlayerScene(scene);
-                      } else {
-                        setDetailsScene(scene);
-                      }
-                    }}
+                    draggable={canReorder}
+                    onDragStart={() => onDragStart(scene.id)}
+                    onDragOver={(e) => onDragOver(e, scene.id)}
+                    onDragEnd={onDragEnd}
+                    className={`flex items-center gap-2 rounded-md border border-[var(--color-border)] p-2 ${
+                      dragId === scene.id ? "opacity-60" : ""
+                    }`}
                   >
-                    <img
-                      src={sceneThumbUrl(scene) || "/placeholder.png"}
-                      alt={scene.title}
-                      className="h-12 w-16 object-cover rounded"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium truncate">{scene.title}</div>
-                      <div className="text-xs text-[var(--color-muted-foreground)]">
-                        {scene.duration
-                          ? `${Math.floor(scene.duration / 60)}:${String(scene.duration % 60).padStart(2, "0")}`
-                          : "\u2014"}
+                    {canReorder && (
+                      <GripVertical
+                        className="h-4 w-4 shrink-0 cursor-grab text-[var(--color-muted-foreground)]"
+                        aria-hidden
+                      />
+                    )}
+                    <button
+                      type="button"
+                      className="flex flex-1 items-center gap-3 text-left hover:bg-[var(--color-muted)]/30 rounded-md"
+                      onClick={() => {
+                        if (canPlay) {
+                          const idx = scenes
+                            .filter(isVideoScene)
+                            .findIndex((v) => v.id === scene.id);
+                          setPlayerIndex(idx >= 0 ? idx : 0);
+                          setPlayerScene(scene);
+                        } else {
+                          setDetailsScene(scene);
+                        }
+                      }}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        setContextMenu({ scene, x: e.clientX, y: e.clientY });
+                      }}
+                    >
+                      <img
+                        src={sceneThumbUrl(scene) || "/placeholder.png"}
+                        alt={scene.title}
+                        className="h-12 w-16 object-cover rounded"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium truncate">{scene.title}</div>
+                        <div className="text-xs text-[var(--color-muted-foreground)]">
+                          {scene.duration
+                            ? `${Math.floor(scene.duration / 60)}:${String(scene.duration % 60).padStart(2, "0")}`
+                            : "\u2014"}
+                        </div>
                       </div>
-                    </div>
-                  </button>
+                    </button>
+                  </div>
                 );
               })}
             </div>
@@ -430,6 +516,9 @@ function CollectionsPage() {
           setPlayerScene(s);
         }}
         onAddToCollection={handleAddToCollection}
+        onRemoveFromCollection={
+          selected && selected.type !== "smart" ? handleRemoveFromCollection : undefined
+        }
       />
     </div>
   );

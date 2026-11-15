@@ -30,6 +30,33 @@ fn column_exists(conn: &Connection, table: &str, column: &str) -> bool {
     names.iter().any(|name| name == column)
 }
 
+/// URL-safe studio id derived from the display name (stable across list/detail).
+fn studio_slug(name: &str) -> String {
+    let slug: String = name
+        .trim()
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c.to_ascii_lowercase()
+            } else if c.is_whitespace() || c == '-' || c == '_' {
+                '-'
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    let slug = slug
+        .split('-')
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join("-");
+    if slug.is_empty() {
+        format!("studio-{}", name.len())
+    } else {
+        slug
+    }
+}
+
 /// Canonical cup sizes stored in `performers.cup_size` (mirrors V1 `CupId`).
 const VALID_CUP_SIZES: &[&str] = &[
     "A",
@@ -697,10 +724,13 @@ impl Database {
             .map_err(|e| AppError::Other(e.to_string()))?;
         let id = Uuid::new_v4().to_string();
         let now = Utc::now().to_rfc3339();
+        // Prefer an explicit studio_name later; until then mirror channel so the
+        // virtual Studios browser has something to group on.
+        let studio_name = channel.filter(|c| !c.trim().is_empty());
         conn.execute(
-            "INSERT INTO scenes (id, title, path, source_url, thumb, phash, oshash, duration, channel, file_size, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
-            params![id, title, path, source_url, thumb, phash, oshash, duration, channel, file_size.map(|v| v as i64), now],
+            "INSERT INTO scenes (id, title, path, source_url, thumb, phash, oshash, duration, channel, studio_name, file_size, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+            params![id, title, path, source_url, thumb, phash, oshash, duration, channel, studio_name, file_size.map(|v| v as i64), now],
         )?;
         for p in performers {
             let pid = Self::upsert_performer_with_conn(&conn, p)?;
@@ -2196,37 +2226,153 @@ impl Database {
     }
 
     pub fn list_collections(&self) -> AppResult<Vec<Collection>> {
+        let mut collections = {
+            let conn = self
+                .conn
+                .lock()
+                .map_err(|e| AppError::Other(e.to_string()))?;
+            let mut stmt = conn.prepare(
+                "SELECT c.id, c.name, c.type, c.description, c.filter_json, c.created_at, c.updated_at,
+                        COUNT(cs.scene_id) as scene_count
+                 FROM collections c
+                 LEFT JOIN collection_scenes cs ON cs.collection_id = c.id
+                 GROUP BY c.id
+                 ORDER BY c.type, c.name",
+            )?;
+            let rows = stmt.query_map([], |row| {
+                let collection_type_str: String = row.get(2)?;
+                let collection_type = match collection_type_str.as_str() {
+                    "watchlist" => CollectionType::Watchlist,
+                    "smart" => CollectionType::Smart,
+                    _ => CollectionType::Collection,
+                };
+                Ok(Collection {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    collection_type,
+                    description: row.get(3)?,
+                    filter_json: row.get(4)?,
+                    scene_count: row.get::<_, i64>(7)? as u32,
+                    cover_thumbs: Vec::new(),
+                    created_at: row.get(5)?,
+                    updated_at: row.get(6)?,
+                })
+            })?;
+            rows.collect::<Result<Vec<_>, _>>()
+                .map_err(AppError::from)?
+        };
+
+        for col in &mut collections {
+            col.cover_thumbs = self.collection_cover_thumbs(&col.id, &col.collection_type, 4)?;
+            if col.collection_type == CollectionType::Smart {
+                // Manual JOIN count is always 0 for smart collections; use filter result size.
+                if let Some(json) = &col.filter_json {
+                    if let Ok(filter) = serde_json::from_str::<SceneFilter>(json) {
+                        col.scene_count = self
+                            .list_scenes_with_filter(&filter, Some(200), None)?
+                            .len() as u32;
+                    }
+                }
+            }
+        }
+        Ok(collections)
+    }
+
+    fn collection_cover_thumbs(
+        &self,
+        collection_id: &str,
+        collection_type: &CollectionType,
+        limit: usize,
+    ) -> AppResult<Vec<crate::models::CollectionCoverThumb>> {
+        if *collection_type == CollectionType::Smart {
+            let filter = {
+                let conn = self
+                    .conn
+                    .lock()
+                    .map_err(|e| AppError::Other(e.to_string()))?;
+                let json: Option<String> = conn
+                    .query_row(
+                        "SELECT filter_json FROM collections WHERE id = ?1",
+                        params![collection_id],
+                        |row| row.get(0),
+                    )
+                    .optional()?;
+                json.and_then(|j| serde_json::from_str::<SceneFilter>(&j).ok())
+            };
+            if let Some(filter) = filter {
+                let scenes = self.list_scenes_with_filter(&filter, Some(limit as i64), None)?;
+                return Ok(scenes
+                    .into_iter()
+                    .take(limit)
+                    .map(|s| crate::models::CollectionCoverThumb {
+                        scene_id: s.id,
+                        thumb: s.thumb,
+                    })
+                    .collect());
+            }
+            return Ok(Vec::new());
+        }
+
         let conn = self
             .conn
             .lock()
             .map_err(|e| AppError::Other(e.to_string()))?;
         let mut stmt = conn.prepare(
-            "SELECT c.id, c.name, c.type, c.description, c.filter_json, c.created_at, c.updated_at,
-                    COUNT(cs.scene_id) as scene_count
-             FROM collections c
-             LEFT JOIN collection_scenes cs ON cs.collection_id = c.id
-             GROUP BY c.id
-             ORDER BY c.type, c.name",
+            "SELECT s.id, s.thumb FROM collection_scenes cs
+             JOIN scenes s ON s.id = cs.scene_id
+             WHERE cs.collection_id = ?1
+               AND COALESCE(s.is_vaulted, 0) = 0
+             ORDER BY cs.position
+             LIMIT ?2",
         )?;
-        let rows = stmt.query_map([], |row| {
-            let collection_type_str: String = row.get(2)?;
-            let collection_type = match collection_type_str.as_str() {
-                "watchlist" => CollectionType::Watchlist,
-                "smart" => CollectionType::Smart,
-                _ => CollectionType::Collection,
-            };
-            Ok(Collection {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                collection_type,
-                description: row.get(3)?,
-                filter_json: row.get(4)?,
-                scene_count: row.get::<_, i64>(7)? as u32,
-                created_at: row.get(5)?,
-                updated_at: row.get(6)?,
+        let rows = stmt.query_map(params![collection_id, limit as i64], |row| {
+            Ok(crate::models::CollectionCoverThumb {
+                scene_id: row.get(0)?,
+                thumb: row.get(1)?,
             })
         })?;
         rows.collect::<Result<Vec<_>, _>>().map_err(AppError::from)
+    }
+
+    pub fn reorder_collection_scenes(
+        &self,
+        collection_id: &str,
+        scene_ids: &[String],
+    ) -> AppResult<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let coll_type: String = conn
+            .query_row(
+                "SELECT type FROM collections WHERE id = ?1",
+                params![collection_id],
+                |row| row.get(0),
+            )
+            .map_err(|_| AppError::NotFound(format!("collection not found: {collection_id}")))?;
+        if coll_type == "smart" {
+            return Err(AppError::InvalidInput(
+                "smart collections cannot be reordered".into(),
+            ));
+        }
+        let tx = conn
+            .unchecked_transaction()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        for (idx, scene_id) in scene_ids.iter().enumerate() {
+            tx.execute(
+                "UPDATE collection_scenes SET position = ?1
+                 WHERE collection_id = ?2 AND scene_id = ?3",
+                params![idx as i64 + 1, collection_id, scene_id],
+            )?;
+        }
+        let now = Utc::now().to_rfc3339();
+        tx.execute(
+            "UPDATE collections SET updated_at = ?1 WHERE id = ?2",
+            params![now, collection_id],
+        )?;
+        tx.commit()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        Ok(())
     }
 
     pub fn create_collection(
@@ -2603,6 +2749,114 @@ impl Database {
         })
     }
 
+    /// Virtual studios derived from `studio_name` falling back to `channel`.
+    pub fn list_studios(&self, query: Option<&str>) -> AppResult<Vec<crate::models::Studio>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let mut stmt = conn.prepare(
+            "SELECT name, COUNT(*) as scene_count FROM (
+                SELECT TRIM(COALESCE(NULLIF(studio_name, ''), NULLIF(channel, ''))) AS name
+                FROM scenes
+                WHERE COALESCE(is_vaulted, 0) = 0
+             )
+             WHERE name IS NOT NULL AND name != ''
+             GROUP BY name
+             ORDER BY scene_count DESC, name COLLATE NOCASE",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            let name: String = row.get(0)?;
+            let scene_count: i64 = row.get(1)?;
+            Ok((name, scene_count))
+        })?;
+        let q = query.map(|s| s.trim().to_lowercase()).filter(|s| !s.is_empty());
+        let mut out = Vec::new();
+        for row in rows {
+            let (name, scene_count) = row?;
+            if let Some(ref q) = q {
+                if !name.to_lowercase().contains(q) {
+                    continue;
+                }
+            }
+            out.push(crate::models::Studio {
+                id: studio_slug(&name),
+                name,
+                url: None,
+                scene_count: scene_count as u32,
+            });
+        }
+        Ok(out)
+    }
+
+    pub fn list_scenes_for_studio(&self, studio_id: &str) -> AppResult<Vec<Scene>> {
+        let studios = self.list_studios(None)?;
+        let studio = studios
+            .into_iter()
+            .find(|s| s.id == studio_id)
+            .ok_or_else(|| AppError::NotFound(format!("studio not found: {studio_id}")))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let mut stmt = conn.prepare(
+            "SELECT id, title, path, thumb, source_url, duration, channel, file_size, width, height, rating
+             FROM scenes
+             WHERE COALESCE(is_vaulted, 0) = 0
+               AND TRIM(COALESCE(NULLIF(studio_name, ''), NULLIF(channel, ''))) = ?1
+             ORDER BY created_at DESC",
+        )?;
+        let rows: Vec<SceneRow> = stmt
+            .query_map(params![studio.name], |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                    row.get(5)?,
+                    row.get(6)?,
+                    row.get(7)?,
+                    row.get(8)?,
+                    row.get(9)?,
+                    row.get(10)?,
+                ))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        drop(stmt);
+        let mut scenes = Vec::with_capacity(rows.len());
+        for (id, title, path, thumb, source_url, duration, channel, file_size, width, height, rating) in
+            rows
+        {
+            let performers = self.scene_performers(&conn, &id)?;
+            let tags = self.scene_tags(&conn, &id)?;
+            scenes.push(Scene {
+                id,
+                title,
+                path,
+                duration,
+                thumb,
+                source_url,
+                studio_id: Some(studio.id.clone()),
+                studio_name: Some(studio.name.clone()),
+                date: None,
+                rating,
+                performers,
+                tags,
+                channel,
+                phash: None,
+                oshash: None,
+                file_size: file_size.map(|v| v as u64),
+                notes: None,
+                width,
+                height,
+                stash_id: None,
+                stashdb_updated_at: None,
+            });
+        }
+        Ok(scenes)
+    }
+
     /// Fingerprints + duration for stash-box matching (no filesystem access).
     /// Tuple is (phash, oshash, md5, duration). Only MD5 + OSHASH go over the
     /// wire: our thumbnail phash is Stash-incompatible (base64 vs int64).
@@ -2859,6 +3113,8 @@ impl Database {
         ids: &[String],
         performers_add: Option<&[String]>,
         tags_add: Option<&[String]>,
+        performers_remove: Option<&[String]>,
+        tags_remove: Option<&[String]>,
     ) -> AppResult<u32> {
         let mut updated = 0u32;
         for id in ids {
@@ -2875,6 +3131,13 @@ impl Database {
                     }
                 }
             }
+            if let Some(remove) = performers_remove {
+                performers.retain(|p| {
+                    !remove
+                        .iter()
+                        .any(|r| !r.trim().is_empty() && p.eq_ignore_ascii_case(r.trim()))
+                });
+            }
             let mut tags = scene.tags;
             if let Some(add) = tags_add {
                 for name in add {
@@ -2886,6 +3149,13 @@ impl Database {
                         tags.push(name.to_string());
                     }
                 }
+            }
+            if let Some(remove) = tags_remove {
+                tags.retain(|t| {
+                    !remove
+                        .iter()
+                        .any(|r| !r.trim().is_empty() && t.eq_ignore_ascii_case(r.trim()))
+                });
             }
             self.update_scene(id, None, Some(&performers), Some(&tags), false, None, None)?;
             updated += 1;
@@ -3733,5 +4003,75 @@ mod tests {
             )
             .unwrap();
         assert!(mismatch.is_empty());
+    }
+
+    #[test]
+    fn batch_update_add_and_remove_is_idempotent() {
+        let dir = tempdir().unwrap();
+        let db = Database::new(dir.path().to_path_buf()).unwrap();
+        let id = db
+            .insert_scene(
+                "bulk-clip",
+                None,
+                None,
+                &["Alice".into(), "Bob".into()],
+                &["tagA".into(), "tagB".into()],
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+
+        let add = vec!["alice".to_string(), "Carol".to_string()];
+        let tags_add = vec!["TagA".to_string(), "tagC".to_string()];
+        assert_eq!(
+            db.batch_update_scenes(&[id.clone()], Some(&add), Some(&tags_add), None, None)
+                .unwrap(),
+            1
+        );
+        let scene = db.get_scene(&id).unwrap();
+        assert_eq!(scene.performers.len(), 3);
+        assert!(scene.performers.iter().any(|p| p == "Carol"));
+        assert_eq!(scene.tags.len(), 3);
+        assert!(scene.tags.iter().any(|t| t == "tagC"));
+
+        let remove = vec!["BOB".to_string(), "missing".to_string()];
+        let tags_remove = vec!["taga".to_string()];
+        assert_eq!(
+            db.batch_update_scenes(
+                &[id.clone()],
+                None,
+                None,
+                Some(&remove),
+                Some(&tags_remove),
+            )
+            .unwrap(),
+            1
+        );
+        let scene = db.get_scene(&id).unwrap();
+        assert!(!scene.performers.iter().any(|p| p.eq_ignore_ascii_case("bob")));
+        assert!(scene.performers.iter().any(|p| p == "Alice"));
+        assert!(scene.performers.iter().any(|p| p == "Carol"));
+        assert!(!scene.tags.iter().any(|t| t.eq_ignore_ascii_case("taga")));
+        assert!(scene.tags.iter().any(|t| t == "tagB"));
+
+        // Second remove is a no-op (idempotent).
+        assert_eq!(
+            db.batch_update_scenes(
+                &[id.clone()],
+                None,
+                None,
+                Some(&remove),
+                Some(&tags_remove),
+            )
+            .unwrap(),
+            1
+        );
+        let again = db.get_scene(&id).unwrap();
+        assert_eq!(again.performers.len(), scene.performers.len());
+        assert_eq!(again.tags.len(), scene.tags.len());
     }
 }

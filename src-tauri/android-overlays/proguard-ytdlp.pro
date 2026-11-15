@@ -25,6 +25,16 @@
 -keep class com.yausername.** { *; }
 -dontwarn com.yausername.**
 
+# WorkManager 2.9.x + Room 2.5.x: stock consumer rules keep subclasses but not
+# their no-arg constructors. R8 full mode (AGP optimization { enable = true })
+# strips WorkDatabase_Impl / InputMerger ctors; WorkManagerInitializer then
+# crashes at boot with:
+#   Failed to create an instance of class androidx.work.impl.WorkDatabase.canonicalName
+# Keep constructors even when release minify is re-enabled later.
+-keep class * extends androidx.room.RoomDatabase { <init>(); }
+-keep class * extends androidx.work.InputMerger { <init>(); }
+-keep class androidx.work.** { *; }
+
 # Apache Commons Compress — youtubedl-android's ZipUtils unzips the Python
 # runtime via commons-compress ZipFile, whose ExtraFieldUtils static registry
 # reflectively instantiates ZipExtraField impls (AsiExtraField, ...). R8 must

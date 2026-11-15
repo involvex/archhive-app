@@ -16,6 +16,7 @@ import {
   Folder,
   Clock,
   Lock,
+  Clapperboard,
 } from "lucide-react";
 import { useSettingsStore } from "@/lib/stores/settings";
 
@@ -193,6 +194,20 @@ function LibraryHubPage() {
                 <p className="font-semibold">Tags</p>
                 <p className="text-xs text-[var(--color-muted-foreground)]">
                   Explore and organize by tags
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        </Link>
+
+        <Link to="/library/studios" className="block">
+          <Card className="cursor-pointer hover:border-[var(--color-primary)] hover:bg-[var(--color-accent)]/5 transition-colors h-full">
+            <CardContent className="flex items-center gap-3 p-4 pt-4">
+              <Clapperboard className="h-5 w-5 text-[var(--color-primary)] shrink-0" />
+              <div>
+                <p className="font-semibold">Studios</p>
+                <p className="text-xs text-[var(--color-muted-foreground)]">
+                  Browse by studio name or channel
                 </p>
               </div>
             </CardContent>

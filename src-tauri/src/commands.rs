@@ -5,7 +5,7 @@ use crate::models::{
     ExportCollectionRequest, ExportCollectionResult, FfmpegStatus, HealthResponse, LanHost,
     LibraryStats, MarkWatchedRequest, MarkWatchedResult, MediaItem, MergeDuplicatesResult,
     OrphanSidecar, Performer, PornhubCategoryEntry, SaveSearchRequest, SavedSearch, ScanResult,
-    Scene, SceneFilter, SceneSort, SiteInfo, Tag, UpdateCollectionRequest,
+    Scene, SceneFilter, SceneSort, SiteInfo, Studio, Tag, UpdateCollectionRequest,
     UpdateSavedSearchRequest, UpdateSceneRequest, WatchProgress, WatchlistPollResult,
     WatchlistStatus, VaultActionResult, VaultScene, VaultStatus,
 };
@@ -697,7 +697,18 @@ pub fn batch_update_scenes(
         &body.scene_ids,
         body.performers_add.as_deref(),
         body.tags_add.as_deref(),
+        body.performers_remove.as_deref(),
+        body.tags_remove.as_deref(),
     ))
+}
+
+#[tauri::command]
+pub fn suggest_scene_tags(
+    state: State<'_, Arc<AppState>>,
+    scene_id: String,
+) -> CmdResult<serde_json::Value> {
+    let (performers, tags) = map_err(state.suggest_scene_tags(&scene_id))?;
+    Ok(serde_json::json!({ "performers": performers, "tags": tags }))
 }
 
 #[tauri::command]
@@ -1177,6 +1188,26 @@ pub async fn rollback_binary(
 }
 
 #[tauri::command]
+pub fn list_studios(
+    state: State<'_, Arc<AppState>>,
+    query: Option<String>,
+) -> CmdResult<Vec<Studio>> {
+    state
+        .list_studios(query.as_deref())
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn list_scenes_for_studio(
+    state: State<'_, Arc<AppState>>,
+    studio_id: String,
+) -> CmdResult<Vec<Scene>> {
+    state
+        .list_scenes_for_studio(&studio_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn list_collections(state: State<'_, Arc<AppState>>) -> CmdResult<Vec<Collection>> {
     state.list_collections().map_err(|e| e.to_string())
 }
@@ -1222,6 +1253,17 @@ pub fn remove_scene_from_collection(
 ) -> CmdResult<()> {
     state
         .remove_scene_from_collection(&scene_id, &collection_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn reorder_collection_scenes(
+    state: State<'_, Arc<AppState>>,
+    collection_id: String,
+    scene_ids: Vec<String>,
+) -> CmdResult<()> {
+    state
+        .reorder_collection_scenes(&collection_id, &scene_ids)
         .map_err(|e| e.to_string())
 }
 
@@ -1453,11 +1495,35 @@ pub async fn vault_status(state: State<'_, Arc<AppState>>) -> CmdResult<VaultSta
     map_err(state.vault_status())
 }
 
-/// Unlocks the vault session. The frontend must have completed a biometric
-/// prompt first; this command only opens the *session* window.
+/// Mint a one-shot unlock token after PIN verification (when configured).
 #[tauri::command]
-pub async fn vault_unlock(state: State<'_, Arc<AppState>>) -> CmdResult<VaultStatus> {
-    map_err(state.unlock_vault())
+pub async fn prepare_vault_unlock(
+    state: State<'_, Arc<AppState>>,
+    pin: Option<String>,
+) -> CmdResult<String> {
+    map_err(state.prepare_vault_unlock(pin.as_deref()))
+}
+
+/// Consume a mint token and open the vault session.
+#[tauri::command]
+pub async fn vault_unlock(
+    state: State<'_, Arc<AppState>>,
+    token: String,
+) -> CmdResult<VaultStatus> {
+    map_err(state.unlock_vault(&token))
+}
+
+#[tauri::command]
+pub async fn set_vault_pin(
+    state: State<'_, Arc<AppState>>,
+    pin: String,
+) -> CmdResult<VaultStatus> {
+    map_err(state.set_vault_pin(&pin))
+}
+
+#[tauri::command]
+pub async fn clear_vault_pin(state: State<'_, Arc<AppState>>) -> CmdResult<VaultStatus> {
+    map_err(state.clear_vault_pin())
 }
 
 #[tauri::command]

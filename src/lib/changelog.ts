@@ -6,6 +6,142 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.7.0",
+    date: "2026-11-15",
+    changes: [
+      {
+        type: "added",
+        text: "Batch remove performers/tags from the library multi-select bar",
+      },
+      {
+        type: "added",
+        text: "Collection cover mosaics, drag-to-reorder, and bulk Add to collection",
+      },
+      {
+        type: "added",
+        text: "Studios browser (virtual studios from studio name / channel)",
+      },
+      {
+        type: "added",
+        text: "Auto-tag from yt-dlp metadata (toggle in Settings) plus suggested tags in scene edit",
+      },
+      {
+        type: "added",
+        text: "Vault unlock gate: one-shot backend token + optional/desktop PIN",
+      },
+      {
+        type: "changed",
+        text: "Vaulted media reads refuse access while locked (path + is_vaulted flag)",
+      },
+    ],
+  },
+  {
+    version: "0.6.6",
+    date: "2026-11-01",
+    changes: [
+      {
+        type: "added",
+        text: "Media vault with biometric lock, gallery hiding, and Android MediaStore cleanup",
+      },
+      {
+        type: "added",
+        text: "CamGirlFinder Explore (search / face / random / profile)",
+      },
+      {
+        type: "added",
+        text: "In-app cam viewer improvements and Stripchat availability fixes",
+      },
+      {
+        type: "fixed",
+        text: "Android vault original-file deletion and ProGuard/yt-dlp packaging overlays",
+      },
+    ],
+  },
+  {
+    version: "0.6.5",
+    date: "2026-10-20",
+    changes: [
+      {
+        type: "added",
+        text: "Native Stripchat HLS resolver and CamsFinder Live tab source",
+      },
+      {
+        type: "fixed",
+        text: "Fullscreen player invoke import on Android",
+      },
+    ],
+  },
+  {
+    version: "0.6.4",
+    date: "2026-10-12",
+    changes: [
+      {
+        type: "added",
+        text: "In-app cookie capture on Android, ThotHub session fixes, optional Termux handoff",
+      },
+      {
+        type: "added",
+        text: "Browse filters, tag indexes, and category browsers across major tube sites",
+      },
+      {
+        type: "changed",
+        text: "Standalone engine mode retired; phones default to on-device local engine",
+      },
+      {
+        type: "fixed",
+        text: "Mobile library playback without LAN hosting, ThotHub/KVS watch paths",
+      },
+    ],
+  },
+  {
+    version: "0.6.3",
+    date: "2026-10-01",
+    changes: [
+      {
+        type: "fixed",
+        text: "Android release packaging and plugin Args retention for Jackson",
+      },
+    ],
+  },
+  {
+    version: "0.6.2",
+    date: "2026-09-28",
+    changes: [
+      {
+        type: "fixed",
+        text: "Legacy native-lib packaging so Chaquopy finds libpython on Android",
+      },
+    ],
+  },
+  {
+    version: "0.6.1",
+    date: "2026-09-25",
+    changes: [
+      {
+        type: "changed",
+        text: "Tauri CSP enabled for desktop/Android webviews",
+      },
+      {
+        type: "fixed",
+        text: "Android release boot crash from R8 stripping commons-compress",
+      },
+    ],
+  },
+  {
+    version: "0.6.0",
+    date: "2026-09-20",
+    changes: [
+      {
+        type: "added",
+        text: "Recommendations Phase 1–2: library picks rail, ranked live/feed slices",
+      },
+      {
+        type: "added",
+        text: "Auto-sign release APK helper for local builds",
+      },
+    ],
+  },
+  {
     version: "0.5.3",
     date: "2026-10-05",
     changes: [

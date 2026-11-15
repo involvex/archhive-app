@@ -244,6 +244,9 @@ impl LanServer {
                 "/api/library/probe-durations",
                 post(probe_library_durations),
             )
+            .route("/api/studios", get(list_studios_lan))
+            .route("/api/studios/{id}/scenes", get(list_studio_scenes_lan))
+            .route("/api/scenes/{id}/suggest-tags", get(suggest_scene_tags_lan))
             .route(
                 "/api/collections",
                 get(list_collections_lan).post(create_collection_lan),
@@ -255,6 +258,10 @@ impl LanServer {
             .route(
                 "/api/collections/{id}/scenes",
                 get(list_collection_scenes_lan),
+            )
+            .route(
+                "/api/collections/{id}/scenes/reorder",
+                post(reorder_collection_scenes_lan),
             )
             .route("/api/collections/{id}/export", get(export_collection_lan))
             .route(
@@ -791,6 +798,8 @@ async fn batch_update_scenes(
             &body.scene_ids,
             body.performers_add.as_deref(),
             body.tags_add.as_deref(),
+            body.performers_remove.as_deref(),
+            body.tags_remove.as_deref(),
         )
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(serde_json::json!(result)))
@@ -1532,6 +1541,43 @@ async fn clear_logs_route(State(_state): State<ApiState>) -> Result<StatusCode, 
     Ok(StatusCode::NO_CONTENT)
 }
 
+async fn suggest_scene_tags_lan(
+    State(state): State<ApiState>,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let (performers, tags) = state
+        .app
+        .suggest_scene_tags(&id)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(serde_json::json!({ "performers": performers, "tags": tags })))
+}
+
+async fn list_studios_lan(
+    State(state): State<ApiState>,
+    Query(q): Query<std::collections::HashMap<String, String>>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let query = q.get("q").map(|s| s.as_str());
+    let studios = state
+        .app
+        .list_studios(query)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(serde_json::json!(studios)))
+}
+
+async fn list_studio_scenes_lan(
+    State(state): State<ApiState>,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let scenes = state
+        .app
+        .list_scenes_for_studio(&id)
+        .map_err(|e| match e {
+            crate::error::AppError::NotFound(_) => StatusCode::NOT_FOUND,
+            _ => StatusCode::INTERNAL_SERVER_ERROR,
+        })?;
+    Ok(Json(serde_json::json!(scenes)))
+}
+
 async fn list_collections_lan(
     State(state): State<ApiState>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
@@ -1585,6 +1631,26 @@ async fn list_collection_scenes_lan(
         .list_collection_scenes(&id)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(serde_json::json!(scenes)))
+}
+
+async fn reorder_collection_scenes_lan(
+    State(state): State<ApiState>,
+    Path(id): Path<String>,
+    Json(body): Json<serde_json::Value>,
+) -> Result<StatusCode, StatusCode> {
+    let scene_ids: Vec<String> = body
+        .get("scene_ids")
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .ok_or(StatusCode::BAD_REQUEST)?;
+    state
+        .app
+        .reorder_collection_scenes(&id, &scene_ids)
+        .map_err(|e| match e {
+            crate::error::AppError::InvalidInput(_) => StatusCode::BAD_REQUEST,
+            crate::error::AppError::NotFound(_) => StatusCode::NOT_FOUND,
+            _ => StatusCode::INTERNAL_SERVER_ERROR,
+        })?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn export_collection_lan(

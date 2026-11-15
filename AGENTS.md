@@ -331,7 +331,7 @@ Configure in **Settings → Engine**. The frontend client (`api/client.ts`) auto
 
 21. **Cookie vault**: Cookies are encrypted at rest with AES-256-GCM. Plaintext cookie files are written only temporarily for yt-dlp `--cookies` usage.
 22. **LAN server**: Requires bearer token for all endpoints except `/api/health`. Tokens are randomly generated 32-byte hex strings.
-23. **CSP**: Currently disabled (`"csp": null`) in `tauri.conf.json` for development flexibility. Re-enable before production release.
+23. **CSP**: Enabled in `tauri.conf.json` (`app.security.csp`) with allowlists for IPC, asset protocol, loopback media, and HTTPS media/CDNs. Tighten further only with care for player/proxy needs.
 24. **No user input in shell commands**: When invoking yt-dlp or gallery-dl, sanitize URLs and never interpolate untrusted input into shell commands. Use `Command::new()` with proper argument arrays.
 
 ### Performance

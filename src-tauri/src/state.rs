@@ -128,14 +128,73 @@ impl AppState {
         self.media_vault.assert_unlocked()
     }
 
-    pub fn unlock_vault(&self) -> AppResult<VaultStatus> {
+    /// Verify PIN (when configured) and mint a one-shot unlock token.
+    ///
+    /// Desktop requires a PIN to be set. Mobile may mint without a PIN after
+    /// the frontend has completed its biometric prompt (attestation stays on
+    /// the UI side; the token is what the backend trusts for the session).
+    pub fn prepare_vault_unlock(&self, pin: Option<&str>) -> AppResult<String> {
         let settings = self.get_settings()?;
         if !settings.vault_enabled {
             return Err(crate::error::AppError::Forbidden(
                 "The vault is disabled in Settings.".into(),
             ));
         }
-        self.media_vault.unlock_for(settings.vault_auto_lock_mins);
+        let pin_hash = settings
+            .vault_pin_hash
+            .as_deref()
+            .filter(|h| !h.trim().is_empty());
+        #[cfg(not(mobile))]
+        if pin_hash.is_none() {
+            return Err(crate::error::AppError::Forbidden(
+                "Set a vault PIN in Settings → Privacy before unlocking.".into(),
+            ));
+        }
+        if let Some(hash) = pin_hash {
+            let pin = pin
+                .map(str::trim)
+                .filter(|p| !p.is_empty())
+                .ok_or_else(|| {
+                    crate::error::AppError::Forbidden("Vault PIN required.".into())
+                })?;
+            if !verify_vault_pin(pin, hash) {
+                return Err(crate::error::AppError::Forbidden(
+                    "Incorrect vault PIN.".into(),
+                ));
+            }
+        }
+        Ok(self.media_vault.mint_unlock_token())
+    }
+
+    pub fn unlock_vault(&self, token: &str) -> AppResult<VaultStatus> {
+        let settings = self.get_settings()?;
+        if !settings.vault_enabled {
+            return Err(crate::error::AppError::Forbidden(
+                "The vault is disabled in Settings.".into(),
+            ));
+        }
+        self.media_vault
+            .unlock_with_token(token, settings.vault_auto_lock_mins)?;
+        self.media_vault.status(&self.db, &settings)
+    }
+
+    pub fn set_vault_pin(&self, pin: &str) -> AppResult<VaultStatus> {
+        let pin = pin.trim();
+        if pin.len() < 4 {
+            return Err(crate::error::AppError::InvalidInput(
+                "Vault PIN must be at least 4 characters.".into(),
+            ));
+        }
+        let mut settings = self.get_settings()?;
+        settings.vault_pin_hash = Some(hash_vault_pin(pin));
+        self.save_settings(&settings)?;
+        self.media_vault.status(&self.db, &settings)
+    }
+
+    pub fn clear_vault_pin(&self) -> AppResult<VaultStatus> {
+        let mut settings = self.get_settings()?;
+        settings.vault_pin_hash = None;
+        self.save_settings(&settings)?;
         self.media_vault.status(&self.db, &settings)
     }
 
@@ -308,7 +367,9 @@ impl AppState {
         let path = scene
             .path
             .ok_or_else(|| crate::error::AppError::NotFound(format!("scene {scene_id}")))?;
-        if self.media_vault.is_vault_path(&path) {
+        // Gate both path-based and DB-flagged vault rows so a stale path
+        // outside vault_media cannot bypass the lock on desktop.
+        if self.media_vault.is_vault_path(&path) || self.db.is_scene_vaulted(scene_id)? {
             self.media_vault.assert_unlocked()?;
         }
         Ok(PathBuf::from(path))
@@ -1324,9 +1385,32 @@ impl AppState {
         ids: &[String],
         performers_add: Option<&[String]>,
         tags_add: Option<&[String]>,
+        performers_remove: Option<&[String]>,
+        tags_remove: Option<&[String]>,
     ) -> AppResult<crate::models::BatchUpdateScenesResult> {
-        let updated = self.db.batch_update_scenes(ids, performers_add, tags_add)?;
+        let updated = self.db.batch_update_scenes(
+            ids,
+            performers_add,
+            tags_add,
+            performers_remove,
+            tags_remove,
+        )?;
         Ok(crate::models::BatchUpdateScenesResult { updated })
+    }
+
+    pub fn suggest_scene_tags(
+        &self,
+        scene_id: &str,
+    ) -> AppResult<(Vec<String>, Vec<String>)> {
+        let scene = self.db.get_scene(scene_id)?;
+        let settings = self.db.get_settings().unwrap_or_default();
+        Ok(crate::library::auto_tag::suggest_from_title_and_path(
+            &scene.title,
+            scene.path.as_deref(),
+            &settings.auto_tag_rules,
+            &scene.tags,
+            &scene.performers,
+        ))
     }
 
     /// A site's category / tag index — or one `group` of a grouped index
@@ -1945,6 +2029,14 @@ impl AppState {
         })
     }
 
+    pub fn list_studios(&self, query: Option<&str>) -> AppResult<Vec<crate::models::Studio>> {
+        self.db.list_studios(query)
+    }
+
+    pub fn list_scenes_for_studio(&self, studio_id: &str) -> AppResult<Vec<Scene>> {
+        self.db.list_scenes_for_studio(studio_id)
+    }
+
     pub fn list_collections(&self) -> AppResult<Vec<Collection>> {
         self.db.list_collections()
     }
@@ -1982,6 +2074,14 @@ impl AppState {
     ) -> AppResult<()> {
         self.db
             .remove_scene_from_collection(scene_id, collection_id)
+    }
+
+    pub fn reorder_collection_scenes(
+        &self,
+        collection_id: &str,
+        scene_ids: &[String],
+    ) -> AppResult<()> {
+        self.db.reorder_collection_scenes(collection_id, scene_ids)
     }
 
     pub fn list_collection_scenes(&self, collection_id: &str) -> AppResult<Vec<Scene>> {
@@ -2667,6 +2767,47 @@ fn mime_from_path(path: &Path) -> &'static str {
         Some(e) if e == "vtt" => "text/vtt",
         _ => "application/octet-stream",
     }
+}
+
+fn hash_vault_pin(pin: &str) -> String {
+    use rand::RngCore;
+    use sha2::{Digest, Sha256};
+    let mut salt = [0u8; 16];
+    rand::thread_rng().fill_bytes(&mut salt);
+    let salt_hex = hex_encode(&salt);
+    let mut hasher = Sha256::new();
+    hasher.update(salt);
+    hasher.update(pin.as_bytes());
+    let hash = hex_encode(&hasher.finalize());
+    format!("{salt_hex}:{hash}")
+}
+
+fn verify_vault_pin(pin: &str, stored: &str) -> bool {
+    use sha2::{Digest, Sha256};
+    let Some((salt_hex, expected)) = stored.split_once(':') else {
+        return false;
+    };
+    let Ok(salt) = hex_decode(salt_hex) else {
+        return false;
+    };
+    let mut hasher = Sha256::new();
+    hasher.update(&salt);
+    hasher.update(pin.as_bytes());
+    hex_encode(&hasher.finalize()) == expected
+}
+
+fn hex_encode(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+fn hex_decode(s: &str) -> Result<Vec<u8>, ()> {
+    if s.len() % 2 != 0 {
+        return Err(());
+    }
+    (0..s.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&s[i..i + 2], 16).map_err(|_| ()))
+        .collect()
 }
 
 #[cfg(test)]

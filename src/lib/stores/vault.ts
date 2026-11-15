@@ -16,8 +16,8 @@ interface VaultState {
   degradedUnlock: boolean;
 
   refreshStatus: () => Promise<VaultStatus | null>;
-  /** Biometric prompt, then open the backend session. */
-  unlock: () => Promise<boolean>;
+  /** Biometric/PIN attestation, mint token, then open the backend session. */
+  unlock: (pin?: string) => Promise<boolean>;
   lock: () => Promise<void>;
   loadItems: () => Promise<void>;
   vaultScene: (id: string) => Promise<void>;
@@ -30,6 +30,14 @@ interface VaultState {
 function applyStatus(status: VaultStatus | null): void {
   setVaultMediaRoot(status?.vault_root);
   setVaultMediaUnlocked(status?.unlocked === true);
+}
+
+async function promptPin(message: string): Promise<string | null> {
+  if (typeof window === "undefined") return null;
+  const value = window.prompt(message);
+  if (value == null) return null;
+  const trimmed = value.trim();
+  return trimmed.length >= 4 ? trimmed : null;
 }
 
 export const useVaultStore = create<VaultState>()((set, get) => ({
@@ -54,15 +62,42 @@ export const useVaultStore = create<VaultState>()((set, get) => ({
     }
   },
 
-  unlock: async () => {
+  unlock: async (pin) => {
     set({ authenticating: true, error: null });
     try {
+      const statusBefore = get().status ?? (await get().refreshStatus());
+      const pinRequired = statusBefore?.pin_required === true;
+
       const outcome = await authenticateForVault();
       if (!outcome.ok) {
         set({ authenticating: false, error: outcome.message ?? null });
         return false;
       }
-      const status = await api.vaultUnlock();
+
+      let unlockPin = pin;
+      // Desktop always needs a PIN; mobile needs one when configured, or when
+      // biometric fell back to a plain confirmation dialog.
+      const needsPinPrompt =
+        pinRequired || outcome.degraded || !(statusBefore?.biometric_available === true);
+      if (!unlockPin && needsPinPrompt) {
+        unlockPin =
+          (await promptPin(
+            pinRequired
+              ? "Enter your vault PIN to unlock"
+              : "Set/confirm vault PIN (min 4 characters)",
+          )) ?? undefined;
+        if (!unlockPin) {
+          set({ authenticating: false, error: "Vault PIN required" });
+          return false;
+        }
+        // First-time desktop: persist PIN if none configured yet.
+        if (!pinRequired) {
+          await api.setVaultPin(unlockPin);
+        }
+      }
+
+      const token = await api.prepareVaultUnlock(unlockPin);
+      const status = await api.vaultUnlock(token);
       applyStatus(status);
       set({ status, authenticating: false, degradedUnlock: outcome.degraded, error: null });
       await get().loadItems();

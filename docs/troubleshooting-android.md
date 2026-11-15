@@ -70,8 +70,28 @@ Common causes:
 | `error while running tauri application` | Same as above, or check setup errors (DB / app data dir) in the same logcat window           |
 | `no such table: collections` on boot    | Install a build with the collections migration fix (no longer gated on FTS notes)            |
 | Empty `gen/android` after regen         | Always run `bun run android:regen` (applies LAN + YtDlp overlays)                            |
+| `WorkDatabase.canonicalName` at launch  | See **WorkManager / R8 boot crash** below                                                    |
 
-Release builds enable R8 minify; keep rules live in [`src-tauri/android-overlays/proguard-ytdlp.pro`](../src-tauri/android-overlays/proguard-ytdlp.pro).
+## WorkManager / R8 boot crash
+
+MIUI/Android feedback dialogs that show:
+
+```
+Unable to get provider androidx.startup.InitializationProvider
+Failed to create an instance of class androidx.work.impl.WorkDatabase.canonicalName
+```
+
+mean **release R8** stripped the no-arg constructor of `WorkDatabase_Impl` (WorkManager 2.9.x + Room 2.5.x). Newer Tauri templates use `optimization { enable = true }` instead of `isMinifyEnabled`, so an older patch that only flipped `isMinifyEnabled` left R8 on.
+
+Fix (then rebuild the APK):
+
+```powershell
+.\scripts\patch-android-ytdlp.ps1
+# or: bun run android:patches
+bun run build:apk:fast
+```
+
+Confirm `src-tauri/gen/android/app/build.gradle.kts` has `enable = false // r8-off marker` (or `isMinifyEnabled = false // r8-off marker`) on the release buildType, and `proguard-rules.pro` keeps `androidx.room.RoomDatabase` constructors. Overlay source: [`src-tauri/android-overlays/proguard-ytdlp.pro`](../src-tauri/android-overlays/proguard-ytdlp.pro).
 
 ## WebView / white screen / “Website not available”
 

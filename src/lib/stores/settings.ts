@@ -33,6 +33,7 @@ const defaultSettings: AppSettings = {
   pause_on_battery_saver: true,
   data_saver: "on_metered",
   thumb_quality: "original",
+  auto_tag_from_ytdlp: true,
 };
 
 export const useSettingsStore = create<SettingsState>()(

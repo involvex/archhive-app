@@ -93,10 +93,8 @@ else
   echo "youtubedl-android Gradle deps already present (pin $YOUTUBE_DL_ANDROID_VERSION)."
 fi
 
-# R8 minification keeps breaking release builds: v0.6.0 boot-crashed (commons-compress
-# reflection), v0.6.1/v0.6.2 broke every plugin invoke (Jackson Args creators stripped),
-# while debug builds with identical code worked. Release parity with debug > APK size,
-# so disable minification for the release buildType.
+# R8 / AGP optimization keeps breaking release builds (commons-compress, Jackson Args,
+# WorkManager WorkDatabase_Impl constructors). Prefer debug parity over APK size.
 if ! grep -q 'r8-off marker' "$GRADLE"; then
   python3 - "$GRADLE" <<'PY'
 import re
@@ -104,14 +102,21 @@ import sys
 from pathlib import Path
 path = Path(sys.argv[1])
 text = path.read_text()
-pattern = re.compile(
-    r'(?s)(getByName\("release"\) \{[^}]*?)isMinifyEnabled\s*=\s*true'
+opt = re.compile(
+    r'(?s)(getByName\("release"\)\s*\{[^}]*?optimization\s*\{[^}]*?)enable\s*=\s*true'
 )
-if not pattern.search(text):
-    raise SystemExit("Release buildType has no isMinifyEnabled = true to disable")
-text = pattern.sub(r'\1isMinifyEnabled = false // r8-off marker', text)
+legacy = re.compile(
+    r'(?s)(getByName\("release"\)\s*\{[^}]*?)isMinifyEnabled\s*=\s*true'
+)
+if opt.search(text):
+    text = opt.sub(r'\1enable = false // r8-off marker', text)
+    print("Disabled AGP release optimization (r8-off marker).")
+elif legacy.search(text):
+    text = legacy.sub(r'\1isMinifyEnabled = false // r8-off marker', text)
+    print("Disabled R8 minification for release buildType (debug parity).")
+else:
+    raise SystemExit("Release buildType has no optimization/minify flag to disable")
 path.write_text(text)
-print("Disabled R8 minification for release buildType (debug parity).")
 PY
 fi
 
@@ -169,8 +174,8 @@ print("Enabled jniLibs.useLegacyPackaging (extractNativeLibs) for youtubedl-andr
 PY
 fi
 
-if [[ -f "$PROGUARD" ]] && grep -q 'YtDlpPlugin' "$PROGUARD"; then
-  echo "ProGuard YtDlp keep rules already present."
+if [[ -f "$PROGUARD" ]] && grep -q 'androidx.room.RoomDatabase' "$PROGUARD"; then
+  echo "ProGuard YtDlp/WorkManager keep rules already present."
 else
   {
     if [[ -f "$PROGUARD" ]]; then
@@ -198,6 +203,17 @@ if ! grep -q 'org.apache.commons.compress' "$PROGUARD"; then
 -dontwarn com.fasterxml.jackson.**
 PG
   echo "Added youtubedl-android library ProGuard keeps."
+fi
+
+# WorkManager 2.9.x + Room: keep no-arg constructors R8 otherwise strips.
+if ! grep -q 'androidx.room.RoomDatabase' "$PROGUARD"; then
+  cat >> "$PROGUARD" <<'PG'
+
+-keep class * extends androidx.room.RoomDatabase { <init>(); }
+-keep class * extends androidx.work.InputMerger { <init>(); }
+-keep class androidx.work.** { *; }
+PG
+  echo "Added WorkManager/Room ProGuard constructor keeps."
 fi
 
 # Projects patched before the cookie login browser existed: add its keeps.
