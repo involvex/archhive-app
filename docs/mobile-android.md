@@ -145,30 +145,38 @@ Allow both ports through Windows Firewall on the desktop.
 
 ## LAN web UI (browser)
 
-When the desktop LAN server is enabled, the built React app is served at **`http://<pc-ip>:8787/`** on your local network (not port 1420).
+When LAN sharing is enabled on the **desktop** or on this **Android** app (Local engine → Settings → LAN → Share library on Wi-Fi), the built React app is served at **`http://<host-ip>:8787/`** on your local network (not port 1420). See [lan-web.md](lan-web.md).
 
-| URL                              | Purpose                                                    |
-| -------------------------------- | ---------------------------------------------------------- |
-| `http://<pc-ip>:8787/`           | Full ArcHive UI (browse, library, downloads)               |
-| `http://<pc-ip>:8787/files`      | Folder browser under your library path (like `bunx serve`) |
-| `http://<pc-ip>:8787/?token=...` | First-time browser access when LAN auth is enabled         |
+| URL                                | Purpose                                                    |
+| ---------------------------------- | ---------------------------------------------------------- |
+| `http://<host-ip>:8787/`           | Full ArcHive UI (browse, library, downloads)               |
+| `http://<host-ip>:8787/files`      | Folder browser under your library path (like `bunx serve`) |
+| `http://<host-ip>:8787/?token=...` | First-time browser access when LAN auth is required        |
 
-Desktop: Settings → LAN → **Copy web link** copies the URL with token.
+**Copy web link** / QR on the host copies the URL with token. Android hosting always requires a token and shows a persistent notification while sharing.
 
 Video playback uses `GET /api/scenes/{id}/media` and `GET /api/files/stream` with HTTP Range support (seek in browser).
 
+### Android as LAN host (manual)
+
+1. Phone: Settings → Engine → **On-device (this phone)**.
+2. Settings → LAN → **Share library on Wi-Fi** (allow the notification).
+3. Copy web link / Show QR.
+4. Another device on the same Wi-Fi opens the link in a browser.
+5. Turn sharing off when done (returns to the on-device `127.0.0.1` media proxy).
+
 ## Remote LAN test flow (manual)
 
-1. **Desktop:** Settings → LAN → enable server (default port `8787`). Copy API token.
-2. **Desktop:** `bun run build` so LAN can serve `dist/` (optional but recommended).
-3. **Find desktop IP:** `ipconfig` (Windows). Example: `192.168.178.69`.
-4. **Phone/emulator:** Settings → Engine → **Remote LAN**
+1. **Host:** Settings → LAN → enable sharing (desktop or Android Local). Copy API token.
+2. **Desktop host:** `bun run build` so LAN can serve `dist/` (optional but recommended).
+3. **Find host IP:** `ipconfig` (Windows) or the LAN URL shown in Settings. Example: `192.168.178.69`.
+4. **Phone/emulator (client):** Settings → Engine → **Remote LAN**
    - Tap a host under **LAN discovery** (mDNS), or enter manually:
-   - **Emulator:** `http://10.0.2.2:8787` (listed automatically)
-   - **Physical device:** pick discovered desktop host, e.g. `http://192.168.178.69:8787`
-   - Token: optional when desktop runs with `ARCHIVE_AUTO_LAN` (e.g. `bun run android:dev`)
-5. Tap **Test Connection** — should show desktop app version.
-6. Browse sites and queue downloads; jobs run on the desktop host.
+   - **Emulator → desktop:** `http://10.0.2.2:8787` (listed automatically)
+   - **Physical device:** pick discovered host, e.g. `http://192.168.178.69:8787`
+   - Token: optional when desktop runs with `ARCHIVE_AUTO_LAN` (e.g. `bun run android:dev`); required for Android hosts
+5. Tap **Test Connection** — should show host app version.
+6. Browse sites and queue downloads; jobs run on the host.
 
 ## Emulator networking notes
 

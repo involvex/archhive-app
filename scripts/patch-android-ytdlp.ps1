@@ -24,6 +24,7 @@ $pluginDest = Join-Path $pluginDestDir "YtDlpPlugin.kt"
 $pluginSrc = Join-Path $Overlays "YtDlpPlugin.kt"
 $proguardOverlay = Join-Path $Overlays "proguard-ytdlp.pro"
 $fgServiceSrc = Join-Path $Overlays "DownloadForegroundService.kt"
+$lanShareServiceSrc = Join-Path $Overlays "LanShareForegroundService.kt"
 $resumeWorkerSrc = Join-Path $Overlays "PendingResumeWorker.kt"
 
 if (-not (Test-Path $gradlePath)) {
@@ -42,6 +43,10 @@ Write-Host "Installed YtDlpPlugin.kt -> $pluginDest"
 if (Test-Path $fgServiceSrc) {
     Copy-Item -Path $fgServiceSrc -Destination (Join-Path $pluginDestDir "DownloadForegroundService.kt") -Force
     Write-Host "Installed DownloadForegroundService.kt"
+}
+if (Test-Path $lanShareServiceSrc) {
+    Copy-Item -Path $lanShareServiceSrc -Destination (Join-Path $pluginDestDir "LanShareForegroundService.kt") -Force
+    Write-Host "Installed LanShareForegroundService.kt"
 }
 if (Test-Path $resumeWorkerSrc) {
     Copy-Item -Path $resumeWorkerSrc -Destination (Join-Path $pluginDestDir "PendingResumeWorker.kt") -Force

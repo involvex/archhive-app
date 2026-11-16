@@ -405,6 +405,43 @@ pub fn stop_keep_alive(app: &AppHandle) {
     }
 }
 
+/// Keep the process alive while Android LAN hosting is on (separate notification
+/// from download keep-alive).
+pub fn start_lan_share_keep_alive(app: &AppHandle, title: &str, text: &str) {
+    #[cfg(target_os = "android")]
+    {
+        use serde_json::json;
+        let _ = with_plugin_state(app, |state| {
+            let _ = state.handle()?.run_mobile_plugin::<PluginResponse>(
+                "startLanShareKeepAlive",
+                json!({ "title": title, "text": text }),
+            );
+            Ok(())
+        });
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = (app, title, text);
+    }
+}
+
+pub fn stop_lan_share_keep_alive(app: &AppHandle) {
+    #[cfg(target_os = "android")]
+    {
+        use serde_json::json;
+        let _ = with_plugin_state(app, |state| {
+            let _ = state
+                .handle()?
+                .run_mobile_plugin::<PluginResponse>("stopLanShareKeepAlive", json!({}));
+            Ok(())
+        });
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = app;
+    }
+}
+
 pub fn schedule_pending_resume(app: &AppHandle, require_unmetered: bool) {
     #[cfg(target_os = "android")]
     {

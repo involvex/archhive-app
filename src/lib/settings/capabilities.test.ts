@@ -23,4 +23,8 @@ describe("visibleSettingsTabs", () => {
       "desktop",
     );
   });
+
+  it("keeps the LAN tab visible on phones (hosting gated by lanServer)", () => {
+    expect(visibleSettingsTabs(base)).toContain("lan");
+  });
 });

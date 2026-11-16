@@ -1122,20 +1122,23 @@ export const api = {
   },
 
   async startLanServer(port: number): Promise<{ token: string }> {
-    if (getAppRuntime() !== "desktop-tauri") {
-      throw new Error("Enable the LAN server on the desktop app (Settings → LAN).");
+    const runtime = getAppRuntime();
+    if (runtime !== "desktop-tauri" && runtime !== "mobile-tauri") {
+      throw new Error("Enable the LAN server in the ArcHive app (Settings → LAN).");
     }
     return localInvoke("start_lan_server", { port });
   },
 
   async stopLanServer(): Promise<void> {
-    if (getAppRuntime() !== "desktop-tauri") return;
+    const runtime = getAppRuntime();
+    if (runtime !== "desktop-tauri" && runtime !== "mobile-tauri") return;
     await localInvoke("stop_lan_server");
   },
 
   async regenerateLanServer(port: number): Promise<{ token: string }> {
-    if (getAppRuntime() !== "desktop-tauri") {
-      throw new Error("Regenerate the LAN token on the desktop app (Settings → LAN).");
+    const runtime = getAppRuntime();
+    if (runtime !== "desktop-tauri" && runtime !== "mobile-tauri") {
+      throw new Error("Regenerate the LAN token in the ArcHive app (Settings → LAN).");
     }
     return localInvoke("regenerate_lan_server", { port });
   },

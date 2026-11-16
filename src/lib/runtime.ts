@@ -1,3 +1,4 @@
+import { isAndroidTauri } from "./lan-discovery";
 import { useSettingsStore } from "./stores/settings";
 import { isMobileDevice, isTauri } from "./tauri";
 import type { EngineMode } from "./types";
@@ -31,7 +32,12 @@ export function getCapabilities(runtime: AppRuntime = getAppRuntime()): RuntimeC
     localIpc:
       runtime === "desktop-tauri" ||
       (runtime === "mobile-tauri" && settings.engine_mode === "local"),
-    lanServer: runtime === "desktop-tauri",
+    // Desktop always; Android Local can host the same LAN web UI on Wi-Fi.
+    lanServer:
+      runtime === "desktop-tauri" ||
+      (runtime === "mobile-tauri" &&
+        isAndroidTauri() &&
+        (settings.engine_mode === "local" || settings.engine_mode === "standalone")),
     lanDiscovery: runtime === "mobile-tauri" || runtime === "desktop-tauri",
     // Library settings are editable on every runtime: desktop and on-device
     // mobile backends persist via save_settings (which validates the path),

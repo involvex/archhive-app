@@ -459,6 +459,42 @@ class YtDlpPlugin(private val activity: Activity) : Plugin(activity) {
         }
     }
 
+    /** Keep process alive while LAN web hosting is enabled (separate from downloads). */
+    @Command
+    fun startLanShareKeepAlive(invoke: Invoke) {
+        val args = invoke.parseArgs(KeepAliveArgs::class.java)
+        try {
+            LanShareForegroundService.start(
+                activity.applicationContext,
+                args.title.ifBlank { "ArcHive LAN sharing" },
+                args.text.ifBlank { "Serving library on your Wi-Fi" },
+            )
+            val ret = JSObject()
+            ret.put("ok", true)
+            invoke.resolve(ret)
+        } catch (e: Throwable) {
+            val ret = JSObject()
+            ret.put("ok", false)
+            ret.put("message", e.message ?: "startLanShareKeepAlive failed")
+            invoke.resolve(ret)
+        }
+    }
+
+    @Command
+    fun stopLanShareKeepAlive(invoke: Invoke) {
+        try {
+            LanShareForegroundService.stop(activity.applicationContext)
+            val ret = JSObject()
+            ret.put("ok", true)
+            invoke.resolve(ret)
+        } catch (e: Throwable) {
+            val ret = JSObject()
+            ret.put("ok", false)
+            ret.put("message", e.message ?: "stopLanShareKeepAlive failed")
+            invoke.resolve(ret)
+        }
+    }
+
     /**
      * Open a local file in another app (video player, gallery, …) via
      * ACTION_VIEW. Android forbids file:// URIs across apps, so the file is

@@ -242,6 +242,8 @@ export interface AppSettings {
   download_quality?: DownloadQuality;
   prefer_mp4?: boolean;
   lan_auth_enabled?: boolean;
+  /** Cleared once on Android so stale loopback `lan_enabled` does not open 0.0.0.0. */
+  android_lan_share_migrated?: boolean;
   auto_tag_rules?: string[];
   /** Merge yt-dlp dump-json tags/categories into scenes on download complete. */
   auto_tag_from_ytdlp?: boolean;

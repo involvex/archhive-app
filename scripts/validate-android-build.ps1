@@ -37,6 +37,7 @@ $cookiePlugin = Join-Path $gen "app\src\main\java\com\archhive\app\CookieHarvest
 $termuxPlugin = Join-Path $gen "app\src\main\java\com\archhive\app\TermuxBridgePlugin.kt"
 $mainActivity = Join-Path $gen "app\src\main\java\com\archhive\app\MainActivity.kt"
 $fgService = Join-Path $gen "app\src\main\java\com\archhive\app\DownloadForegroundService.kt"
+$lanShareService = Join-Path $gen "app\src\main\java\com\archhive\app\LanShareForegroundService.kt"
 $resumeWorker = Join-Path $gen "app\src\main\java\com\archhive\app\PendingResumeWorker.kt"
 $cookieBrowser = Join-Path $gen "app\src\main\java\com\archhive\app\CookieBrowserPlugin.kt"
 $mediaScanPlugin = Join-Path $gen "app\src\main\java\com\archhive\app\MediaScanPlugin.kt"
@@ -62,6 +63,9 @@ if ((Test-Path $mainActivity) -and ((Get-Content $mainActivity -Raw) -notmatch '
 }
 if (-not (Test-Path $fgService)) {
     Add-Fail "Missing DownloadForegroundService.kt"
+}
+if (-not (Test-Path $lanShareService)) {
+    Add-Fail "Missing LanShareForegroundService.kt"
 }
 if (-not (Test-Path $resumeWorker)) {
     Add-Fail "Missing PendingResumeWorker.kt"
@@ -144,6 +148,9 @@ if (-not (Test-Path $manifest)) {
     }
     if ($mf -notmatch 'DownloadForegroundService') {
         Add-Fail "AndroidManifest missing DownloadForegroundService"
+    }
+    if ($mf -notmatch 'LanShareForegroundService') {
+        Add-Fail "AndroidManifest missing LanShareForegroundService"
     }
     if ($mf -notmatch 'FOREGROUND_SERVICE_DATA_SYNC') {
         Add-Warn "AndroidManifest may be missing FOREGROUND_SERVICE_DATA_SYNC"
