@@ -1,5 +1,7 @@
 pub mod binary_installer;
 pub mod cookie_harvest;
+#[cfg(target_os = "android")]
+pub mod lan_share;
 pub mod media_scan;
 pub mod share;
 pub mod standalone;

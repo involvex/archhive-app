@@ -131,6 +131,15 @@ fn bootstrap_mobile_settings(db: &Database, data_dir: &std::path::Path) -> Resul
         }
         _ => {}
     }
+    // Older Android builds set lan_enabled=true whenever the loopback media
+    // server started. Network hosting is a new opt-in — clear the stale flag
+    // once so upgrades do not suddenly bind 0.0.0.0.
+    #[cfg(target_os = "android")]
+    if !settings.android_lan_share_migrated {
+        settings.lan_enabled = false;
+        settings.android_lan_share_migrated = true;
+        changed = true;
+    }
     if changed {
         db.save_settings(&settings).map_err(|e| e.to_string())?;
     }
@@ -243,9 +252,23 @@ pub fn run() {
         #[cfg(mobile)]
         {
             let st = state.clone();
-            let mobile_port = state.get_settings().map(|s| s.lan_port).unwrap_or(8787);
+            let settings = state.get_settings().ok();
+            let mobile_port = settings.as_ref().map(|s| s.lan_port).unwrap_or(8787);
+            // Android may opt into LAN hosting (0.0.0.0); otherwise phones keep
+            // the 127.0.0.1 media proxy for the in-app player.
+            let want_lan_host = cfg!(target_os = "android")
+                && settings.as_ref().is_some_and(|s| s.lan_enabled);
             tauri::async_runtime::spawn(async move {
-                if let Err(e) = st.ensure_loopback_server(mobile_port).await {
+                if want_lan_host {
+                    if let Err(e) = st.ensure_lan_server(mobile_port).await {
+                        tracing::warn!(
+                            "LAN host start failed: {e}; falling back to loopback media server"
+                        );
+                        if let Err(e2) = st.ensure_loopback_server(mobile_port).await {
+                            tracing::warn!("Loopback server start failed: {e2}");
+                        }
+                    }
+                } else if let Err(e) = st.ensure_loopback_server(mobile_port).await {
                     tracing::warn!("Loopback server start failed: {e}");
                 }
             });

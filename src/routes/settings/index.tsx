@@ -16,7 +16,7 @@ import { useUnifiedSettings } from "@/hooks/useUnifiedSettings";
 import { useSettingsStore } from "@/lib/stores/settings";
 import { hasLocalBackend } from "@/lib/runtime";
 import { open } from "@tauri-apps/plugin-dialog";
-import { mergeDiscoveredHosts } from "@/lib/lan-discovery";
+import { isAndroidTauri, mergeDiscoveredHosts } from "@/lib/lan-discovery";
 import { enginePluginStatus } from "@/lib/engineHealth";
 import {
   clearLanHistory,
@@ -1353,8 +1353,8 @@ function SettingsPage() {
         <Card className="border-[var(--color-primary)]">
           <CardContent className="p-4 text-sm">
             Browser mode — connect via <strong>Engine → Remote LAN</strong> (
-            <code>http://&lt;pc-ip&gt;:8787</code> + token). LAN server runs only in the desktop
-            app.
+            <code>http://&lt;host-ip&gt;:8787</code> + token). Enable LAN sharing on the desktop app
+            or on an Android phone (Settings → LAN).
           </CardContent>
         </Card>
       )}
@@ -1409,7 +1409,7 @@ function SettingsPage() {
                   {mode === "remote_lan" && runtime === "browser" && " (recommended)"}
                 </label>
               ))}
-              {caps.lanServer && settings.lan_enabled && displayLanToken && (
+              {caps.lanServer && settings.lan_enabled && displayLanToken && !isAndroidTauri() && (
                 <Card className="border-[var(--color-primary)]">
                   <CardContent className="p-4 text-sm space-y-2">
                     <p>
@@ -1425,11 +1425,10 @@ function SettingsPage() {
               {settings.engine_mode === "remote_lan" && (
                 <div className="space-y-2 pt-2">
                   <ConnectionStatusChip />
-                  {!caps.lanServer && (
+                  {runtime === "mobile-tauri" && (
                     <p className="rounded-md border border-[var(--color-border)] bg-[var(--color-muted)] p-3 text-xs">
-                      Desktop LAN runs on port <strong>8787</strong> (not 1420).{" "}
-                      <code>bun run android:dev</code> auto-starts it; token is optional in dev
-                      mode.
+                      Remote host LAN runs on port <strong>8787</strong> (not 1420). Use a desktop
+                      or another phone that has Settings → LAN sharing enabled.
                     </p>
                   )}
                   {caps.lanDiscovery && (
@@ -2621,15 +2620,27 @@ function SettingsPage() {
             <CardContent className="space-y-3">
               {!caps.lanServer ? (
                 <p className="text-xs text-[var(--color-muted-foreground)]">
-                  The LAN server runs only in the desktop app. Open ArcHive on your PC → Settings →
-                  LAN to enable API on port 8787.
+                  The LAN server runs on the desktop app, or on Android in <strong>Local</strong>{" "}
+                  engine mode. Open ArcHive → Settings → LAN to enable sharing on port 8787.
                 </p>
               ) : (
                 <>
                   <p className="text-xs text-[var(--color-muted-foreground)]">
-                    Serves the web UI and API on your LAN. Open{" "}
-                    <code>http://&lt;pc-ip&gt;:{settings.lan_port}/</code> in a phone browser, or
-                    use Remote LAN in the mobile app. Folder browser: <code>/files</code>.
+                    {isAndroidTauri() ? (
+                      <>
+                        Serves the web UI and API on your Wi-Fi. Other devices open{" "}
+                        <code>http://&lt;phone-ip&gt;:{settings.lan_port}/</code> in a browser.
+                        Token is always required. A notification stays up while sharing (battery
+                        cost). Guest Wi-Fi with client isolation will not work. Folder browser:{" "}
+                        <code>/files</code>.
+                      </>
+                    ) : (
+                      <>
+                        Serves the web UI and API on your LAN. Open{" "}
+                        <code>http://&lt;pc-ip&gt;:{settings.lan_port}/</code> in a phone browser,
+                        or use Remote LAN in the mobile app. Folder browser: <code>/files</code>.
+                      </>
+                    )}
                   </p>
                   <div className="flex items-center gap-3">
                     <Switch.Root
@@ -2645,9 +2656,11 @@ function SettingsPage() {
                     >
                       <Switch.Thumb className="block h-4 w-4 translate-x-0.5 rounded-full bg-white transition data-[state=checked]:translate-x-[18px]" />
                     </Switch.Root>
-                    <span className="text-sm">Enable LAN server</span>
+                    <span className="text-sm">
+                      {isAndroidTauri() ? "Share library on Wi-Fi" : "Enable LAN server"}
+                    </span>
                   </div>
-                  {settings.lan_enabled && (
+                  {settings.lan_enabled && !isAndroidTauri() && (
                     <div className="ml-7 flex items-center gap-3">
                       <Switch.Root
                         checked={settings.lan_auth_enabled !== false}
@@ -2684,6 +2697,12 @@ function SettingsPage() {
                         </p>
                       </div>
                     </div>
+                  )}
+                  {settings.lan_enabled && isAndroidTauri() && (
+                    <p className="ml-7 text-xs text-[var(--color-muted-foreground)]">
+                      Authentication is always on for Android hosting. Use Copy web link to share
+                      the URL with token.
+                    </p>
                   )}
                   <Input
                     type="number"
@@ -2741,8 +2760,9 @@ function SettingsPage() {
                         </div>
                       )}
                       <p className="text-xs text-[var(--color-muted-foreground)]">
-                        Mobile app: Settings → Engine → paste token. Phone browser: use Copy web
-                        link (includes token in URL when required).
+                        {isAndroidTauri()
+                          ? "Other phones/PCs: open the copied web link on the same Wi-Fi. Keep the sharing notification until you turn this off."
+                          : "Mobile app: Settings → Engine → paste token. Phone browser: use Copy web link (includes token in URL when required)."}
                       </p>
                     </div>
                   )}

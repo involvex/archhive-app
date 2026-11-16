@@ -537,6 +537,10 @@ pub struct AppSettings {
     /// Has the first-run wizard been completed? (#73)
     #[serde(default)]
     pub wizard_completed: bool,
+    /// One-shot: older Android builds set `lan_enabled` when starting the
+    /// loopback media server. Cleared once so upgrades do not open 0.0.0.0.
+    #[serde(default)]
+    pub android_lan_share_migrated: bool,
     /// Last timestamp of binary update check (seconds since epoch). (#69)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_binary_check: Option<i64>,
@@ -789,6 +793,7 @@ impl Default for AppSettings {
             data_saver: default_data_saver(),
             thumb_quality: default_thumb_quality(),
             wizard_completed: false,
+            android_lan_share_migrated: false,
             last_binary_check: None,
             auto_check_binaries: default_auto_check_binaries(),
             binary_backup_path: None,

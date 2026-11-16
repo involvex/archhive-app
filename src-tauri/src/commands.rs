@@ -606,8 +606,8 @@ pub async fn start_lan_server(
 }
 
 #[tauri::command]
-pub fn stop_lan_server(state: State<'_, Arc<AppState>>) -> CmdResult<()> {
-    map_err(state.stop_lan_server())
+pub async fn stop_lan_server(state: State<'_, Arc<AppState>>) -> CmdResult<()> {
+    map_err(state.stop_lan_server().await)
 }
 
 #[tauri::command]

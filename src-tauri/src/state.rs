@@ -16,12 +16,12 @@ use std::sync::Arc;
 use tauri::Emitter;
 use tauri_plugin_shell::ShellExt;
 
-/// Phones only run the 127.0.0.1 loopback server (on-device engine); never
-/// expose the API on the network from a mobile device.
+/// iOS (and other non-Android mobile) never expose the API on the network.
+/// Android may opt in via Settings → LAN (token required, foreground service).
 fn refuse_lan_hosting_on_mobile() -> AppResult<()> {
-    if cfg!(mobile) {
+    if cfg!(mobile) && !cfg!(target_os = "android") {
         return Err(crate::error::AppError::Other(
-            "LAN hosting is only available in the desktop app".to_string(),
+            "LAN hosting is only available in the desktop app or Android".to_string(),
         ));
     }
     Ok(())
@@ -1248,44 +1248,73 @@ impl AppState {
         Ok(canonical.to_string_lossy().to_string())
     }
 
-    pub fn stop_lan_server(&self) -> AppResult<()> {
+    /// Stop the running Axum listener without touching `lan_enabled` or
+    /// restarting loopback. Used when switching between loopback and LAN host.
+    fn halt_running_server(&self) {
         if let Some(mut server) = self.lan_server.lock().take() {
             server.stop();
+        }
+    }
+
+    /// Turn off LAN network hosting. On Android, falls back to the 127.0.0.1
+    /// media server so the in-app player keeps working.
+    pub async fn stop_lan_server(self: &Arc<Self>) -> AppResult<()> {
+        self.halt_running_server();
+        #[cfg(target_os = "android")]
+        {
+            crate::mobile::lan_share::stop_keep_alive(self.app_handle());
         }
         let mut settings = self.get_settings()?;
         settings.lan_enabled = false;
         self.save_settings(&settings)?;
+
+        #[cfg(target_os = "android")]
+        {
+            let port = settings.lan_port;
+            if let Err(e) = self.ensure_loopback_server(port).await {
+                tracing::warn!("[lan] loopback restore after stop failed: {e}");
+            }
+        }
         Ok(())
     }
 
     pub async fn ensure_lan_server(self: &Arc<Self>, port: u16) -> AppResult<String> {
         refuse_lan_hosting_on_mobile()?;
         let open_dev = std::env::var("ARCHIVE_AUTO_LAN").ok().as_deref() == Some("1");
+        // Android always requires a token — the phone is often on guest Wi‑Fi
+        // with other untrusted devices.
+        let force_auth = cfg!(target_os = "android");
 
         {
             let guard = self.lan_server.lock();
             if let Some(server) = guard.as_ref() {
                 let settings = self.get_settings()?;
                 let current = settings.lan_token.clone().unwrap_or_default();
-                let want_auth = !open_dev && settings.lan_auth_enabled;
+                let want_auth = force_auth || (!open_dev && settings.lan_auth_enabled);
                 let want_token_empty = !want_auth;
-                let running_mismatch = server.lan_auth_enabled != want_auth
+                let running_mismatch = server.is_loopback()
+                    || server.lan_auth_enabled != want_auth
                     || server.token_empty != want_token_empty
-                    || (open_dev && !current.is_empty());
+                    || (open_dev && !force_auth && !current.is_empty());
                 if !running_mismatch {
+                    #[cfg(target_os = "android")]
+                    {
+                        crate::mobile::lan_share::start_keep_alive(
+                            self.app_handle(),
+                            "ArcHive LAN sharing",
+                            &format!("Serving library on port {port}"),
+                        );
+                    }
                     return Ok(current);
                 }
-            } else {
-                // no server running
             }
         }
         // Restart if a server was running with mismatched auth, or start fresh.
-        if self.lan_server.lock().is_some() {
-            self.stop_lan_server()?;
-        }
+        self.halt_running_server();
 
         let mut settings = self.get_settings()?;
-        let token = if open_dev || !settings.lan_auth_enabled {
+        let want_auth = force_auth || (!open_dev && settings.lan_auth_enabled);
+        let token = if !want_auth {
             String::new()
         } else {
             match settings.lan_token.clone() {
@@ -1298,30 +1327,39 @@ impl AppState {
             self.clone(),
             port,
             token.clone(),
-            settings.lan_auth_enabled,
+            want_auth,
             static_dir,
         )
         .await?;
         *self.lan_server.lock() = Some(server);
         settings.lan_enabled = true;
         settings.lan_port = port;
+        if force_auth {
+            settings.lan_auth_enabled = true;
+        }
         settings.lan_token = if token.is_empty() {
             None
         } else {
             Some(token.clone())
         };
         self.save_settings(&settings)?;
+        #[cfg(target_os = "android")]
+        {
+            crate::mobile::lan_share::start_keep_alive(
+                self.app_handle(),
+                "ArcHive LAN sharing",
+                &format!("Serving library on port {port}"),
+            );
+        }
         tracing::info!(
             "[lan] server started on port {port} auth_required={}",
-            settings.lan_auth_enabled && !token.is_empty()
+            want_auth && !token.is_empty()
         );
         Ok(token)
     }
 
     pub async fn ensure_loopback_server(self: &Arc<Self>, port: u16) -> AppResult<String> {
-        if self.lan_server.lock().is_some() {
-            let _ = self.stop_lan_server();
-        }
+        self.halt_running_server();
 
         let mut settings = self.get_settings()?;
         // Reuse a previously generated token when there is one so the phone UI
@@ -1335,7 +1373,8 @@ impl AppState {
             crate::server::LanServer::start_loopback(self.clone(), port, token.clone(), static_dir)
                 .await?;
         *self.lan_server.lock() = Some(server);
-        settings.lan_enabled = true;
+        // Loopback is the on-device media proxy — it must not flip the
+        // Settings → LAN "share on network" flag (that opts into 0.0.0.0).
         settings.lan_port = port;
         settings.lan_token = Some(token.clone());
         self.save_settings(&settings)?;
@@ -1343,18 +1382,23 @@ impl AppState {
         Ok(token)
     }
 
-    /// Token of the RUNNING loopback server, if any (mobile on-device server).
+    /// Token of the RUNNING on-device media server (loopback or Android LAN host).
     /// Site adapters need this to append `?token=` to the proxy URLs they hand
-    /// to the WebView.
+    /// to the WebView (which still hits 127.0.0.1).
     pub fn loopback_token(&self) -> Option<String> {
         let guard = self.lan_server.lock();
         let server = guard.as_ref()?;
-        server.is_loopback().then(|| server.token().to_string())
+        let token = server.token();
+        (!token.is_empty()).then(|| token.to_string())
     }
 
     pub async fn regenerate_lan_server(self: &Arc<Self>, port: u16) -> AppResult<String> {
         refuse_lan_hosting_on_mobile()?;
-        self.stop_lan_server()?;
+        self.halt_running_server();
+        #[cfg(target_os = "android")]
+        {
+            crate::mobile::lan_share::stop_keep_alive(self.app_handle());
+        }
         let mut settings = self.get_settings()?;
         settings.lan_token = None;
         self.save_settings(&settings)?;

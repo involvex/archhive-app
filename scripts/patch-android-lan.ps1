@@ -84,6 +84,21 @@ $1
             $manifest = $manifest -replace '</application>', "$serviceBlock`r`n  </application>"
             Set-Content -Path $ManifestPath -Value $manifest -NoNewline
             Write-Host "Registered DownloadForegroundService in AndroidManifest."
+            $manifest = Get-Content $ManifestPath -Raw
+        }
+    }
+
+    if ($manifest -notmatch 'LanShareForegroundService') {
+        if ($manifest -match '</application>') {
+            $lanServiceBlock = @'
+    <service
+        android:name="com.archhive.app.LanShareForegroundService"
+        android:exported="false"
+        android:foregroundServiceType="dataSync" />
+'@
+            $manifest = $manifest -replace '</application>', "$lanServiceBlock`r`n  </application>"
+            Set-Content -Path $ManifestPath -Value $manifest -NoNewline
+            Write-Host "Registered LanShareForegroundService in AndroidManifest."
         }
     }
 }
