@@ -1,3 +1,63 @@
+use crate::error::{AppError, AppResult};
+use std::net::IpAddr;
+
+/// Validate an outbound scrape/fetch URL before handing it to reqwest.
+///
+/// Site adapters construct http(s) URLs for remote media hosts; this gate
+/// rejects non-http schemes, embedded credentials, and literal private /
+/// loopback / link-local addresses so a crafted URL cannot turn
+/// `SiteContext::fetch_*` into LAN/metadata SSRF.
+pub fn validate_outbound_fetch_url(url: &str) -> AppResult<String> {
+    let parsed = url::Url::parse(url.trim())
+        .map_err(|e| AppError::InvalidInput(format!("invalid fetch url: {e}")))?;
+    if parsed.scheme() != "http" && parsed.scheme() != "https" {
+        return Err(AppError::InvalidInput(format!(
+            "fetch url must be http(s), got {}",
+            parsed.scheme()
+        )));
+    }
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return Err(AppError::InvalidInput(
+            "fetch url must not include credentials".into(),
+        ));
+    }
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| AppError::InvalidInput("fetch url missing host".into()))?;
+    if is_blocked_fetch_host(host) {
+        return Err(AppError::InvalidInput(format!(
+            "fetch url host is not allowed: {host}"
+        )));
+    }
+    // Rebuild from the parsed URL so the request uses validated components.
+    Ok(parsed.to_string())
+}
+
+fn is_blocked_fetch_host(host: &str) -> bool {
+    let lower = host.to_ascii_lowercase();
+    if lower == "localhost" || lower.ends_with(".localhost") || lower.ends_with(".local") {
+        return true;
+    }
+    let Ok(ip) = host.parse::<IpAddr>() else {
+        return false;
+    };
+    match ip {
+        IpAddr::V4(v4) => {
+            v4.is_loopback()
+                || v4.is_private()
+                || v4.is_link_local()
+                || v4.is_unspecified()
+                || v4.is_broadcast()
+        }
+        IpAddr::V6(v6) => {
+            v6.is_loopback()
+                || v6.is_unspecified()
+                || (v6.segments()[0] & 0xfe00) == 0xfc00 // unique local
+                || (v6.segments()[0] & 0xffc0) == 0xfe80 // link-local
+        }
+    }
+}
+
 /// Path segment: lowercased, whitespace to hyphens, restricted to
 /// `[a-z0-9-_]` (RFC 3986 unreserved + hyphen).
 ///
@@ -501,5 +561,30 @@ https://cdn.example/chunklist_3_video.m3u8
             strip_duration_from_title("Real Title Here"),
             "Real Title Here"
         );
+    }
+
+    #[test]
+    fn validate_outbound_fetch_url_allows_public_https() {
+        let ok = validate_outbound_fetch_url("https://www.pornhub.com/video?viewkey=1").unwrap();
+        assert!(ok.starts_with("https://www.pornhub.com/"));
+    }
+
+    #[test]
+    fn validate_outbound_fetch_url_rejects_ssrf_targets() {
+        for bad in [
+            "file:///etc/passwd",
+            "http://localhost/admin",
+            "http://127.0.0.1/",
+            "http://10.0.0.5/secret",
+            "http://192.168.1.1/",
+            "http://169.254.169.254/latest/meta-data/",
+            "https://user:pass@example.com/",
+            "ftp://example.com/file",
+        ] {
+            assert!(
+                validate_outbound_fetch_url(bad).is_err(),
+                "expected reject for {bad}"
+            );
+        }
     }
 }
