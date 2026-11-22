@@ -840,6 +840,19 @@ pub fn clear_scene_thumb(state: State<'_, Arc<AppState>>, scene_id: String) -> C
 }
 
 #[tauri::command]
+pub async fn set_scene_thumb_from_frame(
+    state: State<'_, Arc<AppState>>,
+    scene_id: String,
+    position_secs: f64,
+) -> CmdResult<Scene> {
+    map_err(
+        state
+            .set_scene_thumb_from_frame(&scene_id, position_secs)
+            .await,
+    )
+}
+
+#[tauri::command]
 pub fn clear_all_thumbs(
     state: State<'_, Arc<AppState>>,
 ) -> CmdResult<crate::models::ClearThumbsResult> {

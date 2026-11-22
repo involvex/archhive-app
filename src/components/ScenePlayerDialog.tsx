@@ -28,7 +28,9 @@ import { ExtLink } from "@/components/ExtLink";
 import type { Scene, WatchProgress } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { formatDuration } from "@/components/SceneCard";
+import { splitNotesWithTimestamps } from "@/lib/noteTimestamps";
 import {
+  Camera,
   ChevronLeft,
   ChevronRight,
   Check,
@@ -98,6 +100,7 @@ function ScenePlayerBody({
   const lastTapRef = useRef<TouchPoint | null>(null);
   const [gestureHint, setGestureHint] = useState<string | null>(null);
   const hintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [settingThumb, setSettingThumb] = useState(false);
   // Q40: fullscreen container (double-tap middle zone + action-bar button).
   const playerContainerRef = useRef<HTMLDivElement | null>(null);
   const fullscreen = usePlayerFullscreen(playerContainerRef);
@@ -129,6 +132,8 @@ function ScenePlayerBody({
       return;
     }
     const t = e.touches[0];
+    // Event-handler timestamp (not render); Date.now is intentional here.
+    // eslint-disable-next-line react-hooks/purity -- touch event handler
     touchStartRef.current = { x: t.clientX, y: t.clientY, t: Date.now() };
     const video = videoRef.current;
     scrubStartTimeRef.current = video ? video.currentTime : 0;
@@ -167,6 +172,7 @@ function ScenePlayerBody({
     const video = videoRef.current;
     if (!start || !video || e.changedTouches.length !== 1) return;
     const t = e.changedTouches[0];
+    // eslint-disable-next-line react-hooks/purity -- touch event handler
     const end: TouchPoint = { x: t.clientX, y: t.clientY, t: Date.now() };
     const moved = Math.hypot(end.x - start.x, end.y - start.y);
     if (moved > 12 || end.t - start.t > 500) {
@@ -292,6 +298,36 @@ function ScenePlayerBody({
     posRef.current = resume?.position_secs ?? 0;
     setResume(null);
   }
+
+  function seekToNoteTimestamp(seconds: number) {
+    const el = videoRef.current;
+    if (!el) return;
+    try {
+      el.currentTime = seconds;
+    } catch {
+      /* seek before metadata */
+    }
+    flashGestureHint(formatDuration(seconds));
+    void el.play().catch(() => {});
+  }
+
+  async function captureFrameAsThumb() {
+    const el = videoRef.current;
+    if (!el || !data.path) return;
+    const position = Number.isFinite(el.currentTime) ? el.currentTime : 0;
+    setSettingThumb(true);
+    try {
+      const updated = await api.setSceneThumbFromFrame(data.id, position);
+      setDetail(updated);
+      toast.success("Thumbnail updated from current frame");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not set thumbnail");
+    } finally {
+      setSettingThumb(false);
+    }
+  }
+
+  const noteSegments = splitNotesWithTimestamps(data.notes);
 
   return (
     <>
@@ -508,6 +544,28 @@ function ScenePlayerBody({
               <dd>{data.studio_name}</dd>
             </div>
           )}
+          {noteSegments.length > 0 && (
+            <div>
+              <dt className="text-xs text-[var(--color-muted-foreground)]">Notes</dt>
+              <dd className="whitespace-pre-wrap text-xs">
+                {noteSegments.map((seg, i) =>
+                  seg.type === "timestamp" ? (
+                    <button
+                      key={`${seg.seconds}-${i}`}
+                      type="button"
+                      className="mx-0.5 inline rounded bg-[var(--color-primary)]/15 px-1 py-0.5 font-mono text-[var(--color-primary)] hover:bg-[var(--color-primary)]/25"
+                      onClick={() => seekToNoteTimestamp(seg.seconds)}
+                      title={`Seek to ${seg.label}`}
+                    >
+                      {seg.text}
+                    </button>
+                  ) : (
+                    <span key={`t-${i}`}>{seg.text}</span>
+                  ),
+                )}
+              </dd>
+            </div>
+          )}
           {data.date && (
             <div>
               <dt className="text-xs text-[var(--color-muted-foreground)]">Date</dt>
@@ -589,6 +647,18 @@ function ScenePlayerBody({
           </div>
         )}
         <div className="flex flex-wrap justify-end gap-2">
+          {webPlayable && data.path && (caps.localIpc || hasLocalBackend()) && (
+            <Button
+              variant="outline"
+              onClick={() => void captureFrameAsThumb()}
+              disabled={settingThumb}
+              className="min-h-10"
+              title="Set the scene thumbnail from the current video frame"
+            >
+              <Camera className="h-3.5 w-3.5" />
+              {settingThumb ? "Saving…" : "Use this frame"}
+            </Button>
+          )}
           {onEdit && (
             <Button
               variant="outline"

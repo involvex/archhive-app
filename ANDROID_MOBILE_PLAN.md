@@ -114,22 +114,22 @@ Limits on Android Local:
 
 ### Phase B — Mobile UX gaps
 
-| ID  | Item                                                                   | Status  | Effort |
-| --- | ---------------------------------------------------------------------- | ------- | ------ |
-| B1  | Background downloads (FG keep-alive + WorkManager resume)              | Partial | High   |
-| B2  | Offline browse cache (for Remote LAN offline / stale listings)         | Done    | High   |
-| B3  | DataSaverMode (cap quality on metered)                                 | Done    | Medium |
-| B4  | gallery-dl strategy on Android or clearer UI gating                    | Todo    | Medium |
-| B5  | Chaturbate/Stripchat mobile listing reliability (cookies / no webview) | Partial | Medium |
+| ID  | Item                                                                   | Status                                                                                   | Effort |
+| --- | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | ------ |
+| B1  | Background downloads (FG keep-alive + WorkManager resume)              | Partial                                                                                  | High   |
+| B2  | Offline browse cache (for Remote LAN offline / stale listings)         | Done                                                                                     | High   |
+| B3  | DataSaverMode (cap quality on metered)                                 | Done                                                                                     | Medium |
+| B4  | gallery-dl strategy on Android or clearer UI gating                    | Partial (v0.9.0: RedGifs errors instead of GalleryDl queue; media tools hide gallery-dl) | Medium |
+| B5  | Chaturbate/Stripchat mobile listing reliability (cookies / no webview) | Partial                                                                                  | Medium |
 
 ### Phase C — Platform expansion (deferred)
 
-| ID  | Item                                       | Status | Effort |
-| --- | ------------------------------------------ | ------ | ------ |
-| C1  | PWA manifest for browser LAN UI            | Todo   | Low    |
-| C2  | iOS (Remote LAN–only recommended)          | Todo   | High   |
-| C3  | Deep / universal links                     | Todo   | Medium |
-| C4  | Mobile-optimized watchlist background poll | Todo   | Medium |
+| ID  | Item                                       | Status                         | Effort |
+| --- | ------------------------------------------ | ------------------------------ | ------ |
+| C1  | PWA manifest for browser LAN UI            | Todo                           | Low    |
+| C2  | iOS (Remote LAN–only recommended)          | Todo                           | High   |
+| C3  | Deep / universal links                     | Todo                           | Medium |
+| C4  | Mobile-optimized watchlist background poll | Done (v0.9.0; Wi-Fi-only skip) | Medium |
 
 ---
 

@@ -35,6 +35,9 @@ const defaultSettings: AppSettings = {
   thumb_quality: "original",
   auto_tag_from_ytdlp: true,
   download_max_concurrent: 2,
+  notify_download_complete: true,
+  notify_download_failed: true,
+  notify_saved_search_matches: true,
 };
 
 export const useSettingsStore = create<SettingsState>()(

@@ -221,6 +221,7 @@ impl LanServer {
             .route("/api/library/ffmpeg-status", get(ffmpeg_status))
             .route("/api/scenes/{id}/probe", post(probe_scene_metadata))
             .route("/api/scenes/{id}/thumb", delete(clear_scene_thumb))
+            .route("/api/scenes/{id}/thumb/frame", post(set_scene_thumb_from_frame))
             .route(
                 "/api/scenes/{id}/watch",
                 post(record_watch_progress).get(get_watch_progress),
@@ -1434,6 +1435,24 @@ async fn clear_scene_thumb(
         .clear_scene_thumb(&id)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+struct ThumbFrameBody {
+    position_secs: f64,
+}
+
+async fn set_scene_thumb_from_frame(
+    Path(id): Path<String>,
+    State(state): State<ApiState>,
+    Json(body): Json<ThumbFrameBody>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let scene = state
+        .app
+        .set_scene_thumb_from_frame(&id, body.position_secs)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(serde_json::json!(scene)))
 }
 
 async fn probe_library_durations(

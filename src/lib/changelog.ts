@@ -6,6 +6,40 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.9.0",
+    date: "2026-11-22",
+    changes: [
+      {
+        type: "added",
+        text: "Click-to-seek [mm:ss] / [h:mm:ss] timestamps in scene notes from the library player",
+      },
+      {
+        type: "added",
+        text: "Naming template live preview with unknown-token and illegal-path warnings",
+      },
+      {
+        type: "added",
+        text: "Use this frame — set a scene thumbnail from the current player position",
+      },
+      {
+        type: "added",
+        text: "Side-by-side muted preview on Duplicate Keep/Remove cards",
+      },
+      {
+        type: "added",
+        text: "Watchlist poller notifications plus Settings toggles for download and match alerts",
+      },
+      {
+        type: "added",
+        text: "Watchlist auto-queue poller on Android (skips when Wi-Fi-only and offline Wi-Fi)",
+      },
+      {
+        type: "fixed",
+        text: "RedGifs no longer queues gallery-dl on Android when a direct URL is unavailable",
+      },
+    ],
+  },
+  {
     version: "0.8.0",
     date: "2026-11-22",
     changes: [

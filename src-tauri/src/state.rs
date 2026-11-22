@@ -2031,6 +2031,31 @@ impl AppState {
         self.db.get_scene(scene_id)
     }
 
+    /// Write `{stem}.jpg` from the frame at `position_secs` and update the scene.
+    pub async fn set_scene_thumb_from_frame(
+        &self,
+        scene_id: &str,
+        position_secs: f64,
+    ) -> AppResult<crate::models::Scene> {
+        let scene = self.db.get_scene(scene_id)?;
+        let video_path = scene
+            .path
+            .as_deref()
+            .ok_or_else(|| crate::error::AppError::NotFound("scene has no path".into()))?;
+        let path = std::path::Path::new(video_path);
+        if !path.is_file() {
+            return Err(crate::error::AppError::NotFound(format!(
+                "file not found: {video_path}"
+            )));
+        }
+        let seek = format!("{:.2}", position_secs.max(0.0));
+        let ffmpeg = crate::media::FfmpegProcessor::new(self.site_ctx.app().clone());
+        let thumb = ffmpeg.extract_thumbnail_at(path, &seek).await?;
+        let thumb_str = thumb.to_string_lossy().to_string();
+        self.db.set_scene_thumb(scene_id, &thumb_str)?;
+        self.db.get_scene(scene_id)
+    }
+
     pub async fn probe_library_durations(
         &self,
         app: tauri::AppHandle,
@@ -2454,6 +2479,7 @@ impl AppState {
         let mut checked = 0u32;
         let mut queued = 0u32;
         let mut errors = 0u32;
+        let mut matched = 0u32;
         let searches = self.db.list_saved_searches()?;
         for search in searches.iter().filter(|s| s.auto_queue) {
             if !Self::is_search_due(&search.last_checked_at, interval, &now) {
@@ -2462,6 +2488,7 @@ impl AppState {
             match self.check_saved_search(&search.id).await {
                 Ok(result) => {
                     checked += 1;
+                    matched += result.new_items.len() as u32;
                     let urls: Vec<String> = result
                         .new_items
                         .iter()
@@ -2493,6 +2520,7 @@ impl AppState {
             checked,
             queued,
             errors,
+            matched,
         })
     }
 
@@ -2525,8 +2553,9 @@ impl AppState {
     }
 
     /// Background loop for the watchlist poller. Ticks every minute; each
-    /// pass only touches searches past their poll interval.
-    #[cfg(not(mobile))]
+    /// pass only touches searches past their poll interval. On Android,
+    /// skips a pass when Wi-Fi-only downloads are on and the network is
+    /// not Wi-Fi / ethernet.
     pub fn spawn_watchlist_poller(self: &std::sync::Arc<Self>) {
         let state = self.clone();
         tauri::async_runtime::spawn(async move {
@@ -2535,20 +2564,61 @@ impl AppState {
             tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             loop {
                 tick.tick().await;
+                if let Ok(settings) = state.db.get_settings() {
+                    if settings.download_on_wifi_only && !state.network_monitor.is_wifi() {
+                        tracing::debug!("[watchlist] skip poll — waiting for Wi-Fi");
+                        continue;
+                    }
+                }
                 match state.poll_watchlist_once().await {
                     Ok(r) if r.checked > 0 => {
                         tracing::info!(
-                            "[watchlist] poll: checked {}, queued {}, errors {}",
+                            "[watchlist] poll: checked {}, matched {}, queued {}, errors {}",
                             r.checked,
+                            r.matched,
                             r.queued,
                             r.errors
                         );
+                        state.notify_watchlist_poll(&r);
                     }
                     Err(e) => tracing::warn!("[watchlist] poll failed: {e}"),
                     _ => {}
                 }
             }
         });
+    }
+
+    fn notify_watchlist_poll(&self, result: &crate::models::WatchlistPollResult) {
+        if result.matched == 0 && result.queued == 0 {
+            return;
+        }
+        let settings = self.db.get_settings().unwrap_or_default();
+        if !settings.notify_saved_search_matches {
+            return;
+        }
+        let body = if result.queued > 0 {
+            format!(
+                "{} new match{}, {} queued",
+                result.matched,
+                if result.matched == 1 { "" } else { "es" },
+                result.queued
+            )
+        } else {
+            format!(
+                "{} new match{}",
+                result.matched,
+                if result.matched == 1 { "" } else { "es" }
+            )
+        };
+        let _ = self.app.emit("watchlist:matches", result);
+        use tauri_plugin_notification::NotificationExt;
+        let _ = self
+            .app
+            .notification()
+            .builder()
+            .title("Watchlist matches")
+            .body(body)
+            .show();
     }
 
     /// Re-run a saved search (page 1) and diff against the stored snapshot.

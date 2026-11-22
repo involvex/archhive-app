@@ -580,6 +580,15 @@ pub struct AppSettings {
     /// Tags excluded from recommendations.
     #[serde(default)]
     pub rec_excluded_tags: Vec<String>,
+    /// Native / in-app notification when a download completes (default true).
+    #[serde(default = "default_true")]
+    pub notify_download_complete: bool,
+    /// Native / in-app notification when a download fails (default true).
+    #[serde(default = "default_true")]
+    pub notify_download_failed: bool,
+    /// Notify when the watchlist poller finds or queues new matches (default true).
+    #[serde(default = "default_true")]
+    pub notify_saved_search_matches: bool,
     /// Media vault: when on, the Vault tab is available and items can be
     /// locked behind biometrics. Off by default; enabling creates the vault
     /// directory but moves nothing until the user vaults a scene.
@@ -814,6 +823,9 @@ impl Default for AppSettings {
             rec_preferred_tags: Vec::new(),
             rec_preferred_performers: Vec::new(),
             rec_excluded_tags: Vec::new(),
+            notify_download_complete: default_true(),
+            notify_download_failed: default_true(),
+            notify_saved_search_matches: default_true(),
             vault_enabled: false,
             vault_pin_hash: None,
             vault_auto_lock_mins: default_vault_auto_lock_mins(),
@@ -1225,6 +1237,9 @@ pub struct WatchlistPollResult {
     pub checked: u32,
     pub queued: u32,
     pub errors: u32,
+    /// New matches found across due auto-queue searches (before queue cap).
+    #[serde(default)]
+    pub matched: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

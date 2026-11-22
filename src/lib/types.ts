@@ -295,6 +295,12 @@ export interface AppSettings {
   rec_preferred_performers?: string[];
   /** Tags excluded from recommendations. */
   rec_excluded_tags?: string[];
+  /** Notify when a download completes (default true). */
+  notify_download_complete?: boolean;
+  /** Notify when a download fails (default true). */
+  notify_download_failed?: boolean;
+  /** Notify when the watchlist poller finds matches (default true). */
+  notify_saved_search_matches?: boolean;
   /** Media vault: enables the Vault tab + biometric lock. Off by default. */
   vault_enabled?: boolean;
   /** Minutes of inactivity before the vault re-locks (0 = never). */
@@ -598,6 +604,8 @@ export interface WatchlistPollResult {
   checked: number;
   queued: number;
   errors: number;
+  /** New matches found before the per-search queue cap. */
+  matched?: number;
 }
 
 export interface WatchPollRun {

@@ -41,7 +41,6 @@ impl NetworkMonitor {
         *self.is_metered.write() = metered;
     }
 
-    #[allow(dead_code)]
     pub fn is_wifi(&self) -> bool {
         *self.is_wifi.read()
     }
