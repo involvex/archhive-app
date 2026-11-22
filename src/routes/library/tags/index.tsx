@@ -1,5 +1,5 @@
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api/client";
 import { Button } from "@/components/ui/button";
 import type { Tag } from "@/lib/types";
@@ -9,6 +9,43 @@ export const Route = createFileRoute("/library/tags/")({
   component: TagsPage,
 });
 
+type TagRow = Tag & { depth: number };
+
+function buildTagTree(tags: Tag[]): TagRow[] {
+  const byParent = new Map<string | undefined, Tag[]>();
+  for (const tag of tags) {
+    const key = tag.parent_id || undefined;
+    const list = byParent.get(key) ?? [];
+    list.push(tag);
+    byParent.set(key, list);
+  }
+  for (const list of byParent.values()) {
+    list.sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  const rows: TagRow[] = [];
+  const visit = (parentId: string | undefined, depth: number, stack: Set<string>) => {
+    const children = byParent.get(parentId) ?? [];
+    for (const child of children) {
+      if (stack.has(child.id)) continue;
+      rows.push({ ...child, depth });
+      const next = new Set(stack);
+      next.add(child.id);
+      visit(child.id, depth + 1, next);
+    }
+  };
+  visit(undefined, 0, new Set());
+
+  // Orphans whose parent is missing from the list still show at the root.
+  const listed = new Set(rows.map((r) => r.id));
+  for (const tag of tags) {
+    if (!listed.has(tag.id)) {
+      rows.push({ ...tag, depth: 0 });
+    }
+  }
+  return rows;
+}
+
 function TagsPage() {
   const navigate = useNavigate();
   const [tags, setTags] = useState<Tag[]>([]);
@@ -17,6 +54,8 @@ function TagsPage() {
   useEffect(() => {
     void api.listTags().then(setTags).catch(console.error);
   }, []);
+
+  const rows = useMemo(() => buildTagTree(tags), [tags]);
 
   function toggle(name: string) {
     setSelected((prev) => {
@@ -49,30 +88,31 @@ function TagsPage() {
           </Button>
         )}
       </div>
-      <div className="flex flex-wrap gap-2">
-        {tags.map((tag) => {
+      <div className="flex flex-col gap-1.5">
+        {rows.map((tag) => {
           const checked = selected.has(tag.name);
           return (
-            <span
+            <div
               key={tag.id}
-              className={`inline-flex items-center gap-1 rounded-full border pr-1 pl-3 py-1 text-sm transition-colors ${
+              className={`inline-flex max-w-full items-center gap-1 rounded-full border pr-1 pl-3 py-1 text-sm transition-colors ${
                 checked
                   ? "border-[var(--color-primary)] bg-[var(--color-primary)]/10"
                   : "border-[var(--color-border)] bg-[var(--color-card)] hover:border-[var(--color-primary)]"
               }`}
+              style={{ marginLeft: `${tag.depth * 16}px` }}
             >
               <button
                 type="button"
                 onClick={() => toggle(tag.name)}
-                className="inline-flex items-center gap-1.5"
+                className="inline-flex min-w-0 items-center gap-1.5"
                 aria-pressed={checked}
               >
                 {checked ? (
-                  <Check className="h-3 w-3 text-[var(--color-primary)]" />
+                  <Check className="h-3 w-3 shrink-0 text-[var(--color-primary)]" />
                 ) : (
-                  <span className="h-3 w-3 rounded-sm border border-[var(--color-border)]" />
+                  <span className="h-3 w-3 shrink-0 rounded-sm border border-[var(--color-border)]" />
                 )}
-                {tag.name}
+                <span className="truncate">{tag.name}</span>
                 <span className="ml-0.5 text-[var(--color-muted-foreground)]">
                   {tag.scene_count}
                 </span>
@@ -86,7 +126,7 @@ function TagsPage() {
               >
                 <ArrowUpRight className="h-3.5 w-3.5" />
               </Link>
-            </span>
+            </div>
           );
         })}
       </div>

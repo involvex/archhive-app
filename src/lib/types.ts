@@ -250,6 +250,8 @@ export interface AppSettings {
   trending_sites?: string[];
   download_max_retries?: number;
   download_retry_delay_seconds?: number;
+  /** Max parallel download jobs (1–4). */
+  download_max_concurrent?: number;
   theme?: AppTheme;
   watched_threshold?: number;
   watch_poll_interval_mins?: number;
@@ -683,6 +685,55 @@ export interface SettingsBackupImportResult {
   settings_applied: boolean;
   cookies_imported: number;
   library_path_skipped: boolean;
+}
+
+export interface LibraryBackupManifest {
+  schema_version: number;
+  app_version: string;
+  exported_at: string;
+  migration_id: string;
+  library_path: string;
+  scene_count: number;
+  performer_count: number;
+  tag_count: number;
+}
+
+export interface LibraryBackupExportResult {
+  path: string;
+  manifest: LibraryBackupManifest;
+}
+
+export interface LibraryBackupDryRun {
+  manifest: LibraryBackupManifest;
+  current_library_path: string;
+  library_path_exists: boolean;
+  library_path_needs_remap: boolean;
+}
+
+export interface LibraryBackupRestoreOptions {
+  library_path_remap?: string | null;
+}
+
+export interface LibraryBackupRestoreResult {
+  restored: boolean;
+  safety_copy_path: string;
+  library_path_remapped: boolean;
+  manifest: LibraryBackupManifest;
+}
+
+export interface LibraryMetadataExport {
+  schema_version: number;
+  app_version: string;
+  exported_at: string;
+  scenes: Scene[];
+  performers: Performer[];
+  tags: Tag[];
+}
+
+export interface MergePerformersResult {
+  keep_id: string;
+  removed_id: string;
+  scenes_reassigned: number;
 }
 
 /** One stash-box endpoint (StashDB, FansDB, …). Key lives in vault. */

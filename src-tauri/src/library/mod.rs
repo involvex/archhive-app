@@ -9,6 +9,7 @@ use tauri::AppHandle;
 use tokio::sync::Semaphore;
 
 pub mod auto_tag;
+pub mod backup;
 pub mod duplicates;
 pub mod hashing;
 pub mod import;

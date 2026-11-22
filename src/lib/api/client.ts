@@ -57,6 +57,12 @@ import type {
   SettingsBackup,
   SettingsBackupImportOptions,
   SettingsBackupImportResult,
+  LibraryBackupExportResult,
+  LibraryBackupDryRun,
+  LibraryBackupRestoreOptions,
+  LibraryBackupRestoreResult,
+  LibraryMetadataExport,
+  MergePerformersResult,
   StashBoxEndpoint,
   StashSceneMatch,
   StashPerformerMatch,
@@ -1355,6 +1361,59 @@ export const api = {
     }
     // Always export from this device (not the remote host).
     return localInvoke<SettingsBackup>("export_settings_backup");
+  },
+
+  /** Full SQLite library backup to `.archhive-backup.zip` (local device only). */
+  async exportLibraryBackup(path?: string | null): Promise<LibraryBackupExportResult> {
+    if (getAppRuntime() === "browser") {
+      throw new Error("Library backup requires the app runtime.");
+    }
+    return localInvoke<LibraryBackupExportResult>("export_library_backup", {
+      path: path ?? null,
+    });
+  },
+
+  async dryRunLibraryBackup(path: string): Promise<LibraryBackupDryRun> {
+    if (getAppRuntime() === "browser") {
+      throw new Error("Library restore requires the app runtime.");
+    }
+    return localInvoke<LibraryBackupDryRun>("dry_run_library_backup", { path });
+  },
+
+  async restoreLibraryBackup(
+    path: string,
+    options?: LibraryBackupRestoreOptions,
+  ): Promise<LibraryBackupRestoreResult> {
+    if (getAppRuntime() === "browser") {
+      throw new Error("Library restore requires the app runtime.");
+    }
+    return localInvoke<LibraryBackupRestoreResult>("restore_library_backup", {
+      path,
+      options: options ?? { library_path_remap: null },
+    });
+  },
+
+  async exportLibraryMetadata(): Promise<LibraryMetadataExport> {
+    return localOrRemote("export_library_metadata", undefined, "/api/library/metadata-export");
+  },
+
+  async mergePerformers(keepId: string, sourceId: string): Promise<MergePerformersResult> {
+    return localOrRemote("merge_performers", { keepId, sourceId }, "/api/performers/merge", {
+      method: "POST",
+      body: JSON.stringify({ keep_id: keepId, source_id: sourceId }),
+    });
+  },
+
+  async setTagParent(tagId: string, parentId: string | null): Promise<Tag> {
+    return localOrRemote(
+      "set_tag_parent",
+      { tagId, parentId },
+      `/api/tags/${encodeURIComponent(tagId)}/parent`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ parent_id: parentId }),
+      },
+    );
   },
 
   /**

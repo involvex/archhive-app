@@ -502,6 +502,9 @@ pub struct AppSettings {
     pub download_max_retries: u32,
     #[serde(default = "default_download_retry_delay_seconds")]
     pub download_retry_delay_seconds: u32,
+    /// Max parallel download jobs (1–4). Takes effect for newly started jobs.
+    #[serde(default = "default_download_max_concurrent")]
+    pub download_max_concurrent: u32,
     #[serde(default = "default_theme")]
     pub theme: AppTheme,
     /// Fraction of duration after which a scene counts as watched (0.5–1.0).
@@ -644,6 +647,10 @@ fn default_download_max_retries() -> u32 {
     2
 }
 
+fn default_download_max_concurrent() -> u32 {
+    2
+}
+
 fn default_rec_enabled() -> bool {
     true
 }
@@ -781,6 +788,7 @@ impl Default for AppSettings {
             trending_sites: default_trending_sites(),
             download_max_retries: default_download_max_retries(),
             download_retry_delay_seconds: default_download_retry_delay_seconds(),
+            download_max_concurrent: default_download_max_concurrent(),
             theme: default_theme(),
             watched_threshold: default_watched_threshold(),
             watch_poll_interval_mins: default_watch_poll_interval_mins(),
@@ -1318,6 +1326,67 @@ pub struct SettingsBackupImportResult {
     pub settings_applied: bool,
     pub cookies_imported: u32,
     pub library_path_skipped: bool,
+}
+
+/// Manifest inside an `.archhive-backup.zip` (schema 1).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LibraryBackupManifest {
+    pub schema_version: u32,
+    pub app_version: String,
+    pub exported_at: String,
+    /// Highest applied migration marker (e.g. `021` for MIGRATION_021).
+    pub migration_id: String,
+    pub library_path: String,
+    pub scene_count: u32,
+    pub performer_count: u32,
+    pub tag_count: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LibraryBackupExportResult {
+    pub path: String,
+    pub manifest: LibraryBackupManifest,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LibraryBackupDryRun {
+    pub manifest: LibraryBackupManifest,
+    pub current_library_path: String,
+    pub library_path_exists: bool,
+    pub library_path_needs_remap: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LibraryBackupRestoreOptions {
+    /// When set, rewrite `settings.library_path` in the restored DB to this value.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub library_path_remap: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LibraryBackupRestoreResult {
+    pub restored: bool,
+    pub safety_copy_path: String,
+    pub library_path_remapped: bool,
+    pub manifest: LibraryBackupManifest,
+}
+
+/// Readable JSON export of library metadata (not a full DB restore).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LibraryMetadataExport {
+    pub schema_version: u32,
+    pub app_version: String,
+    pub exported_at: String,
+    pub scenes: Vec<Scene>,
+    pub performers: Vec<Performer>,
+    pub tags: Vec<Tag>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MergePerformersResult {
+    pub keep_id: String,
+    pub removed_id: String,
+    pub scenes_reassigned: u32,
 }
 
 /// One configured stash-box endpoint (StashDB, FansDB, JAVStash, …).

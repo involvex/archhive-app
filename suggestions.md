@@ -23,35 +23,29 @@
 
 ### 3. Bulk Download Queue Management
 
-**Status:** 🔵 Partial  
+**Status:** 🔵 Partial (v0.8.0: concurrent limit 1–4)  
 **Area:** Downloads  
-**Currently:** Queue has pause/resume/cancel/retry (`commands.rs`, `downloads/manager.rs`), retry with backoff (`retry_count`, `last_retry_at`, `download_max_retries`, `download_retry_delay_seconds`), bulk URL import with browse expansion (`BulkImportPanel.tsx`, `downloads/bulk.rs`, `queue_bulk_import`).  
-**Suggestion:** Add:
+**Currently:** Queue has pause/resume/cancel/retry (`commands.rs`, `downloads/manager.rs`), retry with backoff (`retry_count`, `last_retry_at`, `download_max_retries`, `download_retry_delay_seconds`), `download_max_concurrent` (1–4, Settings → Downloads), bulk URL import with browse expansion (`BulkImportPanel.tsx`, `downloads/bulk.rs`, `queue_bulk_import`).  
+**Suggestion (remaining):**
 
 - **Priority reordering** — drag-and-drop reorder in the download queue.
-- **Concurrent download limit** — configurable max parallel downloads (currently seems unbounded).
 - **Bandwidth throttling** — per-download or global speed limit (yt-dlp `--limit-rate`).
 - **Queue auto-start** — toggle to auto-start downloads when added (currently manual).
-- **Retry failed with backoff** — ✅ done, expose max attempts/delay in Settings UI.
 
 ### 4. Scene Watch History / Playback Position Memory
 
-**Status:** ⚪ Not started  
+**Status:** ✅ Done (see #26)  
 **Area:** Library / Player  
-**Currently:** No `watch_progress` column; `ScenePlayerDialog` plays but does not persist position. `Scene` has `rating: Option<u8>` column unused.  
-**Suggestion:** Track playback position per scene (resume where you left off). Store in SQLite with a `watch_progress` column (position in seconds + timestamp). Display a progress bar overlay on SceneCard thumbnails for partially watched scenes. Mark scenes as "watched" after 90% completion. See also #26 for full history spec.
+**Currently:** `watch_history` table + resume banner + SceneCard progress (see #26). Older “not started” note was stale.
 
 ### 5. Improved Duplicate Detection UI
 
-**Status:** 🔵 Partial  
+**Status:** 🔵 Partial (v0.8.0: quality badges + Keep best + apply-all)  
 **Area:** Library / Duplicates  
-**Currently:** `DuplicateGroupCard` + `DuplicateMergeCard` show groups; `find_duplicates` (pHash + OSHash) and `merge_duplicates(keep_id, remove_ids, delete_files)` work; `/duplicates` route + `EmptyState` exist.  
-**Suggestion:**
+**Currently:** `DuplicateMergeCard` shows size/resolution/duration; Keep best (highest resolution, then largest file) per group; Apply keep-best to all groups with confirm; `merge_duplicates` still used.  
+**Suggestion (remaining):**
 
 - Side-by-side video preview in duplicate resolution dialog.
-- Show file size, resolution, duration, and quality info for each duplicate.
-- "Keep best quality" auto-resolution with one-click merge.
-- Batch merge/resolve across multiple duplicate groups.
 
 ---
 
@@ -73,10 +67,10 @@
 
 ### 8. Export / Import Library Metadata
 
-**Status:** ⚪ Not started  
+**Status:** 🔵 Partial (v0.8.0: JSON metadata export + full DB zip)  
 **Area:** Library  
-**Currently:** Only `export_performers` (full performer list, no scenes/tags) exists. No scene/JSON/CSV export, no import, no Stash compat.  
-**Suggestion:** Export the full library database (scenes, performers, tags, studios) as JSON or CSV. Import from backup. Useful for migration between machines or backup before destructive operations. Could also support Stash-compatible JSON import for users migrating from Stash. See #32 for full backup/restore.
+**Currently:** `export_library_metadata` (scenes/performers/tags JSON), performer CSV/JSON, and full SQLite `.archhive-backup.zip` (#32). No Stash-compatible JSON import yet.  
+**Suggestion (remaining):** Stash-compatible JSON import for users migrating from Stash; optional CSV scene export.
 
 ### 9. Custom Naming Templates with Preview
 
@@ -193,8 +187,8 @@
 
 **Status:** ⚪ Not started  
 **Area:** Mobile / LAN  
-**Currently:** Mobile standalone mode is limited to `resolve_standalone` (YouTube + direct URLs); remote-LAN is the default engine on mobile. No offline outbox.  
-**Suggestion:** When the mobile client reconnects to LAN after being offline, sync any queued download requests. Allow users to queue URLs while offline (standalone mode stores them locally), then batch-send to the desktop when reconnected. See #36 for concrete design.
+**Currently:** Phones default to on-device **Local** engine (standalone retired in 0.6.4). Remote LAN is optional. No offline outbox for Remote LAN queue intents.  
+**Suggestion:** When the mobile client reconnects to LAN after being offline, sync any queued download requests. Allow users to queue URLs while offline, then batch-send to the desktop when reconnected. See #36 for concrete design.
 
 ---
 
@@ -284,13 +278,13 @@
 
 ### 29. Performer Detail Pages + Tag Hierarchy Manager
 
-**Status:** ⚪ Not started  
+**Status:** 🔵 Partial (v0.8.0: merge + tag parents)  
 **Area:** Library  
-**Currently:** Performer/tag list pages exist with scene counts; `ensure_performer`, favorite toggle, aliases stored but no detail view, merge, or hierarchy UI (`Tag.parent_id` unused in UI).  
-**Suggestion:**
+**Currently:** `/library/performers/$id` and `/library/tags/$id` exist with scene grids; performer merge-into; tag `parent_id` editor + children list; indented tag list tree.  
+**Suggestion (remaining):**
 
-- `/library/performers/$id` and `/library/tags/$id` pages: bio/aliases editor, image wall, scene grid, merge-duplicate-performers tool, alias fuzzy-match assist (#1).
-- Tag tree editor (drag to re-parent), bulk retag, tag synonyms.
+- Bio/aliases editor polish, image wall, alias fuzzy-match assist (#1).
+- Drag-to-reparent tag tree, bulk retag, tag synonyms.
 
 ### 30. Live Recorder + Schedule (Chaturbate / Stripchat)
 
@@ -314,13 +308,10 @@
 
 ### 32. Full Library Backup & Restore (DB + Thumbs + Settings)
 
-**Status:** ⚪ Not started  
+**Status:** 🔵 Partial (v0.8.0: DB zip + dry-run + remap + safety copy)  
 **Area:** Library / Settings  
-**Currently:** No backup UI (see #22 for DB-only scheduled copy). Thumbs are sidecar `.jpg` files; settings in SQLite `app_settings`.  
-**Suggestion:**
-
-- One-click `.archhive-backup.zip` (SQLite + `app_settings` + sidecar thumbs + plugin list); retention policy + scheduled job; restore wizard with path remap (Windows ↔ Android) and dry-run validation.
-- Pre-restore safety snapshot; backup manifest with version check against `MIGRATION_*`.
+**Currently:** Settings → Diagnostics → Export/Restore library DB (`.archhive-backup.zip` with `manifest.json` + `archhive.db`); dry-run; library-path remap prompt; pre-restore VACUUM safety copy. Media/thumbs stay on disk under the library path (not zipped).  
+**Suggestion (remaining):** Optional sidecar-thumb packaging; retention policy + scheduled job; richer restore wizard UI.
 
 ### 33. In-App Log Viewer + Diagnostics Export
 
@@ -350,7 +341,7 @@
 
 **Status:** ⚪ Not started  
 **Area:** Mobile / LAN  
-**Currently:** See #20; mobile defaults to `RemoteLan`, `lan-discovery` + `lanBootstrap` handle pairing, no queued intents.  
+**Currently:** See #20; phones default to Local on-device engine; Remote LAN is optional. Share sheet → Downloads bulk import is partial. No offline outbox for Remote LAN.  
 **Suggestion:**
 
 - `localStorage` outbox (`url`, `adapter?`, `createdAt`, `status`) in `api/client.ts` remote mode; "Queued offline (3)" badge; on reconnect flush via `queue_downloads` batch + per-item receipt; conflict display for already-queued URLs.
@@ -643,4 +634,4 @@ Add "Quiet hours" window (e.g., 22:00–08:00) to suppress non-critical toasts; 
 
 ---
 
-_Last updated: 2026-11-15 (v0.7.0: batch tag remove, collection cover/reorder/bulk add, studios MVP, yt-dlp auto-tag + suggestions, vault unlock token/PIN gate, changelog catch-up)_
+_Last updated: 2026-11-22 (v0.8.0: library DB backup/restore, metadata JSON export, duplicate Keep best, performer merge, tag parents, download concurrency)_

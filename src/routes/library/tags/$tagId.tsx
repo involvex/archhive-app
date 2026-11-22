@@ -1,5 +1,5 @@
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api/client";
 import type { Scene, Tag } from "@/lib/types";
 import { toWatchMap, watchFor, type WatchMap } from "@/lib/watch";
@@ -20,12 +20,16 @@ function TagDetailPage() {
   const { tagId } = Route.useParams();
   const navigate = useNavigate();
   const [tag, setTag] = useState<Tag | null>(null);
+  const [allTags, setAllTags] = useState<Tag[]>([]);
   const [scenes, setScenes] = useState<Scene[]>([]);
   const [watchMap, setWatchMap] = useState<WatchMap>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [playerScene, setPlayerScene] = useState<Scene | null>(null);
   const [playerIndex, setPlayerIndex] = useState(0);
+  const [parentEdit, setParentEdit] = useState("");
+  const [parentSaving, setParentSaving] = useState(false);
+  const [parentError, setParentError] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -36,7 +40,10 @@ function TagDetailPage() {
         const all = await api.listTags();
         const found = all.find((t) => t.id === tagId) ?? null;
         if (cancelled) return;
+        setAllTags(all);
         setTag(found);
+        setParentEdit(found?.parent_id ?? "");
+        setParentError("");
         if (!found) {
           setScenes([]);
           return;
@@ -59,6 +66,15 @@ function TagDetailPage() {
       cancelled = true;
     };
   }, [tagId]);
+
+  const children = useMemo(
+    () => allTags.filter((t) => t.parent_id === tagId).sort((a, b) => a.name.localeCompare(b.name)),
+    [allTags, tagId],
+  );
+  const parentName = useMemo(
+    () => allTags.find((t) => t.id === tag?.parent_id)?.name,
+    [allTags, tag?.parent_id],
+  );
 
   const videoScenes = scenes.filter(isVideoScene);
 
@@ -114,6 +130,7 @@ function TagDetailPage() {
           <h2 className="truncate text-2xl font-bold">{tag.name}</h2>
           <p className="text-sm text-[var(--color-muted-foreground)]">
             {tag.scene_count} scene{tag.scene_count === 1 ? "" : "s"}
+            {parentName ? ` · under ${parentName}` : ""}
           </p>
         </div>
         <Button
@@ -125,6 +142,70 @@ function TagDetailPage() {
           Filter scenes
         </Button>
       </div>
+
+      <div className="flex flex-col gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] p-3 sm:flex-row sm:items-end">
+        <label className="flex flex-1 flex-col gap-1 text-xs font-medium text-[var(--color-muted-foreground)]">
+          Parent tag
+          <select
+            className="h-9 rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-2 text-sm text-[var(--color-foreground)]"
+            value={parentEdit}
+            onChange={(e) => setParentEdit(e.target.value)}
+          >
+            <option value="">None (top level)</option>
+            {allTags
+              .filter((t) => t.id !== tag.id)
+              .map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+          </select>
+        </label>
+        <Button
+          size="sm"
+          disabled={parentSaving}
+          onClick={() => {
+            setParentSaving(true);
+            setParentError("");
+            void api
+              .setTagParent(tag.id, parentEdit || null)
+              .then((updated) => {
+                setTag(updated);
+                setParentEdit(updated.parent_id ?? "");
+                setAllTags((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+              })
+              .catch((e) =>
+                setParentError(e instanceof Error ? e.message : String(e) || "Save failed"),
+              )
+              .finally(() => setParentSaving(false));
+          }}
+        >
+          {parentSaving ? "Saving…" : "Save parent"}
+        </Button>
+      </div>
+      {parentError && <p className="text-xs text-red-400">{parentError}</p>}
+
+      {children.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs font-medium text-[var(--color-muted-foreground)]">Child tags</p>
+          <div className="flex flex-wrap gap-2">
+            {children.map((child) => (
+              <Link
+                key={child.id}
+                to="/library/tags/$tagId"
+                params={{ tagId: child.id }}
+                className="rounded-full border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-1 text-sm hover:border-[var(--color-primary)]"
+              >
+                {child.name}
+                <span className="ml-1 text-[var(--color-muted-foreground)]">
+                  {child.scene_count}
+                </span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
       {scenes.length === 0 ? (
         <EmptyState
           icon={<Tags className="h-12 w-12" />}

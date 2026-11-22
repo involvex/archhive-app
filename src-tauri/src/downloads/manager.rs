@@ -17,7 +17,14 @@ use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_notification::NotificationExt;
 use tokio::sync::{mpsc, Semaphore};
 
-const MAX_CONCURRENT_DOWNLOADS: usize = 2;
+/// Hard ceiling for parallel downloads (settings clamp to 1..=this).
+const MAX_CONCURRENT_DOWNLOADS: usize = 4;
+
+fn download_concurrency_limit(db: &Database) -> usize {
+    db.get_settings()
+        .map(|s| s.download_max_concurrent.clamp(1, MAX_CONCURRENT_DOWNLOADS as u32) as usize)
+        .unwrap_or(2)
+}
 
 /// #55 notification channel ids (Android; created at startup, ignored on desktop).
 /// The progress id is only referenced by the mobile-only channel
@@ -388,11 +395,22 @@ async fn worker_loop(
     cancel_flags: Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>,
     queue_tx: mpsc::UnboundedSender<String>,
 ) {
+    // Fixed pool at the hard max; respect the user limit by releasing and
+    // retrying when too many jobs are already in flight.
     let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_DOWNLOADS));
     while let Some(job_id) = queue_rx.recv().await {
-        let permit = match semaphore.clone().acquire_owned().await {
-            Ok(p) => p,
-            Err(_) => break,
+        let permit = loop {
+            let acquired = match semaphore.clone().acquire_owned().await {
+                Ok(p) => p,
+                Err(_) => return,
+            };
+            let limit = download_concurrency_limit(&db);
+            let in_flight = MAX_CONCURRENT_DOWNLOADS - semaphore.available_permits();
+            if in_flight <= limit {
+                break acquired;
+            }
+            drop(acquired);
+            tokio::time::sleep(std::time::Duration::from_millis(75)).await;
         };
         let db = db.clone();
         let app = app.clone();
