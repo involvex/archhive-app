@@ -2360,7 +2360,6 @@ impl AppState {
     }
 
     /// Watchlist poller tuning (review: named constants, single due-check).
-    #[cfg(not(mobile))]
     const POLL_TICK_SECS: u64 = 60;
     /// Cap per search per pass so a runaway listing can't flood the queue.
     const MAX_QUEUE_PER_SEARCH: usize = 25;
