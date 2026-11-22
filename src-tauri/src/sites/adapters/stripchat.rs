@@ -220,9 +220,13 @@ pub(crate) async fn resolve_stream_url_native(ctx: &SiteContext, url: &str) -> A
         return Err(AppError::Other("invalid stripchat username".to_string()));
     }
 
+    // Rebuild from the trusted host + validated username so a crafted caller
+    // URL cannot redirect this request to an arbitrary origin (SSRF).
+    let room_url = format!("{BASE}/{username}");
+
     let resp = ctx
         .client
-        .get(url)
+        .get(&room_url)
         .header(
             "Accept",
             "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",

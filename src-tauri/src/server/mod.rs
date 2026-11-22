@@ -1536,17 +1536,23 @@ async fn network_info(
     })))
 }
 
+#[derive(Deserialize)]
+struct LibraryFilterBody {
+    #[serde(flatten)]
+    filter: crate::models::SceneFilter,
+    #[serde(default)]
+    limit: Option<i64>,
+    #[serde(default)]
+    offset: Option<i64>,
+}
+
 async fn list_scenes_with_filter(
     State(state): State<ApiState>,
-    Json(body): Json<serde_json::Value>,
+    Json(body): Json<LibraryFilterBody>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
-    let filter: crate::models::SceneFilter =
-        serde_json::from_value(body.clone()).map_err(|_| StatusCode::BAD_REQUEST)?;
-    let limit = body.get("limit").and_then(|v| v.as_i64());
-    let offset = body.get("offset").and_then(|v| v.as_i64());
     let scenes = state
         .app
-        .list_scenes_with_filter(&filter, limit, offset)
+        .list_scenes_with_filter(&body.filter, body.limit, body.offset)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(serde_json::json!(scenes)))
 }

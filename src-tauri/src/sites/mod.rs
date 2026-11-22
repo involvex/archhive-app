@@ -106,6 +106,10 @@ impl SiteContext {
         site_id: &str,
         extra: Option<&[(&str, &str)]>,
     ) -> AppResult<String> {
+        // Defense-in-depth against SSRF: adapters build remote http(s) URLs, but
+        // reject non-http schemes, credentials, and private/loopback IP literals
+        // before attaching vault cookies and issuing the request.
+        let url = urls::validate_outbound_fetch_url(url)?;
         let cookie = self
             .vault
             .cookie_header(site_id)
@@ -113,7 +117,7 @@ impl SiteContext {
             .flatten()
             .filter(|h| !h.is_empty());
         let build = |client: &reqwest::Client| {
-            let mut req = client.get(url);
+            let mut req = client.get(&url);
             if let Some(header) = cookie.as_deref() {
                 req = req.header("Cookie", header);
             }
@@ -122,7 +126,7 @@ impl SiteContext {
             }
             req
         };
-        throttle::acquire(url).await?;
+        throttle::acquire(&url).await?;
         let resp = match build(&self.client).send().await {
             Ok(resp) => resp,
             Err(e) if is_transport_error(&e) => {
@@ -136,7 +140,7 @@ impl SiteContext {
                 .headers()
                 .get(reqwest::header::RETRY_AFTER)
                 .and_then(|v| v.to_str().ok());
-            throttle::note_rate_limited(url, retry_after);
+            throttle::note_rate_limited(&url, retry_after);
             return Err(AppError::Site(format!(
                 "{site_id} is rate limiting requests (HTTP 429); wait a minute and retry"
             )));
@@ -144,7 +148,7 @@ impl SiteContext {
         if !resp.status().is_success() {
             return Err(AppError::Site(format!("HTTP {} for {url}", resp.status())));
         }
-        throttle::note_ok(url);
+        throttle::note_ok(&url);
         Ok(resp.text().await?)
     }
 
