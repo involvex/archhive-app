@@ -274,8 +274,7 @@ pub fn run() {
             });
         }
 
-        // #19 watchlist auto-queue poller (desktop only).
-        #[cfg(not(mobile))]
+        // #19 watchlist auto-queue poller (desktop + Android; skips on metered when Wi-Fi-only).
         state.spawn_watchlist_poller();
 
         #[cfg(not(mobile))]
@@ -404,6 +403,7 @@ pub fn run() {
             commands::library_storage_stats,
             commands::delete_orphan_sidecar,
             commands::clear_scene_thumb,
+            commands::set_scene_thumb_from_frame,
             commands::clear_all_thumbs,
             commands::binary_versions,
             commands::get_library_stats,

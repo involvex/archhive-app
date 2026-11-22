@@ -30,7 +30,8 @@
 
 - **Priority reordering** — drag-and-drop reorder in the download queue.
 - **Bandwidth throttling** — per-download or global speed limit (yt-dlp `--limit-rate`).
-- **Queue auto-start** — toggle to auto-start downloads when added (currently manual).
+
+Queue auto-start is already immediate unless the job is `WaitingForWifi`.
 
 ### 4. Scene Watch History / Playback Position Memory
 
@@ -43,9 +44,7 @@
 **Status:** 🔵 Partial (v0.8.0: quality badges + Keep best + apply-all)  
 **Area:** Library / Duplicates  
 **Currently:** `DuplicateMergeCard` shows size/resolution/duration; Keep best (highest resolution, then largest file) per group; Apply keep-best to all groups with confirm; `merge_duplicates` still used.  
-**Suggestion (remaining):**
-
-- Side-by-side video preview in duplicate resolution dialog.
+**Done (v0.9.0):** Side-by-side muted preview (keep vs first remove) on `DuplicateMergeCard`.
 
 ---
 
@@ -74,14 +73,12 @@
 
 ### 9. Custom Naming Templates with Preview
 
-**Status:** 🔵 Partial  
+**Status:** 🔵 Partial (v0.9.0: live preview + unknown-token + illegal-path warnings)  
 **Area:** Settings / Library  
-**Currently:** `naming_template` is a plain string (`{performer}/{title}.{ext}`); `downloads/naming.rs` renders it. No preview or validation UI.  
-**Suggestion:**
+**Currently:** Settings → Library shows a live sample path, flags unknown `{tokens}`, and warns on Windows-illegal characters. `downloads/naming.rs` maps known tokens to yt-dlp.  
+**Suggestion (remaining):**
 
-- Visual template builder with available variables: `{performer}`, `{title}`, `{site}`, `{date}`, `{tags}`, `{studio}`, `{duration}`.
-- Live preview showing sample output for a selected scene.
-- Template validation (detect illegal path characters per OS).
+- Visual template builder / chip picker.
 - Per-site template overrides (e.g., different naming for Pornhub vs YouTube).
 
 ### 10. Keyboard Shortcuts & Command Palette
@@ -139,18 +136,14 @@
 **Area:** Library  
 **Currently:** `scenes.notes TEXT` (`MIGRATION_006`), `Scene.notes`, `UpdateSceneRequest.notes`, `state.update_scene(..., notes)`, editable in scene edit/details UI.  
 **Done:** Extended `scenes_fts` FTS5 index to include `notes` column (MIGRATION_013 rebuilds the index for existing databases; triggers now sync on insert/update/delete). Scene search now matches text in both title and notes.  
-**Suggestion (remaining):** Add timestamp-jump annotations (`[01:23] note` click-to-seek in player).
+**Done (v0.9.0):** `[mm:ss]` / `[h:mm:ss]` markers in notes are clickable in the library player and seek the video.
 
 ### 16. Per-Scene Custom Thumbnail
 
-**Status:** 🔵 Partial  
+**Status:** 🔵 Partial (v0.9.0: “Use this frame” from the player)  
 **Area:** Library  
-**Currently:** Thumbnails auto-generated (remote URL → probe frame via `generate_missing_thumbs`, `probe_scene_metadata`); `clear_scene_thumb` + orphan sidecar cleaner (`list_orphan_sidecars`) exist. No custom upload.  
-**Suggestion:** Allow users to:
-
-- Upload a custom thumbnail image for a scene.
-- Scrub through the video to select a specific frame.
-- Set thumbnail from a URL.
+**Currently:** Thumbnails auto-generated (remote URL → probe frame); player can write `{stem}.jpg` from the current frame via `set_scene_thumb_from_frame`; `clear_scene_thumb` + orphan cleaner exist.  
+**Suggestion (remaining):** Upload a custom image; set thumbnail from a URL; scrubber UI dedicated to frame picking.
 
 ### 17. Theme Customization
 
@@ -207,10 +200,10 @@
 
 ### 22. Automated Backup
 
-**Status:** ⚪ Not started  
+**Status:** 🔵 Partial (v0.8.0: manual DB zip backup/restore)  
 **Area:** Library  
-**Currently:** No scheduled backup or restore UI. Manual SQLite file copy is the only path.  
-**Suggestion:** Scheduled SQLite backup (copy the `.db` file to a backup directory). Configurable backup interval and retention. One-click restore from backup in Settings. See #32 for full backup (DB + thumbs + settings).
+**Currently:** Settings → Diagnostics Export/Restore library DB (`.archhive-backup.zip`) shipped in #32. No scheduled/retention job yet.  
+**Suggestion (remaining):** Scheduled SQLite backup with configurable interval and retention.
 
 ### 23. Performance Monitoring Dashboard
 
@@ -239,16 +232,10 @@
 
 ### 25. REST API Pagination & Filtering
 
-**Status:** ⚪ Not started  
+**Status:** 🔵 Partial  
 **Area:** LAN Server  
-**Currently:** Axum LAN server serves SPA + `GET /api/scenes|performers|tags|downloads|sites`, scene media streaming with Range support, `/files` browser; bearer-token auth. No `page/per_page/sort/filter` params (server `list_scenes` ignores them).  
-**Suggestion:** Add query parameters to LAN API endpoints:
-
-- `?page=1&per_page=50` for paginated responses.
-- `?sort=newest&order=desc` for sorting.
-- `?performer=X&tag=Y` for filtering.
-- `?search=query` for search.
-- This would make the LAN API more useful for third-party integrations. See #37 for auth scopes.
+**Currently:** `GET /api/scenes` accepts `q`, `sort`, `limit`, `offset` (and some attribute filters). Full performer/tag filter still goes through `POST /api/library/filter`.  
+**Suggestion (remaining):** Richer query-param filters on GET; page/per_page aliases; see #37 for auth scopes.
 
 ---
 
@@ -271,10 +258,8 @@
 **Status:** 🔵 Partial  
 **Area:** Browse / Library  
 **Currently:** `saved_searches` table (`MIGRATION_010`) with save/list/delete + `check_saved_search` (re-runs page 1, diffs against a capped 300-key snapshot, first check seeds the baseline); Save toggle on every browse detail page; "Saved searches" manager on Browse with per-search Check now, new-count badges, and aggregate total; manual checks open a New Matches panel (queue-all capped at 50 with overflow note, dismiss clears the badge via `dismiss_saved_search_news`); "Hide watched" toggle on browse results hides items whose URL matches a watched library scene (`list_watched_source_urls`); poller last-run indicator (`watchlist_status`: last run time, checked/queued/errors, due count); backend named constants in `state.rs`, `is_search_due` helper, `scene_exists`/`existing_scene_ids` cheap validation, corrupt snapshot error logging, proper 404/500 mapping in `server/mod.rs`; icon-only buttons in Browse saved card have `aria-label`s.  
-**Suggestion (remaining):**
-
-- Optional tray toast (#11) when the background poller finds items.
-- Pairs with #19 scheduled downloads — ✅ auto-queue pairing shipped (per-search toggle + interval poller).
+**Done (v0.9.0):** Native + in-app notification when the poller finds/queues matches; Settings → Downloads toggles; Android poller with Wi-Fi-only skip.  
+**Suggestion (remaining):** Quiet-hours suppression (#43).
 
 ### 29. Performer Detail Pages + Tag Hierarchy Manager
 
@@ -402,19 +387,10 @@
 
 ### 43. Notification Preferences
 
-**Status:** ⚪ Not started  
+**Status:** 🔵 Partial (v0.9.0: download complete/failed + watchlist match toggles)  
 **Area:** Settings / UX  
-**Currently:** Notification pipe shipped (#11: native OS + in-app toasts) but no user-facing toggles.  
-**Suggestion:** Settings → Notifications (or Diagnostics tab): per-event enable/disable toggles for:
-
-- Download completed
-- Download failed
-- Library scan finished
-- New duplicates detected
-- LAN connection status changes
-- Saved-search new matches (pairs with #28)
-
-Add "Quiet hours" window (e.g., 22:00–08:00) to suppress non-critical toasts; persist in `app_settings`.
+**Currently:** Settings → Downloads → Notifications toggles `notify_download_complete`, `notify_download_failed`, `notify_saved_search_matches`.  
+**Suggestion (remaining):** Toggles for library scan finished, duplicates found, LAN status; quiet-hours window.
 
 ---
 
@@ -634,4 +610,4 @@ Add "Quiet hours" window (e.g., 22:00–08:00) to suppress non-critical toasts; 
 
 ---
 
-_Last updated: 2026-11-22 (v0.8.0: library DB backup/restore, metadata JSON export, duplicate Keep best, performer merge, tag parents, download concurrency)_
+_Last updated: 2026-11-22 (v0.9.0: notes seek, naming preview, frame thumb, dupe preview, watchlist notify + Android poller, RedGifs Android gate)_

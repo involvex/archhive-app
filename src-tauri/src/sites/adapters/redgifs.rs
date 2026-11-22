@@ -150,6 +150,15 @@ impl SiteAdapter for RedgifsAdapter {
             });
         }
 
+        // gallery-dl is not available on Android; avoid queueing a tool the
+        // phone cannot run. Direct HTTP above covers most RedGifs clips.
+        if cfg!(target_os = "android") {
+            return Err(AppError::Other(
+                "RedGifs needs gallery-dl for this URL. Open it on desktop ArcHive, or use Remote LAN."
+                    .to_string(),
+            ));
+        }
+
         Ok(DownloadPlan {
             url: item.url.clone(),
             output_template: "redgifs/%(title)s.%(ext)s".to_string(),

@@ -63,9 +63,6 @@ impl FfmpegProcessor {
     ///    skip a video entirely.
     /// 4. If the primary pass fails, retry with `-ss 0` as a last resort.
     pub async fn extract_thumbnail(&self, video_path: &Path) -> AppResult<PathBuf> {
-        let thumb_path = video_path.with_extension("jpg");
-        let video_str = video_path.to_string_lossy().to_string();
-
         let seek_pos = match self.probe_duration(video_path).await {
             Some(dur) if dur > 0.0 => {
                 let t = dur.min(30.0) * 0.1;
@@ -73,13 +70,30 @@ impl FfmpegProcessor {
             }
             _ => "0".to_string(),
         };
+        self.extract_thumbnail_at(video_path, &seek_pos).await
+    }
+
+    /// Extract a JPEG thumbnail at an explicit seek position (seconds as `"12.34"`).
+    /// Writes `{stem}.jpg` next to the video. Retries at `0` if the seek fails.
+    pub async fn extract_thumbnail_at(
+        &self,
+        video_path: &Path,
+        seek_secs: &str,
+    ) -> AppResult<PathBuf> {
+        let thumb_path = video_path.with_extension("jpg");
+        let video_str = video_path.to_string_lossy().to_string();
+        let seek = if seek_secs.trim().is_empty() {
+            "0".to_string()
+        } else {
+            seek_secs.trim().to_string()
+        };
 
         let mut args = vec![
             "-y".to_string(),
             "-ss".to_string(),
-            seek_pos,
+            seek,
             "-i".to_string(),
-            video_str.clone(),
+            video_str,
             "-frames:v".to_string(),
             "1".to_string(),
             "-q:v".to_string(),

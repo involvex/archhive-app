@@ -909,6 +909,19 @@ export const api = {
     return localInvoke<void>("clear_scene_thumb", { sceneId });
   },
 
+  async setSceneThumbFromFrame(sceneId: string, positionSecs: number): Promise<Scene> {
+    if (shouldUseRemoteApi()) {
+      return remoteFetch<Scene>(`/api/scenes/${sceneId}/thumb/frame`, {
+        method: "POST",
+        body: JSON.stringify({ position_secs: positionSecs }),
+      });
+    }
+    return localInvoke<Scene>("set_scene_thumb_from_frame", {
+      sceneId,
+      positionSecs,
+    });
+  },
+
   async resolveMediaDetails(url: string): Promise<MediaItem> {
     return localOrRemote("resolve_media_details", { url }, "/api/media/resolve", {
       method: "POST",

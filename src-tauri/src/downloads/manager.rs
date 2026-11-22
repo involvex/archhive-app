@@ -352,14 +352,20 @@ pub(crate) fn mark_job_failed(
         .unwrap_or(30);
 
     if job.retry_count >= max_retries {
-        let title = job.title.as_deref().unwrap_or("Download failed");
-        let _ = app
-            .notification()
-            .builder()
-            .channel_id(NOTIF_CHANNEL_ERROR)
-            .title("Download failed")
-            .body(title)
-            .show();
+        let notify_failed = settings
+            .as_ref()
+            .map(|s| s.notify_download_failed)
+            .unwrap_or(true);
+        if notify_failed {
+            let title = job.title.as_deref().unwrap_or("Download failed");
+            let _ = app
+                .notification()
+                .builder()
+                .channel_id(NOTIF_CHANNEL_ERROR)
+                .title("Download failed")
+                .body(title)
+                .show();
+        }
         return;
     }
 
@@ -703,14 +709,17 @@ async fn run_job_with_plan(
             db.update_download_job(&job)?;
             let _ = app.emit("download:progress", &job);
             sync_android_download_lifecycle(&db, &app);
-            let title = job.title.as_deref().unwrap_or("Download complete");
-            let _ = app
-                .notification()
-                .builder()
-                .channel_id(NOTIF_CHANNEL_DONE)
-                .title("Download complete")
-                .body(title)
-                .show();
+            let settings_after = db.get_settings().unwrap_or_default();
+            if settings_after.notify_download_complete {
+                let title = job.title.as_deref().unwrap_or("Download complete");
+                let _ = app
+                    .notification()
+                    .builder()
+                    .channel_id(NOTIF_CHANNEL_DONE)
+                    .title("Download complete")
+                    .body(title)
+                    .show();
+            }
 
             let mut enriched_performers = plan.performers.clone();
             let mut enriched_tags = plan.tags.clone();
@@ -718,8 +727,7 @@ async fn run_job_with_plan(
             let mut enriched_duration = plan.duration;
             let mut enriched_thumb_url = plan.thumbnail_url.clone();
 
-            let settings_for_tag = db.get_settings().unwrap_or_default();
-            let auto_from_ytdlp = settings_for_tag.auto_tag_from_ytdlp;
+            let auto_from_ytdlp = settings_after.auto_tag_from_ytdlp;
             if plan.tool == DownloadTool::YtDlp && auto_from_ytdlp {
                 let cookies = vault.cookie_file_for_site(&plan.adapter_id);
                 if let Ok(json) = runner

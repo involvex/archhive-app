@@ -1,6 +1,7 @@
 import { useEffect, useCallback } from "react";
 import { api } from "@/lib/api/client";
 import { shouldUseRemoteApi, getAppRuntime } from "@/lib/runtime";
+import { useSettingsStore } from "@/lib/stores/settings";
 import type { DownloadJob } from "@/lib/types";
 
 const POLL_INTERVAL_MS = 5000;
@@ -21,12 +22,15 @@ export function useDownloadNotifications(toastFn?: ToastFn) {
   const emitToast = useCallback(
     (job: DownloadJob) => {
       if (!toastFn) return;
+      const settings = useSettingsStore.getState().settings;
       if (job.status === "completed") {
+        if (settings.notify_download_complete === false) return;
         toastFn(`${job.title || job.url} — download complete`, {
           icon: "✓",
           duration: 5000,
         });
       } else if (job.status === "failed") {
+        if (settings.notify_download_failed === false) return;
         toastFn(`${job.title || job.url} — download failed`, {
           icon: "✕",
           duration: 8000,

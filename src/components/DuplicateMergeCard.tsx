@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type { DuplicateGroup, Scene } from "@/lib/types";
 import {
   formatDuration,
@@ -6,6 +6,7 @@ import {
   formatResolution,
   pickBestDuplicateScene,
 } from "@/lib/duplicates";
+import { isWebPlayableScene, sceneMediaUrl } from "@/lib/mediaUrl";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { SceneCard } from "@/components/SceneCard";
@@ -36,6 +37,16 @@ export function DuplicateMergeCard({
 
   const removeIds = group.scenes.filter((s) => s.id !== keepId).map((s) => s.id);
   const canMerge = keepId && removeIds.length > 0;
+
+  const previewPair = useMemo(() => {
+    const keep = group.scenes.find((s) => s.id === keepId);
+    const other = group.scenes.find((s) => s.id !== keepId);
+    if (!keep || !other) return null;
+    const keepSrc = isWebPlayableScene(keep) ? sceneMediaUrl(keep) : undefined;
+    const otherSrc = isWebPlayableScene(other) ? sceneMediaUrl(other) : undefined;
+    if (!keepSrc && !otherSrc) return null;
+    return { keep, other, keepSrc, otherSrc };
+  }, [group.scenes, keepId]);
 
   const handleMergeConfirm = useCallback(async () => {
     setConfirmDelete(false);
@@ -118,6 +129,37 @@ export function DuplicateMergeCard({
             </Button>
           </div>
         </div>
+
+        {previewPair && (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {(
+              [
+                { label: "Keep", scene: previewPair.keep, src: previewPair.keepSrc },
+                { label: "Remove", scene: previewPair.other, src: previewPair.otherSrc },
+              ] as const
+            ).map(({ label, scene, src }) => (
+              <div key={`${label}-${scene.id}`} className="space-y-1">
+                <p className="text-[10px] font-medium uppercase tracking-wide text-[var(--color-muted-foreground)]">
+                  {label}: {scene.title}
+                </p>
+                {src ? (
+                  <video
+                    src={src}
+                    muted
+                    playsInline
+                    preload="metadata"
+                    controls
+                    className="aspect-video max-h-40 w-full rounded-md bg-black object-contain"
+                  />
+                ) : (
+                  <div className="flex aspect-video max-h-40 items-center justify-center rounded-md border border-dashed border-[var(--color-border)] bg-[var(--color-muted)]/40 px-2 text-center text-[10px] text-[var(--color-muted-foreground)]">
+                    Preview unavailable in-app for this file
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {group.scenes.map((scene) => (

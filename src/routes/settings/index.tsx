@@ -26,6 +26,7 @@ import {
 } from "@/lib/lanHistory";
 import QRCode from "react-qr-code";
 import { getPluginSettingsPanels } from "@/lib/plugins/loader";
+import { analyseNamingTemplate } from "@/lib/namingTemplate";
 import { visibleSettingsTabs } from "@/lib/settings/capabilities";
 import type {
   BinaryLatestVersions,
@@ -1760,10 +1761,35 @@ function SettingsPage() {
                   value={hostSettings?.naming_template || ""}
                   onChange={(e) => patchHostSettings({ naming_template: e.target.value })}
                 />
-                <p className="mt-1 text-[10px] text-[var(--color-muted-foreground)]">
-                  Placeholders: {"{performer}"}, {"{title}"}, {"{ext}"}, {"{id}"}, {"{site}"}.
-                  Example: {"{performer}/{title}.{ext}"} → saved under your library path.
-                </p>
+                {(() => {
+                  const naming = analyseNamingTemplate(hostSettings?.naming_template);
+                  return (
+                    <div className="mt-1 space-y-1 text-[10px] text-[var(--color-muted-foreground)]">
+                      <p>
+                        Placeholders: {"{performer}"}, {"{title}"}, {"{ext}"}, {"{id}"}, {"{site}"},{" "}
+                        {"{date}"}, {"{channel}"}. Example: {"{performer}/{title}.{ext}"}
+                      </p>
+                      <p className="font-mono text-[var(--color-foreground)]">
+                        Preview: {naming.preview}
+                      </p>
+                      {naming.unknownTokens.length > 0 && (
+                        <p className="text-amber-400">
+                          Unknown placeholder
+                          {naming.unknownTokens.length === 1 ? "" : "s"}:{" "}
+                          {naming.unknownTokens.map((t) => `{${t}}`).join(", ")}
+                          {naming.fallsBackToDefault
+                            ? " — falls back to {performer}/{title}.{ext}"
+                            : ""}
+                        </p>
+                      )}
+                      {naming.hasIllegalChars && (
+                        <p className="text-red-400">
+                          Contains characters illegal in Windows paths (&lt; &gt; : &quot; | ? *).
+                        </p>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
               <div>
                 <label className="text-xs text-[var(--color-muted-foreground)]">
@@ -2549,7 +2575,8 @@ function SettingsPage() {
               <p className="text-xs text-[var(--color-muted-foreground)]">
                 A background poller re-checks saved searches past this interval and queues new
                 matches as downloads (max 25 per search per pass). Enable per search with the
-                lightning toggle on the Browse page. Desktop app only.
+                lightning toggle on the Browse page. On Android the poller skips a pass when
+                Wi-Fi-only downloads are on and the network is metered.
               </p>
               <div>
                 <label className="text-xs text-[var(--color-muted-foreground)]">
@@ -2569,6 +2596,48 @@ function SettingsPage() {
                   }
                 />
               </div>
+              <Button onClick={() => void saveHostSettings()} disabled={!hostSettings}>
+                Save
+              </Button>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Notifications</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-xs text-[var(--color-muted-foreground)]">
+                Control system notifications for downloads and watchlist matches. Quiet hours are
+                not configured yet.
+              </p>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={hostSettings?.notify_download_complete ?? true}
+                  onChange={(e) =>
+                    patchHostSettings({ notify_download_complete: e.target.checked })
+                  }
+                />
+                Download completed
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={hostSettings?.notify_download_failed ?? true}
+                  onChange={(e) => patchHostSettings({ notify_download_failed: e.target.checked })}
+                />
+                Download failed
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={hostSettings?.notify_saved_search_matches ?? true}
+                  onChange={(e) =>
+                    patchHostSettings({ notify_saved_search_matches: e.target.checked })
+                  }
+                />
+                Watchlist / saved-search matches
+              </label>
               <Button onClick={() => void saveHostSettings()} disabled={!hostSettings}>
                 Save
               </Button>
