@@ -138,13 +138,14 @@ type SceneRow = (
 
 pub struct Database {
     conn: Arc<Mutex<Connection>>,
+    db_path: PathBuf,
 }
 
 impl Database {
     pub fn new(data_dir: PathBuf) -> AppResult<Self> {
         std::fs::create_dir_all(&data_dir)?;
         let db_path = data_dir.join("archhive.db");
-        let conn = Connection::open(db_path)?;
+        let conn = Connection::open(&db_path)?;
         conn.execute_batch(MIGRATION_001)?;
         conn.execute_batch(MIGRATION_002)?;
         if !column_exists(&conn, "download_jobs", "metadata") {
@@ -228,11 +229,25 @@ impl Database {
         }
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
+            db_path,
         })
     }
 
     pub fn connection(&self) -> Arc<Mutex<Connection>> {
         self.conn.clone()
+    }
+
+    pub fn db_path(&self) -> PathBuf {
+        self.db_path.clone()
+    }
+
+    pub fn count_scenes(&self) -> AppResult<u32> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM scenes", [], |row| row.get(0))?;
+        Ok(count.max(0) as u32)
     }
 
     pub fn get_settings(&self) -> AppResult<AppSettings> {
@@ -3025,6 +3040,153 @@ impl Database {
         row.ok_or_else(|| AppError::NotFound(format!("performer {performer_id}")))
     }
 
+    /// Merge `source_id` into `keep_id`: reassign scene links, union aliases
+    /// (including the source display name), then delete the source performer.
+    pub fn merge_performers(
+        &self,
+        keep_id: &str,
+        source_id: &str,
+    ) -> AppResult<crate::models::MergePerformersResult> {
+        if keep_id == source_id {
+            return Err(AppError::InvalidInput(
+                "keep and source performer must differ".into(),
+            ));
+        }
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+
+        let keep_exists: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM performers WHERE id = ?1",
+                params![keep_id],
+                |row| row.get::<_, i64>(0),
+            )
+            .map(|c| c > 0)?;
+        if !keep_exists {
+            return Err(AppError::NotFound(format!("performer {keep_id}")));
+        }
+
+        let source: Option<(String, Option<String>)> = conn
+            .query_row(
+                "SELECT name, aliases FROM performers WHERE id = ?1",
+                params![source_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()?;
+        let Some((source_name, source_aliases_json)) = source else {
+            return Err(AppError::NotFound(format!("performer {source_id}")));
+        };
+
+        let scenes_reassigned: u32 = {
+            let mut stmt = conn.prepare(
+                "SELECT scene_id FROM scene_performers WHERE performer_id = ?1",
+            )?;
+            let scene_ids: Vec<String> = stmt
+                .query_map(params![source_id], |row| row.get(0))?
+                .collect::<Result<Vec<_>, _>>()?;
+            let count = scene_ids.len() as u32;
+            for scene_id in &scene_ids {
+                conn.execute(
+                    "INSERT OR IGNORE INTO scene_performers (scene_id, performer_id) VALUES (?1, ?2)",
+                    params![scene_id, keep_id],
+                )?;
+            }
+            conn.execute(
+                "DELETE FROM scene_performers WHERE performer_id = ?1",
+                params![source_id],
+            )?;
+            count
+        };
+
+        let mut extra_aliases: Vec<String> =
+            serde_json::from_str(source_aliases_json.as_deref().unwrap_or("[]"))
+                .unwrap_or_default();
+        if !source_name.trim().is_empty() {
+            extra_aliases.push(source_name);
+        }
+        drop(conn);
+        self.merge_performer_aliases(keep_id, &extra_aliases)?;
+
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        conn.execute("DELETE FROM performers WHERE id = ?1", params![source_id])?;
+
+        Ok(crate::models::MergePerformersResult {
+            keep_id: keep_id.to_string(),
+            removed_id: source_id.to_string(),
+            scenes_reassigned,
+        })
+    }
+
+    /// Set or clear a tag's parent. Rejects self-parent and missing parents.
+    pub fn set_tag_parent(&self, tag_id: &str, parent_id: Option<&str>) -> AppResult<Tag> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+
+        let exists: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM tags WHERE id = ?1",
+                params![tag_id],
+                |row| row.get::<_, i64>(0),
+            )
+            .map(|c| c > 0)?;
+        if !exists {
+            return Err(AppError::NotFound(format!("tag {tag_id}")));
+        }
+
+        if let Some(pid) = parent_id {
+            if pid == tag_id {
+                return Err(AppError::InvalidInput(
+                    "a tag cannot be its own parent".into(),
+                ));
+            }
+            let parent_exists: bool = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM tags WHERE id = ?1",
+                    params![pid],
+                    |row| row.get::<_, i64>(0),
+                )
+                .map(|c| c > 0)?;
+            if !parent_exists {
+                return Err(AppError::NotFound(format!("parent tag {pid}")));
+            }
+            // Reject one-level cycles: parent already points at this tag.
+            let parent_of_parent: Option<String> = conn
+                .query_row(
+                    "SELECT parent_id FROM tags WHERE id = ?1",
+                    params![pid],
+                    |row| row.get(0),
+                )
+                .optional()?
+                .flatten();
+            if parent_of_parent.as_deref() == Some(tag_id) {
+                return Err(AppError::InvalidInput(
+                    "setting this parent would create a cycle".into(),
+                ));
+            }
+            conn.execute(
+                "UPDATE tags SET parent_id = ?2 WHERE id = ?1",
+                params![tag_id, pid],
+            )?;
+        } else {
+            conn.execute(
+                "UPDATE tags SET parent_id = NULL WHERE id = ?1",
+                params![tag_id],
+            )?;
+        }
+        drop(conn);
+        self.list_tags()?
+            .into_iter()
+            .find(|t| t.id == tag_id)
+            .ok_or_else(|| AppError::NotFound(format!("tag {tag_id}")))
+    }
+
     /// Union new aliases into a performer (case-insensitive, ordered, capped).
     pub fn merge_performer_aliases(&self, performer_id: &str, aliases: &[String]) -> AppResult<()> {
         let conn = self
@@ -3357,7 +3519,7 @@ impl Database {
             }
             if let Some(row) = conn
                 .query_row(
-                    "SELECT id, title, path, thumb, source_url, channel, file_size, width, height FROM scenes WHERE id = ?1 AND COALESCE(is_vaulted, 0) = 0",
+                    "SELECT id, title, path, thumb, source_url, channel, file_size, width, height, duration FROM scenes WHERE id = ?1 AND COALESCE(is_vaulted, 0) = 0",
                     params![id],
                     |row| {
                         Ok((
@@ -3370,19 +3532,21 @@ impl Database {
                             row.get::<_, Option<i64>>(6)?,
                             row.get::<_, Option<u32>>(7)?,
                             row.get::<_, Option<u32>>(8)?,
+                            row.get::<_, Option<u32>>(9)?,
                         ))
                     },
                 )
                 .optional()?
             {
-                let (id, title, path, thumb, source_url, channel, file_size, width, height) = row;
+                let (id, title, path, thumb, source_url, channel, file_size, width, height, duration) =
+                    row;
                 let performers = self.scene_performers(conn, &id)?;
                 let tags = self.scene_tags(conn, &id)?;
                 scenes.push(Scene {
                     id,
                     title,
                     path,
-                    duration: None,
+                    duration,
                     thumb,
                     source_url,
                     studio_id: None,
@@ -3397,7 +3561,7 @@ impl Database {
                     phash: None,
                     oshash: None,
                     file_size: file_size.map(|v| v as u64),
-                notes: None,
+                    notes: None,
                     width,
                     height,
                 });
@@ -4073,5 +4237,58 @@ mod tests {
         let again = db.get_scene(&id).unwrap();
         assert_eq!(again.performers.len(), scene.performers.len());
         assert_eq!(again.tags.len(), scene.tags.len());
+    }
+
+    #[test]
+    fn merge_performers_and_set_tag_parent() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::new(dir.path().to_path_buf()).unwrap();
+        let keep_id = db.upsert_performer("Keep Me").unwrap();
+        let source_id = db.upsert_performer("Merge Away").unwrap();
+        let scene_id = db
+            .insert_scene(
+                "Shared",
+                None,
+                None,
+                &["Merge Away".into()],
+                &["child".into()],
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+        let _ = db
+            .insert_scene(
+                "ParentTagScene",
+                None,
+                None,
+                &[],
+                &["parent".into()],
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+        let tags = db.list_tags().unwrap();
+        let child = tags.iter().find(|t| t.name == "child").unwrap().clone();
+        let parent = tags.iter().find(|t| t.name == "parent").unwrap().clone();
+
+        let result = db.merge_performers(&keep_id, &source_id).unwrap();
+        assert_eq!(result.scenes_reassigned, 1);
+        let scene = db.get_scene(&scene_id).unwrap();
+        assert!(scene.performers.iter().any(|p| p == "Keep Me"));
+        assert!(!scene.performers.iter().any(|p| p == "Merge Away"));
+        assert!(db.get_performer(&source_id).is_err());
+
+        let updated = db.set_tag_parent(&child.id, Some(&parent.id)).unwrap();
+        assert_eq!(updated.parent_id.as_deref(), Some(parent.id.as_str()));
+        let cleared = db.set_tag_parent(&child.id, None).unwrap();
+        assert!(cleared.parent_id.is_none());
     }
 }

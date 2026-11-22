@@ -1,13 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api/client";
+import { pickBestDuplicateScene } from "@/lib/duplicates";
 import type { DuplicateGroup } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DuplicateMergeCard } from "@/components/DuplicateMergeCard";
 import { SkeletonGrid } from "@/components/SkeletonGrid";
 import { EmptyState } from "@/components/EmptyState";
-import { RefreshCw, Search, Trash2 } from "lucide-react";
+import { RefreshCw, Search, Sparkles, Trash2 } from "lucide-react";
 
 export const Route = createFileRoute("/duplicates/")({
   component: DuplicatesPage,
@@ -19,6 +20,8 @@ function DuplicatesPage() {
   const [error, setError] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [applyAllBusy, setApplyAllBusy] = useState(false);
+  const [deleteFilesAll, setDeleteFilesAll] = useState(false);
 
   const loadGroups = useCallback(() => {
     setLoading(true);
@@ -79,6 +82,42 @@ function DuplicatesPage() {
     }
   }
 
+  async function handleApplyKeepBestAll() {
+    const targets = filteredGroups;
+    if (targets.length === 0) return;
+    if (
+      !window.confirm(
+        `Apply Keep best to ${targets.length} group(s)?${
+          deleteFilesAll ? " Duplicate files will be deleted from disk." : ""
+        }`,
+      )
+    ) {
+      return;
+    }
+    setApplyAllBusy(true);
+    setError(null);
+    let merged = 0;
+    try {
+      for (const group of targets) {
+        const best = pickBestDuplicateScene(group.scenes);
+        if (!best) continue;
+        const removeIds = group.scenes.filter((s) => s.id !== best.id).map((s) => s.id);
+        if (removeIds.length === 0) continue;
+        await api.mergeDuplicates(best.id, removeIds, deleteFilesAll);
+        merged += 1;
+        setGroups((prev) => prev.filter((g) => !g.scenes.some((s) => removeIds.includes(s.id))));
+      }
+    } catch (e) {
+      console.error(e);
+      setError(e instanceof Error ? e.message : "Apply keep-best failed");
+    } finally {
+      setApplyAllBusy(false);
+      if (merged > 0 && !error) {
+        // status via cleared groups is enough
+      }
+    }
+  }
+
   const filteredGroups = groups.filter((g) =>
     g.scenes.some((s) => {
       const q = searchQuery.toLowerCase();
@@ -94,7 +133,28 @@ function DuplicatesPage() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-2xl font-bold">Library — Duplicates</h2>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          {filteredGroups.length > 0 && (
+            <>
+              <label className="flex items-center gap-1.5 text-xs text-[var(--color-muted-foreground)]">
+                <input
+                  type="checkbox"
+                  checked={deleteFilesAll}
+                  onChange={(e) => setDeleteFilesAll(e.target.checked)}
+                />
+                Delete files
+              </label>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => void handleApplyKeepBestAll()}
+                disabled={applyAllBusy || loading}
+              >
+                <Sparkles className="h-4 w-4 mr-1.5" />
+                {applyAllBusy ? "Applying…" : `Keep best all (${filteredGroups.length})`}
+              </Button>
+            </>
+          )}
           <Button size="sm" variant="outline" onClick={loadGroups} disabled={loading}>
             <RefreshCw className="h-4 w-4 mr-1.5" />
             Refresh

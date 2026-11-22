@@ -15,7 +15,7 @@ import {
 import { useUnifiedSettings } from "@/hooks/useUnifiedSettings";
 import { useSettingsStore } from "@/lib/stores/settings";
 import { hasLocalBackend } from "@/lib/runtime";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import { isAndroidTauri, mergeDiscoveredHosts } from "@/lib/lan-discovery";
 import { enginePluginStatus } from "@/lib/engineHealth";
 import {
@@ -251,6 +251,8 @@ function SettingsPage() {
   const [diagnosticsCopyStatus, setDiagnosticsCopyStatus] = useState<string | null>(null);
   const [backupStatus, setBackupStatus] = useState<string | null>(null);
   const [backupBusy, setBackupBusy] = useState(false);
+  const [libraryBackupStatus, setLibraryBackupStatus] = useState<string | null>(null);
+  const [libraryBackupBusy, setLibraryBackupBusy] = useState(false);
   const [includeRemoteCreds, setIncludeRemoteCreds] = useState(false);
   const [pickingFolder, setPickingFolder] = useState(false);
   const [folderPickerOpen, setFolderPickerOpen] = useState(false);
@@ -1247,6 +1249,140 @@ function SettingsPage() {
       setBackupStatus(e instanceof Error ? e.message : "Import failed");
     } finally {
       setBackupBusy(false);
+    }
+  }
+
+  async function handleExportLibraryBackup() {
+    setLibraryBackupStatus(null);
+    setLibraryBackupBusy(true);
+    try {
+      let path: string | null = null;
+      if (runtime !== "mobile-tauri") {
+        const selected = await save({
+          title: "Save library backup",
+          defaultPath: `archhive-backup-${Date.now()}.archhive-backup.zip`,
+          filters: [{ name: "ArcHive backup", extensions: ["archhive-backup.zip", "zip"] }],
+        });
+        if (!selected) {
+          setLibraryBackupStatus("Export cancelled.");
+          return;
+        }
+        path = selected;
+      }
+      const result = await api.exportLibraryBackup(path);
+      setLibraryBackupStatus(
+        `Saved DB backup (${result.manifest.scene_count} scenes) to ${result.path}`,
+      );
+    } catch (e) {
+      setLibraryBackupStatus(e instanceof Error ? e.message : "Library backup failed");
+    } finally {
+      setLibraryBackupBusy(false);
+    }
+  }
+
+  async function handleRestoreLibraryBackup() {
+    setLibraryBackupStatus(null);
+    setLibraryBackupBusy(true);
+    try {
+      let path: string | null = null;
+      if (runtime === "mobile-tauri") {
+        setLibraryBackupStatus(
+          "Pick a .archhive-backup.zip from Files (desktop restore is easier).",
+        );
+        const picked = await open({
+          multiple: false,
+          title: "Choose library backup",
+          filters: [{ name: "ArcHive backup", extensions: ["zip", "archhive-backup.zip"] }],
+        });
+        path = typeof picked === "string" ? picked : null;
+      } else {
+        const picked = await open({
+          multiple: false,
+          title: "Choose library backup",
+          filters: [{ name: "ArcHive backup", extensions: ["zip", "archhive-backup.zip"] }],
+        });
+        path = typeof picked === "string" ? picked : null;
+      }
+      if (!path) {
+        setLibraryBackupStatus("Restore cancelled.");
+        return;
+      }
+
+      const dry = await api.dryRunLibraryBackup(path);
+      let remap: string | null = null;
+      if (dry.library_path_needs_remap) {
+        const suggestion = dry.current_library_path || hostSettings?.library_path || "";
+        const answer = window.prompt(
+          `Backup library path is missing on this device:\n${dry.manifest.library_path}\n\nEnter the library folder to use after restore:`,
+          suggestion,
+        );
+        if (answer === null) {
+          setLibraryBackupStatus("Restore cancelled.");
+          return;
+        }
+        remap = answer.trim() || null;
+        if (!remap) {
+          setLibraryBackupStatus("Restore cancelled — library path required.");
+          return;
+        }
+      }
+
+      if (
+        !window.confirm(
+          `Restore library DB from backup?\n${dry.manifest.scene_count} scenes · ${dry.manifest.performer_count} performers\nApp ${dry.manifest.app_version} · migration ${dry.manifest.migration_id}\n\nA safety copy of the current database will be kept.`,
+        )
+      ) {
+        setLibraryBackupStatus("Restore cancelled.");
+        return;
+      }
+
+      const result = await api.restoreLibraryBackup(path, {
+        library_path_remap: remap,
+      });
+      const device = await api.getDeviceSettings();
+      updateSettings(device);
+      setHostSettings(device);
+      void loadDiagnostics();
+      setLibraryBackupStatus(
+        `Restored. Safety copy: ${result.safety_copy_path}${
+          result.library_path_remapped ? " (library path remapped)" : ""
+        }`,
+      );
+    } catch (e) {
+      setLibraryBackupStatus(e instanceof Error ? e.message : "Library restore failed");
+    } finally {
+      setLibraryBackupBusy(false);
+    }
+  }
+
+  async function handleExportLibraryMetadata() {
+    setLibraryBackupStatus(null);
+    setLibraryBackupBusy(true);
+    try {
+      const data = await api.exportLibraryMetadata();
+      const text = JSON.stringify(data, null, 2);
+      const filename = `archhive-library-metadata-${Date.now()}.json`;
+      if (runtime === "mobile-tauri") {
+        await api.shareTextFile(filename, text, "ArcHive library metadata");
+        setLibraryBackupStatus(
+          `Shared metadata (${data.scenes.length} scenes). Save from the share sheet.`,
+        );
+        return;
+      }
+      const blob = new Blob([text], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+      setLibraryBackupStatus(
+        `Exported ${data.scenes.length} scenes, ${data.performers.length} performers, ${data.tags.length} tags.`,
+      );
+    } catch (e) {
+      setLibraryBackupStatus(e instanceof Error ? e.message : "Metadata export failed");
+    } finally {
+      setLibraryBackupBusy(false);
     }
   }
 
@@ -2380,6 +2516,26 @@ function SettingsPage() {
                   }
                 />
               </div>
+              <div>
+                <label className="text-xs text-[var(--color-muted-foreground)]">
+                  Concurrent downloads (1–4)
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={4}
+                  className="mt-1 flex h-9 w-full max-w-xs rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-2 text-sm"
+                  value={hostSettings?.download_max_concurrent ?? 2}
+                  onChange={(e) =>
+                    patchHostSettings({
+                      download_max_concurrent: Number(e.target.value),
+                    })
+                  }
+                />
+                <p className="mt-1 text-[10px] text-[var(--color-muted-foreground)]">
+                  Applies to newly started jobs. Default is 2.
+                </p>
+              </div>
               <Button onClick={() => void saveHostSettings()} disabled={!hostSettings}>
                 Save
               </Button>
@@ -3191,42 +3347,83 @@ function SettingsPage() {
             <CardHeader>
               <CardTitle className="text-base">Backup &amp; Restore</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3 text-sm">
-              <p className="text-[var(--color-muted-foreground)]">
-                Export settings and site cookies to move them between desktop and Android. On
-                Android, Export opens the system Share sheet — save to Files, Drive, or send to
-                another device. The file contains secrets — do not share it publicly.
-              </p>
-              <label className="flex items-center gap-2 text-xs">
-                <input
-                  type="checkbox"
-                  checked={includeRemoteCreds}
-                  onChange={(e) => setIncludeRemoteCreds(e.target.checked)}
-                  className="rounded"
-                />
-                On import, also restore Remote LAN host / token
-              </label>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={backupBusy || runtime === "browser"}
-                  onClick={() => void handleExportSettingsBackup()}
-                >
-                  Export backup
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={backupBusy || runtime === "browser"}
-                  onClick={() => void handleImportSettingsBackup()}
-                >
-                  Import backup
-                </Button>
+            <CardContent className="space-y-4 text-sm">
+              <div className="space-y-3">
+                <p className="font-medium">Settings + cookies</p>
+                <p className="text-[var(--color-muted-foreground)]">
+                  Export settings and site cookies to move them between desktop and Android. The
+                  file contains secrets — do not share it publicly.
+                </p>
+                <label className="flex items-center gap-2 text-xs">
+                  <input
+                    type="checkbox"
+                    checked={includeRemoteCreds}
+                    onChange={(e) => setIncludeRemoteCreds(e.target.checked)}
+                    className="rounded"
+                  />
+                  On import, also restore Remote LAN host / token
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={backupBusy || runtime === "browser"}
+                    onClick={() => void handleExportSettingsBackup()}
+                  >
+                    Export settings
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={backupBusy || runtime === "browser"}
+                    onClick={() => void handleImportSettingsBackup()}
+                  >
+                    Import settings
+                  </Button>
+                </div>
+                {backupStatus && (
+                  <p className="text-xs text-[var(--color-muted-foreground)]">{backupStatus}</p>
+                )}
               </div>
-              {backupStatus && (
-                <p className="text-xs text-[var(--color-muted-foreground)]">{backupStatus}</p>
-              )}
+              <div className="space-y-3 border-t border-[var(--color-border)] pt-3">
+                <p className="font-medium">Library database</p>
+                <p className="text-[var(--color-muted-foreground)]">
+                  Portable `.archhive-backup.zip` of the SQLite library (scenes, tags, collections,
+                  watch history, encrypted cookie vault). Video files stay in your library folder —
+                  remap the path on restore if needed.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={libraryBackupBusy || runtime === "browser"}
+                    onClick={() => void handleExportLibraryBackup()}
+                  >
+                    Export library DB
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={libraryBackupBusy || runtime === "browser"}
+                    onClick={() => void handleRestoreLibraryBackup()}
+                  >
+                    Restore library DB
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={libraryBackupBusy}
+                    onClick={() => void handleExportLibraryMetadata()}
+                  >
+                    Export metadata JSON
+                  </Button>
+                </div>
+                {libraryBackupStatus && (
+                  <p className="text-xs text-[var(--color-muted-foreground)]">
+                    {libraryBackupStatus}
+                  </p>
+                )}
+              </div>
             </CardContent>
           </Card>
 

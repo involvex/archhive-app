@@ -11,7 +11,7 @@ import { ErrorState } from "@/components/ErrorState";
 import { EmptyState } from "@/components/EmptyState";
 import { Button } from "@/components/ui/button";
 import { sceneThumbUrl, isVideoScene } from "@/lib/mediaUrl";
-import { ArrowLeft, Check, Database, Filter, Users, X } from "lucide-react";
+import { ArrowLeft, Check, Database, Filter, GitMerge, Users, X } from "lucide-react";
 
 export const Route = createFileRoute("/library/performers/$performerId")({
   component: PerformerDetailPage,
@@ -36,6 +36,10 @@ function PerformerDetailPage() {
   const [stashSearching, setStashSearching] = useState(false);
   const [stashLinking, setStashLinking] = useState<string | null>(null);
   const [stashError, setStashError] = useState("");
+  const [allPerformers, setAllPerformers] = useState<Performer[]>([]);
+  const [mergeTargetId, setMergeTargetId] = useState("");
+  const [merging, setMerging] = useState(false);
+  const [mergeError, setMergeError] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -46,10 +50,13 @@ function PerformerDetailPage() {
         const all = await api.listPerformers();
         const found = all.find((p) => p.id === performerId) ?? null;
         if (cancelled) return;
+        setAllPerformers(all);
         setPerformer(found);
         setCupEdit(found?.cup_size ?? "");
         setHairEdit(found?.hair_color ?? "");
         setAttrError("");
+        setMergeTargetId("");
+        setMergeError("");
         if (!found) {
           setScenes([]);
           return;
@@ -213,6 +220,59 @@ function PerformerDetailPage() {
         </Button>
       </div>
       {attrError && <p className="text-xs text-red-400">{attrError}</p>}
+      <div className="flex flex-col gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] p-3 sm:flex-row sm:items-end">
+        <label className="flex flex-1 flex-col gap-1 text-xs font-medium text-[var(--color-muted-foreground)]">
+          Merge into…
+          <select
+            className="h-9 rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-2 text-sm text-[var(--color-foreground)]"
+            value={mergeTargetId}
+            onChange={(e) => setMergeTargetId(e.target.value)}
+          >
+            <option value="">Select performer to keep</option>
+            {allPerformers
+              .filter((p) => p.id !== performer.id)
+              .map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name} ({p.scene_count})
+                </option>
+              ))}
+          </select>
+        </label>
+        <Button
+          size="sm"
+          variant="destructive"
+          disabled={!mergeTargetId || merging}
+          onClick={() => {
+            const target = allPerformers.find((p) => p.id === mergeTargetId);
+            if (!target) return;
+            if (
+              !window.confirm(
+                `Merge "${performer.name}" into "${target.name}"? Scene links move over, aliases are kept, and "${performer.name}" is removed.`,
+              )
+            ) {
+              return;
+            }
+            setMerging(true);
+            setMergeError("");
+            void api
+              .mergePerformers(target.id, performer.id)
+              .then((result) => {
+                void navigate({
+                  to: "/library/performers/$performerId",
+                  params: { performerId: result.keep_id },
+                });
+              })
+              .catch((e) =>
+                setMergeError(e instanceof Error ? e.message : String(e) || "Merge failed"),
+              )
+              .finally(() => setMerging(false));
+          }}
+        >
+          <GitMerge className="mr-1.5 h-3.5 w-3.5" />
+          {merging ? "Merging…" : "Merge"}
+        </Button>
+      </div>
+      {mergeError && <p className="text-xs text-red-400">{mergeError}</p>}
       <div className="flex flex-col gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] p-3">
         <div className="flex items-center justify-between gap-2">
           <p className="text-xs font-medium text-[var(--color-muted-foreground)]">

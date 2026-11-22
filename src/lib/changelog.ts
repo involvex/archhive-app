@@ -6,6 +6,32 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.8.0",
+    date: "2026-11-22",
+    changes: [
+      {
+        type: "added",
+        text: "Full library database backup/restore (.archhive-backup.zip) with path remap and safety copy",
+      },
+      {
+        type: "added",
+        text: "JSON export of scenes, performers, and tags (Settings → Diagnostics)",
+      },
+      {
+        type: "added",
+        text: "Duplicate Keep best (resolution → size) per group and apply-all, with size/resolution/duration badges",
+      },
+      {
+        type: "added",
+        text: "Merge performers from the detail page; tag parent editor with indented tag tree",
+      },
+      {
+        type: "added",
+        text: "Configurable concurrent downloads (1–4) in Settings → Downloads",
+      },
+    ],
+  },
+  {
     version: "0.7.0",
     date: "2026-11-15",
     changes: [

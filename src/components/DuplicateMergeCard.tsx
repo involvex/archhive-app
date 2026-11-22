@@ -1,15 +1,23 @@
 import { useCallback, useState } from "react";
 import type { DuplicateGroup, Scene } from "@/lib/types";
+import {
+  formatDuration,
+  formatFileSize,
+  formatResolution,
+  pickBestDuplicateScene,
+} from "@/lib/duplicates";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { SceneCard } from "@/components/SceneCard";
-import { GitMerge, Trash2 } from "lucide-react";
+import { GitMerge, Sparkles, Trash2 } from "lucide-react";
 
 interface DuplicateMergeCardProps {
   group: DuplicateGroup;
   onMerge: (keepId: string, removeIds: string[], deleteFiles: boolean) => Promise<void>;
   onDelete: (sceneId: string) => Promise<void>;
   onNavigate?: (scene: Scene) => void;
+  /** When set by the parent (e.g. apply-all), force delete-files for the merge. */
+  deleteFilesDefault?: boolean;
 }
 
 export function DuplicateMergeCard({
@@ -17,9 +25,11 @@ export function DuplicateMergeCard({
   onMerge,
   onDelete,
   onNavigate,
+  deleteFilesDefault = false,
 }: DuplicateMergeCardProps) {
-  const [keepId, setKeepId] = useState<string>(group.scenes[0]?.id ?? "");
-  const [deleteFiles, setDeleteFiles] = useState(false);
+  const best = pickBestDuplicateScene(group.scenes);
+  const [keepId, setKeepId] = useState<string>(best?.id ?? group.scenes[0]?.id ?? "");
+  const [deleteFiles, setDeleteFiles] = useState(deleteFilesDefault);
   const [merging, setMerging] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -45,6 +55,11 @@ export function DuplicateMergeCard({
       void handleMergeConfirm();
     }
   }, [canMerge, deleteFiles, handleMergeConfirm]);
+
+  const handleKeepBest = useCallback(() => {
+    const picked = pickBestDuplicateScene(group.scenes);
+    if (picked) setKeepId(picked.id);
+  }, [group.scenes]);
 
   const handleDelete = useCallback(
     async (sceneId: string) => {
@@ -79,7 +94,7 @@ export function DuplicateMergeCard({
             </span>
             <code className="text-[10px] text-[var(--color-muted-foreground)]">{group.hash}</code>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <label className="flex items-center gap-1.5 text-xs text-[var(--color-muted-foreground)]">
               <input
                 type="checkbox"
@@ -88,6 +103,10 @@ export function DuplicateMergeCard({
               />
               Delete files
             </label>
+            <Button size="sm" variant="outline" onClick={handleKeepBest} disabled={merging}>
+              <Sparkles className="h-3.5 w-3.5 mr-1" />
+              Keep best
+            </Button>
             <Button
               size="sm"
               variant="destructive"
@@ -127,6 +146,22 @@ export function DuplicateMergeCard({
                 )}
               </button>
               <SceneCard item={scene} listView={false} onClick={() => onNavigate?.(scene)} />
+              <div className="mt-1.5 flex flex-wrap gap-1.5 text-[10px] text-[var(--color-muted-foreground)]">
+                <span className="rounded bg-[var(--color-muted)]/60 px-1.5 py-0.5">
+                  {formatResolution(scene.width, scene.height)}
+                </span>
+                <span className="rounded bg-[var(--color-muted)]/60 px-1.5 py-0.5">
+                  {formatFileSize(scene.file_size)}
+                </span>
+                <span className="rounded bg-[var(--color-muted)]/60 px-1.5 py-0.5">
+                  {formatDuration(scene.duration)}
+                </span>
+                {best?.id === scene.id && (
+                  <span className="rounded bg-[var(--color-primary)]/15 px-1.5 py-0.5 text-[var(--color-primary)]">
+                    best
+                  </span>
+                )}
+              </div>
               <Button
                 size="icon"
                 variant="ghost"

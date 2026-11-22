@@ -180,12 +180,15 @@ impl LanServer {
             .route("/api/files/stream", get(stream_file))
             .route("/api/sites/pornhub/categories", get(pornhub_categories))
             .route("/api/performers", get(list_performers))
+            .route("/api/performers/merge", post(merge_performers))
             .route("/api/performers/{id}/image", put(set_performer_image))
             .route(
                 "/api/performers/{id}/attributes",
                 put(set_performer_attributes),
             )
             .route("/api/tags", get(list_tags))
+            .route("/api/tags/{id}/parent", put(set_tag_parent))
+            .route("/api/library/metadata-export", get(export_library_metadata))
             .route("/api/duplicates", get(list_duplicates))
             .route("/api/duplicates/merge", post(merge_duplicates))
             .route("/api/cookies", get(list_cookies))
@@ -1321,6 +1324,58 @@ async fn ensure_performer(
         .ensure_performer(&body.name)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(serde_json::json!(performer)))
+}
+
+#[derive(Deserialize)]
+struct MergePerformersBody {
+    keep_id: String,
+    source_id: String,
+}
+
+async fn merge_performers(
+    State(state): State<ApiState>,
+    Json(body): Json<MergePerformersBody>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let result = state
+        .app
+        .merge_performers(&body.keep_id, &body.source_id)
+        .map_err(|e| match e {
+            crate::error::AppError::NotFound(_) => StatusCode::NOT_FOUND,
+            crate::error::AppError::InvalidInput(_) => StatusCode::BAD_REQUEST,
+            _ => StatusCode::INTERNAL_SERVER_ERROR,
+        })?;
+    Ok(Json(serde_json::json!(result)))
+}
+
+#[derive(Deserialize)]
+struct SetTagParentBody {
+    parent_id: Option<String>,
+}
+
+async fn set_tag_parent(
+    Path(id): Path<String>,
+    State(state): State<ApiState>,
+    Json(body): Json<SetTagParentBody>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let tag = state
+        .app
+        .set_tag_parent(&id, body.parent_id.as_deref())
+        .map_err(|e| match e {
+            crate::error::AppError::NotFound(_) => StatusCode::NOT_FOUND,
+            crate::error::AppError::InvalidInput(_) => StatusCode::BAD_REQUEST,
+            _ => StatusCode::INTERNAL_SERVER_ERROR,
+        })?;
+    Ok(Json(serde_json::json!(tag)))
+}
+
+async fn export_library_metadata(
+    State(state): State<ApiState>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let export = state
+        .app
+        .export_library_metadata()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(serde_json::json!(export)))
 }
 
 #[derive(Deserialize)]

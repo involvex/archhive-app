@@ -562,6 +562,59 @@ pub fn export_settings_backup(
 }
 
 #[tauri::command]
+pub fn export_library_backup(
+    state: State<'_, Arc<AppState>>,
+    path: Option<String>,
+) -> CmdResult<crate::models::LibraryBackupExportResult> {
+    map_err(state.export_library_backup(path.as_deref()))
+}
+
+#[tauri::command]
+pub fn dry_run_library_backup(
+    state: State<'_, Arc<AppState>>,
+    path: String,
+) -> CmdResult<crate::models::LibraryBackupDryRun> {
+    map_err(state.dry_run_library_backup(&path))
+}
+
+#[tauri::command]
+pub fn restore_library_backup(
+    state: State<'_, Arc<AppState>>,
+    path: String,
+    options: Option<crate::models::LibraryBackupRestoreOptions>,
+) -> CmdResult<crate::models::LibraryBackupRestoreResult> {
+    let opts = options.unwrap_or(crate::models::LibraryBackupRestoreOptions {
+        library_path_remap: None,
+    });
+    map_err(state.restore_library_backup(&path, &opts))
+}
+
+#[tauri::command]
+pub fn export_library_metadata(
+    state: State<'_, Arc<AppState>>,
+) -> CmdResult<crate::models::LibraryMetadataExport> {
+    map_err(state.export_library_metadata())
+}
+
+#[tauri::command]
+pub fn merge_performers(
+    state: State<'_, Arc<AppState>>,
+    keep_id: String,
+    source_id: String,
+) -> CmdResult<crate::models::MergePerformersResult> {
+    map_err(state.merge_performers(&keep_id, &source_id))
+}
+
+#[tauri::command]
+pub fn set_tag_parent(
+    state: State<'_, Arc<AppState>>,
+    tag_id: String,
+    parent_id: Option<String>,
+) -> CmdResult<crate::models::Tag> {
+    map_err(state.set_tag_parent(&tag_id, parent_id.as_deref()))
+}
+
+#[tauri::command]
 pub fn import_settings_backup(
     _app: tauri::AppHandle,
     state: State<'_, Arc<AppState>>,

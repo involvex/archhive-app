@@ -1214,8 +1214,83 @@ impl AppState {
             Self::validate_library_path(&settings.library_path, &self.data_dir)?;
             self.invalidate_library_cache();
         }
-        self.db.save_settings(settings)?;
+        let mut next = settings.clone();
+        next.download_max_concurrent = next.download_max_concurrent.clamp(1, 4);
+        self.db.save_settings(&next)?;
         Ok(())
+    }
+
+    pub fn export_library_backup(
+        &self,
+        zip_path: Option<&str>,
+    ) -> AppResult<crate::models::LibraryBackupExportResult> {
+        let path = match zip_path.map(str::trim).filter(|s| !s.is_empty()) {
+            Some(p) => std::path::PathBuf::from(p),
+            None => {
+                let dir = self.data_dir.join("backups");
+                std::fs::create_dir_all(&dir).map_err(|e| {
+                    crate::error::AppError::Other(format!("create backups dir: {e}"))
+                })?;
+                dir.join(format!(
+                    "archhive-backup-{}.archhive-backup.zip",
+                    chrono::Utc::now().format("%Y%m%d-%H%M%S")
+                ))
+            }
+        };
+        crate::library::backup::export_library_backup(&self.db, &path)
+    }
+
+    pub fn dry_run_library_backup(
+        &self,
+        zip_path: &str,
+    ) -> AppResult<crate::models::LibraryBackupDryRun> {
+        crate::library::backup::dry_run_library_backup(&self.db, std::path::Path::new(zip_path))
+    }
+
+    pub fn restore_library_backup(
+        &self,
+        zip_path: &str,
+        options: &crate::models::LibraryBackupRestoreOptions,
+    ) -> AppResult<crate::models::LibraryBackupRestoreResult> {
+        let mut opts = options.clone();
+        if let Some(ref remap) = opts.library_path_remap {
+            let canonical = Self::validate_library_path(remap, &self.data_dir)?;
+            opts.library_path_remap = Some(canonical);
+        }
+        let result =
+            crate::library::backup::restore_library_backup(&self.db, std::path::Path::new(zip_path), &opts)?;
+        self.invalidate_library_cache();
+        Ok(result)
+    }
+
+    pub fn export_library_metadata(&self) -> AppResult<crate::models::LibraryMetadataExport> {
+        let scenes = self.db.list_scenes(None, crate::models::SceneSort::Newest, None, None)?;
+        let performers = self.db.list_performers(None, None, None)?;
+        let tags = self.db.list_tags()?;
+        Ok(crate::models::LibraryMetadataExport {
+            schema_version: 1,
+            app_version: env!("CARGO_PKG_VERSION").to_string(),
+            exported_at: chrono::Utc::now().to_rfc3339(),
+            scenes,
+            performers,
+            tags,
+        })
+    }
+
+    pub fn merge_performers(
+        &self,
+        keep_id: &str,
+        source_id: &str,
+    ) -> AppResult<crate::models::MergePerformersResult> {
+        self.db.merge_performers(keep_id, source_id)
+    }
+
+    pub fn set_tag_parent(
+        &self,
+        tag_id: &str,
+        parent_id: Option<&str>,
+    ) -> AppResult<crate::models::Tag> {
+        self.db.set_tag_parent(tag_id, parent_id)
     }
 
     pub fn scan_library(&self) -> AppResult<ScanResult> {
