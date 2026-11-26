@@ -277,6 +277,9 @@ pub fn run() {
         // #19 watchlist auto-queue poller (desktop + Android; skips on metered when Wi-Fi-only).
         state.spawn_watchlist_poller();
 
+        // Desktop library watch-folder auto-import (opt-in via Settings).
+        state.sync_watch_folder();
+
         #[cfg(not(mobile))]
         {
             app.manage(Arc::new(desktop::TrayHotkeyState::new()));
@@ -342,6 +345,7 @@ pub fn run() {
             commands::list_performers,
             commands::list_tags,
             commands::get_settings,
+            commands::get_watch_folder_status,
             commands::save_settings,
             commands::scan_library,
             commands::generate_missing_thumbs,

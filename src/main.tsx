@@ -13,6 +13,7 @@ import { isDesktopTauri, isTauri } from "./lib/tauri";
 import { getAppRuntime } from "./lib/runtime";
 import { AppErrorBoundary } from "./components/AppErrorBoundary";
 import { useDownloadNotifications } from "@/lib/hooks/useDownloadNotifications";
+import { useWatchFolderNotifications } from "@/lib/hooks/useWatchFolderNotifications";
 import { useWatchlistNotifications } from "@/lib/hooks/useWatchlistNotifications";
 import { FirstRunWizardGate } from "./components/FirstRunWizard";
 import { initAmoled } from "./lib/amoled";
@@ -124,6 +125,7 @@ function TrayNavigationListener() {
 function DownloadNotifications() {
   useDownloadNotifications(toast);
   useWatchlistNotifications(toast);
+  useWatchFolderNotifications(toast);
   return null;
 }
 

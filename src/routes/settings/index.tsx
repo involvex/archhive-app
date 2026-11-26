@@ -46,6 +46,7 @@ import type {
   AppSettings,
   AppTheme,
   VaultStatus,
+  WatchFolderStatus,
 } from "@/lib/types";
 import { DuplicateGroupCard } from "@/components/DuplicateGroupCard";
 import { DirectoryPickerDialog } from "@/components/DirectoryPickerDialog";
@@ -202,6 +203,7 @@ function SettingsPage() {
   const [probingDurations, setProbingDurations] = useState(false);
   const [scanProgress, setScanProgress] = useState("");
   const [scanResult, setScanResult] = useState("");
+  const [watchFolderStatus, setWatchFolderStatus] = useState<WatchFolderStatus | null>(null);
   const [ffmpegAvail, setFfmpegAvail] = useState<FfmpegStatus | null>(null);
   // Q13: binary versions card.
   const [binaryVersions, setBinaryVersions] = useState<BinaryVersions | null>(null);
@@ -327,6 +329,32 @@ function SettingsPage() {
       });
     return () => unlisten?.();
   }, [caps.libraryScanLocal]);
+
+  const refreshWatchFolderStatus = useCallback(() => {
+    void api
+      .getWatchFolderStatus()
+      .then(setWatchFolderStatus)
+      .catch(() => setWatchFolderStatus(null));
+  }, []);
+
+  useEffect(() => {
+    if (settingsTab !== "library") return;
+    refreshWatchFolderStatus();
+    let unlisten: (() => void) | undefined;
+    void api
+      .subscribeWatchImport((ev) => {
+        setWatchFolderStatus((prev) => ({
+          enabled: prev?.enabled ?? true,
+          watching: prev?.watching ?? true,
+          watch_path: prev?.watch_path,
+          last_message: `Imported "${ev.title}"`,
+        }));
+      })
+      .then((fn) => {
+        unlisten = fn;
+      });
+    return () => unlisten?.();
+  }, [settingsTab, refreshWatchFolderStatus]);
 
   async function refreshCookies() {
     try {
@@ -1092,6 +1120,7 @@ function SettingsPage() {
     try {
       await saveHostSettings();
       setLibraryPickerStatus("Saved.");
+      refreshWatchFolderStatus();
     } catch (e) {
       setLibraryPickerStatus(e instanceof Error ? e.message : "Save failed");
     }
@@ -1968,6 +1997,70 @@ function SettingsPage() {
                   Named captures: {"(?<performer>...)"} and {"(?<tag>...)"}. Used during library
                   scan and download import.
                 </p>
+              </div>
+              <div className="space-y-3 rounded-md border border-[var(--color-border)] p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium">Watch folder auto-import</p>
+                    <p className="text-xs text-[var(--color-muted-foreground)]">
+                      Desktop only: import new videos that appear under the library (or a
+                      subfolder). Incomplete downloads (`.part`, etc.) are skipped until the file
+                      settles.
+                    </p>
+                  </div>
+                  <Switch.Root
+                    checked={hostSettings?.watch_folder_enabled ?? false}
+                    onCheckedChange={(checked) =>
+                      patchHostSettings({ watch_folder_enabled: checked })
+                    }
+                    className="h-5 w-9 shrink-0 rounded-full bg-[var(--color-secondary)] data-[state=checked]:bg-[var(--color-primary)]"
+                    aria-label="Enable watch folder auto-import"
+                  >
+                    <Switch.Thumb className="block h-4 w-4 translate-x-0.5 rounded-full bg-white transition data-[state=checked]:translate-x-[18px]" />
+                  </Switch.Root>
+                </div>
+                <div>
+                  <label className="text-xs text-[var(--color-muted-foreground)]">
+                    Watch path (optional, under library)
+                  </label>
+                  <Input
+                    value={hostSettings?.watch_folder_path ?? ""}
+                    onChange={(e) =>
+                      patchHostSettings({
+                        watch_folder_path: e.target.value.trim() ? e.target.value : null,
+                      })
+                    }
+                    placeholder="Leave empty for library root (e.g. inbox)"
+                    className="mt-1 font-mono text-sm"
+                    disabled={!hostSettings?.watch_folder_enabled}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-[var(--color-muted-foreground)]">
+                    Extensions (comma-separated)
+                  </label>
+                  <Input
+                    value={(hostSettings?.watch_folder_extensions ?? []).join(", ")}
+                    onChange={(e) =>
+                      patchHostSettings({
+                        watch_folder_extensions: e.target.value
+                          .split(/[,\s]+/)
+                          .map((s) => s.trim().replace(/^\./, "").toLowerCase())
+                          .filter(Boolean),
+                      })
+                    }
+                    placeholder="mp4, mkv, webm, mov, avi, m4v"
+                    className="mt-1 font-mono text-sm"
+                    disabled={!hostSettings?.watch_folder_enabled}
+                  />
+                </div>
+                {(watchFolderStatus?.last_message || watchFolderStatus?.watching) && (
+                  <p className="text-xs text-[var(--color-muted-foreground)]">
+                    {watchFolderStatus.watching ? "● Watching — " : ""}
+                    {watchFolderStatus.last_message ||
+                      (watchFolderStatus.watch_path ? `Path: ${watchFolderStatus.watch_path}` : "")}
+                  </p>
+                )}
               </div>
               <Button onClick={() => void saveLibrarySettings()} disabled={!hostSettings}>
                 Save

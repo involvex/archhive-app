@@ -74,6 +74,8 @@ import type {
   VaultActionResult,
   VaultScene,
   VaultStatus,
+  WatchFolderStatus,
+  WatchImportEvent,
 } from "../types";
 import { getAppRuntime, shouldUseRemoteApi } from "../runtime";
 import { vibrateTick } from "../haptics";
@@ -1226,6 +1228,26 @@ export const api = {
       throw new Error("Library scan requires the app runtime.");
     }
     return localInvoke("scan_library");
+  },
+
+  async getWatchFolderStatus(): Promise<WatchFolderStatus> {
+    if (shouldUseRemoteApi()) {
+      return remoteFetch<WatchFolderStatus>("/api/library/watch-folder");
+    }
+    if (getAppRuntime() === "browser") {
+      return { enabled: false, watching: false, watch_path: null, last_message: null };
+    }
+    return localInvoke("get_watch_folder_status");
+  },
+
+  async subscribeWatchImport(onImport: (event: WatchImportEvent) => void): Promise<() => void> {
+    if (!isTauri() || shouldUseRemoteApi()) {
+      return () => {};
+    }
+    const unlisten = await listen<WatchImportEvent>("library:watch-import", (event) => {
+      onImport(event.payload);
+    });
+    return unlisten;
   },
 
   async findDuplicates(): Promise<DuplicateGroup[]> {

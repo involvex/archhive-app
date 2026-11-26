@@ -39,6 +39,10 @@ pub struct AppState {
     pub lan_server: Arc<Mutex<Option<LanServer>>>,
     pub static_ui_dir: Arc<Mutex<Option<PathBuf>>>,
     library_root_cache: Arc<Mutex<Option<PathBuf>>>,
+    /// Desktop watch-folder handle (None when disabled / mobile).
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    watch_folder: Arc<Mutex<Option<crate::library::watch::WatchFolderHandle>>>,
+    watch_folder_last_message: Arc<Mutex<Option<String>>>,
     app: tauri::AppHandle,
 }
 
@@ -91,6 +95,9 @@ impl AppState {
             lan_server: Arc::new(Mutex::new(None)),
             static_ui_dir: Arc::new(Mutex::new(static_ui_dir)),
             library_root_cache: Arc::new(Mutex::new(None)),
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            watch_folder: Arc::new(Mutex::new(None)),
+            watch_folder_last_message: Arc::new(Mutex::new(None)),
             app,
         })
     }
@@ -1233,8 +1240,202 @@ impl AppState {
             next.download_rate_limit.as_deref(),
         )
         .map_err(crate::error::AppError::InvalidInput)?;
+        next.watch_folder_extensions =
+            crate::library::watch::normalize_extensions(&next.watch_folder_extensions);
+        if next.watch_folder_enabled {
+            let lib = Path::new(&next.library_path);
+            // Validate watch path early so bad settings never persist.
+            if lib.as_os_str().is_empty() {
+                return Err(crate::error::AppError::InvalidInput(
+                    "set a library path before enabling watch folder".into(),
+                ));
+            }
+            crate::library::watch::resolve_watch_root(lib, next.watch_folder_path.as_deref())
+                .map_err(crate::error::AppError::InvalidInput)?;
+        } else if let Some(raw) = next.watch_folder_path.as_deref().map(str::trim) {
+            if raw.is_empty() {
+                next.watch_folder_path = None;
+            }
+        }
         self.db.save_settings(&next)?;
+        self.sync_watch_folder();
         Ok(())
+    }
+
+    /// In-memory status for Settings → Library watch-folder card.
+    pub fn watch_folder_status(&self) -> crate::models::WatchFolderStatus {
+        let settings = self.get_settings().unwrap_or_default();
+        let watching = {
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            {
+                self.watch_folder.lock().is_some()
+            }
+            #[cfg(any(target_os = "android", target_os = "ios"))]
+            {
+                false
+            }
+        };
+        let watch_path = if settings.watch_folder_enabled {
+            let lib = Path::new(&settings.library_path);
+            crate::library::watch::resolve_watch_root(lib, settings.watch_folder_path.as_deref())
+                .ok()
+                .map(|p| p.to_string_lossy().to_string())
+        } else {
+            None
+        };
+        crate::models::WatchFolderStatus {
+            enabled: settings.watch_folder_enabled,
+            watching,
+            watch_path,
+            last_message: self.watch_folder_last_message.lock().clone(),
+        }
+    }
+
+    /// Start or stop the desktop library folder watcher from current settings.
+    pub fn sync_watch_folder(&self) {
+        #[cfg(any(target_os = "android", target_os = "ios"))]
+        {
+            let _ = self;
+        }
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        {
+            // Drop any existing watcher first.
+            *self.watch_folder.lock() = None;
+
+            let settings = match self.get_settings() {
+                Ok(s) => s,
+                Err(e) => {
+                    tracing::warn!("[watch-folder] settings: {e}");
+                    return;
+                }
+            };
+            if !settings.watch_folder_enabled {
+                return;
+            }
+            let lib = match Self::validate_library_path(&settings.library_path, &self.data_dir) {
+                Ok(p) => PathBuf::from(p),
+                Err(e) => {
+                    *self.watch_folder_last_message.lock() =
+                        Some(format!("Watch folder idle: {e}"));
+                    return;
+                }
+            };
+            let watch_root = match crate::library::watch::resolve_watch_root(
+                &lib,
+                settings.watch_folder_path.as_deref(),
+            ) {
+                Ok(p) => p,
+                Err(e) => {
+                    *self.watch_folder_last_message.lock() =
+                        Some(format!("Watch folder idle: {e}"));
+                    return;
+                }
+            };
+
+            let db = self.db.clone();
+            let app = self.app.clone();
+            let last_message = self.watch_folder_last_message.clone();
+            let library_root = lib.clone();
+            let handle = crate::library::watch::start_watcher(watch_root.clone(), move |path| {
+                Self::handle_watch_path_inner(
+                    &db,
+                    &app,
+                    &last_message,
+                    library_root.clone(),
+                    path,
+                );
+            });
+            match handle {
+                Ok(h) => {
+                    *self.watch_folder_last_message.lock() =
+                        Some(format!("Watching {}", watch_root.to_string_lossy()));
+                    *self.watch_folder.lock() = Some(h);
+                    tracing::info!(
+                        "[watch-folder] watching {}",
+                        watch_root.to_string_lossy()
+                    );
+                }
+                Err(e) => {
+                    *self.watch_folder_last_message.lock() = Some(format!("Watch failed: {e}"));
+                    tracing::warn!("[watch-folder] start failed: {e}");
+                }
+            }
+        }
+    }
+
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    fn handle_watch_path_inner(
+        db: &Arc<Database>,
+        app: &tauri::AppHandle,
+        last_message: &Arc<Mutex<Option<String>>>,
+        library_root: PathBuf,
+        path: PathBuf,
+    ) {
+        let settings = match db.get_settings() {
+            Ok(s) => s,
+            Err(_) => return,
+        };
+        if !settings.watch_folder_enabled {
+            return;
+        }
+        let extensions =
+            crate::library::watch::normalize_extensions(&settings.watch_folder_extensions);
+        let rules = settings.auto_tag_rules.clone();
+        let attempt = crate::library::watch::try_import_settled_file(
+            db,
+            &library_root,
+            &path,
+            &rules,
+            &extensions,
+        );
+        match attempt {
+            crate::library::watch::ImportAttempt::Imported {
+                scene_id,
+                title,
+                path: path_str,
+            } => {
+                let app_post = app.clone();
+                let db_post = db.clone();
+                let video = PathBuf::from(&path_str);
+                let scene_id_post = scene_id.clone();
+                tauri::async_runtime::spawn(async move {
+                    let _ = crate::library::LibraryScanner::post_process_file(
+                        &db_post,
+                        app_post,
+                        &scene_id_post,
+                        &video,
+                    )
+                    .await;
+                });
+                let msg = format!("Imported \"{title}\"");
+                *last_message.lock() = Some(msg.clone());
+                let event = crate::models::WatchImportEvent {
+                    scene_id,
+                    title: title.clone(),
+                    path: path_str,
+                };
+                let _ = app.emit("library:watch-import", &event);
+                use tauri_plugin_notification::NotificationExt;
+                let _ = app
+                    .notification()
+                    .builder()
+                    .title("Library auto-import")
+                    .body(msg)
+                    .show();
+            }
+            crate::library::watch::ImportAttempt::Skipped(reason) => {
+                tracing::debug!(
+                    "[watch-folder] skip {}: {reason}",
+                    path.to_string_lossy()
+                );
+            }
+            crate::library::watch::ImportAttempt::Failed(err) => {
+                tracing::debug!(
+                    "[watch-folder] defer {}: {err}",
+                    path.to_string_lossy()
+                );
+            }
+        }
     }
 
     pub fn export_library_backup(

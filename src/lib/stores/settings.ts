@@ -39,6 +39,9 @@ const defaultSettings: AppSettings = {
   notify_download_complete: true,
   notify_download_failed: true,
   notify_saved_search_matches: true,
+  watch_folder_enabled: false,
+  watch_folder_path: null,
+  watch_folder_extensions: ["mp4", "mkv", "webm", "mov", "avi", "m4v"],
 };
 
 export const useSettingsStore = create<SettingsState>()(

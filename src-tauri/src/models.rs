@@ -596,6 +596,15 @@ pub struct AppSettings {
     /// Notify when the watchlist poller finds or queues new matches (default true).
     #[serde(default = "default_true")]
     pub notify_saved_search_matches: bool,
+    /// Desktop: auto-import new video files under the library (or watch subpath).
+    #[serde(default)]
+    pub watch_folder_enabled: bool,
+    /// Optional path under `library_path` to watch. Empty/None = library root.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub watch_folder_path: Option<String>,
+    /// Video extensions to import (lowercase, no dots). Empty = defaults.
+    #[serde(default = "default_watch_folder_extensions")]
+    pub watch_folder_extensions: Vec<String>,
     /// Media vault: when on, the Vault tab is available and items can be
     /// locked behind biometrics. Off by default; enabling creates the vault
     /// directory but moves nothing until the user vaults a scene.
@@ -647,6 +656,13 @@ fn default_auto_tag_from_ytdlp() -> bool {
 
 fn default_auto_tag_rules() -> Vec<String> {
     vec![r"(?<performer>[a-zA-Z0-9_]+)-\d+".to_string()]
+}
+
+fn default_watch_folder_extensions() -> Vec<String> {
+    ["mp4", "mkv", "webm", "mov", "avi", "m4v"]
+        .into_iter()
+        .map(str::to_string)
+        .collect()
 }
 
 fn default_trending_sites() -> Vec<String> {
@@ -834,6 +850,9 @@ impl Default for AppSettings {
             notify_download_complete: default_true(),
             notify_download_failed: default_true(),
             notify_saved_search_matches: default_true(),
+            watch_folder_enabled: false,
+            watch_folder_path: None,
+            watch_folder_extensions: default_watch_folder_extensions(),
             vault_enabled: false,
             vault_pin_hash: None,
             vault_auto_lock_mins: default_vault_auto_lock_mins(),
@@ -907,6 +926,23 @@ pub struct ScanProgress {
     pub scanned: u32,
     pub added: u32,
     pub updated: u32,
+}
+
+/// Desktop watch-folder auto-import status (in-memory; not persisted).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WatchFolderStatus {
+    pub enabled: bool,
+    pub watching: bool,
+    pub watch_path: Option<String>,
+    pub last_message: Option<String>,
+}
+
+/// Emitted on `library:watch-import` when a file is auto-imported.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WatchImportEvent {
+    pub scene_id: String,
+    pub title: String,
+    pub path: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
