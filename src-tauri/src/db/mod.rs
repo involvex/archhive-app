@@ -4,7 +4,7 @@ use crate::db::migrations::{
     MIGRATION_001, MIGRATION_002, MIGRATION_003, MIGRATION_004, MIGRATION_005, MIGRATION_006,
     MIGRATION_007, MIGRATION_008, MIGRATION_009, MIGRATION_010, MIGRATION_011, MIGRATION_012,
     MIGRATION_013, MIGRATION_014, MIGRATION_015, MIGRATION_016, MIGRATION_017, MIGRATION_018,
-    MIGRATION_019, MIGRATION_020, MIGRATION_021,
+    MIGRATION_019, MIGRATION_020, MIGRATION_021, MIGRATION_022,
 };
 use crate::error::{AppError, AppResult};
 use crate::models::{
@@ -201,6 +201,23 @@ impl Database {
         // deletes scene rows.
         if !column_exists(&conn, "scenes", "is_vaulted") {
             conn.execute_batch(MIGRATION_021)?;
+        }
+        // Persisted download queue order (reorder + claim-next scheduler).
+        if !column_exists(&conn, "download_jobs", "sort_order") {
+            conn.execute_batch(MIGRATION_022)?;
+            // Oldest first = front of the queue (matches pre-migration FIFO).
+            let mut stmt = conn.prepare(
+                "SELECT id FROM download_jobs ORDER BY created_at ASC, id ASC",
+            )?;
+            let ids: Vec<String> = stmt
+                .query_map([], |row| row.get(0))?
+                .collect::<Result<Vec<_>, _>>()?;
+            for (idx, id) in ids.into_iter().enumerate() {
+                conn.execute(
+                    "UPDATE download_jobs SET sort_order = ?1 WHERE id = ?2",
+                    params![(idx as i64) + 1, id],
+                )?;
+            }
         }
         // Backfill the default StashDB endpoint for DBs created before it
         // existed (fresh DBs get it via AppSettings::default).
@@ -403,6 +420,15 @@ impl Database {
     ) -> AppResult<DownloadJob> {
         let initial_status = initial_status.unwrap_or(DownloadStatus::Pending);
         let is_waiting_for_wifi = initial_status == DownloadStatus::WaitingForWifi;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let sort_order: i64 = conn.query_row(
+            "SELECT COALESCE(MAX(sort_order), 0) + 1 FROM download_jobs",
+            [],
+            |row| row.get(0),
+        )?;
         let job = DownloadJob {
             id: Uuid::new_v4().to_string(),
             url: url.to_string(),
@@ -419,15 +445,12 @@ impl Database {
             created_at: Utc::now().to_rfc3339(),
             retry_count: 0,
             last_retry_at: None,
+            sort_order,
             queue_position: None,
         };
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| AppError::Other(e.to_string()))?;
         conn.execute(
-            "INSERT INTO download_jobs (id, url, adapter, status, progress, output_path, error, title, metadata, created_at, retry_count, last_retry_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+            "INSERT INTO download_jobs (id, url, adapter, status, progress, output_path, error, title, metadata, created_at, retry_count, last_retry_at, sort_order)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
             params![
                 job.id,
                 job.url,
@@ -441,6 +464,7 @@ impl Database {
                 job.created_at,
                 job.retry_count,
                 job.last_retry_at,
+                job.sort_order,
             ],
         )?;
         Ok(job)
@@ -588,26 +612,23 @@ impl Database {
             .lock()
             .map_err(|e| AppError::Other(e.to_string()))?;
         let mut stmt = conn.prepare(
-            "SELECT id, url, adapter, status, progress, output_path, error, title, created_at, retry_count, last_retry_at
-             FROM download_jobs ORDER BY created_at DESC LIMIT 100",
+            "SELECT id, url, adapter, status, progress, output_path, error, title, created_at, retry_count, last_retry_at, sort_order
+             FROM download_jobs
+             ORDER BY
+               CASE
+                 WHEN status IN ('pending', 'waitingforwifi') THEN 0
+                 WHEN status = 'active' THEN 1
+                 WHEN status = 'paused' THEN 2
+                 ELSE 3
+               END,
+               CASE
+                 WHEN status IN ('pending', 'waitingforwifi', 'active', 'paused') THEN sort_order
+                 ELSE 0
+               END ASC,
+               created_at DESC
+             LIMIT 100",
         )?;
-        let rows = stmt.query_map([], |row| {
-            let status_str: String = row.get(3)?;
-            Ok(DownloadJob {
-                id: row.get(0)?,
-                url: row.get(1)?,
-                adapter: row.get(2)?,
-                status: parse_status(&status_str),
-                progress: row.get(4)?,
-                output_path: row.get(5)?,
-                error: row.get(6)?,
-                title: row.get(7)?,
-                created_at: row.get(8)?,
-                retry_count: row.get(9)?,
-                last_retry_at: row.get(10)?,
-                queue_position: None,
-            })
-        })?;
+        let rows = stmt.query_map([], map_download_job_row)?;
         rows.collect::<Result<Vec<_>, _>>().map_err(AppError::from)
     }
 
@@ -626,29 +647,102 @@ impl Database {
             .lock()
             .map_err(|e| AppError::Other(e.to_string()))?;
         conn.query_row(
-            "SELECT id, url, adapter, status, progress, output_path, error, title, created_at, retry_count, last_retry_at
+            "SELECT id, url, adapter, status, progress, output_path, error, title, created_at, retry_count, last_retry_at, sort_order
              FROM download_jobs WHERE id = ?1",
             params![id],
-            |row| {
-                let status_str: String = row.get(3)?;
-                Ok(DownloadJob {
-                    id: row.get(0)?,
-                    url: row.get(1)?,
-                    adapter: row.get(2)?,
-                    status: parse_status(&status_str),
-                    progress: row.get(4)?,
-                    output_path: row.get(5)?,
-                    error: row.get(6)?,
-                    title: row.get(7)?,
-                    created_at: row.get(8)?,
-                    retry_count: row.get(9)?,
-                    last_retry_at: row.get(10)?,
-                    queue_position: None,
-                })
-            },
+            map_download_job_row,
         )
         .optional()
         .map_err(AppError::from)
+    }
+
+    /// Atomically claim the next pending job (lowest `sort_order`) by marking
+    /// it active. Returns `None` when the queue is empty.
+    pub fn claim_next_pending_download(&self) -> AppResult<Option<DownloadJob>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let tx = conn
+            .unchecked_transaction()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let next_id: Option<String> = tx
+            .query_row(
+                "SELECT id FROM download_jobs
+                 WHERE status = 'pending'
+                 ORDER BY sort_order ASC, created_at ASC, id ASC
+                 LIMIT 1",
+                [],
+                |row| row.get(0),
+            )
+            .optional()?;
+        let Some(id) = next_id else {
+            tx.commit()
+                .map_err(|e| AppError::Other(e.to_string()))?;
+            return Ok(None);
+        };
+        let changed = tx.execute(
+            "UPDATE download_jobs SET status = 'active', error = NULL
+             WHERE id = ?1 AND status = 'pending'",
+            params![id],
+        )?;
+        if changed != 1 {
+            tx.commit()
+                .map_err(|e| AppError::Other(e.to_string()))?;
+            return Ok(None);
+        }
+        let job = tx.query_row(
+            "SELECT id, url, adapter, status, progress, output_path, error, title, created_at, retry_count, last_retry_at, sort_order
+             FROM download_jobs WHERE id = ?1",
+            params![id],
+            map_download_job_row,
+        )?;
+        tx.commit()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        Ok(Some(job))
+    }
+
+    /// Persist a new order for pending / waiting-for-Wi-Fi jobs. `job_ids`
+    /// must list every reorderable job exactly once (front of queue first).
+    pub fn reorder_download_jobs(&self, job_ids: &[String]) -> AppResult<()> {
+        if job_ids.is_empty() {
+            return Ok(());
+        }
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        let tx = conn
+            .unchecked_transaction()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+
+        let mut expected: Vec<String> = {
+            let mut stmt = tx.prepare(
+                "SELECT id FROM download_jobs
+                 WHERE status IN ('pending', 'waitingforwifi')
+                 ORDER BY sort_order ASC, created_at ASC, id ASC",
+            )?;
+            let rows = stmt.query_map([], |row| row.get(0))?;
+            rows.collect::<Result<Vec<_>, _>>()?
+        };
+        expected.sort();
+        let mut provided = job_ids.to_vec();
+        provided.sort();
+        if provided != expected {
+            return Err(AppError::InvalidInput(
+                "reorder must include every pending and waiting-for-Wi-Fi job exactly once".into(),
+            ));
+        }
+
+        for (idx, id) in job_ids.iter().enumerate() {
+            tx.execute(
+                "UPDATE download_jobs SET sort_order = ?1 WHERE id = ?2",
+                params![(idx as i64) + 1, id],
+            )?;
+        }
+        tx.commit()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+        Ok(())
     }
 
     pub fn upsert_performer(&self, name: &str) -> AppResult<String> {
@@ -3596,10 +3690,31 @@ fn map_performer(row: &rusqlite::Row<'_>) -> rusqlite::Result<Performer> {
     })
 }
 
+fn map_download_job_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DownloadJob> {
+    let status_str: String = row.get(3)?;
+    Ok(DownloadJob {
+        id: row.get(0)?,
+        url: row.get(1)?,
+        adapter: row.get(2)?,
+        status: parse_status(&status_str),
+        progress: row.get(4)?,
+        output_path: row.get(5)?,
+        error: row.get(6)?,
+        title: row.get(7)?,
+        created_at: row.get(8)?,
+        retry_count: row.get(9)?,
+        last_retry_at: row.get(10)?,
+        sort_order: row.get(11)?,
+        queue_position: None,
+    })
+}
+
 fn parse_status(s: &str) -> DownloadStatus {
     match s.to_lowercase().as_str() {
         "active" => DownloadStatus::Active,
         "paused" => DownloadStatus::Paused,
+        // Debug-lowercase writes "waitingforwifi"; accept snake_case too.
+        "waitingforwifi" | "waiting_for_wifi" => DownloadStatus::WaitingForWifi,
         "completed" => DownloadStatus::Completed,
         "failed" => DownloadStatus::Failed,
         "cancelled" => DownloadStatus::Cancelled,

@@ -23,13 +23,10 @@
 
 ### 3. Bulk Download Queue Management
 
-**Status:** 🔵 Partial (v0.8.0: concurrent limit 1–4)  
+**Status:** ✅ Done (v0.9.2: reorder + global rate limit; v0.8.0: concurrent limit 1–4)  
 **Area:** Downloads  
-**Currently:** Queue has pause/resume/cancel/retry (`commands.rs`, `downloads/manager.rs`), retry with backoff (`retry_count`, `last_retry_at`, `download_max_retries`, `download_retry_delay_seconds`), `download_max_concurrent` (1–4, Settings → Downloads), bulk URL import with browse expansion (`BulkImportPanel.tsx`, `downloads/bulk.rs`, `queue_bulk_import`).  
-**Suggestion (remaining):**
-
-- **Priority reordering** — drag-and-drop reorder in the download queue.
-- **Bandwidth throttling** — per-download or global speed limit (yt-dlp `--limit-rate`).
+**Currently:** Queue has pause/resume/cancel/retry (`commands.rs`, `downloads/manager.rs`), retry with backoff (`retry_count`, `last_retry_at`, `download_max_retries`, `download_retry_delay_seconds`), `download_max_concurrent` (1–4, Settings → Downloads), bulk URL import with browse expansion (`BulkImportPanel.tsx`, `downloads/bulk.rs`, `queue_bulk_import`). Persisted `sort_order` + drag/arrow reorder for pending and waiting-for-Wi-Fi jobs (`reorder_downloads`, claim-next scheduler). Global yt-dlp `--limit-rate` via `download_rate_limit` in Settings → Downloads.  
+**Suggestion (remaining):** Per-download rate limits (optional power-user setting).
 
 Queue auto-start is already immediate unless the job is `WaitingForWifi`.
 
@@ -610,4 +607,4 @@ Queue auto-start is already immediate unless the job is `WaitingForWifi`.
 
 ---
 
-_Last updated: 2026-11-22 (v0.9.0: notes seek, naming preview, frame thumb, dupe preview, watchlist notify + Android poller, RedGifs Android gate)_
+_Last updated: 2026-11-26 (v0.9.2: download queue reorder + global yt-dlp rate limit)_

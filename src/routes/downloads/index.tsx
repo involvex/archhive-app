@@ -102,6 +102,70 @@ function DownloadsPage() {
     [jobs],
   );
 
+  const isReorderable = useCallback(
+    (status: DownloadJob["status"]) => status === "pending" || status === "waiting_for_wifi",
+    [],
+  );
+
+  const [dragId, setDragId] = useState<string | null>(null);
+
+  const persistQueueOrder = useCallback(
+    async (next: DownloadJob[]) => {
+      const ids = next.filter((j) => isReorderable(j.status)).map((j) => j.id);
+      if (ids.length < 2) return;
+      setJobs(next);
+      try {
+        await api.reorderDownloads(ids);
+        refreshJobs();
+      } catch (e) {
+        console.error("reorder failed", e);
+        toast.error(e instanceof Error ? e.message : "Failed to reorder queue");
+        refreshJobs();
+      }
+    },
+    [isReorderable, refreshJobs],
+  );
+
+  const onDragStart = useCallback((id: string) => setDragId(id), []);
+
+  const onDragOver = useCallback(
+    (e: React.DragEvent, overId: string) => {
+      e.preventDefault();
+      if (!dragId || dragId === overId) return;
+      const from = jobs.findIndex((j) => j.id === dragId);
+      const to = jobs.findIndex((j) => j.id === overId);
+      if (from < 0 || to < 0) return;
+      if (!isReorderable(jobs[from].status) || !isReorderable(jobs[to].status)) return;
+      const next = [...jobs];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      setJobs(next);
+    },
+    [dragId, isReorderable, jobs],
+  );
+
+  const onDragEnd = useCallback(() => {
+    if (dragId) void persistQueueOrder(jobs);
+    setDragId(null);
+  }, [dragId, jobs, persistQueueOrder]);
+
+  const moveQueued = useCallback(
+    (id: string, delta: -1 | 1) => {
+      const queued = jobs.filter((j) => isReorderable(j.status));
+      const idx = queued.findIndex((j) => j.id === id);
+      const swapIdx = idx + delta;
+      if (idx < 0 || swapIdx < 0 || swapIdx >= queued.length) return;
+      const nextQueued = [...queued];
+      const tmp = nextQueued[idx];
+      nextQueued[idx] = nextQueued[swapIdx];
+      nextQueued[swapIdx] = tmp;
+      // Rebuild full list: reorderable block stays at the front (matches list order).
+      const rest = jobs.filter((j) => !isReorderable(j.status));
+      void persistQueueOrder([...nextQueued, ...rest]);
+    },
+    [isReorderable, jobs, persistQueueOrder],
+  );
+
   /** Run a bulk action behind the metered/storage guards. */
   const guarded = useCallback(
     (actionLabel: string, run: () => void) => {
@@ -323,17 +387,32 @@ function DownloadsPage() {
         />
       )}
       <div className="space-y-2">
-        {jobs.map((job) => (
-          <DownloadProgressRow
-            key={job.id}
-            job={job}
-            onPause={(id) => void api.pauseDownload(id).then(refreshJobs)}
-            onResume={(id) => void api.resumeDownload(id).then(refreshJobs)}
-            onRetry={(id) => void api.retryDownload(id).then(refreshJobs)}
-            onCancel={(id) => void api.cancelDownload(id).then(refreshJobs)}
-            onDelete={(id) => void api.deleteDownload(id).then(refreshJobs)}
-          />
-        ))}
+        {pendingCount > 1 && (
+          <p className="text-[11px] text-[var(--color-muted-foreground)]">
+            Drag queued items (or use the arrows) to change what downloads next.
+          </p>
+        )}
+        {jobs.map((job) => {
+          const canReorder = isReorderable(job.status) && pendingCount > 1;
+          return (
+            <DownloadProgressRow
+              key={job.id}
+              job={job}
+              canReorder={canReorder}
+              dragging={dragId === job.id}
+              onDragStart={onDragStart}
+              onDragOver={onDragOver}
+              onDragEnd={onDragEnd}
+              onMoveUp={canReorder ? (id) => moveQueued(id, -1) : undefined}
+              onMoveDown={canReorder ? (id) => moveQueued(id, 1) : undefined}
+              onPause={(id) => void api.pauseDownload(id).then(refreshJobs)}
+              onResume={(id) => void api.resumeDownload(id).then(refreshJobs)}
+              onRetry={(id) => void api.retryDownload(id).then(refreshJobs)}
+              onCancel={(id) => void api.cancelDownload(id).then(refreshJobs)}
+              onDelete={(id) => void api.deleteDownload(id).then(refreshJobs)}
+            />
+          );
+        })}
         {jobs.length === 0 && (
           <p className="text-sm text-[var(--color-muted-foreground)]">
             No downloads yet.{" "}

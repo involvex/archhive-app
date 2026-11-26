@@ -404,7 +404,7 @@ async fn worker_loop(
     // Fixed pool at the hard max; respect the user limit by releasing and
     // retrying when too many jobs are already in flight.
     let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_DOWNLOADS));
-    while let Some(job_id) = queue_rx.recv().await {
+    while let Some(_wake_id) = queue_rx.recv().await {
         let permit = loop {
             let acquired = match semaphore.clone().acquire_owned().await {
                 Ok(p) => p,
@@ -425,22 +425,34 @@ async fn worker_loop(
         let queue_tx = queue_tx.clone();
         tauri::async_runtime::spawn(async move {
             let _permit = permit;
-            let cancel = cancel_flags
-                .lock()
-                .get(&job_id)
-                .cloned()
-                .unwrap_or_else(|| Arc::new(AtomicBool::new(true)));
-
-            let Ok(Some(job)) = db.get_download_job(&job_id) else {
-                return;
+            // Honor persisted sort_order: each wake claims the front of the
+            // pending queue, so drag-reorder takes effect before the next start.
+            let job = match db.claim_next_pending_download() {
+                Ok(Some(j)) => j,
+                Ok(None) => return,
+                Err(e) => {
+                    tracing::warn!("[queue] claim next failed: {e}");
+                    return;
+                }
             };
-            if matches!(
-                job.status,
-                DownloadStatus::Paused
-                    | DownloadStatus::WaitingForWifi
-                    | DownloadStatus::Cancelled
-                    | DownloadStatus::Completed
-            ) {
+            let job_id = job.id.clone();
+            let cancel = {
+                let mut flags = cancel_flags.lock();
+                flags
+                    .entry(job_id.clone())
+                    .or_insert_with(|| Arc::new(AtomicBool::new(true)))
+                    .clone()
+            };
+            if !cancel.load(Ordering::Relaxed) {
+                // Paused/cancelled between claim and start — revert to pending
+                // so a later resume can pick it up again.
+                if let Ok(Some(mut j)) = db.get_download_job(&job_id) {
+                    if j.status == DownloadStatus::Active {
+                        j.status = DownloadStatus::Paused;
+                        let _ = db.update_download_job(&j);
+                        let _ = app.emit("download:progress", &j);
+                    }
+                }
                 return;
             }
             let plan = match plan_from_job(&db, &job) {
@@ -662,7 +674,12 @@ async fn run_job_with_plan(
                 .unwrap_or(false);
             let quality =
                 crate::downloads::network::effective_download_quality(&settings, is_metered);
-            let format_args = SidecarRunner::format_selection_args(quality, settings.prefer_mp4);
+            let mut format_args =
+                SidecarRunner::format_selection_args(quality, settings.prefer_mp4);
+            crate::downloads::rate_limit::append_limit_rate_args(
+                &mut format_args,
+                settings.download_rate_limit.as_deref(),
+            );
             let path_result = runner
                 .run_yt_dlp(
                     &plan.url,
@@ -992,6 +1009,31 @@ mod tests {
         let settings = AppSettings::default();
         assert_eq!(settings.download_max_retries, 2);
         assert_eq!(settings.download_retry_delay_seconds, 30);
+        assert_eq!(settings.download_rate_limit, None);
+    }
+
+    #[test]
+    fn reorder_beats_created_at_on_claim() {
+        let dir = tempdir().unwrap();
+        let db = Database::new(dir.path().to_path_buf()).unwrap();
+        let older = db
+            .insert_download_job("https://example.com/a", "generic_ytdlp", Some("older"), None, None)
+            .unwrap();
+        let newer = db
+            .insert_download_job("https://example.com/b", "generic_ytdlp", Some("newer"), None, None)
+            .unwrap();
+        assert!(older.sort_order < newer.sort_order);
+
+        // Move the newer job to the front of the queue.
+        db.reorder_download_jobs(&[newer.id.clone(), older.id.clone()])
+            .unwrap();
+
+        let claimed = db.claim_next_pending_download().unwrap().unwrap();
+        assert_eq!(claimed.id, newer.id, "reordered job must start before older");
+        assert_eq!(claimed.status, DownloadStatus::Active);
+
+        let claimed2 = db.claim_next_pending_download().unwrap().unwrap();
+        assert_eq!(claimed2.id, older.id);
     }
 
     #[test]

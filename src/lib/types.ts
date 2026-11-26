@@ -116,6 +116,8 @@ export interface DownloadJob {
   created_at: string;
   retry_count?: number;
   last_retry_at?: string;
+  /** Persisted queue rank (lower starts first). */
+  sort_order?: number;
   /**
    * 1-based position in the active queue (pending + active jobs ahead of this
    * one, plus one). `null` when the backend hasn't computed it yet — e.g. the
@@ -252,6 +254,8 @@ export interface AppSettings {
   download_retry_delay_seconds?: number;
   /** Max parallel download jobs (1–4). */
   download_max_concurrent?: number;
+  /** Global yt-dlp `--limit-rate` token (e.g. `500K`, `2M`). Empty = unlimited. */
+  download_rate_limit?: string | null;
   theme?: AppTheme;
   watched_threshold?: number;
   watch_poll_interval_mins?: number;

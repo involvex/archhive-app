@@ -325,6 +325,7 @@ pub fn run() {
             commands::queue_download,
             commands::queue_downloads,
             commands::list_downloads,
+            commands::reorder_downloads,
             commands::cancel_download,
             commands::pause_download,
             commands::resume_download,
