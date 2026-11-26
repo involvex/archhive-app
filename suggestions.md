@@ -117,15 +117,10 @@ Queue auto-start is already immediate unless the job is `WaitingForWifi`.
 
 ### 14. Watch Folder / Auto-Import
 
-**Status:** ⚪ Not started  
+**Status:** ✅ Done (v0.9.3: desktop watcher + settle/import)  
 **Area:** Library  
-**Currently:** Manual `scan_library` only (with `library:scan-progress` events + post-scan `generate_missing_thumbs`). No filesystem watcher.  
-**Suggestion:** Monitor a configurable directory for new video/image files. When new files appear, automatically import them into the library:
-
-- Probe metadata (duration, resolution, thumbnail).
-- Attempt auto-tagging from filename.
-- Show import progress in a dedicated panel.
-- Configurable file extensions to watch.
+**Currently:** Manual `scan_library` remains. Desktop opt-in watch folder (`watch_folder_enabled`, optional path under `library_path`, configurable extensions) uses `notify` with debounce + size-settle, skips incomplete sidecars / vault / `.nomedia`, imports via `LibraryScanner::import_new_file` + `post_process_file`, Settings status + `library:watch-import` toast/notification.  
+**Suggestion (remaining):** Dedicated Auto-Import activity panel; image/gallery watch; external inbox with move/copy into library; Android (out of scope for FS watch).
 
 ### 15. Scene Notes / Annotations
 
@@ -607,4 +602,4 @@ Queue auto-start is already immediate unless the job is `WaitingForWifi`.
 
 ---
 
-_Last updated: 2026-11-26 (v0.9.2: download queue reorder + global yt-dlp rate limit)_
+_Last updated: 2026-11-26 (v0.9.3: desktop watch folder auto-import)_

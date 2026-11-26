@@ -14,6 +14,7 @@ pub mod duplicates;
 pub mod hashing;
 pub mod import;
 pub mod thumbnail;
+pub mod watch;
 
 pub struct LibraryScanner;
 
@@ -26,7 +27,6 @@ impl LibraryScanner {
         rules: &[String],
         on_progress: Option<ProgressCb>,
     ) -> AppResult<crate::models::ScanResult> {
-        use crate::library::auto_tag::apply_filename_rules;
         use walkdir::WalkDir;
 
         let path = Path::new(library_path);
@@ -44,7 +44,7 @@ impl LibraryScanner {
         let mut added = 0u32;
         let mut updated = 0u32;
         let mut scanned = 0u32;
-        let extensions = ["mp4", "mkv", "webm", "mov", "avi", "m4v"];
+        let extensions = watch::normalize_extensions(&[]);
 
         let emit = |scanned: u32, added: u32, updated: u32| {
             if let Some(ref cb) = on_progress {
@@ -70,45 +70,23 @@ impl LibraryScanner {
             if !file_path.is_file() {
                 continue;
             }
-            let ext = file_path
-                .extension()
-                .and_then(|e| e.to_str())
-                .unwrap_or("")
-                .to_lowercase();
-            if !extensions.contains(&ext.as_str()) {
+            if !watch::extension_allowed(file_path, &extensions) {
                 continue;
             }
 
             scanned += 1;
             let path_str = file_path.to_string_lossy().to_string();
-            let title = file_path
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("Unknown")
-                .to_string();
 
             if known_paths.contains(&path_str) {
                 updated += 1;
             } else {
-                let (performers, tags) = apply_filename_rules(&title, rules);
-                let file_size = std::fs::metadata(&path_str).ok().map(|m| m.len());
-                match db.insert_scene(
-                    &title,
-                    Some(&path_str),
-                    None,
-                    &performers,
-                    &tags,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    file_size,
-                ) {
-                    Ok(_) => {
+                match Self::import_new_file(db, file_path, rules) {
+                    Ok(Some(_)) => {
                         added += 1;
-                        // Add to set so duplicate files in the same scan are caught.
                         known_paths.insert(path_str);
+                    }
+                    Ok(None) => {
+                        updated += 1;
                     }
                     Err(e) => tracing::warn!("scan skip {}: {e}", path_str),
                 }
@@ -121,6 +99,50 @@ impl LibraryScanner {
 
         emit(scanned, added, updated);
         Ok(crate::models::ScanResult { added, updated })
+    }
+
+    /// Insert a new scene for a file on disk if it is not already known.
+    /// Returns `Some(scene_id)` when inserted, `None` when the path already exists.
+    pub fn import_new_file(
+        db: &Database,
+        file_path: &Path,
+        rules: &[String],
+    ) -> AppResult<Option<String>> {
+        use crate::library::auto_tag::apply_filename_rules;
+
+        let path_str = file_path.to_string_lossy().to_string();
+        if db.scene_by_path(&path_str)?.is_some() {
+            return Ok(None);
+        }
+        // Also skip if a canonicalized path matches a known row (Windows \\?\).
+        if let Ok(canon) = file_path.canonicalize() {
+            let canon_str = canon.to_string_lossy().to_string();
+            if canon_str != path_str && db.scene_by_path(&canon_str)?.is_some() {
+                return Ok(None);
+            }
+        }
+
+        let title = file_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("Unknown")
+            .to_string();
+        let (performers, tags) = apply_filename_rules(&title, rules);
+        let file_size = std::fs::metadata(file_path).ok().map(|m| m.len());
+        let id = db.insert_scene(
+            &title,
+            Some(&path_str),
+            None,
+            &performers,
+            &tags,
+            None,
+            None,
+            None,
+            None,
+            None,
+            file_size,
+        )?;
+        Ok(Some(id))
     }
 
     /// Generate JPEG sidecars for library scenes missing thumbs.

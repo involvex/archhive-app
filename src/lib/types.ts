@@ -305,6 +305,12 @@ export interface AppSettings {
   notify_download_failed?: boolean;
   /** Notify when the watchlist poller finds matches (default true). */
   notify_saved_search_matches?: boolean;
+  /** Desktop: auto-import new videos under the library (or watch subpath). */
+  watch_folder_enabled?: boolean;
+  /** Optional path under library_path. Empty = library root. */
+  watch_folder_path?: string | null;
+  /** Video extensions without dots (default mp4/mkv/webm/mov/avi/m4v). */
+  watch_folder_extensions?: string[];
   /** Media vault: enables the Vault tab + biometric lock. Off by default. */
   vault_enabled?: boolean;
   /** Minutes of inactivity before the vault re-locks (0 = never). */
@@ -315,6 +321,21 @@ export interface AppSettings {
   vault_lan_exposed?: boolean;
   /** Present when a vault PIN is configured (hash only; never the PIN). */
   vault_pin_hash?: string;
+}
+
+/** Desktop watch-folder auto-import status (in-memory on the host). */
+export interface WatchFolderStatus {
+  enabled: boolean;
+  watching: boolean;
+  watch_path?: string | null;
+  last_message?: string | null;
+}
+
+/** Payload for `library:watch-import` when a file is auto-imported. */
+export interface WatchImportEvent {
+  scene_id: string;
+  title: string;
+  path: string;
 }
 
 /** A scene held in the vault. Carries no playable path - stream via the app. */

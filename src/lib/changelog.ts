@@ -6,6 +6,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.9.3",
+    date: "2026-11-26",
+    changes: [
+      {
+        type: "added",
+        text: "Watch folder auto-import (desktop): opt-in Settings → Library toggle watches the library (or a subfolder) and imports settled video files with filename tags + thumbnails",
+      },
+    ],
+  },
+  {
     version: "0.9.2",
     date: "2026-11-26",
     changes: [

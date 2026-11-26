@@ -314,6 +314,13 @@ pub fn get_settings(state: State<'_, Arc<AppState>>) -> CmdResult<AppSettings> {
 }
 
 #[tauri::command]
+pub fn get_watch_folder_status(
+    state: State<'_, Arc<AppState>>,
+) -> CmdResult<crate::models::WatchFolderStatus> {
+    Ok(state.watch_folder_status())
+}
+
+#[tauri::command]
 pub fn save_settings(
     _app: tauri::AppHandle,
     state: State<'_, Arc<AppState>>,

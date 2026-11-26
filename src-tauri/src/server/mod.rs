@@ -203,6 +203,7 @@ impl LanServer {
                 get(export_settings_backup).post(import_settings_backup),
             )
             .route("/api/library/scan", post(scan_library))
+            .route("/api/library/watch-folder", get(watch_folder_status))
             .route(
                 "/api/library/thumbs",
                 post(generate_missing_thumbs).delete(clear_all_thumbs),
@@ -992,6 +993,12 @@ async fn scan_library(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let _ = state.app.generate_missing_thumbs().await;
     Ok(Json(serde_json::json!(result)))
+}
+
+async fn watch_folder_status(
+    State(state): State<ApiState>,
+) -> Result<Json<crate::models::WatchFolderStatus>, StatusCode> {
+    Ok(Json(state.app.watch_folder_status()))
 }
 
 async fn generate_missing_thumbs(
