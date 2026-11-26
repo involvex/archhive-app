@@ -294,3 +294,12 @@ ALTER TABLE scenes ADD COLUMN vault_original_path TEXT;
 ALTER TABLE scenes ADD COLUMN vaulted_at TEXT;
 CREATE INDEX IF NOT EXISTS idx_scenes_vaulted ON scenes(is_vaulted);
 "#;
+
+/// Persisted download queue order. New jobs get max(sort_order)+1; the
+/// scheduler claims the lowest pending sort_order next. Backfill of existing
+/// rows (by created_at) runs in `Database::new` after this ALTER.
+pub const MIGRATION_022: &str = r#"
+ALTER TABLE download_jobs ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0;
+CREATE INDEX IF NOT EXISTS idx_download_jobs_queue
+    ON download_jobs(status, sort_order, created_at);
+"#;

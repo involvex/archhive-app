@@ -450,6 +450,7 @@ bun run test
 
 ## Learned Workspace Facts
 
+- Download queue order is persisted as `download_jobs.sort_order`; the worker claims the next pending job by ascending `sort_order` (not channel FIFO / `created_at`). Reorder via `reorder_downloads` / `POST /api/downloads/reorder`. Global yt-dlp cap is `AppSettings.download_rate_limit` → `--limit-rate`
 - Desktop LAN on port **8787** serves the bundled React SPA (`lan-ui` Tauri resource), REST API, scene media streaming (`/api/scenes/{id}/media`), and `/files` folder browser; Vite dev UI is port **1420** only (see `docs/lan-web.md`)
 - Android standalone runs an embedded yt-dlp engine (youtubedl-android Kotlin plugin, updatable in Settings → Library → Download engine); Android-native ffmpeg/ffprobe come from the same AAR (`FFmpeg.init`) — no `setup:binaries:android` step required for media tools
 - `build:apk` / `build:apk:fast` / `build:apk:release` auto-run `scripts/patch-android-ytdlp.ps1` so the YtDlp/FFmpeg overlay is always applied before packaging

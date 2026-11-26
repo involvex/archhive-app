@@ -6,6 +6,20 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.9.2",
+    date: "2026-11-26",
+    changes: [
+      {
+        type: "added",
+        text: "Drag (or arrow) reorder for pending and waiting-for-Wi-Fi downloads; scheduler starts the front of the queue",
+      },
+      {
+        type: "added",
+        text: "Global yt-dlp download speed limit in Settings → Downloads (e.g. 500K / 2M)",
+      },
+    ],
+  },
+  {
     version: "0.9.0",
     date: "2026-11-22",
     changes: [

@@ -374,6 +374,13 @@ export const api = {
     return localOrRemote("list_downloads", undefined, "/api/downloads");
   },
 
+  async reorderDownloads(jobIds: string[]): Promise<void> {
+    return localOrRemote("reorder_downloads", { jobIds }, "/api/downloads/reorder", {
+      method: "POST",
+      body: JSON.stringify({ job_ids: jobIds }),
+    });
+  },
+
   async cancelDownload(id: string): Promise<void> {
     return localOrRemote("cancel_download", { id }, `/api/downloads/${id}/cancel`, {
       method: "POST",

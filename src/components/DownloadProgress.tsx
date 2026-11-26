@@ -2,7 +2,16 @@ import { useCallback, useRef, useState } from "react";
 import type { DownloadJob } from "@/lib/types";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
-import { Pause, Play, RotateCcw, Trash2, XCircle } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronUp,
+  GripVertical,
+  Pause,
+  Play,
+  RotateCcw,
+  Trash2,
+  XCircle,
+} from "lucide-react";
 import { vibrateTick } from "@/lib/haptics";
 import { cn } from "@/lib/utils";
 import { SiteAvatar } from "@/components/SitePicker";
@@ -14,6 +23,14 @@ interface DownloadProgressRowProps {
   onRetry?: (id: string) => void;
   onCancel?: (id: string) => void;
   onDelete?: (id: string) => void;
+  /** Allow HTML5 drag reorder (pending / waiting-for-Wi-Fi). */
+  canReorder?: boolean;
+  dragging?: boolean;
+  onDragStart?: (id: string) => void;
+  onDragOver?: (e: React.DragEvent, id: string) => void;
+  onDragEnd?: () => void;
+  onMoveUp?: (id: string) => void;
+  onMoveDown?: (id: string) => void;
 }
 
 const statusColors: Record<DownloadJob["status"], string> = {
@@ -55,6 +72,13 @@ export function DownloadProgressRow({
   onRetry,
   onCancel,
   onDelete,
+  canReorder,
+  dragging,
+  onDragStart,
+  onDragOver,
+  onDragEnd,
+  onMoveUp,
+  onMoveDown,
 }: DownloadProgressRowProps) {
   const showProgress =
     job.status === "active" || job.status === "pending" || job.status === "waiting_for_wifi";
@@ -129,12 +153,20 @@ export function DownloadProgressRow({
 
   return (
     <div
-      className="relative space-y-2 overflow-hidden rounded-lg border border-[var(--color-border)] p-3"
+      className={cn(
+        "relative space-y-2 overflow-hidden rounded-lg border border-[var(--color-border)] p-3",
+        dragging && "opacity-60",
+        canReorder && "cursor-grab active:cursor-grabbing",
+      )}
       style={
         swipeX !== 0
           ? { transform: `translateX(${swipeX}px)`, transition: "transform 0.1s ease" }
           : undefined
       }
+      draggable={Boolean(canReorder)}
+      onDragStart={() => canReorder && onDragStart?.(job.id)}
+      onDragOver={(e) => canReorder && onDragOver?.(e, job.id)}
+      onDragEnd={() => canReorder && onDragEnd?.()}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
@@ -167,6 +199,43 @@ export function DownloadProgressRow({
         </div>
       )}
       <div className="flex items-start justify-between gap-2.5">
+        {canReorder && (
+          <div className="flex shrink-0 flex-col items-center gap-0.5 pt-0.5">
+            <GripVertical className="h-4 w-4 text-[var(--color-muted-foreground)]" aria-hidden />
+            <div className="flex flex-col">
+              {onMoveUp && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  title="Move up"
+                  aria-label="Move up in queue"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onMoveUp(job.id);
+                  }}
+                >
+                  <ChevronUp className="h-3.5 w-3.5" />
+                </Button>
+              )}
+              {onMoveDown && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  title="Move down"
+                  aria-label="Move down in queue"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onMoveDown(job.id);
+                  }}
+                >
+                  <ChevronDown className="h-3.5 w-3.5" />
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
         <SiteAvatar site={{ id: job.adapter, display_name: job.adapter }} size="sm" />
         <div className="min-w-0 flex-1">
           <p className="line-clamp-2 text-sm font-medium leading-snug break-all sm:break-normal">

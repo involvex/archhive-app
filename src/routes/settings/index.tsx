@@ -2562,6 +2562,25 @@ function SettingsPage() {
                   Applies to newly started jobs. Default is 2.
                 </p>
               </div>
+              <div>
+                <label className="text-xs text-[var(--color-muted-foreground)]">
+                  Download speed limit (yt-dlp)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. 500K or 2M"
+                  className="mt-1 flex h-9 w-full max-w-xs rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-2 text-sm"
+                  value={hostSettings?.download_rate_limit ?? ""}
+                  onChange={(e) =>
+                    patchHostSettings({
+                      download_rate_limit: e.target.value.trim() ? e.target.value : null,
+                    })
+                  }
+                />
+                <p className="mt-1 text-[10px] text-[var(--color-muted-foreground)]">
+                  Global cap for yt-dlp jobs (desktop and Android). Leave blank for unlimited.
+                </p>
+              </div>
               <Button onClick={() => void saveHostSettings()} disabled={!hostSettings}>
                 Save
               </Button>

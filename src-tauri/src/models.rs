@@ -248,7 +248,7 @@ pub struct SiteInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "snake_case")]
 pub enum DownloadStatus {
     Pending,
     Active,
@@ -281,6 +281,10 @@ pub struct DownloadJob {
     pub retry_count: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_retry_at: Option<String>,
+    /// Persisted queue rank (lower starts first). Assigned on insert; updated
+    /// by `reorder_downloads`. Independent of `created_at`.
+    #[serde(default)]
+    pub sort_order: i64,
     /// 1-based position in the active queue (pending + active jobs ahead,
     /// plus one). `None` when the backend hasn't computed it yet. Mobile
     /// surfaces this as "#N in queue" so users know how long they'll wait.
@@ -505,6 +509,9 @@ pub struct AppSettings {
     /// Max parallel download jobs (1–4). Takes effect for newly started jobs.
     #[serde(default = "default_download_max_concurrent")]
     pub download_max_concurrent: u32,
+    /// Global yt-dlp `--limit-rate` token (e.g. `500K`, `2M`). Empty/None = unlimited.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub download_rate_limit: Option<String>,
     #[serde(default = "default_theme")]
     pub theme: AppTheme,
     /// Fraction of duration after which a scene counts as watched (0.5–1.0).
@@ -798,6 +805,7 @@ impl Default for AppSettings {
             download_max_retries: default_download_max_retries(),
             download_retry_delay_seconds: default_download_retry_delay_seconds(),
             download_max_concurrent: default_download_max_concurrent(),
+            download_rate_limit: None,
             theme: default_theme(),
             watched_threshold: default_watched_threshold(),
             watch_poll_interval_mins: default_watch_poll_interval_mins(),

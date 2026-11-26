@@ -149,6 +149,14 @@ pub fn list_downloads(state: State<'_, Arc<AppState>>) -> CmdResult<Vec<Download
 }
 
 #[tauri::command]
+pub fn reorder_downloads(
+    state: State<'_, Arc<AppState>>,
+    job_ids: Vec<String>,
+) -> CmdResult<()> {
+    map_err(state.reorder_downloads(&job_ids))
+}
+
+#[tauri::command]
 pub fn cancel_download(state: State<'_, Arc<AppState>>, id: String) -> CmdResult<()> {
     map_err(state.cancel_download(&id))
 }

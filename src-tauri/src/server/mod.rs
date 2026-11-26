@@ -155,6 +155,7 @@ impl LanServer {
             .route("/api/sites/{id}/categories", get(site_categories))
             .route("/api/downloads", get(list_downloads).post(queue_download))
             .route("/api/downloads/bulk", post(queue_bulk_import))
+            .route("/api/downloads/reorder", post(reorder_downloads_lan))
             .route("/api/downloads/{id}/cancel", post(cancel_download))
             .route("/api/downloads/{id}/pause", post(pause_download))
             .route("/api/downloads/{id}/resume", post(resume_download))
@@ -517,6 +518,24 @@ async fn list_downloads(
         .list_downloads()
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(serde_json::json!(jobs)))
+}
+
+async fn reorder_downloads_lan(
+    State(state): State<ApiState>,
+    Json(body): Json<serde_json::Value>,
+) -> Result<StatusCode, StatusCode> {
+    let job_ids: Vec<String> = body
+        .get("job_ids")
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .ok_or(StatusCode::BAD_REQUEST)?;
+    state
+        .app
+        .reorder_downloads(&job_ids)
+        .map_err(|e| match e {
+            crate::error::AppError::InvalidInput(_) => StatusCode::BAD_REQUEST,
+            _ => StatusCode::INTERNAL_SERVER_ERROR,
+        })?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn queue_download(

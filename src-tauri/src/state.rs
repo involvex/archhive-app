@@ -626,10 +626,8 @@ impl AppState {
 
     pub fn list_downloads(&self) -> AppResult<Vec<DownloadJob>> {
         let mut jobs = self.db.list_download_jobs()?;
-        // Transient queue position for in-flight jobs so mobile can show
-        // "#N in queue". Derived from queue order at read time — no schema
-        // change, no persistence. `None` for terminal states.
-        let mut queued_ids: Vec<String> = jobs
+        // Transient 1-based queue position from persisted sort_order.
+        let mut queued: Vec<(i64, String, String)> = jobs
             .iter()
             .filter(|j| {
                 matches!(
@@ -639,22 +637,37 @@ impl AppState {
                         | crate::models::DownloadStatus::WaitingForWifi
                 )
             })
-            .map(|j| j.id.clone())
+            .map(|j| (j.sort_order, j.created_at.clone(), j.id.clone()))
             .collect();
-        // Oldest first = front of the queue. `list_download_jobs` returns
-        // newest-first, so reverse for position assignment.
-        queued_ids.reverse();
-        if !queued_ids.is_empty() {
-            let by_id: std::collections::HashMap<String, u32> = queued_ids
+        queued.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)).then(a.2.cmp(&b.2)));
+        if !queued.is_empty() {
+            let by_id: std::collections::HashMap<String, u32> = queued
                 .into_iter()
                 .enumerate()
-                .map(|(i, id)| (id, (i + 1) as u32))
+                .map(|(i, (_ord, _created, id))| (id, (i + 1) as u32))
                 .collect();
             for job in jobs.iter_mut() {
                 job.queue_position = by_id.get(&job.id).copied();
             }
         }
         Ok(jobs)
+    }
+
+    pub fn reorder_downloads(&self, job_ids: &[String]) -> AppResult<()> {
+        self.db.reorder_download_jobs(job_ids)?;
+        // Refresh queue_position badges for any subscribed UIs.
+        if let Ok(jobs) = self.list_downloads() {
+            for job in jobs {
+                if matches!(
+                    job.status,
+                    crate::models::DownloadStatus::Pending
+                        | crate::models::DownloadStatus::WaitingForWifi
+                ) {
+                    let _ = self.app.emit("download:progress", &job);
+                }
+            }
+        }
+        Ok(())
     }
 
     pub fn cancel_download(&self, id: &str) -> AppResult<()> {
@@ -1216,6 +1229,10 @@ impl AppState {
         }
         let mut next = settings.clone();
         next.download_max_concurrent = next.download_max_concurrent.clamp(1, 4);
+        next.download_rate_limit = crate::downloads::rate_limit::normalize_rate_limit(
+            next.download_rate_limit.as_deref(),
+        )
+        .map_err(crate::error::AppError::InvalidInput)?;
         self.db.save_settings(&next)?;
         Ok(())
     }
