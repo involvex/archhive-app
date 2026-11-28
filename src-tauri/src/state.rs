@@ -1415,13 +1415,16 @@ impl AppState {
                     path: path_str,
                 };
                 let _ = app.emit("library:watch-import", &event);
-                use tauri_plugin_notification::NotificationExt;
-                let _ = app
-                    .notification()
-                    .builder()
-                    .title("Library auto-import")
-                    .body(msg)
-                    .show();
+                let settings = db.get_settings().unwrap_or_default();
+                if settings.notify_watch_import && settings.notifications_allowed() {
+                    use tauri_plugin_notification::NotificationExt;
+                    let _ = app
+                        .notification()
+                        .builder()
+                        .title("Library auto-import")
+                        .body(msg)
+                        .show();
+                }
             }
             crate::library::watch::ImportAttempt::Skipped(reason) => {
                 tracing::debug!(
@@ -2786,6 +2789,10 @@ impl AppState {
                         tracing::debug!("[watchlist] skip poll — waiting for Wi-Fi");
                         continue;
                     }
+                    if settings.should_pause_auto_queue() {
+                        tracing::debug!("[watchlist] skip poll — quiet hours");
+                        continue;
+                    }
                 }
                 match state.poll_watchlist_once().await {
                     Ok(r) if r.checked > 0 => {
@@ -2827,7 +2834,12 @@ impl AppState {
                 if result.matched == 1 { "" } else { "es" }
             )
         };
+        // Always emit the IPC event so the UI can refresh badges; quiet hours
+        // only suppress the OS toast (and the frontend toast via shouldNotify).
         let _ = self.app.emit("watchlist:matches", result);
+        if !settings.notifications_allowed() {
+            return;
+        }
         use tauri_plugin_notification::NotificationExt;
         let _ = self
             .app

@@ -344,13 +344,14 @@ pub async fn scan_library(
     state: State<'_, Arc<AppState>>,
 ) -> CmdResult<ScanResult> {
     let app_state = state.inner().clone();
+    let app_for_scan = app.clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let settings = app_state.db.get_settings().map_err(|e| e.to_string())?;
             let path = AppState::validate_library_path(&settings.library_path, &app_state.data_dir)
                 .map_err(|e| e.to_string())?;
             let rules = settings.auto_tag_rules.clone();
-            let app_for_progress = app.clone();
+            let app_for_progress = app_for_scan.clone();
             crate::library::LibraryScanner::scan(
                 &app_state.db,
                 &path,
@@ -369,6 +370,20 @@ pub async fn scan_library(
     // Best-effort thumb generation after scan (does not fail the scan).
     let thumbs_state = state.inner().clone();
     let _ = thumbs_state.generate_missing_thumbs().await;
+
+    if result.added + result.updated > 0 {
+        let settings = state.db.get_settings().unwrap_or_default();
+        if settings.notify_library_scan && settings.notifications_allowed() {
+            use tauri_plugin_notification::NotificationExt;
+            let body = format!("{} added, {} updated", result.added, result.updated);
+            let _ = app
+                .notification()
+                .builder()
+                .title("Library scan finished")
+                .body(body)
+                .show();
+        }
+    }
 
     Ok(result)
 }

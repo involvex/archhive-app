@@ -357,14 +357,20 @@ pub(crate) fn mark_job_failed(
             .map(|s| s.notify_download_failed)
             .unwrap_or(true);
         if notify_failed {
-            let title = job.title.as_deref().unwrap_or("Download failed");
-            let _ = app
-                .notification()
-                .builder()
-                .channel_id(NOTIF_CHANNEL_ERROR)
-                .title("Download failed")
-                .body(title)
-                .show();
+            let quiet_ok = settings
+                .as_ref()
+                .map(|s| s.notifications_allowed())
+                .unwrap_or(true);
+            if quiet_ok {
+                let title = job.title.as_deref().unwrap_or("Download failed");
+                let _ = app
+                    .notification()
+                    .builder()
+                    .channel_id(NOTIF_CHANNEL_ERROR)
+                    .title("Download failed")
+                    .body(title)
+                    .show();
+            }
         }
         return;
     }
@@ -727,7 +733,7 @@ async fn run_job_with_plan(
             let _ = app.emit("download:progress", &job);
             sync_android_download_lifecycle(&db, &app);
             let settings_after = db.get_settings().unwrap_or_default();
-            if settings_after.notify_download_complete {
+            if settings_after.notify_download_complete && settings_after.notifications_allowed() {
                 let title = job.title.as_deref().unwrap_or("Download complete");
                 let _ = app
                     .notification()
