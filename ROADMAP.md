@@ -8,7 +8,6 @@
 
 ## Now
 
-- [ ] R07 Post-wizard Home checklist
 - [ ] R08 Auto-suggest landscape on rotate + 44px player targets
 - [ ] R11 App Lock / Private Mode — PIN gate + blur
 - [ ] R12 Offline outbox for Remote LAN
@@ -19,10 +18,11 @@
 - [ ] R09 Data-saver-aware thumbnails (Wave 1)
 - [ ] R14–R30 Wave 1 items (see table below)
 - [ ] R31–R40 Wave 2 items (see table below)
-- [ ] Share saved-search export/import: free announcement draft in SHARE.md
+- [ ] Share post-wizard Home checklist: free announcement draft in SHARE.md
 
 ## Done
 
+- [x] R07 Post-wizard Home checklist
 - [x] R06 Saved-search JSON export / import
 - [x] R02 Naming-template presets + token chip picker
 - [x] R01 Fix backup manifest schema id (021 → 022) — already `CURRENT_MIGRATION_ID = "022"`
@@ -58,7 +58,7 @@ No DB migration, no native code, no new dependency. Each of these can ship indep
 | R04 | _(shipped — see appendix)_                             |             |        |                                                                                                                   |                                                                                              |
 | R05 | _(shipped — see appendix)_                             |             |        |                                                                                                                   |                                                                                              |
 | R06 | _(shipped — see Done)_                                 |             |        |                                                                                                                   |                                                                                              |
-| R07 | Post-wizard Home checklist                             | #40         | S      | `FirstRunWizardGate` + `/` stats grid + `useSettingsStore` already exist                                          | Dismissible checklist card with deep links (library path, engine, cookies, LAN)              |
+| R07 | _(shipped — see Done)_                                 |             |        |                                                                                                                   |                                                                                              |
 | R08 | Auto-suggest landscape on rotate + 44px player targets | #44         | S      | `useIsLandscape()` at `src/lib/hooks/useMediaQuery.ts:42`; player Prev/Next are 40px, action bar 44px             | Rotating to landscape suggests fullscreen; all player touch targets ≥ 44px                   |
 | R09 | _(moved to Wave 1 — see note below)_                   |             |        |                                                                                                                   |                                                                                              |
 | R10 | _(already shipped — moved to appendix)_                |             |        |                                                                                                                   |                                                                                              |

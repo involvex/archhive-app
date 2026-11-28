@@ -32,7 +32,7 @@ import {
   parseSavedSearchBackup,
   savedSearchIdentityKey,
 } from "@/lib/savedSearchBackup";
-import { visibleSettingsTabs } from "@/lib/settings/capabilities";
+import { SETTINGS_TABS, visibleSettingsTabs, type SettingsTab } from "@/lib/settings/capabilities";
 import type {
   BinaryLatestVersions,
   BinaryVersions,
@@ -68,7 +68,15 @@ import { ChangelogDialog, useChangelogDialog } from "@/components/ChangelogDialo
 import { ExtLink } from "@/components/ExtLink";
 import { CookieLoginButton } from "@/components/CookieLoginButton";
 
+function parseSettingsTab(value: unknown): SettingsTab | undefined {
+  if (typeof value !== "string") return undefined;
+  return (SETTINGS_TABS as readonly string[]).includes(value) ? (value as SettingsTab) : undefined;
+}
+
 export const Route = createFileRoute("/settings/")({
+  validateSearch: (search: Record<string, unknown>): { tab?: SettingsTab } => ({
+    tab: parseSettingsTab(search.tab),
+  }),
   component: SettingsPage,
 });
 
@@ -224,7 +232,14 @@ function SettingsPage() {
   const [thumbStats, setThumbStats] = useState<ThumbCacheStats | null>(null);
   const [thumbStatsLoading, setThumbStatsLoading] = useState(false);
   // Issue #2: gate library walks on the Library tab (default Engine = no walk).
-  const [settingsTab, setSettingsTab] = useState("engine");
+  // R07: deep links from Home checklist / first-run wizard use ?tab=.
+  const navigateSettings = Route.useNavigate();
+  const { tab: tabFromSearch } = Route.useSearch();
+  const settingsTab: SettingsTab = tabFromSearch ?? "engine";
+  function setSettingsTab(value: string) {
+    const next = parseSettingsTab(value) ?? "engine";
+    void navigateSettings({ search: (prev) => ({ ...prev, tab: next }), replace: true });
+  }
   // Media vault: status shown on the Privacy tab, refreshed when it opens.
   const [vaultStatus, setVaultStatus] = useState<VaultStatus | null>(null);
   const [discoveredHosts, setDiscoveredHosts] = useState<LanHost[]>([]);
