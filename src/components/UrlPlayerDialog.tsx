@@ -283,7 +283,7 @@ export function UrlPlayerDialog({
                 variant="outline"
                 disabled={!prevItem}
                 onClick={() => prevItem && onSelectItem(prevItem)}
-                className="min-h-10 gap-1"
+                className="min-h-11 gap-1"
               >
                 <ChevronLeft className="h-4 w-4" />
                 Previous
@@ -297,7 +297,7 @@ export function UrlPlayerDialog({
                 variant="outline"
                 disabled={!nextItem}
                 onClick={() => nextItem && onSelectItem(nextItem)}
-                className="min-h-10 gap-1"
+                className="min-h-11 gap-1"
               >
                 Next
                 <ChevronRight className="h-4 w-4" />
@@ -310,7 +310,7 @@ export function UrlPlayerDialog({
                 variant="outline"
                 onClick={() => void resolveStream()}
                 disabled={loading}
-                className="min-h-10 min-w-[5.5rem]"
+                className="min-h-11 min-w-[5.5rem]"
               >
                 {loading ? "Retrying…" : "Retry"}
               </Button>
@@ -326,11 +326,11 @@ export function UrlPlayerDialog({
                     setError(e instanceof Error ? e.message : "Failed to queue download"),
                   );
               }}
-              className="min-h-10 min-w-[5.5rem]"
+              className="min-h-11 min-w-[5.5rem]"
             >
               {queued ? "Queued ✓" : "Download"}
             </Button>
-            <Button variant="outline" onClick={onClose} className="min-h-10 min-w-[5.5rem]">
+            <Button variant="outline" onClick={onClose} className="min-h-11 min-w-[5.5rem]">
               Close
             </Button>
           </div>

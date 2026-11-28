@@ -8,7 +8,6 @@
 
 ## Now
 
-- [ ] R08 Auto-suggest landscape on rotate + 44px player targets
 - [ ] R11 App Lock / Private Mode — PIN gate + blur
 - [ ] R12 Offline outbox for Remote LAN
 - [ ] R13 Player "select frame" scrubber UI
@@ -18,10 +17,11 @@
 - [ ] R09 Data-saver-aware thumbnails (Wave 1)
 - [ ] R14–R30 Wave 1 items (see table below)
 - [ ] R31–R40 Wave 2 items (see table below)
-- [ ] Share post-wizard Home checklist: free announcement draft in SHARE.md
+- [ ] Share landscape fullscreen suggest: free announcement draft in SHARE.md
 
 ## Done
 
+- [x] R08 Auto-suggest landscape on rotate + 44px player targets
 - [x] R07 Post-wizard Home checklist
 - [x] R06 Saved-search JSON export / import
 - [x] R02 Naming-template presets + token chip picker
@@ -50,21 +50,21 @@ Effort is a rough guide: **S** (< 1 day), **M** (1–3 days), **L** (> 3 days / 
 
 No DB migration, no native code, no new dependency. Each of these can ship independently.
 
-| ID  | Item                                                   | Source      | Effort | Evidence (why doable)                                                                                             | Done when                                                                                    |
-| --- | ------------------------------------------------------ | ----------- | ------ | ----------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| R01 | _(shipped — see Done)_                                 |             |        |                                                                                                                   |                                                                                              |
-| R02 | _(shipped — see Done)_                                 |             |        |                                                                                                                   |                                                                                              |
-| R03 | _(shipped — see appendix)_                             |             |        |                                                                                                                   |                                                                                              |
-| R04 | _(shipped — see appendix)_                             |             |        |                                                                                                                   |                                                                                              |
-| R05 | _(shipped — see appendix)_                             |             |        |                                                                                                                   |                                                                                              |
-| R06 | _(shipped — see Done)_                                 |             |        |                                                                                                                   |                                                                                              |
-| R07 | _(shipped — see Done)_                                 |             |        |                                                                                                                   |                                                                                              |
-| R08 | Auto-suggest landscape on rotate + 44px player targets | #44         | S      | `useIsLandscape()` at `src/lib/hooks/useMediaQuery.ts:42`; player Prev/Next are 40px, action bar 44px             | Rotating to landscape suggests fullscreen; all player touch targets ≥ 44px                   |
-| R09 | _(moved to Wave 1 — see note below)_                   |             |        |                                                                                                                   |                                                                                              |
-| R10 | _(already shipped — moved to appendix)_                |             |        |                                                                                                                   |                                                                                              |
-| R11 | App Lock / Private Mode — PIN gate + blur              | #53 Phase 1 | M      | `vault_pin_hash`/`verify_vault_pin` + `authenticateForVault()` exist; gate pattern in `FirstRunWizardGate`        | PIN on cold start/background return (configurable timeout); Private mode blurs thumbs        |
-| R12 | Offline outbox for Remote LAN                          | #20/#36     | M      | `shouldUseRemoteApi()` switch, browse-cache precedent, `useLanConnection` reconnect trigger, localStorage helpers | Queue while offline; badge shows count; flush on reconnect with per-item receipts/ conflicts |
-| R13 | Player "select frame" scrubber UI                      | #16/#31     | M      | `setSceneThumbFromFrame` + "Use this frame" button already work                                                   | Scrubber picks an arbitrary frame and writes `{stem}.jpg`                                    |
+| ID  | Item                                      | Source      | Effort | Evidence (why doable)                                                                                             | Done when                                                                                    |
+| --- | ----------------------------------------- | ----------- | ------ | ----------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| R01 | _(shipped — see Done)_                    |             |        |                                                                                                                   |                                                                                              |
+| R02 | _(shipped — see Done)_                    |             |        |                                                                                                                   |                                                                                              |
+| R03 | _(shipped — see appendix)_                |             |        |                                                                                                                   |                                                                                              |
+| R04 | _(shipped — see appendix)_                |             |        |                                                                                                                   |                                                                                              |
+| R05 | _(shipped — see appendix)_                |             |        |                                                                                                                   |                                                                                              |
+| R06 | _(shipped — see Done)_                    |             |        |                                                                                                                   |                                                                                              |
+| R07 | _(shipped — see Done)_                    |             |        |                                                                                                                   |                                                                                              |
+| R08 | _(shipped — see Done)_                    |             |        |                                                                                                                   |                                                                                              |
+| R09 | _(moved to Wave 1 — see note below)_      |             |        |                                                                                                                   |                                                                                              |
+| R10 | _(already shipped — moved to appendix)_   |             |        |                                                                                                                   |                                                                                              |
+| R11 | App Lock / Private Mode — PIN gate + blur | #53 Phase 1 | M      | `vault_pin_hash`/`verify_vault_pin` + `authenticateForVault()` exist; gate pattern in `FirstRunWizardGate`        | PIN on cold start/background return (configurable timeout); Private mode blurs thumbs        |
+| R12 | Offline outbox for Remote LAN             | #20/#36     | M      | `shouldUseRemoteApi()` switch, browse-cache precedent, `useLanConnection` reconnect trigger, localStorage helpers | Queue while offline; badge shows count; flush on reconnect with per-item receipts/ conflicts |
+| R13 | Player "select frame" scrubber UI         | #16/#31     | M      | `setSceneThumbFromFrame` + "Use this frame" button already work                                                   | Scrubber picks an arbitrary frame and writes `{stem}.jpg`                                    |
 
 ---
 
