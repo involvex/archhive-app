@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { toast } from "react-hot-toast";
+import { Sparkles } from "lucide-react";
 import { api } from "@/lib/api/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -89,6 +91,51 @@ export function SceneBulkEditBar({
     }
   }
 
+  /**
+   * Ask the existing per-scene suggester for every selected scene and apply
+   * the union as a single batch update (R03).
+   */
+  async function handleSuggest() {
+    setSaving(true);
+    setError(null);
+    try {
+      const results = await Promise.allSettled(selectedIds.map((id) => api.suggestSceneTags(id)));
+      const tags = new Map<string, string>();
+      const performers = new Map<string, string>();
+      for (const result of results) {
+        if (result.status !== "fulfilled") continue;
+        for (const tag of result.value.tags ?? []) {
+          const key = tag.trim().toLowerCase();
+          if (key && !tags.has(key)) tags.set(key, tag.trim());
+        }
+        for (const performer of result.value.performers ?? []) {
+          const key = performer.trim().toLowerCase();
+          if (key && !performers.has(key)) performers.set(key, performer.trim());
+        }
+      }
+      const tagNames = [...tags.values()];
+      const performerNames = [...performers.values()];
+      if (tagNames.length === 0 && performerNames.length === 0) {
+        toast("No suggestions found for the selected scenes");
+        return;
+      }
+      await api.batchUpdateScenes({
+        scene_ids: selectedIds,
+        ...(tagNames.length ? { tags_add: tagNames } : {}),
+        ...(performerNames.length ? { performers_add: performerNames } : {}),
+      });
+      toast.success(
+        `Applied ${tagNames.length} tag${tagNames.length === 1 ? "" : "s"} and ${performerNames.length} performer${performerNames.length === 1 ? "" : "s"}`,
+      );
+      onApplied();
+      onClear();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Suggest tags failed");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function handleVault() {
     if (!onMoveToVault) return;
     setSaving(true);
@@ -148,6 +195,10 @@ export function SceneBulkEditBar({
       </div>
       {error && <p className="mt-2 text-sm text-red-500">{error}</p>}
       <div className="mt-2 flex flex-wrap justify-end gap-2">
+        <Button variant="outline" onClick={() => void handleSuggest()} disabled={saving}>
+          <Sparkles className="mr-1.5 h-4 w-4" />
+          Suggest tags
+        </Button>
         <Button variant="outline" onClick={() => void handleMarkWatched(true)} disabled={saving}>
           Mark watched
         </Button>

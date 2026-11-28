@@ -22,7 +22,7 @@ pub const BACKUP_SCHEMA_VERSION: u32 = 1;
 pub const MANIFEST_NAME: &str = "manifest.json";
 pub const DB_ENTRY_NAME: &str = "archhive.db";
 /// Marker written by `Database::new` after the latest additive migration.
-pub const CURRENT_MIGRATION_ID: &str = "021";
+pub const CURRENT_MIGRATION_ID: &str = "022";
 
 fn map_io(ctx: &str, err: std::io::Error) -> AppError {
     AppError::Other(format!("{ctx}: {err}"))
