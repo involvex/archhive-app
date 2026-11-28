@@ -642,6 +642,16 @@ pub struct AppSettings {
     /// `prepare_vault_unlock` requires the matching PIN before minting a token.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vault_pin_hash: Option<String>,
+    /// App Lock (#53 / R11): gate the whole UI behind the vault PIN on cold
+    /// start and after returning from background.
+    #[serde(default)]
+    pub app_lock_enabled: bool,
+    /// Minutes in background before App Lock engages (0 = lock immediately).
+    #[serde(default = "default_app_lock_timeout_mins")]
+    pub app_lock_timeout_mins: u32,
+    /// Private mode: blur library / browse thumbnails without locking the app.
+    #[serde(default)]
+    pub private_mode: bool,
 }
 
 fn default_phash_threshold() -> u8 {
@@ -727,6 +737,10 @@ fn default_vault_auto_lock_mins() -> u32 {
 
 fn default_vault_lock_on_background() -> bool {
     true
+}
+
+fn default_app_lock_timeout_mins() -> u32 {
+    5
 }
 
 fn default_auto_check_binaries() -> bool {
@@ -890,6 +904,9 @@ impl Default for AppSettings {
             vault_auto_lock_mins: default_vault_auto_lock_mins(),
             vault_lock_on_background: default_vault_lock_on_background(),
             vault_lan_exposed: false,
+            app_lock_enabled: false,
+            app_lock_timeout_mins: default_app_lock_timeout_mins(),
+            private_mode: false,
         }
     }
 }

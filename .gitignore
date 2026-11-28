@@ -47,3 +47,5 @@ src/lib/plugins/registry.generated.ts
 .env
 *.jks
 *.keystore
+
+.tanstack/

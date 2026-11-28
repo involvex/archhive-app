@@ -2,11 +2,11 @@
 
 ## Audience
 
-Mobile ArcHive users who watch library scenes on a phone or tablet.
+ArcHive users who keep media on a shared phone/PC and want a quick privacy layer.
 
 ## Announcement
 
-Rotate the phone while a scene is playing and ArcHive offers fullscreen; player Prev/Next and overlay controls are now ≥44px for easier taps.
+ArcHive can lock the whole UI behind your Privacy PIN on cold start or after you leave the app (configurable timeout), and Private Mode blurs library thumbnails without locking. Find both under Settings → Privacy; desktop sidebar has a Private Mode quick toggle.
 
 ## Free channels (pick one)
 

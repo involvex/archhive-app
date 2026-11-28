@@ -392,6 +392,7 @@ pub fn run() {
             commands::vault_unlock,
             commands::set_vault_pin,
             commands::clear_vault_pin,
+            commands::verify_vault_pin,
             commands::vault_lock,
             commands::vault_scene,
             commands::vault_scenes,

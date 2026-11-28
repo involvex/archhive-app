@@ -205,6 +205,28 @@ impl AppState {
         self.media_vault.status(&self.db, &settings)
     }
 
+    /// Verify the vault / App Lock PIN without opening a vault session (R11).
+    pub fn verify_pin(&self, pin: &str) -> AppResult<()> {
+        let settings = self.get_settings()?;
+        let hash = settings
+            .vault_pin_hash
+            .as_deref()
+            .filter(|h| !h.trim().is_empty())
+            .ok_or_else(|| {
+                crate::error::AppError::Forbidden(
+                    "Set a PIN in Settings → Privacy before using App Lock.".into(),
+                )
+            })?;
+        let pin = pin.trim();
+        if pin.is_empty() {
+            return Err(crate::error::AppError::Forbidden("PIN required.".into()));
+        }
+        if !verify_vault_pin(pin, hash) {
+            return Err(crate::error::AppError::Forbidden("Incorrect PIN.".into()));
+        }
+        Ok(())
+    }
+
     pub fn lock_vault(&self) -> AppResult<VaultStatus> {
         self.media_vault.lock();
         let settings = self.get_settings()?;

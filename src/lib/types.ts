@@ -333,6 +333,12 @@ export interface AppSettings {
   vault_lan_exposed?: boolean;
   /** Present when a vault PIN is configured (hash only; never the PIN). */
   vault_pin_hash?: string;
+  /** App Lock: PIN gate on cold start / return from background (R11). */
+  app_lock_enabled?: boolean;
+  /** Minutes in background before App Lock engages (0 = immediate). */
+  app_lock_timeout_mins?: number;
+  /** Private mode: blur thumbnails without locking the app (R11). */
+  private_mode?: boolean;
 }
 
 /** Desktop watch-folder auto-import status (in-memory on the host). */

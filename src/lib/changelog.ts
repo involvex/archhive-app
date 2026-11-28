@@ -11,6 +11,10 @@ export const CHANGELOG: ChangelogEntry[] = [
     changes: [
       {
         type: "added",
+        text: "App Lock (Privacy PIN on cold start / after background) and Private Mode (blur thumbnails); Settings → Privacy",
+      },
+      {
+        type: "added",
         text: "Player offers fullscreen when rotating to landscape; Prev/Next and overlay controls use ≥44px touch targets",
       },
       {

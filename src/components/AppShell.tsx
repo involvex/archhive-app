@@ -14,6 +14,7 @@ import {
   Monitor,
   Contrast,
   Copy,
+  EyeOff,
   Plus,
   Lock,
 } from "lucide-react";
@@ -96,6 +97,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const vaultLockOnBackground = useSettingsStore(
     (s) => s.settings.vault_lock_on_background !== false,
   );
+  const privateMode = useSettingsStore((s) => s.settings.private_mode === true);
+  const updateSettings = useSettingsStore((s) => s.updateSettings);
   const vaultExpiresAt = useVaultStore((s) => s.status?.expires_at);
 
   // Vault: learn the vault path + lock state once per session, so media URLs
@@ -524,6 +527,29 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             )}
           >
             <Contrast className="h-3.5 w-3.5" />
+          </button>
+          {/* R11: Private mode — blur thumbs without locking. */}
+          <button
+            type="button"
+            onClick={() => {
+              const next = !privateMode;
+              updateSettings({ private_mode: next });
+              void api
+                .getSettings()
+                .then((s) => api.saveSettings({ ...s, private_mode: next }))
+                .catch(() => {});
+            }}
+            title={privateMode ? "Private mode: on" : "Private mode: off"}
+            aria-label="Toggle private mode (blur thumbnails)"
+            aria-pressed={privateMode}
+            className={cn(
+              "rounded-md p-1.5 transition-colors",
+              privateMode
+                ? "bg-[var(--color-primary)] text-[var(--color-primary-foreground)]"
+                : "text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)]",
+            )}
+          >
+            <EyeOff className="h-3.5 w-3.5" />
           </button>
         </div>
         {appVersion && (

@@ -501,6 +501,12 @@ export const api = {
     return localInvoke<VaultStatus>("clear_vault_pin");
   },
 
+  /** Verify vault / App Lock PIN without opening a vault session (R11). */
+  async verifyVaultPin(pin: string): Promise<void> {
+    requireLocalVault();
+    return localInvoke<void>("verify_vault_pin", { pin });
+  },
+
   async vaultLock(): Promise<VaultStatus> {
     requireLocalVault();
     return localInvoke<VaultStatus>("vault_lock");
