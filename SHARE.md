@@ -2,11 +2,11 @@
 
 ## Audience
 
-ArcHive users who keep watchlists / saved browse listings and move between desktop and mobile, plus people following the open-source media-library space.
+New ArcHive users finishing first-run setup, plus people following the open-source media-library space.
 
 ## Announcement
 
-ArcHive can export and import saved searches as JSON from Settings → Diagnostics. Move watchlist listings between devices with validation; identical site/kind/slug/name rows are skipped so re-import stays safe. Naming-template presets and token chips are also available in Settings → Library.
+After the first-run wizard, ArcHive Home shows a dismissible setup checklist with deep links into Settings for library path, download engine, site cookies, and LAN. Tick items as you configure them, or dismiss until you're ready.
 
 ## Free channels (pick one)
 

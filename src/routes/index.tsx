@@ -2,7 +2,14 @@ import { Link, createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api/client";
 import { ConnectionStatusChip } from "@/components/ConnectionStatusChip";
+import { SetupChecklistCard } from "@/components/SetupChecklistCard";
 import { getCapabilities } from "@/lib/runtime";
+import {
+  dismissSetupChecklist,
+  evaluateSetupChecklist,
+  isSetupChecklistDismissed,
+  shouldShowSetupChecklist,
+} from "@/lib/setupChecklist";
 import { useSettingsStore } from "@/lib/stores/settings";
 import { isMobileDevice } from "@/lib/tauri";
 import type { DownloadJob, Scene } from "@/lib/types";
@@ -34,6 +41,8 @@ function HomePage() {
   const [playerIndex, setPlayerIndex] = useState(0);
   // #26 watch-history map for card overlays.
   const [watchMap, setWatchMap] = useState<WatchMap>(new Map());
+  const [cookieSiteCount, setCookieSiteCount] = useState(0);
+  const [checklistDismissed, setChecklistDismissed] = useState(() => isSetupChecklistDismissed());
   const caps = getCapabilities();
   const isMobile = isMobileDevice();
   // A desktop host is only required in browser mode or when the user chose
@@ -41,6 +50,28 @@ function HomePage() {
   const needsSetup =
     !settings.remote_host?.trim() &&
     (caps.showBrowserBanner || settings.engine_mode === "remote_lan");
+
+  const checklistItems = useMemo(
+    () =>
+      evaluateSetupChecklist({
+        settings,
+        cookieSiteCount,
+        canHostLan: caps.lanServer,
+      }),
+    [settings, cookieSiteCount, caps.lanServer],
+  );
+  const showSetupChecklist = shouldShowSetupChecklist(
+    settings.wizard_completed,
+    checklistItems,
+    checklistDismissed,
+  );
+
+  useEffect(() => {
+    void api
+      .listCookieSites()
+      .then((sites) => setCookieSiteCount(sites.length))
+      .catch(() => setCookieSiteCount(0));
+  }, [settings.engine_mode, settings.remote_host]);
 
   useEffect(() => {
     if (needsSetup) return;
@@ -160,10 +191,22 @@ function HomePage() {
               Host: <code>http://192.168.178.69:8787</code> — enable LAN on the PC app first.
             </p>
             <Button asChild size="sm">
-              <Link to="/settings">Open Settings</Link>
+              <Link to="/settings" search={{ tab: "engine" }}>
+                Open Settings
+              </Link>
             </Button>
           </CardContent>
         </Card>
+      )}
+
+      {showSetupChecklist && (
+        <SetupChecklistCard
+          items={checklistItems}
+          onDismiss={() => {
+            dismissSetupChecklist();
+            setChecklistDismissed(true);
+          }}
+        />
       )}
 
       {loadError && <p className="text-sm text-[var(--color-destructive)]">{loadError}</p>}

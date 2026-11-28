@@ -11,6 +11,10 @@ export const CHANGELOG: ChangelogEntry[] = [
     changes: [
       {
         type: "added",
+        text: "Post-wizard Home checklist with deep links to Settings (library, engine, cookies, LAN); dismissible until complete",
+      },
+      {
+        type: "added",
         text: "Saved-search JSON export/import in Settings → Diagnostics (restore watchlist listings with validation; skip identical rows)",
       },
       {

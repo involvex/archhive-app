@@ -131,7 +131,7 @@ export function FirstRunWizard({ onDone }: { onDone: () => void }) {
     }
   }
 
-  function openSettings(tab: string) {
+  function openSettings(tab: "engine" | "lan" | "library" | "cookies") {
     void finish().then(() => {
       void navigate({ to: "/settings", search: { tab } });
     });
