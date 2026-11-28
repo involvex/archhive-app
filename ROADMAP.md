@@ -8,7 +8,6 @@
 
 ## Now
 
-- [ ] R11 App Lock / Private Mode — PIN gate + blur
 - [ ] R12 Offline outbox for Remote LAN
 - [ ] R13 Player "select frame" scrubber UI
 
@@ -17,10 +16,11 @@
 - [ ] R09 Data-saver-aware thumbnails (Wave 1)
 - [ ] R14–R30 Wave 1 items (see table below)
 - [ ] R31–R40 Wave 2 items (see table below)
-- [ ] Share landscape fullscreen suggest: free announcement draft in SHARE.md
+- [ ] Share App Lock / Private Mode: free announcement draft in SHARE.md
 
 ## Done
 
+- [x] R11 App Lock / Private Mode — PIN gate + blur
 - [x] R08 Auto-suggest landscape on rotate + 44px player targets
 - [x] R07 Post-wizard Home checklist
 - [x] R06 Saved-search JSON export / import
@@ -62,7 +62,7 @@ No DB migration, no native code, no new dependency. Each of these can ship indep
 | R08 | _(shipped — see Done)_                    |             |        |                                                                                                                   |                                                                                              |
 | R09 | _(moved to Wave 1 — see note below)_      |             |        |                                                                                                                   |                                                                                              |
 | R10 | _(already shipped — moved to appendix)_   |             |        |                                                                                                                   |                                                                                              |
-| R11 | App Lock / Private Mode — PIN gate + blur | #53 Phase 1 | M      | `vault_pin_hash`/`verify_vault_pin` + `authenticateForVault()` exist; gate pattern in `FirstRunWizardGate`        | PIN on cold start/background return (configurable timeout); Private mode blurs thumbs        |
+| R11 | _(shipped — see Done)_                                 |             |        |                                                                                                                   |                                                                                              |
 | R12 | Offline outbox for Remote LAN             | #20/#36     | M      | `shouldUseRemoteApi()` switch, browse-cache precedent, `useLanConnection` reconnect trigger, localStorage helpers | Queue while offline; badge shows count; flush on reconnect with per-item receipts/ conflicts |
 | R13 | Player "select frame" scrubber UI         | #16/#31     | M      | `setSceneThumbFromFrame` + "Use this frame" button already work                                                   | Scrubber picks an arbitrary frame and writes `{stem}.jpg`                                    |
 

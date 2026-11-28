@@ -169,10 +169,15 @@ export function SceneCard({
       ? s.settings.engine_mode === "local" || s.settings.engine_mode === "standalone"
       : false,
   );
+  const privateMode = useSettingsStore((s) => s.settings.private_mode === true);
   const showOffline =
     offline ?? (!isMediaItem(item) && Boolean((item as Scene).path) && onDeviceBackend);
   const thumb = getItemThumb(item, thumbSrc);
   const description = getItemDescription(item);
+  const thumbClass = cn(
+    "h-full w-full object-cover transition-transform duration-300 group-hover:scale-105",
+    privateMode && "scale-110 blur-xl",
+  );
 
   const [swipeX, setSwipeX] = useState(0);
   const [swiping, setSwiping] = useState(false);
@@ -245,8 +250,8 @@ export function SceneCard({
           {thumb ? (
             <img
               src={thumb}
-              alt={title}
-              className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+              alt={privateMode ? "" : title}
+              className={thumbClass}
               loading="lazy"
               onError={(e) => {
                 (e.target as HTMLImageElement).style.display = "none";
@@ -429,8 +434,8 @@ export function SceneCard({
         {thumb ? (
           <img
             src={thumb}
-            alt={title}
-            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+            alt={privateMode ? "" : title}
+            className={thumbClass}
             loading="lazy"
             onError={(e) => {
               (e.target as HTMLImageElement).style.display = "none";

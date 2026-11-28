@@ -3302,6 +3302,130 @@ function SettingsPage() {
         <Tabs.Content value="privacy" className="mt-4 space-y-4">
           <Card>
             <CardHeader>
+              <CardTitle className="text-base">App Lock &amp; Private Mode</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-xs text-[var(--color-muted-foreground)]">
+                App Lock gates the whole UI behind your Privacy PIN on cold start and after you
+                leave the app. Private mode only blurs thumbnails. Both use the same PIN as the
+                media vault.
+              </p>
+
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                <span className="text-[var(--color-muted-foreground)]">
+                  Privacy PIN:{" "}
+                  {settings.vault_pin_hash?.trim() || vaultStatus?.pin_required ? "set" : "not set"}
+                </span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="min-h-11"
+                  onClick={() => {
+                    const pin = window.prompt("New Privacy PIN (min 4 characters)");
+                    if (!pin || pin.trim().length < 4) {
+                      setTestStatus("PIN must be at least 4 characters");
+                      return;
+                    }
+                    void api
+                      .setVaultPin(pin.trim())
+                      .then(async () => {
+                        setTestStatus("Privacy PIN saved");
+                        void refreshVaultStatus();
+                        try {
+                          const next =
+                            runtime === "mobile-tauri"
+                              ? await api.getDeviceSettings()
+                              : await api.getSettings();
+                          updateSettings({ vault_pin_hash: next.vault_pin_hash });
+                          if (hostSettings) {
+                            setHostSettings({
+                              ...hostSettings,
+                              vault_pin_hash: next.vault_pin_hash,
+                            });
+                          }
+                        } catch {
+                          /* pin is saved; UI may need a Settings re-open */
+                        }
+                      })
+                      .catch((e: unknown) =>
+                        setTestStatus(e instanceof Error ? e.message : "Failed to set PIN"),
+                      );
+                  }}
+                >
+                  {settings.vault_pin_hash?.trim() || vaultStatus?.pin_required
+                    ? "Change PIN"
+                    : "Set PIN"}
+                </Button>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <Switch.Root
+                  checked={settings.app_lock_enabled === true}
+                  onCheckedChange={(checked) => {
+                    if (
+                      checked &&
+                      !(settings.vault_pin_hash?.trim() || vaultStatus?.pin_required)
+                    ) {
+                      setTestStatus("Set a Privacy PIN before enabling App Lock");
+                      return;
+                    }
+                    void persistBackendSettings({ app_lock_enabled: checked }).catch((e: unknown) =>
+                      setTestStatus(e instanceof Error ? e.message : "Failed to update App Lock"),
+                    );
+                  }}
+                  className="h-5 w-9 rounded-full bg-[var(--color-secondary)] data-[state=checked]:bg-[var(--color-primary)]"
+                >
+                  <Switch.Thumb className="block h-4 w-4 translate-x-0.5 rounded-full bg-white transition data-[state=checked]:translate-x-[18px]" />
+                </Switch.Root>
+                <span className="text-sm">Enable App Lock</span>
+              </div>
+
+              {settings.app_lock_enabled && (
+                <label className="ml-7 flex items-center gap-3 text-sm">
+                  <span className="w-48 shrink-0 text-[var(--color-muted-foreground)]">
+                    Lock after background (minutes)
+                  </span>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={240}
+                    value={settings.app_lock_timeout_mins ?? 5}
+                    onChange={(e) => {
+                      const next = Math.max(0, Math.min(240, Number(e.target.value) || 0));
+                      void persistBackendSettings({ app_lock_timeout_mins: next });
+                    }}
+                    className="w-24"
+                  />
+                </label>
+              )}
+              {settings.app_lock_enabled && (
+                <p className="ml-7 text-xs text-[var(--color-muted-foreground)]">
+                  0 locks as soon as ArcHive goes to the background. Cold start always locks when
+                  App Lock is on.
+                </p>
+              )}
+
+              <div className="flex items-center gap-3">
+                <Switch.Root
+                  checked={settings.private_mode === true}
+                  onCheckedChange={(checked) =>
+                    void persistBackendSettings({ private_mode: checked }).catch((e: unknown) =>
+                      setTestStatus(
+                        e instanceof Error ? e.message : "Failed to update Private Mode",
+                      ),
+                    )
+                  }
+                  className="h-5 w-9 rounded-full bg-[var(--color-secondary)] data-[state=checked]:bg-[var(--color-primary)]"
+                >
+                  <Switch.Thumb className="block h-4 w-4 translate-x-0.5 rounded-full bg-white transition data-[state=checked]:translate-x-[18px]" />
+                </Switch.Root>
+                <span className="text-sm">Private mode (blur thumbnails)</span>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
               <CardTitle className="text-base">Media Vault</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">

@@ -1622,6 +1622,12 @@ pub async fn clear_vault_pin(state: State<'_, Arc<AppState>>) -> CmdResult<Vault
     map_err(state.clear_vault_pin())
 }
 
+/// Verify the vault / App Lock PIN without unlocking the media vault (R11).
+#[tauri::command]
+pub async fn verify_vault_pin(state: State<'_, Arc<AppState>>, pin: String) -> CmdResult<()> {
+    map_err(state.verify_pin(&pin))
+}
+
 #[tauri::command]
 pub async fn vault_lock(state: State<'_, Arc<AppState>>) -> CmdResult<VaultStatus> {
     map_err(state.lock_vault())

@@ -16,6 +16,7 @@ import { useDownloadNotifications } from "@/lib/hooks/useDownloadNotifications";
 import { useWatchFolderNotifications } from "@/lib/hooks/useWatchFolderNotifications";
 import { useWatchlistNotifications } from "@/lib/hooks/useWatchlistNotifications";
 import { FirstRunWizardGate } from "./components/FirstRunWizard";
+import { AppLockGate } from "./components/AppLockGate";
 import { initAmoled } from "./lib/amoled";
 import "./styles/globals.css";
 
@@ -135,6 +136,7 @@ createRoot(document.getElementById("root")!).render(
       <DownloadNotifications />
       <BootstrapSettings />
       <FirstRunWizardGate />
+      <AppLockGate />
       <TrayNavigationListener />
       <RouterProvider router={router} />
       <Toaster position="bottom-right" />
