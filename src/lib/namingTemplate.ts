@@ -123,3 +123,30 @@ export function analyseNamingTemplate(template: string | undefined | null): Nami
     ytdlpTemplate: ytdlp,
   };
 }
+
+export interface InsertNamingTokenResult {
+  /** Template after splicing `{token}` at the selection. */
+  value: string;
+  /** Caret position after the inserted token (for re-focus). */
+  caret: number;
+}
+
+/**
+ * Insert `{token}` at `[start, end)` in the template (replaces a selection).
+ * Out-of-range indices clamp to the string bounds.
+ */
+export function insertNamingToken(
+  template: string,
+  token: NamingToken,
+  start: number,
+  end: number = start,
+): InsertNamingTokenResult {
+  const value = template ?? "";
+  const lo = Math.max(0, Math.min(start, end, value.length));
+  const hi = Math.max(0, Math.min(Math.max(start, end), value.length));
+  const insertion = `{${token}}`;
+  return {
+    value: value.slice(0, lo) + insertion + value.slice(hi),
+    caret: lo + insertion.length,
+  };
+}

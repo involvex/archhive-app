@@ -199,6 +199,41 @@ function DownloadsPage() {
     await runBulk(failedIds, (id) => api.retryDownload(id));
   }, [failedIds, runBulk]);
 
+  /**
+   * Recovery path for jobs that exhausted their automatic retries: queue the
+   * failed URLs as fresh jobs instead of reusing the old (capped) job.
+   */
+  const requeueFailed = useCallback(() => {
+    guarded("Queue failed URLs", () => {
+      const urls = [
+        ...new Set(
+          jobs
+            .filter((j) => j.status === "failed" || j.status === "cancelled")
+            .map((j) => j.url)
+            .filter((url) => !!url?.trim()),
+        ),
+      ];
+      if (urls.length === 0) return;
+      if (
+        !window.confirm(
+          `Queue ${urls.length} failed URL${urls.length === 1 ? "" : "s"} again as new download${urls.length === 1 ? "" : "s"}?\nThe old job(s) stay in the list.`,
+        )
+      ) {
+        return;
+      }
+      void api
+        .queueDownloads(urls)
+        .then((queued) => {
+          toast.success(`Queued ${queued.length} new download${queued.length === 1 ? "" : "s"}`);
+          refreshJobs();
+        })
+        .catch((e) => {
+          console.error("re-queue failed", e);
+          toast.error("Could not re-queue failed URLs");
+        });
+    });
+  }, [guarded, jobs, refreshJobs]);
+
   const pauseAll = useCallback(async () => {
     await runBulk(pausableIds, (id) => api.pauseDownload(id));
     toast.success(`Paused ${pausableIds.length} download${pausableIds.length === 1 ? "" : "s"}`);
@@ -325,6 +360,12 @@ function DownloadsPage() {
             <Button variant="outline" size="sm" onClick={() => void retryFailed()}>
               <RotateCcw className="mr-1.5 h-4 w-4" />
               Retry failed ({failedIds.length})
+            </Button>
+          )}
+          {failedIds.length > 0 && (
+            <Button variant="outline" size="sm" onClick={requeueFailed}>
+              <Plus className="mr-1.5 h-4 w-4" />
+              Re-queue URLs ({failedIds.length})
             </Button>
           )}
           {completedIds.length > 0 && (

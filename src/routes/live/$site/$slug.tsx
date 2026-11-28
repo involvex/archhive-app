@@ -6,7 +6,16 @@ import { ExtLink } from "@/components/ExtLink";
 import { openExternal } from "@/lib/external";
 import { HlsVideoPlayer, STREAM_URL_EXPIRED_ERROR } from "@/components/HlsVideoPlayer";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Radio, ArrowLeft, ExternalLink, AppWindow, ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  Radio,
+  ArrowLeft,
+  ExternalLink,
+  AppWindow,
+  ChevronLeft,
+  ChevronRight,
+  Copy,
+} from "lucide-react";
+import { toast } from "react-hot-toast";
 import { Link, useNavigate } from "@tanstack/react-router";
 import type { MediaItem } from "@/lib/types";
 
@@ -63,6 +72,18 @@ function openInViewer(url: string): void {
     console.error("in-app viewer failed, opening browser instead:", viewerError);
     void openExternal(url).catch(console.error);
   });
+}
+
+/** Copy a resolved stream/audio URL for use in an external player. */
+function copyText(text: string, label: string): void {
+  if (!navigator.clipboard?.writeText) {
+    toast.error("Clipboard unavailable");
+    return;
+  }
+  void navigator.clipboard
+    .writeText(text)
+    .then(() => toast.success(`${label} copied`))
+    .catch(() => toast.error(`Could not copy ${label.toLowerCase()}`));
 }
 
 function LivePlayerPage() {
@@ -186,6 +207,29 @@ function LivePlayerPage() {
           </span>
         </h2>
       </div>
+
+      {streamUrl && (
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => copyText(streamUrl, "Stream URL")}>
+            <Copy className="mr-1 h-4 w-4" />
+            Copy stream URL
+          </Button>
+          {audioUrl && (
+            <Button variant="outline" size="sm" onClick={() => copyText(audioUrl, "Audio URL")}>
+              <Copy className="mr-1 h-4 w-4" />
+              Copy audio URL
+            </Button>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void openExternal(streamUrl).catch(console.error)}
+          >
+            <ExternalLink className="mr-1 h-4 w-4" />
+            Open stream externally
+          </Button>
+        </div>
+      )}
 
       {!streamUrl && embedUrl && !isRoomOfflineError(streamError) && (
         <div className="space-y-1 text-xs text-[var(--color-muted-foreground)]">
