@@ -4,6 +4,32 @@
 > **Rule:** Code is the source of truth for status. `suggestions.md` is a historical idea list and is intentionally left unchanged; several of its status labels are stale (see [Stale claims](#stale-claims-in-suggestionsmd)).
 > **Scope:** "Realistically shippable" means no new dependency, no native/Kotlin work, and no DB migration unless the item says so explicitly in its blocker column.
 
+`/ship-roadmap` takes the first unchecked item under **Now**. Wave tables below are the detailed catalog.
+
+## Now
+
+- [ ] R06 Saved-search JSON export / import
+- [ ] R07 Post-wizard Home checklist
+- [ ] R08 Auto-suggest landscape on rotate + 44px player targets
+- [ ] R11 App Lock / Private Mode — PIN gate + blur
+- [ ] R12 Offline outbox for Remote LAN
+- [ ] R13 Player "select frame" scrubber UI
+
+## Later
+
+- [ ] R09 Data-saver-aware thumbnails (Wave 1)
+- [ ] R14–R30 Wave 1 items (see table below)
+- [ ] R31–R40 Wave 2 items (see table below)
+- [ ] Share naming-template presets: free announcement draft in SHARE.md
+
+## Done
+
+- [x] R02 Naming-template presets + token chip picker
+- [x] R01 Fix backup manifest schema id (021 → 022) — already `CURRENT_MIGRATION_ID = "022"`
+- [x] R03 Bulk suggest-and-apply tags
+- [x] R04 Re-queue failed URLs
+- [x] R05 Copy/Open HLS stream URL
+
 ---
 
 ## Legend
@@ -26,8 +52,8 @@ No DB migration, no native code, no new dependency. Each of these can ship indep
 
 | ID  | Item                                                   | Source      | Effort | Evidence (why doable)                                                                                             | Done when                                                                                    |
 | --- | ------------------------------------------------------ | ----------- | ------ | ----------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| R01 | Fix backup manifest schema id (021 → 022)              | stale bug   | S      | `src-tauri/src/library/backup.rs:25` has `CURRENT_MIGRATION_ID = "021"`; latest is `MIGRATION_022`                | Export backup → `manifest.json` reports `022`; round-trip test still passes                  |
-| R02 | Naming-template presets + token chip picker            | #9          | S      | `src/lib/namingTemplate.ts:1–125` already validates/renders tokens; Settings UI at `settings/index.tsx:1790–1816` | Save/load/rename presets; click a chip inserts its token into the template                   |
+| R01 | _(shipped — see Done)_                                 |             |        |                                                                                                                   |                                                                                              |
+| R02 | _(shipped — see Done)_                                 |             |        |                                                                                                                   |                                                                                              |
 | R03 | _(shipped — see appendix)_                             |             |        |                                                                                                                   |                                                                                              |
 | R04 | _(shipped — see appendix)_                             |             |        |                                                                                                                   |                                                                                              |
 | R05 | _(shipped — see appendix)_                             |             |        |                                                                                                                   |                                                                                              |
@@ -105,7 +131,7 @@ Recorded here so planning stops re-litigating them. Evidence lives in code and t
 - PiP, gestures, wake-lock, fullscreen (#44 core), duplicate count badge (#23 partial)
 - Pagination base + thumb quality (#25 base, #49 Phase 1)
 - Wi-Fi-only / battery-aware downloads (#45), LAN history + QR pairing (#46, Q35/Q36)
-- **Shipped from this roadmap (v0.9.4 dev):** R03 bulk suggest-and-apply tags (`SceneBulkEditBar.tsx` + test), R04 re-queue failed URLs (`downloads/index.tsx`), R05 copy/Open HLS stream URL (`live/$site/$slug.tsx`)
+- **Shipped from this roadmap (v0.9.4 dev):** R01 backup manifest `022`, R02 naming-template presets + token chips (`NamingTemplateEditor.tsx`), R03 bulk suggest-and-apply tags (`SceneBulkEditBar.tsx` + test), R04 re-queue failed URLs (`downloads/index.tsx`), R05 copy/Open HLS stream URL (`live/$site/$slug.tsx`)
 
 ---
 

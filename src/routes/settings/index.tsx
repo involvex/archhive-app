@@ -26,7 +26,7 @@ import {
 } from "@/lib/lanHistory";
 import QRCode from "react-qr-code";
 import { getPluginSettingsPanels } from "@/lib/plugins/loader";
-import { analyseNamingTemplate } from "@/lib/namingTemplate";
+import { NamingTemplateEditor } from "@/components/NamingTemplateEditor";
 import { visibleSettingsTabs } from "@/lib/settings/capabilities";
 import type {
   BinaryLatestVersions,
@@ -1782,44 +1782,11 @@ function SettingsPage() {
                   onClose={() => setFolderPickerOpen(false)}
                 />
               </div>
-              <div>
-                <label className="text-xs text-[var(--color-muted-foreground)]">
-                  Naming template
-                </label>
-                <Input
-                  value={hostSettings?.naming_template || ""}
-                  onChange={(e) => patchHostSettings({ naming_template: e.target.value })}
-                />
-                {(() => {
-                  const naming = analyseNamingTemplate(hostSettings?.naming_template);
-                  return (
-                    <div className="mt-1 space-y-1 text-[10px] text-[var(--color-muted-foreground)]">
-                      <p>
-                        Placeholders: {"{performer}"}, {"{title}"}, {"{ext}"}, {"{id}"}, {"{site}"},{" "}
-                        {"{date}"}, {"{channel}"}. Example: {"{performer}/{title}.{ext}"}
-                      </p>
-                      <p className="font-mono text-[var(--color-foreground)]">
-                        Preview: {naming.preview}
-                      </p>
-                      {naming.unknownTokens.length > 0 && (
-                        <p className="text-amber-400">
-                          Unknown placeholder
-                          {naming.unknownTokens.length === 1 ? "" : "s"}:{" "}
-                          {naming.unknownTokens.map((t) => `{${t}}`).join(", ")}
-                          {naming.fallsBackToDefault
-                            ? " — falls back to {performer}/{title}.{ext}"
-                            : ""}
-                        </p>
-                      )}
-                      {naming.hasIllegalChars && (
-                        <p className="text-red-400">
-                          Contains characters illegal in Windows paths (&lt; &gt; : &quot; | ? *).
-                        </p>
-                      )}
-                    </div>
-                  );
-                })()}
-              </div>
+              <NamingTemplateEditor
+                value={hostSettings?.naming_template || ""}
+                onChange={(template) => patchHostSettings({ naming_template: template })}
+                disabled={!hostSettings}
+              />
               <div>
                 <label className="text-xs text-[var(--color-muted-foreground)]">
                   phash Hamming threshold (0 = exact, 10 = near-duplicate)

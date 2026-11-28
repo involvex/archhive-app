@@ -11,6 +11,10 @@ export const CHANGELOG: ChangelogEntry[] = [
     changes: [
       {
         type: "added",
+        text: "Naming-template presets and token chip picker in Settings → Library (save/load/rename local presets; click a chip to insert {token})",
+      },
+      {
+        type: "added",
         text: "Quiet hours in Settings → Downloads → Notifications: mute OS and in-app alerts on a schedule (overnight windows supported)",
       },
       {
