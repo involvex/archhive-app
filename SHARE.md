@@ -2,11 +2,11 @@
 
 ## Audience
 
-New ArcHive users finishing first-run setup, plus people following the open-source media-library space.
+Mobile ArcHive users who watch library scenes on a phone or tablet.
 
 ## Announcement
 
-After the first-run wizard, ArcHive Home shows a dismissible setup checklist with deep links into Settings for library path, download engine, site cookies, and LAN. Tick items as you configure them, or dismiss until you're ready.
+Rotate the phone while a scene is playing and ArcHive offers fullscreen; player Prev/Next and overlay controls are now ≥44px for easier taps.
 
 ## Free channels (pick one)
 

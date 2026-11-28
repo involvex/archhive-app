@@ -390,7 +390,7 @@ export const HlsVideoPlayer = forwardRef<HTMLVideoElement, HlsVideoPlayerProps>(
               e.stopPropagation();
               handleUnmute();
             }}
-            className="pointer-events-auto absolute bottom-14 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full bg-black/80 px-4 py-2 text-sm text-white"
+            className="pointer-events-auto absolute bottom-14 left-1/2 z-10 flex min-h-11 -translate-x-1/2 items-center gap-2 rounded-full bg-black/80 px-4 py-2 text-sm text-white"
           >
             <VolumeX className="h-4 w-4" />
             Tap to unmute
@@ -407,8 +407,8 @@ export const HlsVideoPlayer = forwardRef<HTMLVideoElement, HlsVideoPlayerProps>(
             title={fullscreen.isFullscreen ? "Exit fullscreen" : "Fullscreen"}
             aria-label={fullscreen.isFullscreen ? "Exit fullscreen" : "Fullscreen"}
             className={cn(
-              "pointer-events-auto absolute top-2 z-10 rounded-md bg-black/70 p-2 text-white hover:bg-black/90",
-              showPip && pipAvailable ? "right-12" : "right-2",
+              "pointer-events-auto absolute top-2 z-10 flex min-h-11 min-w-11 items-center justify-center rounded-md bg-black/70 p-2 text-white hover:bg-black/90",
+              showPip && pipAvailable ? "right-14" : "right-2",
               fullscreen.appFullscreen && "top-[max(0.5rem,env(safe-area-inset-top))]",
             )}
           >
@@ -429,7 +429,7 @@ export const HlsVideoPlayer = forwardRef<HTMLVideoElement, HlsVideoPlayerProps>(
             }}
             title="Picture in picture"
             aria-label="Picture in picture"
-            className="pointer-events-auto absolute right-2 top-2 z-10 rounded-md bg-black/70 p-2 text-white hover:bg-black/90"
+            className="pointer-events-auto absolute right-2 top-2 z-10 flex min-h-11 min-w-11 items-center justify-center rounded-md bg-black/70 p-2 text-white hover:bg-black/90"
           >
             <PictureInPicture2 className="h-4 w-4" />
           </button>

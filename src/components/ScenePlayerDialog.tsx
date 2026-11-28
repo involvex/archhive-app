@@ -24,6 +24,7 @@ import { api } from "@/lib/api/client";
 import { HlsVideoPlayer } from "@/components/HlsVideoPlayer";
 import { cn } from "@/lib/utils";
 import { APP_FULLSCREEN_CLASS, usePlayerFullscreen } from "@/lib/hooks/usePlayerFullscreen";
+import { useLandscapeFullscreenSuggest } from "@/lib/hooks/useLandscapeFullscreenSuggest";
 import { ExtLink } from "@/components/ExtLink";
 import type { Scene, WatchProgress } from "@/lib/types";
 import { Button } from "@/components/ui/button";
@@ -105,6 +106,8 @@ function ScenePlayerBody({
   const playerContainerRef = useRef<HTMLDivElement | null>(null);
   const fullscreen = usePlayerFullscreen(playerContainerRef);
   const isFullscreen = fullscreen.isFullscreen;
+  // R08: rotate into landscape → offer fullscreen (session-dismissible).
+  const landscapeFs = useLandscapeFullscreenSuggest(true, isFullscreen);
 
   function flashGestureHint(label: string) {
     setGestureHint(label);
@@ -410,17 +413,41 @@ function ScenePlayerBody({
           content size and pushes the pinned footer out of view (the original
           "hidden buttons" bug on Android edge-to-edge). Do not "simplify". */}
       <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 pb-4">
+        {landscapeFs.showSuggest && !isFullscreen && (
+          <div
+            className="mb-3 flex flex-wrap items-center gap-2 rounded-md border border-[var(--color-primary)]/40 bg-[var(--color-primary)]/10 px-3 py-2"
+            role="status"
+          >
+            <p className="text-sm">Landscape detected — go fullscreen?</p>
+            <div className="flex-1" />
+            <Button
+              size="sm"
+              className="min-h-11"
+              onClick={() => landscapeFs.accept(toggleFullscreen)}
+            >
+              Fullscreen
+            </Button>
+            <Button size="sm" variant="ghost" className="min-h-11" onClick={landscapeFs.dismiss}>
+              Not now
+            </Button>
+          </div>
+        )}
         {resume && (
           <div className="mb-3 flex flex-wrap items-center gap-2 rounded-md border border-[var(--color-primary)]/40 bg-[var(--color-primary)]/10 px-3 py-2">
             <p className="text-sm">
               Resume from {formatDuration(Math.floor(resume.position_secs))}?
             </p>
             <div className="flex-1" />
-            <Button size="sm" onClick={resumePlayback}>
+            <Button size="sm" className="min-h-11" onClick={resumePlayback}>
               <Play className="h-3.5 w-3.5" />
               Resume
             </Button>
-            <Button size="sm" variant="outline" onClick={() => setResume(null)}>
+            <Button
+              size="sm"
+              variant="outline"
+              className="min-h-11"
+              onClick={() => setResume(null)}
+            >
               <RotateCcw className="h-3.5 w-3.5" />
               Start over
             </Button>
@@ -613,7 +640,7 @@ function ScenePlayerBody({
               size="sm"
               disabled={currentIndex <= 0}
               onClick={() => onNavigate(scenes[currentIndex - 1], currentIndex - 1)}
-              className="min-h-10"
+              className="min-h-11"
               aria-label="Previous scene (ArrowLeft)"
             >
               <ChevronLeft className="h-4 w-4" />
@@ -638,7 +665,7 @@ function ScenePlayerBody({
               size="sm"
               disabled={currentIndex >= scenes.length - 1}
               onClick={() => onNavigate(scenes[currentIndex + 1], currentIndex + 1)}
-              className="min-h-10"
+              className="min-h-11"
               aria-label="Next scene (ArrowRight)"
             >
               Next
@@ -652,7 +679,7 @@ function ScenePlayerBody({
               variant="outline"
               onClick={() => void captureFrameAsThumb()}
               disabled={settingThumb}
-              className="min-h-10"
+              className="min-h-11"
               title="Set the scene thumbnail from the current video frame"
             >
               <Camera className="h-3.5 w-3.5" />
@@ -663,13 +690,13 @@ function ScenePlayerBody({
             <Button
               variant="outline"
               onClick={() => onEdit(data)}
-              className="min-h-10 min-w-[5.5rem]"
+              className="min-h-11 min-w-[5.5rem]"
             >
               <Pencil className="h-3.5 w-3.5" />
               Edit
             </Button>
           )}
-          <Button variant="outline" onClick={onClose} className="min-h-10 min-w-[5.5rem]">
+          <Button variant="outline" onClick={onClose} className="min-h-11 min-w-[5.5rem]">
             Close
           </Button>
         </div>

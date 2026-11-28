@@ -11,6 +11,10 @@ export const CHANGELOG: ChangelogEntry[] = [
     changes: [
       {
         type: "added",
+        text: "Player offers fullscreen when rotating to landscape; Prev/Next and overlay controls use ≥44px touch targets",
+      },
+      {
+        type: "added",
         text: "Post-wizard Home checklist with deep links to Settings (library, engine, cookies, LAN); dismissible until complete",
       },
       {
