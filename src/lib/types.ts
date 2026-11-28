@@ -305,6 +305,18 @@ export interface AppSettings {
   notify_download_failed?: boolean;
   /** Notify when the watchlist poller finds matches (default true). */
   notify_saved_search_matches?: boolean;
+  /** Notify when the desktop watch folder auto-imports a file (default true). */
+  notify_watch_import?: boolean;
+  /** Notify when a library scan finishes with additions/updates (default true). */
+  notify_library_scan?: boolean;
+  /** Suppress notifications during a nightly quiet-hours window. */
+  quiet_hours_enabled?: boolean;
+  /** Quiet hours start HH:MM (default 22:00). */
+  quiet_hours_from?: string;
+  /** Quiet hours end HH:MM (default 08:00). */
+  quiet_hours_to?: string;
+  /** Skip watchlist auto-queue poller ticks during quiet hours. */
+  quiet_hours_pause_auto_queue?: boolean;
   /** Desktop: auto-import new videos under the library (or watch subpath). */
   watch_folder_enabled?: boolean;
   /** Optional path under library_path. Empty = library root. */

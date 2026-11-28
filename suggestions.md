@@ -87,10 +87,10 @@ Queue auto-start is already immediate unless the job is `WaitingForWifi`.
 
 ### 11. Notification System
 
-**Status:** ✅ Done  
+**Status:** ✅ Done (v0.9.4: quiet hours + scan/watch-import toggles)  
 **Area:** UX / Downloads  
-**Currently:** Native OS notifications via `tauri-plugin-notification` (download complete/failed in `DownloadManager`); in-app toasts via `react-hot-toast` + `useDownloadNotifications` hook — subscribes to Tauri events on desktop, falls back to 5s polling in LAN remote mode (mobile + desktop `remote_lan`). Desktop tray (`desktop/tray.rs`, close-to-tray/minimize-to-tray, `Ctrl+Shift+A` hotkey) remains.  
-**Suggestion (remaining):** Per-event notification preferences in Settings (download complete/failed, scan done, duplicate found, LAN status) + quiet-hours suppression (see #43).
+**Currently:** Native OS notifications via `tauri-plugin-notification` (download complete/failed in `DownloadManager`, watchlist, watch-import, scan); in-app toasts via `react-hot-toast` + hooks — respect per-event toggles and quiet hours (`shouldNotify`). Desktop tray remains.  
+**Suggestion (remaining):** Duplicates-found / LAN-status toasts only with a real automatic event source (see #43).
 
 ### 12. Advanced Search with Filters
 
@@ -163,10 +163,10 @@ Queue auto-start is already immediate unless the job is `WaitingForWifi`.
 
 ### 19. Scheduled Downloads
 
-**Status:** 🔵 Partial  
+**Status:** 🔵 Partial (v0.9.4: quiet-hours mute + optional auto-queue pause)  
 **Area:** Downloads  
-**Currently:** Watchlist auto-queue pairing shipped: per-search `auto_queue` toggle (Browse lightning button), background poller (60s tick, checks searches past `AppSettings.watch_poll_interval_mins`, default 60, clamped 5–1440, set in Settings → Downloads), `poll_watchlist` command + `POST /api/watchlist/poll` for manual runs, max 25 queued per search per pass. Poller runs desktop-only.  
-**Suggestion (remaining):** Queue downloads to start at a specific time; pause during certain hours (quiet-hours window) for off-peak bandwidth usage.
+**Currently:** Watchlist auto-queue pairing shipped: per-search `auto_queue` toggle (Browse lightning button), background poller (60s tick, checks searches past `AppSettings.watch_poll_interval_mins`, default 60, clamped 5–1440, set in Settings → Downloads), `poll_watchlist` command + `POST /api/watchlist/poll` for manual runs, max 25 queued per search per pass. Poller runs desktop-only. Quiet hours (`quiet_hours_*`) mute notifications and can skip auto-queue ticks.  
+**Suggestion (remaining):** Queue downloads to start at a specific time (“start after HH:MM” on pending jobs).
 
 ### 20. Mobile: Offline Queue Sync
 
@@ -251,7 +251,7 @@ Queue auto-start is already immediate unless the job is `WaitingForWifi`.
 **Area:** Browse / Library  
 **Currently:** `saved_searches` table (`MIGRATION_010`) with save/list/delete + `check_saved_search` (re-runs page 1, diffs against a capped 300-key snapshot, first check seeds the baseline); Save toggle on every browse detail page; "Saved searches" manager on Browse with per-search Check now, new-count badges, and aggregate total; manual checks open a New Matches panel (queue-all capped at 50 with overflow note, dismiss clears the badge via `dismiss_saved_search_news`); "Hide watched" toggle on browse results hides items whose URL matches a watched library scene (`list_watched_source_urls`); poller last-run indicator (`watchlist_status`: last run time, checked/queued/errors, due count); backend named constants in `state.rs`, `is_search_due` helper, `scene_exists`/`existing_scene_ids` cheap validation, corrupt snapshot error logging, proper 404/500 mapping in `server/mod.rs`; icon-only buttons in Browse saved card have `aria-label`s.  
 **Done (v0.9.0):** Native + in-app notification when the poller finds/queues matches; Settings → Downloads toggles; Android poller with Wi-Fi-only skip.  
-**Suggestion (remaining):** Quiet-hours suppression (#43).
+**Done (v0.9.4):** Quiet-hours suppression + optional auto-queue pause (#43).
 
 ### 29. Performer Detail Pages + Tag Hierarchy Manager
 
@@ -379,10 +379,10 @@ Queue auto-start is already immediate unless the job is `WaitingForWifi`.
 
 ### 43. Notification Preferences
 
-**Status:** 🔵 Partial (v0.9.0: download complete/failed + watchlist match toggles)  
+**Status:** ✅ Done (v0.9.4: quiet hours + watch-import/scan toggles)  
 **Area:** Settings / UX  
-**Currently:** Settings → Downloads → Notifications toggles `notify_download_complete`, `notify_download_failed`, `notify_saved_search_matches`.  
-**Suggestion (remaining):** Toggles for library scan finished, duplicates found, LAN status; quiet-hours window.
+**Currently:** Settings → Downloads → Notifications toggles `notify_download_complete`, `notify_download_failed`, `notify_saved_search_matches`, `notify_watch_import`, `notify_library_scan`, plus `quiet_hours_enabled` / `from` / `to` and optional `quiet_hours_pause_auto_queue`.  
+**Suggestion (remaining):** Duplicates-found / LAN-status toasts only if a real automatic event source is added (avoid inventing spam).
 
 ---
 
@@ -602,4 +602,4 @@ Queue auto-start is already immediate unless the job is `WaitingForWifi`.
 
 ---
 
-_Last updated: 2026-11-26 (v0.9.3: desktop watch folder auto-import)_
+_Last updated: 2026-11-27 (v0.9.4: notification quiet hours)_

@@ -2719,8 +2719,8 @@ function SettingsPage() {
             </CardHeader>
             <CardContent className="space-y-3">
               <p className="text-xs text-[var(--color-muted-foreground)]">
-                Control system notifications for downloads and watchlist matches. Quiet hours are
-                not configured yet.
+                Control system and in-app alerts for downloads, watchlist, watch-folder imports, and
+                library scans. Quiet hours mute all of these on a schedule.
               </p>
               <label className="flex items-center gap-2 text-sm">
                 <input
@@ -2750,6 +2750,68 @@ function SettingsPage() {
                 />
                 Watchlist / saved-search matches
               </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={hostSettings?.notify_watch_import ?? true}
+                  onChange={(e) => patchHostSettings({ notify_watch_import: e.target.checked })}
+                />
+                Watch-folder auto-import
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={hostSettings?.notify_library_scan ?? true}
+                  onChange={(e) => patchHostSettings({ notify_library_scan: e.target.checked })}
+                />
+                Library scan finished
+              </label>
+              <div className="space-y-3 border-t border-[var(--color-border)] pt-3">
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={hostSettings?.quiet_hours_enabled ?? false}
+                    onChange={(e) => patchHostSettings({ quiet_hours_enabled: e.target.checked })}
+                  />
+                  Quiet hours
+                </label>
+                {(hostSettings?.quiet_hours_enabled ?? false) && (
+                  <div className="flex flex-col gap-3 pl-6">
+                    <div className="flex items-center gap-3">
+                      <label className="text-xs text-[var(--color-muted-foreground)]">From</label>
+                      <Input
+                        type="time"
+                        value={hostSettings?.quiet_hours_from ?? "22:00"}
+                        onChange={(e) => patchHostSettings({ quiet_hours_from: e.target.value })}
+                        className="w-32"
+                      />
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <label className="text-xs text-[var(--color-muted-foreground)]">To</label>
+                      <Input
+                        type="time"
+                        value={hostSettings?.quiet_hours_to ?? "08:00"}
+                        onChange={(e) => patchHostSettings({ quiet_hours_to: e.target.value })}
+                        className="w-32"
+                      />
+                    </div>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={hostSettings?.quiet_hours_pause_auto_queue ?? false}
+                        onChange={(e) =>
+                          patchHostSettings({ quiet_hours_pause_auto_queue: e.target.checked })
+                        }
+                      />
+                      Pause watchlist auto-queue during quiet hours
+                    </label>
+                    <p className="text-xs text-[var(--color-muted-foreground)]">
+                      Overnight windows are supported (e.g. 22:00–08:00). Manual Check now still
+                      runs; in-flight downloads are not paused.
+                    </p>
+                  </div>
+                )}
+              </div>
               <Button onClick={() => void saveHostSettings()} disabled={!hostSettings}>
                 Save
               </Button>

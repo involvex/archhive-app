@@ -10,6 +10,7 @@ mod media;
 mod metadata;
 mod mobile;
 mod models;
+mod notify;
 mod secure_vault;
 mod server;
 mod sites;

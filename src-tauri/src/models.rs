@@ -596,6 +596,24 @@ pub struct AppSettings {
     /// Notify when the watchlist poller finds or queues new matches (default true).
     #[serde(default = "default_true")]
     pub notify_saved_search_matches: bool,
+    /// Notify when the desktop watch folder auto-imports a file (default true).
+    #[serde(default = "default_true")]
+    pub notify_watch_import: bool,
+    /// Notify when a library scan finishes with additions/updates (default true).
+    #[serde(default = "default_true")]
+    pub notify_library_scan: bool,
+    /// Suppress OS / in-app notifications during a nightly quiet-hours window.
+    #[serde(default)]
+    pub quiet_hours_enabled: bool,
+    /// Quiet hours start (HH:MM local). Default 22:00.
+    #[serde(default = "default_quiet_hours_from")]
+    pub quiet_hours_from: String,
+    /// Quiet hours end (HH:MM local). Default 08:00.
+    #[serde(default = "default_quiet_hours_to")]
+    pub quiet_hours_to: String,
+    /// When quiet hours are active, also skip the watchlist auto-queue poller tick.
+    #[serde(default)]
+    pub quiet_hours_pause_auto_queue: bool,
     /// Desktop: auto-import new video files under the library (or watch subpath).
     #[serde(default)]
     pub watch_folder_enabled: bool,
@@ -756,6 +774,14 @@ fn default_theme_schedule_to() -> String {
     "07:00".to_string()
 }
 
+fn default_quiet_hours_from() -> String {
+    "22:00".to_string()
+}
+
+fn default_quiet_hours_to() -> String {
+    "08:00".to_string()
+}
+
 fn default_download_on_wifi_only() -> bool {
     #[cfg(mobile)]
     return true;
@@ -850,6 +876,12 @@ impl Default for AppSettings {
             notify_download_complete: default_true(),
             notify_download_failed: default_true(),
             notify_saved_search_matches: default_true(),
+            notify_watch_import: default_true(),
+            notify_library_scan: default_true(),
+            quiet_hours_enabled: false,
+            quiet_hours_from: default_quiet_hours_from(),
+            quiet_hours_to: default_quiet_hours_to(),
+            quiet_hours_pause_auto_queue: false,
             watch_folder_enabled: false,
             watch_folder_path: None,
             watch_folder_extensions: default_watch_folder_extensions(),

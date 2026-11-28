@@ -6,6 +6,24 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.9.4",
+    date: "2026-11-27",
+    changes: [
+      {
+        type: "added",
+        text: "Quiet hours in Settings → Downloads → Notifications: mute OS and in-app alerts on a schedule (overnight windows supported)",
+      },
+      {
+        type: "added",
+        text: "Optional pause of watchlist auto-queue during quiet hours (manual Check now still runs)",
+      },
+      {
+        type: "added",
+        text: "Notification toggles for watch-folder auto-import and library scan finished",
+      },
+    ],
+  },
+  {
     version: "0.9.3",
     date: "2026-11-26",
     changes: [

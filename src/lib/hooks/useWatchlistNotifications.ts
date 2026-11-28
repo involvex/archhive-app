@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { getAppRuntime } from "@/lib/runtime";
+import { shouldNotify } from "@/lib/shouldNotify";
 import { useSettingsStore } from "@/lib/stores/settings";
 import type { WatchlistPollResult } from "@/lib/types";
 import type { ToastFn } from "@/lib/hooks/useDownloadNotifications";
@@ -16,8 +17,8 @@ export function useWatchlistNotifications(toastFn?: ToastFn) {
 
     void listen<WatchlistPollResult>("watchlist:matches", (event) => {
       if (cancelled) return;
-      const enabled = useSettingsStore.getState().settings.notify_saved_search_matches !== false;
-      if (!enabled) return;
+      const settings = useSettingsStore.getState().settings;
+      if (!shouldNotify(settings, "saved_search_matches")) return;
       const r = event.payload;
       const matched = r.matched ?? 0;
       if (matched <= 0 && r.queued <= 0) return;

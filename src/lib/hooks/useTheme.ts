@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { useSettingsStore } from "@/lib/stores/settings";
+import { inTimeWindow, localMinutesNow } from "@/lib/timeWindow";
 import type { AppTheme } from "@/lib/types";
 
 function applyTheme(theme: AppTheme) {
@@ -14,25 +15,9 @@ function applyTheme(theme: AppTheme) {
   }
 }
 
-/** Parse "HH:MM" into minutes-since-midnight. */
-function parseTimeHM(time: string): number | null {
-  const [h, m] = time.split(":").map(Number);
-  if (Number.isNaN(h) || Number.isNaN(m)) return null;
-  return h * 60 + m;
-}
-
 /** Returns "dark" if current time is in the scheduled dark window, "light" otherwise. */
 function scheduledTheme(from: string, to: string): "dark" | "light" {
-  const now = new Date();
-  const current = now.getHours() * 60 + now.getMinutes();
-  const fromMin = parseTimeHM(from);
-  const toMin = parseTimeHM(to);
-  if (fromMin == null || toMin == null) return "dark";
-
-  if (fromMin <= toMin) {
-    return current >= fromMin && current < toMin ? "dark" : "light";
-  }
-  return current >= fromMin || current < toMin ? "dark" : "light";
+  return inTimeWindow(from, to, localMinutesNow()) ? "dark" : "light";
 }
 
 export function useTheme() {
