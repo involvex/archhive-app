@@ -11,6 +11,10 @@ export const CHANGELOG: ChangelogEntry[] = [
     changes: [
       {
         type: "added",
+        text: "Saved-search JSON export/import in Settings → Diagnostics (restore watchlist listings with validation; skip identical rows)",
+      },
+      {
+        type: "added",
         text: "Naming-template presets and token chip picker in Settings → Library (save/load/rename local presets; click a chip to insert {token})",
       },
       {
