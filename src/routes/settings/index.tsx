@@ -27,6 +27,11 @@ import {
 import QRCode from "react-qr-code";
 import { getPluginSettingsPanels } from "@/lib/plugins/loader";
 import { NamingTemplateEditor } from "@/components/NamingTemplateEditor";
+import {
+  buildSavedSearchBackup,
+  parseSavedSearchBackup,
+  savedSearchIdentityKey,
+} from "@/lib/savedSearchBackup";
 import { visibleSettingsTabs } from "@/lib/settings/capabilities";
 import type {
   BinaryLatestVersions,
@@ -256,6 +261,8 @@ function SettingsPage() {
   const [backupBusy, setBackupBusy] = useState(false);
   const [libraryBackupStatus, setLibraryBackupStatus] = useState<string | null>(null);
   const [libraryBackupBusy, setLibraryBackupBusy] = useState(false);
+  const [savedSearchBackupStatus, setSavedSearchBackupStatus] = useState<string | null>(null);
+  const [savedSearchBackupBusy, setSavedSearchBackupBusy] = useState(false);
   const [includeRemoteCreds, setIncludeRemoteCreds] = useState(false);
   const [pickingFolder, setPickingFolder] = useState(false);
   const [folderPickerOpen, setFolderPickerOpen] = useState(false);
@@ -1279,6 +1286,145 @@ function SettingsPage() {
       setBackupStatus(e instanceof Error ? e.message : "Import failed");
     } finally {
       setBackupBusy(false);
+    }
+  }
+
+  async function downloadJsonFile(filename: string, text: string) {
+    if (runtime === "mobile-tauri") {
+      await api.shareTextFile(filename, text, filename);
+      return "shared";
+    }
+    const file = new File([text], filename, { type: "application/json" });
+    const nav = navigator as Navigator & {
+      canShare?: (data: ShareData) => boolean;
+      share?: (data: ShareData) => Promise<void>;
+    };
+    if (typeof nav.share === "function") {
+      const shareData: ShareData = { files: [file], title: filename };
+      if (!nav.canShare || nav.canShare(shareData)) {
+        await nav.share(shareData);
+        return "shared";
+      }
+    }
+    const blob = new Blob([text], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    return "downloaded";
+  }
+
+  async function handleExportSavedSearches() {
+    setSavedSearchBackupStatus(null);
+    setSavedSearchBackupBusy(true);
+    try {
+      const searches = await api.listSavedSearches();
+      const backup = buildSavedSearchBackup(searches);
+      const text = JSON.stringify(backup, null, 2);
+      const filename = `archhive-saved-searches-${Date.now()}.json`;
+      const mode = await downloadJsonFile(filename, text);
+      setSavedSearchBackupStatus(
+        mode === "shared"
+          ? `Shared ${searches.length} saved search(es). Save from the share sheet.`
+          : `Exported ${searches.length} saved search(es).`,
+      );
+    } catch (e) {
+      if (e instanceof Error && e.name === "AbortError") {
+        setSavedSearchBackupStatus("Share cancelled.");
+        return;
+      }
+      setSavedSearchBackupStatus(e instanceof Error ? e.message : "Export failed");
+    } finally {
+      setSavedSearchBackupBusy(false);
+    }
+  }
+
+  async function handleImportSavedSearches() {
+    setSavedSearchBackupStatus(null);
+    setSavedSearchBackupBusy(true);
+    try {
+      const text = await new Promise<string | null>((resolve) => {
+        const input = document.createElement("input");
+        input.type = "file";
+        input.accept = "application/json,.json";
+        input.onchange = () => {
+          const file = input.files?.[0];
+          if (!file) {
+            resolve(null);
+            return;
+          }
+          const reader = new FileReader();
+          reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : null);
+          reader.onerror = () => resolve(null);
+          reader.readAsText(file);
+        };
+        input.oncancel = () => resolve(null);
+        input.click();
+      });
+      if (!text) {
+        setSavedSearchBackupStatus("Import cancelled.");
+        return;
+      }
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        throw new Error("Invalid JSON file.");
+      }
+      const backup = parseSavedSearchBackup(parsed);
+      if (
+        !window.confirm(
+          `Import ${backup.searches.length} saved search(es)? Existing identical listings (same site, kind, slug, and name) are skipped.`,
+        )
+      ) {
+        setSavedSearchBackupStatus("Import cancelled.");
+        return;
+      }
+
+      const existing = await api.listSavedSearches();
+      const keys = new Set(existing.map((s) => savedSearchIdentityKey(s)));
+      let created = 0;
+      let skipped = 0;
+      const errors: string[] = [];
+
+      for (const entry of backup.searches) {
+        const key = savedSearchIdentityKey(entry);
+        if (keys.has(key)) {
+          skipped += 1;
+          continue;
+        }
+        try {
+          const saved = await api.saveSearch({
+            name: entry.name,
+            site_id: entry.site_id,
+            kind: entry.kind,
+            slug: entry.slug,
+            orientation: entry.orientation,
+            filters: entry.filters,
+          });
+          if (entry.auto_queue) {
+            await api.setSavedSearchAutoQueue(saved.id, true);
+          }
+          keys.add(key);
+          created += 1;
+        } catch (err) {
+          errors.push(`${entry.name}: ${err instanceof Error ? err.message : "failed to save"}`);
+        }
+      }
+
+      const parts = [`Created ${created}`, `skipped ${skipped}`];
+      if (errors.length) parts.push(`${errors.length} error(s)`);
+      setSavedSearchBackupStatus(
+        errors.length ? `${parts.join(", ")}. First error: ${errors[0]}` : `${parts.join(", ")}.`,
+      );
+    } catch (e) {
+      setSavedSearchBackupStatus(e instanceof Error ? e.message : "Import failed");
+    } finally {
+      setSavedSearchBackupBusy(false);
     }
   }
 
@@ -3593,6 +3739,36 @@ function SettingsPage() {
                 </div>
                 {backupStatus && (
                   <p className="text-xs text-[var(--color-muted-foreground)]">{backupStatus}</p>
+                )}
+              </div>
+              <div className="space-y-3 border-t border-[var(--color-border)] pt-3">
+                <p className="font-medium">Saved searches</p>
+                <p className="text-[var(--color-muted-foreground)]">
+                  Export watchlist / saved browse listings as JSON (site, kind, slug, filters).
+                  Import recreates missing listings; identical name+site+kind+slug rows are skipped.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={savedSearchBackupBusy || runtime === "browser"}
+                    onClick={() => void handleExportSavedSearches()}
+                  >
+                    Export saved searches
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={savedSearchBackupBusy || runtime === "browser"}
+                    onClick={() => void handleImportSavedSearches()}
+                  >
+                    Import saved searches
+                  </Button>
+                </div>
+                {savedSearchBackupStatus && (
+                  <p className="text-xs text-[var(--color-muted-foreground)]">
+                    {savedSearchBackupStatus}
+                  </p>
                 )}
               </div>
               <div className="space-y-3 border-t border-[var(--color-border)] pt-3">

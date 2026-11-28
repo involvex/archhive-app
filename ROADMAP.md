@@ -8,7 +8,6 @@
 
 ## Now
 
-- [ ] R06 Saved-search JSON export / import
 - [ ] R07 Post-wizard Home checklist
 - [ ] R08 Auto-suggest landscape on rotate + 44px player targets
 - [ ] R11 App Lock / Private Mode — PIN gate + blur
@@ -20,10 +19,11 @@
 - [ ] R09 Data-saver-aware thumbnails (Wave 1)
 - [ ] R14–R30 Wave 1 items (see table below)
 - [ ] R31–R40 Wave 2 items (see table below)
-- [ ] Share naming-template presets: free announcement draft in SHARE.md
+- [ ] Share saved-search export/import: free announcement draft in SHARE.md
 
 ## Done
 
+- [x] R06 Saved-search JSON export / import
 - [x] R02 Naming-template presets + token chip picker
 - [x] R01 Fix backup manifest schema id (021 → 022) — already `CURRENT_MIGRATION_ID = "022"`
 - [x] R03 Bulk suggest-and-apply tags
@@ -57,7 +57,7 @@ No DB migration, no native code, no new dependency. Each of these can ship indep
 | R03 | _(shipped — see appendix)_                             |             |        |                                                                                                                   |                                                                                              |
 | R04 | _(shipped — see appendix)_                             |             |        |                                                                                                                   |                                                                                              |
 | R05 | _(shipped — see appendix)_                             |             |        |                                                                                                                   |                                                                                              |
-| R06 | Saved-search JSON export / import                      | #28 partial | S      | `listSavedSearches`/`saveSearch` exist; Diagnostics already hosts settings/cookies backup UI                      | Export downloads JSON; import restores searches with validation                              |
+| R06 | _(shipped — see Done)_                                 |             |        |                                                                                                                   |                                                                                              |
 | R07 | Post-wizard Home checklist                             | #40         | S      | `FirstRunWizardGate` + `/` stats grid + `useSettingsStore` already exist                                          | Dismissible checklist card with deep links (library path, engine, cookies, LAN)              |
 | R08 | Auto-suggest landscape on rotate + 44px player targets | #44         | S      | `useIsLandscape()` at `src/lib/hooks/useMediaQuery.ts:42`; player Prev/Next are 40px, action bar 44px             | Rotating to landscape suggests fullscreen; all player touch targets ≥ 44px                   |
 | R09 | _(moved to Wave 1 — see note below)_                   |             |        |                                                                                                                   |                                                                                              |
@@ -131,7 +131,7 @@ Recorded here so planning stops re-litigating them. Evidence lives in code and t
 - PiP, gestures, wake-lock, fullscreen (#44 core), duplicate count badge (#23 partial)
 - Pagination base + thumb quality (#25 base, #49 Phase 1)
 - Wi-Fi-only / battery-aware downloads (#45), LAN history + QR pairing (#46, Q35/Q36)
-- **Shipped from this roadmap (v0.9.4 dev):** R01 backup manifest `022`, R02 naming-template presets + token chips (`NamingTemplateEditor.tsx`), R03 bulk suggest-and-apply tags (`SceneBulkEditBar.tsx` + test), R04 re-queue failed URLs (`downloads/index.tsx`), R05 copy/Open HLS stream URL (`live/$site/$slug.tsx`)
+- **Shipped from this roadmap (v0.9.4 dev):** R01 backup manifest `022`, R02 naming-template presets + token chips (`NamingTemplateEditor.tsx`), R03 bulk suggest-and-apply tags (`SceneBulkEditBar.tsx` + test), R04 re-queue failed URLs (`downloads/index.tsx`), R05 copy/Open HLS stream URL (`live/$site/$slug.tsx`), R06 saved-search JSON export/import (`savedSearchBackup.ts` + Diagnostics Backup card)
 
 ---
 

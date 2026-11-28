@@ -2,11 +2,11 @@
 
 ## Audience
 
-ArcHive users who customize download output paths, and people following the open-source media-library space.
+ArcHive users who keep watchlists / saved browse listings and move between desktop and mobile, plus people following the open-source media-library space.
 
 ## Announcement
 
-ArcHive now has naming-template presets and a token chip picker in Settings → Library. Save reusable path patterns, load built-in starters, and tap chips like `{performer}` or `{date}` to build templates without memorizing placeholders. The live preview and illegal-path warnings still apply.
+ArcHive can export and import saved searches as JSON from Settings → Diagnostics. Move watchlist listings between devices with validation; identical site/kind/slug/name rows are skipped so re-import stays safe. Naming-template presets and token chips are also available in Settings → Library.
 
 ## Free channels (pick one)
 
